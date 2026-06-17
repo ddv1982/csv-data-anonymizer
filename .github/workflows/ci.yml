@@ -97,7 +97,7 @@ jobs:
       - name: Install Linux package tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y fakeroot rpm gnupg
+          sudo apt-get install -y appstream desktop-file-utils fakeroot gnupg rpm rpm2cpio zstd
 
       - name: Build application
         run: pnpm run build
@@ -110,6 +110,26 @@ jobs:
 
       - name: Build Linux release packages
         run: pnpm exec electron-builder --linux AppImage deb rpm --x64 --publish never
+
+      - name: Validate Linux package metadata
+        run: pnpm run linux:metadata:check
+
+      - name: Smoke test APT repository generation
+        run: |
+          set -euo pipefail
+          test_keyring="$(mktemp)"
+          printf 'local unsigned APT repository test keyring\n' > "${test_keyring}"
+
+          python3 scripts/build_apt_repository.py "release/**/*.deb" \
+            --output /tmp/csv-anonymizer-apt-repository \
+            --unsigned \
+            --clean \
+            --setup-public-key "${test_keyring}" \
+            --setup-package-out /tmp/csv-anonymizer-repository-setup_1.0_all.deb
+
+          test -s /tmp/csv-anonymizer-apt-repository/dists/stable/main/binary-amd64/Packages.gz
+          test -s /tmp/csv-anonymizer-apt-repository/dists/stable/main/dep11/Components-amd64.yml.gz
+          test -s /tmp/csv-anonymizer-repository-setup_1.0_all.deb
 
       - name: Sign Linux release artifacts
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

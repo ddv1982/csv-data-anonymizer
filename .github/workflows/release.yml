@@ -8,6 +8,8 @@ on:
 permissions:
   actions: read
   contents: write
+  id-token: write
+  pages: write
 
 concurrency:
   group: release-${{ github.ref_name }}
@@ -249,6 +251,9 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
       - name: Download reusable Linux package artifact from CI
         uses: actions/download-artifact@v8
         with:
@@ -258,10 +263,10 @@ jobs:
           run-id: ${{ needs.validate-release.outputs.ci_run_id }}
           path: release-artifacts
 
-      - name: Install Linux signature validation tools
+      - name: Install Linux signature and metadata validation tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y gnupg
+          sudo apt-get install -y appstream desktop-file-utils gnupg rpm rpm2cpio zstd
 
       - name: Verify Linux artifact signatures
         env:
@@ -316,6 +321,9 @@ jobs:
             GNUPGHOME="${verification_home}" gpg --batch --verify "${signature}" "${package}"
           done
 
+      - name: Validate Linux package metadata
+        run: python3 scripts/validate_linux_package_metadata.py "release-artifacts/**/*.deb" "release-artifacts/**/*.rpm"
+
       - name: Upload Linux release assets
         uses: softprops/action-gh-release@v3
         with:
@@ -329,9 +337,193 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  publish-apt-repository:
+    name: Publish APT Repository
+    needs: [validate-release, create-release, upload-linux-release]
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy_apt_pages.outputs.page_url }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Download reusable Linux package artifact from CI
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.LINUX_RELEASE_ARTIFACT_NAME }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.validate-release.outputs.ci_run_id }}
+          path: release-artifacts
+
+      - name: Install APT repository tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y appstream desktop-file-utils gnupg rpm rpm2cpio zstd
+
+      - name: Validate Linux package metadata
+        run: python3 scripts/validate_linux_package_metadata.py "release-artifacts/**/*.deb" "release-artifacts/**/*.rpm"
+
+      - name: Build signed APT repository
+        env:
+          APT_REPO_SIGNING_PRIVATE_KEY: ${{ secrets.APT_REPO_SIGNING_PRIVATE_KEY }}
+          APT_REPO_SIGNING_KEY_FINGERPRINT: ${{ secrets.APT_REPO_SIGNING_KEY_FINGERPRINT }}
+          APT_REPO_SIGNING_KEY_PASSPHRASE: ${{ secrets.APT_REPO_SIGNING_KEY_PASSPHRASE }}
+          DEB_SIGNING_PRIVATE_KEY: ${{ secrets.DEB_SIGNING_PRIVATE_KEY }}
+          DEB_SIGNING_KEY_FINGERPRINT: ${{ secrets.DEB_SIGNING_KEY_FINGERPRINT }}
+          DEB_SIGNING_KEY_PASSPHRASE: ${{ secrets.DEB_SIGNING_KEY_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+
+          signing_private_key="${APT_REPO_SIGNING_PRIVATE_KEY}"
+          signing_fingerprint="${APT_REPO_SIGNING_KEY_FINGERPRINT}"
+          signing_passphrase="${APT_REPO_SIGNING_KEY_PASSPHRASE}"
+          signing_source="APT repository signing key"
+
+          if [ -z "${signing_private_key}" ] && [ -z "${signing_fingerprint}" ]; then
+            signing_private_key="${DEB_SIGNING_PRIVATE_KEY}"
+            signing_fingerprint="${DEB_SIGNING_KEY_FINGERPRINT}"
+            signing_passphrase="${DEB_SIGNING_KEY_PASSPHRASE}"
+            signing_source="Linux artifact signing key fallback"
+          fi
+
+          missing=()
+          [ -n "${signing_private_key}" ] || missing+=("APT_REPO_SIGNING_PRIVATE_KEY or DEB_SIGNING_PRIVATE_KEY")
+          [ -n "${signing_fingerprint}" ] || missing+=("APT_REPO_SIGNING_KEY_FINGERPRINT or DEB_SIGNING_KEY_FINGERPRINT")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "Required APT repository signing inputs are missing: ${missing[*]}" >&2
+            exit 1
+          fi
+
+          echo "Using ${signing_source} for APT repository Release signing."
+
+          deb_packages=(release-artifacts/**/*.deb)
+          if [ ${#deb_packages[@]} -eq 0 ]; then
+            echo "No .deb packages found under release-artifacts." >&2
+            exit 1
+          fi
+
+          gnupg_home="$(mktemp -d)"
+          verification_home="$(mktemp -d)"
+          private_key_file="$(mktemp)"
+          passphrase_file="$(mktemp)"
+          setup_extract_dir=""
+          cleanup() {
+            rm -rf "${gnupg_home}" "${verification_home}"
+            rm -f "${private_key_file}" "${passphrase_file}"
+            if [ -n "${setup_extract_dir}" ]; then
+              rm -rf "${setup_extract_dir}"
+            fi
+          }
+          trap cleanup EXIT
+
+          chmod 700 "${gnupg_home}" "${verification_home}"
+          chmod 600 "${passphrase_file}"
+          export GNUPGHOME="${gnupg_home}"
+          echo allow-loopback-pinentry > "${GNUPGHOME}/gpg-agent.conf"
+          gpgconf --kill gpg-agent || true
+
+          printf '%s' "${signing_private_key}" | base64 --decode > "${private_key_file}"
+          printf '%s' "${signing_passphrase}" > "${passphrase_file}"
+          gpg --batch --import "${private_key_file}"
+
+          expected_fingerprint="$(printf '%s' "${signing_fingerprint}" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
+          imported_fingerprint="$(gpg --batch --with-colons --fingerprint "${expected_fingerprint}" | awk -F: '$1 == "fpr" { print toupper($10); exit }')"
+          if [ "${imported_fingerprint}" != "${expected_fingerprint}" ]; then
+            echo "Imported APT repository signing key fingerprint did not match the selected signing fingerprint." >&2
+            exit 1
+          fi
+
+          setup_package="csv-anonymizer-repository-setup_1.0_all.deb"
+          python3 scripts/build_apt_repository.py "${deb_packages[@]}" \
+            --output apt-repository \
+            --clean \
+            --repository-url "https://ddv1982.github.io/csv-data-anonymizer/apt/" \
+            --gpg-key "${expected_fingerprint}" \
+            --gpg-homedir "${gnupg_home}" \
+            --gpg-passphrase-file "${passphrase_file}" \
+            --public-key-out apt-repository/csv-anonymizer-archive-keyring.pgp \
+            --setup-package-out "${setup_package}"
+
+          EXPECTED_FINGERPRINT="${expected_fingerprint}" python3 - <<'PY'
+          import os
+          import pathlib
+
+          script_path = pathlib.Path("scripts/install-apt-repo.sh")
+          placeholder = "__CSV_ANONYMIZER_APT_SIGNING_KEY_FINGERPRINT__"
+          text = script_path.read_text(encoding="utf-8")
+          if placeholder not in text:
+              raise SystemExit(f"{placeholder} was not found in {script_path}")
+          script_path.write_text(
+              text.replace(placeholder, os.environ["EXPECTED_FINGERPRINT"]),
+              encoding="utf-8",
+          )
+          PY
+
+          sha256sum "${setup_package}" > "${setup_package}.sha256"
+          gpg --batch --yes --pinentry-mode loopback --passphrase-file "${passphrase_file}" \
+            --local-user "${expected_fingerprint}" --armor --detach-sign \
+            --output "${setup_package}.sha256.asc" \
+            "${setup_package}.sha256"
+
+          test "$(dpkg-deb --field "${setup_package}" Package)" = "csv-anonymizer-repository-setup"
+          test "$(dpkg-deb --field "${setup_package}" Version)" = "1.0"
+          test "$(dpkg-deb --field "${setup_package}" Architecture)" = "all"
+          setup_extract_dir="$(mktemp -d)"
+          dpkg-deb -x "${setup_package}" "${setup_extract_dir}"
+          test -s "${setup_extract_dir}/usr/share/keyrings/csv-anonymizer-archive-keyring.pgp"
+          grep -Fx "Types: deb" "${setup_extract_dir}/etc/apt/sources.list.d/csv-anonymizer.sources"
+          grep -Fx "URIs: https://ddv1982.github.io/csv-data-anonymizer/apt/" "${setup_extract_dir}/etc/apt/sources.list.d/csv-anonymizer.sources"
+          grep -Fx "Suites: stable" "${setup_extract_dir}/etc/apt/sources.list.d/csv-anonymizer.sources"
+          grep -Fx "Components: main" "${setup_extract_dir}/etc/apt/sources.list.d/csv-anonymizer.sources"
+          grep -E '^Architectures: .*amd64( |$)' "${setup_extract_dir}/etc/apt/sources.list.d/csv-anonymizer.sources"
+          grep -Fx "Signed-By: /usr/share/keyrings/csv-anonymizer-archive-keyring.pgp" "${setup_extract_dir}/etc/apt/sources.list.d/csv-anonymizer.sources"
+          sh -n scripts/install-apt-repo.sh
+          ! grep -F "__CSV_ANONYMIZER_APT_SIGNING_KEY_FINGERPRINT__" scripts/install-apt-repo.sh
+
+          GNUPGHOME="${verification_home}" gpg --batch --import apt-repository/csv-anonymizer-archive-keyring.pgp
+          GNUPGHOME="${verification_home}" gpg --batch --verify apt-repository/dists/stable/InRelease
+          GNUPGHOME="${verification_home}" gpg --batch --verify \
+            apt-repository/dists/stable/Release.gpg \
+            apt-repository/dists/stable/Release
+          GNUPGHOME="${verification_home}" gpg --batch --verify \
+            "${setup_package}.sha256.asc" \
+            "${setup_package}.sha256"
+
+          mkdir -p pages-site/apt
+          cp -a apt-repository/. pages-site/apt/
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload APT repository Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: pages-site
+
+      - name: Deploy APT repository to GitHub Pages
+        id: deploy_apt_pages
+        uses: actions/deploy-pages@v4
+
+      - name: Upload APT setup release assets
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          draft: true
+          files: |
+            csv-anonymizer-repository-setup_*.deb
+            csv-anonymizer-repository-setup_*.deb.sha256
+            csv-anonymizer-repository-setup_*.deb.sha256.asc
+            scripts/install-apt-repo.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   publish-release:
     name: Publish Release
-    needs: [create-release, build-macos-release, upload-linux-release]
+    needs: [create-release, build-macos-release, upload-linux-release, publish-apt-repository]
     runs-on: ubuntu-24.04
 
     steps:

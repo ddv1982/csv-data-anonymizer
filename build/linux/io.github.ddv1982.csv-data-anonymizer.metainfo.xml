@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.ddv1982.csv-data-anonymizer</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>CSV Anonymizer</name>
+  <summary>Local-first CSV anonymization desktop app</summary>
+  <description>
+    <p>CSV Anonymizer detects sensitive CSV columns, previews deterministic transformations, and writes anonymized output without sending data off the device.</p>
+  </description>
+  <launchable type="desktop-id">csv-anonymizer.desktop</launchable>
+  <provides>
+    <binary>csv-anonymizer</binary>
+  </provides>
+  <url type="homepage">https://github.com/ddv1982/csv-data-anonymizer</url>
+  <categories>
+    <category>Utility</category>
+  </categories>
+  <releases>
+    <release version="1.0.1" date="2026-06-17" />
+    <release version="1.0.0" date="2026-06-17" />
+  </releases>
+</component>

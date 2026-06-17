@@ -11,6 +11,8 @@ Update `package.json` and add release notes to `CHANGELOG.md` using this heading
 - Release note
 ```
 
+Also update the latest `<release>` entry in `build/linux/io.github.ddv1982.csv-data-anonymizer.metainfo.xml` to the same version and date.
+
 Validate metadata before tagging:
 
 ```bash
@@ -63,7 +65,21 @@ Linux packages are signed as detached GPG `.asc` signatures on `main` pushes bef
 - `DEB_SIGNING_KEY_PASSPHRASE`: passphrase for the Linux artifact signing key
 - `DEB_SIGNING_PUBLIC_KEY`: repository variable containing the base64-encoded ASCII-armored public key
 
-`APT_REPO_SIGNING_*` secrets may also be configured for a future hosted APT repository, but the current Electron release workflow publishes direct GitHub Release assets only.
+Tagged releases also publish a signed APT repository to GitHub Pages at:
+
+```text
+https://ddv1982.github.io/csv-data-anonymizer/apt/
+```
+
+GitHub Pages must be configured to deploy from GitHub Actions. The APT repository should use a dedicated signing key when available:
+
+- `APT_REPO_SIGNING_PRIVATE_KEY`: base64-encoded ASCII-armored GPG private key for APT `Release` metadata
+- `APT_REPO_SIGNING_KEY_FINGERPRINT`: full fingerprint for the APT repository signing key
+- `APT_REPO_SIGNING_KEY_PASSPHRASE`: passphrase for the APT repository signing key
+
+If the dedicated APT key is not configured yet, the release workflow falls back to the `DEB_SIGNING_*` key so the repository metadata is still signed.
+
+The repository setup package is `csv-anonymizer-repository-setup_1.0_all.deb`. Its version is independent from the app version; keep it at `1.0` unless the repository URL, keyring path, source file path, suite/component, or installed trust contract changes.
 
 ## Release Behavior
 
@@ -75,12 +91,57 @@ The release workflow:
 - waits for the normal `CI` workflow to succeed on the tagged commit and verifies that it produced the reusable Linux package artifact
 - creates or refreshes a draft GitHub Release
 - downloads the Linux package artifact from CI, verifies detached GPG signatures, and uploads `AppImage`, `deb`, `rpm`, and `.asc` assets
+- validates Linux package AppStream, desktop-file, Debian copyright, and RPM license metadata
+- builds a signed static APT repository from the same `.deb`, publishes it to GitHub Pages under `/apt/`, and uploads the repository setup package plus installer script to the draft release
 - builds signed and notarized macOS `dmg` and `zip` artifacts for x64 and arm64
 - verifies the packaged `.app` with `codesign`, `stapler`, and `spctl`
 - uploads the macOS artifacts to the draft release
 - publishes the release only after the Linux and macOS jobs succeed
 
-The workflow does not currently sign Windows artifacts or publish a hosted Linux package repository. Add those as separate distribution steps when those channels are needed.
+The workflow does not currently sign Windows artifacts or publish RPM/YUM repository metadata. RPM artifacts are uploaded directly to GitHub Releases with detached `.asc` signatures.
+
+## APT Repository Verification
+
+The canonical user install flow is:
+
+```bash
+bash <(curl -fsSL https://github.com/ddv1982/csv-data-anonymizer/releases/latest/download/install-apt-repo.sh)
+sudo apt update
+sudo apt install csv-anonymizer
+```
+
+The installer downloads:
+
+```text
+https://github.com/ddv1982/csv-data-anonymizer/releases/latest/download/csv-anonymizer-repository-setup_1.0_all.deb
+https://github.com/ddv1982/csv-data-anonymizer/releases/latest/download/csv-anonymizer-repository-setup_1.0_all.deb.sha256
+https://github.com/ddv1982/csv-data-anonymizer/releases/latest/download/csv-anonymizer-repository-setup_1.0_all.deb.sha256.asc
+https://ddv1982.github.io/csv-data-anonymizer/apt/csv-anonymizer-archive-keyring.pgp
+```
+
+The release workflow stamps the selected APT signing fingerprint into `scripts/install-apt-repo.sh` before uploading it. The installer validates the downloaded keyring, verifies the signed SHA256 sidecar, checks the setup package hash, then installs the setup package with APT.
+
+After the Pages deploy, verify the hosted repository and release assets:
+
+```bash
+curl -fsSI https://ddv1982.github.io/csv-data-anonymizer/apt/dists/stable/InRelease
+curl -fsSI https://ddv1982.github.io/csv-data-anonymizer/apt/dists/stable/main/binary-amd64/Packages.gz
+curl -fsSI https://ddv1982.github.io/csv-data-anonymizer/apt/dists/stable/main/dep11/Components-amd64.yml.gz
+curl -fsSI https://ddv1982.github.io/csv-data-anonymizer/apt/csv-anonymizer-archive-keyring.pgp
+curl -fsSI https://github.com/ddv1982/csv-data-anonymizer/releases/latest/download/install-apt-repo.sh
+curl -fsSI https://github.com/ddv1982/csv-data-anonymizer/releases/latest/download/csv-anonymizer-repository-setup_1.0_all.deb
+curl -fsSI https://github.com/ddv1982/csv-data-anonymizer/releases/latest/download/csv-anonymizer-repository-setup_1.0_all.deb.sha256
+curl -fsSI https://github.com/ddv1982/csv-data-anonymizer/releases/latest/download/csv-anonymizer-repository-setup_1.0_all.deb.sha256.asc
+```
+
+In a clean Debian/Ubuntu VM, verify the package-manager update path:
+
+```bash
+bash <(curl -fsSL https://github.com/ddv1982/csv-data-anonymizer/releases/latest/download/install-apt-repo.sh)
+sudo apt update
+apt-cache policy csv-anonymizer
+sudo apt install csv-anonymizer
+```
 
 ## Local Validation
 
@@ -106,4 +167,12 @@ On Linux, check unpacked packaging and the packaged smoke flow with:
 ```bash
 pnpm run dist:linux:dir
 xvfb-run --auto-servernum pnpm run smoke:packaged
+```
+
+After building Linux release packages, validate package metadata and APT repository generation:
+
+```bash
+pnpm run dist:linux
+pnpm run linux:metadata:check
+pnpm run apt:repo:check
 ```

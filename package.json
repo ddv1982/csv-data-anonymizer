@@ -1,8 +1,9 @@
 {
   "name": "csv-anonymizer",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Desktop CSV anonymizer for local-first anonymization workflows.",
   "desktopName": "csv-anonymizer.desktop",
+  "homepage": "https://github.com/ddv1982/csv-data-anonymizer",
   "main": "out/main/index.js",
   "packageManager": "pnpm@11.7.0",
   "scripts": {
@@ -16,6 +17,8 @@
     "dist:linux": "pnpm run build && electron-builder --linux AppImage deb rpm --x64 --publish never",
     "dist:linux:dir": "pnpm run build && electron-builder --linux dir --x64 --publish never",
     "icons:linux": "node scripts/generate-linux-icons.mjs",
+    "linux:metadata:check": "python3 scripts/validate_linux_package_metadata.py \"release/**/*.deb\" \"release/**/*.rpm\"",
+    "apt:repo:check": "python3 scripts/build_apt_repository.py \"release/**/*.deb\" --output /tmp/csv-anonymizer-apt-repository --unsigned --clean",
     "release:check": "node scripts/check-release-metadata.mjs",
     "smoke:packaged": "node scripts/packaged-smoke.mjs",
     "test": "vitest run",
@@ -108,9 +111,15 @@
       "executableName": "csv-anonymizer",
       "icon": "build/icons",
       "maintainer": "Douwe de Vries <douwe.de.vries.82@gmail.com>",
+      "vendor": "Douwe de Vries <douwe.de.vries.82@gmail.com>",
       "syncDesktopName": true,
       "synopsis": "Local-first CSV anonymization desktop app",
       "description": "Desktop CSV anonymizer for local-first anonymization workflows.",
+      "desktop": {
+        "entry": {
+          "Keywords": "CSV;Privacy;Anonymization;Data;"
+        }
+      },
       "target": [
         "AppImage",
         "deb",
@@ -119,10 +128,18 @@
     },
     "deb": {
       "packageCategory": "utils",
-      "priority": "optional"
+      "priority": "optional",
+      "fpm": [
+        "build/linux/io.github.ddv1982.csv-data-anonymizer.metainfo.xml=/usr/share/metainfo/io.github.ddv1982.csv-data-anonymizer.metainfo.xml",
+        "build/linux/debian/copyright=/usr/share/doc/csv-anonymizer/copyright"
+      ]
     },
     "rpm": {
-      "packageCategory": "Applications/Productivity"
+      "packageCategory": "Applications/Productivity",
+      "fpm": [
+        "build/linux/io.github.ddv1982.csv-data-anonymizer.metainfo.xml=/usr/share/metainfo/io.github.ddv1982.csv-data-anonymizer.metainfo.xml",
+        "LICENSE=/usr/share/licenses/csv-anonymizer/LICENSE"
+      ]
     }
   }
 }

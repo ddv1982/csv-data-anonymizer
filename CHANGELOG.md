@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.1 - 2026-06-17
+
+- Add signed APT repository publishing to GitHub Pages, including a repository setup package and verified installer script.
+- Add Linux package metadata validation for AppStream, desktop launcher, Debian copyright, and RPM license files.
+- Document the Debian/Ubuntu repository install and update path plus maintainer release verification steps.
+
 ## v1.0.0 - 2026-06-17
 
 - Initial Electron desktop release of CSV Anonymizer.
