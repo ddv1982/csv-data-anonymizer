@@ -27,7 +27,33 @@ describe('getErrorMessage', () => {
     }
 
     expect(getErrorMessage(error)).toBe(
-      'Output file already exists. Disable overwrite or choose a different output path.'
+      'Output file already exists. Enable overwrite or choose a different output path.'
+    )
+  })
+
+  it('surfaces unexpected bridge error details when no mapped recovery exists', () => {
+    const error: ApiError = {
+      success: false,
+      error: {
+        code: 'UNKNOWN',
+        message: 'An object could not be cloned.',
+      },
+    }
+
+    expect(getErrorMessage(error)).toBe('An object could not be cloned.')
+  })
+
+  it('uses a clear mapped message for bridge payload clone failures', () => {
+    const error: ApiError = {
+      success: false,
+      error: {
+        code: 'BRIDGE_PAYLOAD_INVALID',
+        message: 'The app could not send the selected data to the desktop process. Try selecting the columns again.',
+      },
+    }
+
+    expect(getErrorMessage(error)).toBe(
+      'The app could not send the selected data to the desktop process. Try selecting the columns again.'
     )
   })
 })

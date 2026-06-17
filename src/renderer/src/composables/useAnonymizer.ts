@@ -72,6 +72,10 @@ export function useAnonymizer() {
     return Math.random().toString(36).slice(2, 15)
   }
 
+  function getSelectedColumnPayload(): number[] {
+    return [...selectedColumns.value]
+  }
+
   async function loadSettings(): Promise<void> {
     isLoadingSettings.value = true
     const response = await getSettings()
@@ -167,7 +171,7 @@ export function useAnonymizer() {
 
     const response = await getPreview({
       filePath: selectedFile.value,
-      columns: selectedColumns.value,
+      columns: getSelectedColumnPayload(),
       deterministic: config.value.deterministic,
       seed: previewSeed.value,
       sampleCount: settings.value?.anonymization.previewSampleCount ?? 5,
@@ -210,7 +214,7 @@ export function useAnonymizer() {
     const response = await anonymizeFile({
       filePath: selectedFile.value,
       outputPath: config.value.outputPath,
-      columns: selectedColumns.value,
+      columns: getSelectedColumnPayload(),
       deterministic: config.value.deterministic,
       seed: seedToUse,
       force: config.value.overwriteOutput,

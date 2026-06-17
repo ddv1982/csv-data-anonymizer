@@ -73,3 +73,32 @@ test('previews and anonymizes small CSVs through the desktop bridge', async () =
     await rm(tempDir, { recursive: true, force: true });
   }
 });
+
+test('previews and anonymizes a small CSV through the visible workflow', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'csv-anonymizer-ui-e2e-'));
+  let app: Awaited<ReturnType<typeof electron.launch>> | undefined;
+
+  try {
+    const inputPath = join(tempDir, 'contacts.csv');
+    const outputPath = join(tempDir, 'contacts-output.csv');
+    await writeFile(inputPath, 'id,email\n1,alice@example.com\n2,bob@example.com\n', 'utf-8');
+
+    app = await electron.launch({ args: ['.'] });
+    const page = await app.firstWindow();
+
+    await page.getByLabel('File path input').fill(inputPath);
+    await expect(page.getByText('1 of 2 columns selected')).toBeVisible();
+    await page.locator('#output-path').fill(outputPath);
+
+    await page.getByRole('button', { name: 'Show Preview' }).click();
+    await expect(page.getByText('alice@example.com')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Anonymize File' }).click();
+    await expect(page.getByText('Success!')).toBeVisible();
+    await expect(page.getByText('An unexpected error occurred. Please try again.')).toHaveCount(0);
+    expect(await readFile(outputPath, 'utf-8')).toContain('@example.com');
+  } finally {
+    await app?.close();
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
