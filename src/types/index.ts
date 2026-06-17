@@ -14,13 +14,9 @@ export type {
 
 // Configuration types
 export type {
-  StrategyOptions,
-  ColumnConfig,
-  AnonymizationConfig,
   ProcessOptions,
   ProcessResult,
   TransformContext,
-  AnonymizeCommandOptions,
   ParsedSample,
 } from './config.js';
 
@@ -30,7 +26,6 @@ export {
   AnonymizerError,
   FileNotFoundError,
   CsvParseError,
-  ConfigValidationError,
   ColumnNotFoundError,
   OutputExistsError,
   InvalidSelectionError,

@@ -1,11 +1,10 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, afterAll } from 'vitest';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { processFile } from '../../src/core/processor.js';
 import { readSample } from '../../src/core/sampleReader.js';
 import { buildColumnMetadata, applyColumnSelection } from '../../src/core/metadataBuilder.js';
-import type { ColumnMetadata } from '../../src/types/column.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(__dirname, '..', 'fixtures');

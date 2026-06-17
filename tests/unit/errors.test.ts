@@ -4,12 +4,10 @@ import {
   AnonymizerError,
   FileNotFoundError,
   CsvParseError,
-  ConfigValidationError,
   ColumnNotFoundError,
   OutputExistsError,
   InvalidSelectionError,
 } from '../../src/types/errors.js';
-import type { ZodIssue } from 'zod';
 
 describe('ErrorCodes', () => {
   it('should have all expected error codes', () => {
@@ -107,78 +105,6 @@ describe('CsvParseError', () => {
   });
 });
 
-describe('ConfigValidationError', () => {
-  it('should create error from Zod issues', () => {
-    const issues: ZodIssue[] = [
-      {
-        code: 'invalid_type',
-        expected: 'string',
-        received: 'number',
-        path: ['columns', 0, 'name'],
-        message: 'Expected string, received number',
-      },
-    ];
-    const error = new ConfigValidationError(issues);
-    expect(error.code).toBe('CONFIG_INVALID');
-    expect(error.name).toBe('ConfigValidationError');
-    expect(error.issues).toEqual(issues);
-  });
-
-  it('should format issues in message', () => {
-    const issues: ZodIssue[] = [
-      {
-        code: 'too_small',
-        minimum: 1,
-        type: 'string',
-        inclusive: true,
-        exact: false,
-        path: ['columns', 0, 'name'],
-        message: 'Column name cannot be empty',
-      },
-      {
-        code: 'invalid_enum_value',
-        options: ['email', 'uuid'],
-        received: 'invalid',
-        path: ['columns', 0, 'type'],
-        message: 'Invalid type',
-      },
-    ];
-    const error = new ConfigValidationError(issues);
-    expect(error.message).toContain('columns.0.name');
-    expect(error.message).toContain('columns.0.type');
-    expect(error.message).toContain('Column name cannot be empty');
-    expect(error.message).toContain('Invalid type');
-  });
-
-  it('should handle root-level issues', () => {
-    const issues: ZodIssue[] = [
-      {
-        code: 'invalid_type',
-        expected: 'object',
-        received: 'null',
-        path: [],
-        message: 'Expected object, received null',
-      },
-    ];
-    const error = new ConfigValidationError(issues);
-    expect(error.message).toContain('root');
-  });
-
-  it('should include recovery suggestion', () => {
-    const issues: ZodIssue[] = [
-      { code: 'custom', path: ['test'], message: 'error' },
-    ];
-    const error = new ConfigValidationError(issues);
-    expect(error.suggestion).toContain('configuration file');
-  });
-
-  it('should be instanceof AnonymizerError', () => {
-    const error = new ConfigValidationError([]);
-    expect(error).toBeInstanceOf(AnonymizerError);
-    expect(error).toBeInstanceOf(ConfigValidationError);
-  });
-});
-
 describe('ColumnNotFoundError', () => {
   it('should create error with column name', () => {
     const error = new ColumnNotFoundError('email_address');
@@ -190,7 +116,7 @@ describe('ColumnNotFoundError', () => {
 
   it('should include default suggestion without available columns', () => {
     const error = new ColumnNotFoundError('col');
-    expect(error.suggestion).toContain('--preview');
+    expect(error.suggestion).toContain('detected CSV columns');
   });
 
   it('should include available columns in suggestion when provided', () => {
@@ -219,8 +145,8 @@ describe('OutputExistsError', () => {
 
   it('should include suggestion about --force flag', () => {
     const error = new OutputExistsError('/path');
-    expect(error.suggestion).toContain('--force');
-    expect(error.suggestion).toContain('--output');
+    expect(error.suggestion).toContain('overwrite output');
+    expect(error.suggestion).toContain('different output path');
   });
 
   it('should be instanceof AnonymizerError', () => {

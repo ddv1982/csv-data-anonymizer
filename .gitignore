@@ -3,10 +3,17 @@ node_modules/
 
 # Build output
 dist/
+out/
+release/
+*.tsbuildinfo
 
 # Coverage
 coverage/
 *.lcov
+
+# Playwright
+playwright-report/
+test-results/
 
 # IDE
 .idea/

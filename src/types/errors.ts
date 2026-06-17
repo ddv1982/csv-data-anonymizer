@@ -1,5 +1,3 @@
-import type { ZodIssue } from 'zod';
-
 /**
  * Error codes for all anonymizer errors
  */
@@ -86,29 +84,6 @@ export class CsvParseError extends AnonymizerError {
 }
 
 /**
- * Error thrown when configuration validation fails
- */
-export class ConfigValidationError extends AnonymizerError {
-  public readonly issues: ZodIssue[];
-
-  constructor(issues: ZodIssue[]) {
-    const messages = issues.map((issue) => {
-      const path = issue.path.length > 0 ? issue.path.join('.') : 'root';
-      return `  - ${path}: ${issue.message}`;
-    });
-
-    super(
-      `Configuration validation failed:\n${messages.join('\n')}`,
-      ErrorCodes.CONFIG_INVALID,
-      'Review and fix the configuration file according to the schema.'
-    );
-    this.name = 'ConfigValidationError';
-    this.issues = issues;
-    Object.setPrototypeOf(this, new.target.prototype);
-  }
-}
-
-/**
  * Error thrown when a specified column is not found in the CSV
  */
 export class ColumnNotFoundError extends AnonymizerError {
@@ -119,6 +94,8 @@ export class ColumnNotFoundError extends AnonymizerError {
     let suggestion = 'Use --preview to see available columns.';
     if (availableColumns && availableColumns.length > 0) {
       suggestion = `Available columns: ${availableColumns.join(', ')}`;
+    } else {
+      suggestion = 'Review the detected CSV columns and select an available column.'
     }
 
     super(
@@ -143,7 +120,7 @@ export class OutputExistsError extends AnonymizerError {
     super(
       `Output file already exists: ${outputPath}`,
       ErrorCodes.OUTPUT_EXISTS,
-      'Use --force flag to overwrite, or specify a different output path with --output.'
+      'Enable overwrite output or choose a different output path.'
     );
     this.name = 'OutputExistsError';
     this.outputPath = outputPath;

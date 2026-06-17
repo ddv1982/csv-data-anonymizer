@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readSample, readAllRows } from '../../src/core/sampleReader.js';
-import { FileNotFoundError, CsvParseError } from '../../src/types/errors.js';
+import { FileNotFoundError } from '../../src/types/errors.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(__dirname, '..', 'fixtures');
