@@ -56,11 +56,11 @@ Linux release artifacts use Electron Builder on Ubuntu to produce:
 - `deb`
 - `rpm`
 
-The Debian package is GPG-signed on `main` pushes before CI uploads the reusable Linux artifact bundle. Configure these GitHub Actions inputs before pushing a release tag:
+Linux packages are signed as detached GPG `.asc` signatures on `main` pushes before CI uploads the reusable Linux artifact bundle. Configure these GitHub Actions inputs before pushing a release tag:
 
 - `DEB_SIGNING_PRIVATE_KEY`: base64-encoded ASCII-armored GPG private key
-- `DEB_SIGNING_KEY_FINGERPRINT`: full fingerprint for the Debian signing key
-- `DEB_SIGNING_KEY_PASSPHRASE`: passphrase for the Debian signing key
+- `DEB_SIGNING_KEY_FINGERPRINT`: full fingerprint for the Linux artifact signing key
+- `DEB_SIGNING_KEY_PASSPHRASE`: passphrase for the Linux artifact signing key
 - `DEB_SIGNING_PUBLIC_KEY`: repository variable containing the base64-encoded ASCII-armored public key
 
 `APT_REPO_SIGNING_*` secrets may also be configured for a future hosted APT repository, but the current Electron release workflow publishes direct GitHub Release assets only.
@@ -74,7 +74,7 @@ The release workflow:
 - validates the tag, package version, and changelog section
 - waits for the normal `CI` workflow to succeed on the tagged commit and verifies that it produced the reusable Linux package artifact
 - creates or refreshes a draft GitHub Release
-- downloads the Linux package artifact from CI, verifies Debian package signatures, and uploads `AppImage`, `deb`, and `rpm` assets
+- downloads the Linux package artifact from CI, verifies detached GPG signatures, and uploads `AppImage`, `deb`, `rpm`, and `.asc` assets
 - builds signed and notarized macOS `dmg` and `zip` artifacts for x64 and arm64
 - verifies the packaged `.app` with `codesign`, `stapler`, and `spctl`
 - uploads the macOS artifacts to the draft release
