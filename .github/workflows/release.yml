@@ -210,6 +210,9 @@ jobs:
       - name: Validate release metadata
         run: pnpm run release:check -- --expected-tag "${{ github.ref_name }}"
 
+      - name: Build application
+        run: pnpm run build
+
       - name: Build signed and notarized macOS app
         run: pnpm exec electron-builder --mac --${{ matrix.arch }} --publish never -c.forceCodeSigning=true
 
@@ -233,6 +236,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
+          draft: true
           files: |
             release/**/*.dmg
             release/**/*.zip
@@ -316,6 +320,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
+          draft: true
           files: |
             release-artifacts/**/*.AppImage
             release-artifacts/**/*.deb
