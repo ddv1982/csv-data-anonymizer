@@ -1,8 +1,0 @@
-allowBuilds:
-  electron-winstaller: false
-  esbuild: true
-  vue-demi: true
-minimumReleaseAgeExclude:
-  - electron@42.4.1
-overrides:
-  esbuild: 0.28.1

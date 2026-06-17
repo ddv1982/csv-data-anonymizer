@@ -95,7 +95,7 @@ function findLinuxBundle() {
   }
 
   throw new Error(
-    `No Electrobun Linux app bundle found under ${relative(projectRoot, buildRoot)}. Run pnpm run build:stable on Linux first.`
+    `No Electrobun Linux app bundle found under ${relative(projectRoot, buildRoot)}. Run bun run build:stable on Linux first.`
   )
 }
 

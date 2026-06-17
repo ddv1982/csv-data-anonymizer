@@ -12,15 +12,21 @@ const outputPath = join(tempDir, 'output.csv')
 
 await writeFile(inputPath, 'id,email\n1,alice@example.com\n2,bob@example.com\n', 'utf8')
 
-const child = spawn('pnpm', ['exec', 'electrobun', 'run'], {
-  detached: process.platform !== 'win32',
-  stdio: ['ignore', 'pipe', 'pipe'],
-  env: {
-    ...process.env,
-    CSV_ANONYMIZER_SMOKE_SERVER: '1',
-    CSV_ANONYMIZER_SMOKE_PORT: '0'
+const child = process.env.ELECTROBUN_SMOKE_LAUNCHER
+  ? spawn(process.env.ELECTROBUN_SMOKE_LAUNCHER, [], childOptions())
+  : spawn('bun', ['x', 'electrobun', 'run'], childOptions())
+
+function childOptions() {
+  return {
+    detached: process.platform !== 'win32',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: {
+      ...process.env,
+      CSV_ANONYMIZER_SMOKE_SERVER: '1',
+      CSV_ANONYMIZER_SMOKE_PORT: '0'
+    }
   }
-})
+}
 
 let output = ''
 let settled = false

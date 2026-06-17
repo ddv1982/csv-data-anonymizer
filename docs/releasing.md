@@ -2,6 +2,8 @@
 
 Use this workflow when publishing downloadable CSV Anonymizer desktop artifacts.
 
+The project uses Bun for dependency installation and package scripts. The committed `bun.lock` is the release lockfile.
+
 ## Version And Tag
 
 Update `package.json`, `CHANGELOG.md`, and the latest `<release>` entry in `build/linux/io.github.ddv1982.csv-data-anonymizer.metainfo.xml` to the same version and date.
@@ -9,7 +11,7 @@ Update `package.json`, `CHANGELOG.md`, and the latest `<release>` entry in `buil
 Validate metadata before tagging:
 
 ```bash
-pnpm run release:check -- --expected-tag v1.0.0
+bun run release:check -- --expected-tag v1.0.0
 ```
 
 Then commit, tag, and push:
@@ -86,19 +88,19 @@ The release workflow:
 Before pushing a release tag, run on the host platform:
 
 ```bash
-pnpm install --frozen-lockfile
-pnpm run typecheck
-pnpm test
-pnpm run build:stable
-pnpm run smoke:electrobun
-pnpm run artifacts:electrobun:check
-pnpm run release:check -- --expected-tag v1.0.0
+bun install --frozen-lockfile
+bun run typecheck
+bun run test
+bun run build:stable
+bun run smoke:electrobun
+bun run artifacts:electrobun:check
+bun run release:check -- --expected-tag v1.0.0
 ```
 
 On Linux, also validate package-manager artifacts:
 
 ```bash
-pnpm run linux:packages
-pnpm run linux:metadata:check
-pnpm run apt:repo:check
+bun run linux:packages
+bun run linux:metadata:check
+bun run apt:repo:check
 ```

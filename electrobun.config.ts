@@ -36,6 +36,7 @@ export default {
     mac: {
       bundleCEF: false,
       defaultRenderer: 'native',
+      icons: 'build/macos/AppIcon.iconset',
       codesign: macCodesignEnabled,
       notarize: macNotarizeEnabled
     },
