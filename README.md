@@ -62,3 +62,17 @@ pnpm run dist
 Packaged artifacts are written to `release/<version>/`.
 
 Release steps, Linux package signing, and macOS notarization prerequisites are documented in `docs/releasing.md`.
+
+## Linux Install And Updates
+
+On Debian/Ubuntu systems, enable the signed APT repository once:
+
+```bash
+bash <(curl -fsSL https://github.com/ddv1982/csv-data-anonymizer/releases/latest/download/install-apt-repo.sh)
+sudo apt update
+sudo apt install csv-anonymizer
+```
+
+After that, normal `sudo apt update` and `sudo apt upgrade` runs handle CSV Anonymizer updates through the package manager.
+
+Direct `.deb`, `.rpm`, and AppImage downloads remain available from GitHub Releases for users who do not want to enable the repository.
