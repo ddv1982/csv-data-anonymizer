@@ -1,5 +1,6 @@
 import { dirname } from 'node:path'
-import { dialog, ipcMain, shell } from 'electron'
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import type { IpcMainInvokeEvent, OpenDialogOptions, SaveDialogOptions } from 'electron'
 import { z } from 'zod'
 import {
   anonymizeRequestSchema,
@@ -22,15 +23,19 @@ export function registerIpcHandlers(service: AnonymizerService, settingsStore: S
   ipcMain.handle('settings:update', (_event, input: AppSettingsPatch) =>
     result(() => settingsStore.updateSettings(appSettingsPatchSchema.parse(input)))
   )
-  ipcMain.handle('dialog:select-csv', () =>
+  ipcMain.handle('dialog:select-csv', (event) =>
     result(async () => {
       const settings = settingsStore.getSettings()
-      const dialogResult = await dialog.showOpenDialog({
+      const options: OpenDialogOptions = {
         title: 'Select CSV File',
         defaultPath: settings.files.rememberLastPaths ? settings.files.lastInputDirectory ?? undefined : undefined,
         properties: ['openFile'],
         filters: [{ name: 'CSV files', extensions: ['csv'] }]
-      })
+      }
+      const parentWindow = getDialogParentWindow(event)
+      const dialogResult = parentWindow
+        ? await dialog.showOpenDialog(parentWindow, options)
+        : await dialog.showOpenDialog(options)
 
       const filePath = dialogResult.canceled ? null : dialogResult.filePaths[0] ?? null
       if (filePath && settings.files.rememberLastPaths) {
@@ -40,16 +45,20 @@ export function registerIpcHandlers(service: AnonymizerService, settingsStore: S
       return { filePath }
     })
   )
-  ipcMain.handle('dialog:select-output', (_event, input) =>
+  ipcMain.handle('dialog:select-output', (event, input) =>
     result(async () => {
       const settings = settingsStore.getSettings()
       const parsed = outputPathDialogRequestSchema.parse(input ?? {})
-      const dialogResult = await dialog.showSaveDialog({
+      const options: SaveDialogOptions = {
         title: 'Choose Output CSV',
         defaultPath:
           parsed.defaultPath ?? (settings.files.rememberLastPaths ? settings.files.lastOutputDirectory ?? undefined : undefined),
         filters: [{ name: 'CSV files', extensions: ['csv'] }]
-      })
+      }
+      const parentWindow = getDialogParentWindow(event)
+      const dialogResult = parentWindow
+        ? await dialog.showSaveDialog(parentWindow, options)
+        : await dialog.showSaveDialog(options)
 
       const filePath = dialogResult.canceled ? null : dialogResult.filePath ?? null
       if (filePath && settings.files.rememberLastPaths) {
@@ -75,6 +84,17 @@ export function registerIpcHandlers(service: AnonymizerService, settingsStore: S
   ipcMain.handle('csv:anonymize', (_event, input) =>
     result(() => service.anonymizeCsv(anonymizeRequestSchema.parse(input)))
   )
+}
+
+function getDialogParentWindow(event: IpcMainInvokeEvent): BrowserWindow | undefined {
+  const parentWindow = BrowserWindow.fromWebContents(event.sender)
+  if (!parentWindow || parentWindow.isDestroyed()) return undefined
+
+  if (parentWindow.isMinimized()) parentWindow.restore()
+  if (!parentWindow.isVisible()) parentWindow.show()
+  parentWindow.focus()
+
+  return parentWindow
 }
 
 async function result<T>(operation: () => T | Promise<T>): Promise<ApiResult<T>> {
