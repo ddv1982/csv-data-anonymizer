@@ -10,7 +10,6 @@ const fixturesDir = path.join(__dirname, '..', 'fixtures');
 
 describe('fileReader', () => {
   const testFilePath = path.join(fixturesDir, 'test-temp.txt');
-  const sampleCsvPath = path.join(fixturesDir, 'sample.csv');
 
   beforeAll(async () => {
     // Create a temp test file

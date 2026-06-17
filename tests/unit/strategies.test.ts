@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import type { TransformContext } from '../../src/types/index.js';
 import { emailStrategy } from '../../src/strategies/email.js';
 import { uuidStrategy } from '../../src/strategies/uuid.js';

@@ -1,62 +1,102 @@
 {
   "name": "csv-anonymizer",
   "version": "1.0.0",
-  "description": "Interactive CSV Anonymizer - A TypeScript CLI tool for anonymizing CSV data",
-  "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "bin": {
-    "csv-anonymizer": "dist/index.js"
-  },
-  "workspaces": [
-    "ui"
-  ],
+  "description": "Desktop CSV anonymizer for local-first anonymization workflows.",
+  "main": "out/main/index.js",
+  "packageManager": "pnpm@11.5.3",
   "scripts": {
-    "build": "tsc && npm run build:ui",
-    "build:cli": "tsc",
-    "build:ui": "npm run build --workspace=ui",
-    "dev": "npm run dev --workspace=ui",
+    "dev": "electron-vite dev",
+    "build": "tsc -b --noEmit && electron-vite build",
+    "preview": "electron-vite preview",
+    "dist": "pnpm run build && electron-builder",
+    "dist:dir": "pnpm run build && electron-builder --dir",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "lint": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "test:e2e": "pnpm run build && playwright test",
+    "lint": "tsc -b --noEmit",
+    "typecheck": "tsc -b --noEmit"
   },
   "keywords": [
     "csv",
     "anonymizer",
     "privacy",
     "data",
-    "cli"
+    "desktop"
   ],
   "author": "",
   "license": "MIT",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.13.0"
   },
   "dependencies": {
-    "@faker-js/faker": "^8.4.1",
-    "chalk": "^5.6.2",
-    "commander": "^12.1.0",
-    "express": "^5.2.1",
-    "js-yaml": "^4.1.1",
-    "open": "^11.0.0",
-    "ora": "^8.2.0",
+    "@electron-toolkit/utils": "^4.0.0",
+    "@faker-js/faker": "^10.4.0",
+    "@vueuse/core": "^14.3.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "@lucide/vue": "^1.0.0",
     "papaparse": "^5.5.3",
-    "zod": "^3.25.76"
+    "reka-ui": "^2.9.10",
+    "tailwind-merge": "^3.4.0",
+    "vue": "^3.5.38",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@playwright/test": "^1.57.0",
-    "@types/cors": "^2.8.19",
-    "@types/express": "^5.0.6",
-    "@types/js-yaml": "^4.0.9",
-    "@types/node": "^25.0.6",
+    "@electron-toolkit/tsconfig": "^2.0.0",
+    "@playwright/test": "^1.61.0",
+    "@types/node": "^24.13.2",
     "@types/papaparse": "^5.5.2",
-    "@types/supertest": "^6.0.3",
-    "@vitest/coverage-v8": "^4.0.17",
-    "cors": "^2.8.5",
-    "supertest": "^7.2.2",
-    "typescript": "^5.9.3",
-    "vitest": "^4.0.17"
+    "@vitejs/plugin-vue": "^6.0.7",
+    "@vitest/coverage-v8": "^4.1.9",
+    "@vue/test-utils": "^2.4.6",
+    "autoprefixer": "^10.4.23",
+    "electron": "^42.4.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "happy-dom": "^20.1.0",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.19",
+    "tailwindcss-animate": "^1.0.7",
+    "typescript": "^6.0.3",
+    "vite": "^7.3.5",
+    "vitest": "^4.1.9",
+    "vue-tsc": "^3.3.5"
+  },
+  "build": {
+    "appId": "com.csv-anonymizer.app",
+    "productName": "CSV Anonymizer",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "release/${version}"
+    },
+    "files": [
+      "out/**/*",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "asar": true,
+    "npmRebuild": false,
+    "publish": null,
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ]
+    },
+    "linux": {
+      "category": "Utility",
+      "target": [
+        "AppImage",
+        "deb"
+      ]
+    }
   }
 }
