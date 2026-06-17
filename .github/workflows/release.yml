@@ -434,56 +434,6 @@ jobs:
         with:
           path: dist/electrobun/apt-pages
 
-  build-windows-release:
-    name: Build Windows x64
-    needs: create-release
-    runs-on: windows-2025
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 11.7.0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '24'
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.13
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Validate release metadata
-        run: pnpm run release:check -- --expected-tag "${{ github.ref_name }}"
-
-      - name: Build stable Electrobun artifacts
-        run: pnpm run build:stable
-
-      - name: Smoke test Electrobun app
-        run: pnpm run smoke:electrobun
-
-      - name: Validate Electrobun artifacts
-        run: pnpm run artifacts:electrobun:check
-
-      - name: Upload Windows release assets
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ github.ref_name }}
-          draft: true
-          files: dist/electrobun/artifacts/**
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   publish-apt-repository:
     name: Publish APT Repository
     needs: build-linux-release
@@ -499,7 +449,7 @@ jobs:
 
   publish-release:
     name: Publish Release
-    needs: [create-release, build-macos-release, build-linux-release, build-windows-release, publish-apt-repository]
+    needs: [create-release, build-macos-release, build-linux-release, publish-apt-repository]
     runs-on: ubuntu-24.04
 
     steps:

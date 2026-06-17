@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.0.4 - 2026-06-18
+
+- Migrate the desktop runtime and packaging pipeline from Electron to Electrobun.
+- Replace Electron IPC with the Electrobun RPC bridge while preserving anonymization and settings behavior.
+- Add Electrobun smoke and artifact validation scripts for local and CI release checks.
+- Add Linux package-manager artifacts for Debian, RPM, AppImage, and signed APT repository publishing.
+- Derive the macOS Developer ID signing identity from the imported certificate during release builds.
+- Defer Windows release artifacts until Authenticode signing is configured.
+
 ## v1.0.3 - 2026-06-18
 
 - Migrate the desktop runtime and packaging pipeline from Electron to Electrobun.
