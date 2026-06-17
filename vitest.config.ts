@@ -20,7 +20,6 @@ export default defineConfig({
       exclude: [
         'src/**/*.d.ts',
         'src/types/**/*.ts',
-        'src/preload/**/*.ts',
         'src/renderer/**/*.d.ts',
         'src/core/index.ts',
         'src/utils/index.ts',

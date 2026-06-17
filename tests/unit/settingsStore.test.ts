@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { defaultAppSettings } from '../../src/shared/contracts';
-import { SettingsStore } from '../../src/main/services/settingsStore';
+import { SettingsStore } from '../../src/services/settingsStore';
 
 describe('SettingsStore', () => {
   let tempDir: string;

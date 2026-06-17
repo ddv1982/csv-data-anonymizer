@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  LINUX_RELEASE_ARTIFACT_NAME: csv-anonymizer-linux-x86_64-release-bundle
+  ELECTROBUN_LINUX_ARTIFACT_NAME: csv-anonymizer-electrobun-linux-x64-release-bundle
 
 jobs:
   test:
@@ -37,11 +37,26 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install Linux Electron dependencies
-        run: pnpm exec playwright install-deps chromium
+      - name: Install Linux desktop dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xvfb \
+            libgtk-3-0 \
+            libwebkit2gtk-4.1-0 \
+            libayatana-appindicator3-1 \
+            libnss3 \
+            libxss1 \
+            libasound2t64 \
+            libgbm1
 
       - name: Validate release metadata
         run: pnpm run release:check
@@ -52,23 +67,14 @@ jobs:
       - name: Run unit and integration tests
         run: pnpm test
 
-      - name: Build
+      - name: Build Electrobun app
         run: pnpm run build
 
-      - name: Run Electron e2e tests
-        run: xvfb-run --auto-servernum pnpm run test:e2e
-
-      - name: Upload Playwright report
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: playwright-report
-          path: playwright-report/
-          if-no-files-found: ignore
-          retention-days: 7
+      - name: Run Electrobun smoke
+        run: xvfb-run --auto-servernum pnpm run smoke:electrobun
 
   package-linux:
-    name: Package Linux
+    name: Package Linux Electrobun
     needs: test
     runs-on: ubuntu-24.04
 
@@ -88,50 +94,60 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install Linux Electron dependencies
-        run: pnpm exec playwright install-deps chromium
-
-      - name: Install Linux package tools
+      - name: Install Linux desktop and packaging dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y appstream desktop-file-utils fakeroot gnupg rpm rpm2cpio zstd
+          sudo apt-get install -y \
+            xvfb \
+            zstd \
+            rpm \
+            desktop-file-utils \
+            appstream \
+            wget \
+            libgtk-3-0 \
+            libwebkit2gtk-4.1-0 \
+            libayatana-appindicator3-1 \
+            libnss3 \
+            libxss1 \
+            libasound2t64 \
+            libgbm1
 
-      - name: Build application
-        run: pnpm run build
+      - name: Install appimagetool
+        run: |
+          set -euo pipefail
+          appimagetool="${RUNNER_TEMP}/appimagetool-x86_64.AppImage"
+          wget -O "${appimagetool}" "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x "${appimagetool}"
+          echo "APPIMAGETOOL=${appimagetool}" >> "$GITHUB_ENV"
+          echo "APPIMAGE_EXTRACT_AND_RUN=1" >> "$GITHUB_ENV"
 
-      - name: Package unpacked Linux app
-        run: pnpm exec electron-builder --linux dir --x64 --publish never
+      - name: Build stable Electrobun artifacts
+        run: pnpm run build:stable
 
-      - name: Smoke test unpacked Linux app
-        run: xvfb-run --auto-servernum pnpm run smoke:packaged
+      - name: Smoke test Electrobun app
+        run: xvfb-run --auto-servernum pnpm run smoke:electrobun
 
-      - name: Build Linux release packages
-        run: pnpm exec electron-builder --linux AppImage deb rpm --x64 --publish never
+      - name: Validate Electrobun artifacts
+        run: pnpm run artifacts:electrobun:check
+
+      - name: Build Linux package-manager artifacts
+        run: pnpm run linux:packages
 
       - name: Validate Linux package metadata
         run: pnpm run linux:metadata:check
 
-      - name: Smoke test APT repository generation
-        run: |
-          set -euo pipefail
-          test_keyring="$(mktemp)"
-          printf 'local unsigned APT repository test keyring\n' > "${test_keyring}"
+      - name: Validate APT repository generation
+        run: pnpm run apt:repo:check
 
-          python3 scripts/build_apt_repository.py "release/**/*.deb" \
-            --output /tmp/csv-anonymizer-apt-repository \
-            --unsigned \
-            --clean \
-            --setup-public-key "${test_keyring}" \
-            --setup-package-out /tmp/csv-anonymizer-repository-setup_1.0_all.deb
-
-          test -s /tmp/csv-anonymizer-apt-repository/dists/stable/main/binary-amd64/Packages.gz
-          test -s /tmp/csv-anonymizer-apt-repository/dists/stable/main/dep11/Components-amd64.yml.gz
-          test -s /tmp/csv-anonymizer-repository-setup_1.0_all.deb
-
-      - name: Sign Linux release artifacts
+      - name: Sign Linux Electrobun artifacts
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           DEB_SIGNING_PRIVATE_KEY: ${{ secrets.DEB_SIGNING_PRIVATE_KEY }}
@@ -140,7 +156,6 @@ jobs:
           DEB_SIGNING_PUBLIC_KEY: ${{ vars.DEB_SIGNING_PUBLIC_KEY }}
         run: |
           set -euo pipefail
-          shopt -s globstar nullglob
 
           missing=()
           [ -n "${DEB_SIGNING_PRIVATE_KEY}" ] || missing+=("DEB_SIGNING_PRIVATE_KEY")
@@ -153,9 +168,9 @@ jobs:
             exit 1
           fi
 
-          linux_packages=(release/**/*.AppImage release/**/*.deb release/**/*.rpm)
-          if [ ${#linux_packages[@]} -eq 0 ]; then
-            echo "No Linux packages found under release/." >&2
+          mapfile -t artifacts < <(find dist/electrobun/artifacts -type f ! -name '*.asc' | sort)
+          if [ ${#artifacts[@]} -eq 0 ]; then
+            echo "No Electrobun artifacts found under dist/electrobun/artifacts." >&2
             exit 1
           fi
 
@@ -189,23 +204,19 @@ jobs:
           fi
 
           GNUPGHOME="${verification_home}" gpg --batch --import "${public_key_file}"
-          for package in "${linux_packages[@]}"; do
-            signature="${package}.asc"
-            echo "Signing ${package}"
+          for artifact in "${artifacts[@]}"; do
+            signature="${artifact}.asc"
+            echo "Signing ${artifact}"
             gpg --batch --yes --pinentry-mode loopback --passphrase-file "${passphrase_file}" \
               --local-user "${expected_fingerprint}" --armor --detach-sign \
-              --output "${signature}" "${package}"
-            GNUPGHOME="${verification_home}" gpg --batch --verify "${signature}" "${package}"
+              --output "${signature}" "${artifact}"
+            GNUPGHOME="${verification_home}" gpg --batch --verify "${signature}" "${artifact}"
           done
 
-      - name: Upload reusable Linux package artifact
+      - name: Upload reusable Linux Electrobun artifact
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ env.LINUX_RELEASE_ARTIFACT_NAME }}
-          path: |
-            release/**/*.AppImage
-            release/**/*.deb
-            release/**/*.rpm
-            release/**/*.asc
+          name: ${{ env.ELECTROBUN_LINUX_ARTIFACT_NAME }}
+          path: dist/electrobun/artifacts/**
           if-no-files-found: error
           retention-days: 7

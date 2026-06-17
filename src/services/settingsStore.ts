@@ -6,7 +6,7 @@ import {
   defaultAppSettings,
   type AppSettings,
   type AppSettingsPatch
-} from '../../shared/contracts'
+} from '../shared/contracts'
 
 export class SettingsStore {
   private readonly settingsPath: string

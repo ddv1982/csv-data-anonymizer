@@ -1,6 +1,6 @@
 # CSV Data Anonymizer
 
-Desktop-only Electron application for anonymizing CSV data locally while preserving file structure and useful formats.
+Desktop-only Electrobun application for anonymizing CSV data locally while preserving file structure and useful formats.
 
 ## Features
 
@@ -21,24 +21,24 @@ pnpm run dev
 Useful commands:
 
 ```bash
-pnpm run build          # Type-check and build the Electron app
+pnpm run build          # Type-check and build the Electrobun app
 pnpm test               # Run unit and integration tests
 pnpm run test:coverage  # Run tests with coverage
-pnpm run test:e2e       # Build and run Electron smoke tests
-pnpm run dist           # Package installers with electron-builder
-pnpm run dist:linux     # Package Linux AppImage, deb, and rpm artifacts
+pnpm run test:e2e       # Run the Electrobun smoke workflow
+pnpm run dist           # Build stable Electrobun artifacts for the host platform
 pnpm run release:check  # Validate package version and changelog metadata
 ```
 
 ## Architecture
 
-- `src/main` owns Electron windows, IPC handlers, native dialogs, shell actions, app settings, and filesystem access.
-- `src/preload` exposes the typed `window.csvAnonymizer` bridge through `contextBridge`.
+- `src/bun` owns the Electrobun window, typed RPC handlers, native dialogs, shell actions, app settings, and filesystem access.
+- `src/electrobun-view` exposes the typed `window.csvAnonymizer` bridge through Electrobun RPC.
+- `src/services` contains runtime services shared by the Bun process and tests.
 - `src/shared/contracts.ts` contains the Zod schemas, inferred TypeScript types, defaults, and renderer-facing API contract.
 - `src/renderer` is the Vue renderer.
 - `src/core`, `src/strategies`, `src/types`, and `src/utils` contain the reusable CSV anonymization engine.
 
-App settings are stored as versioned JSON under Electron `app.getPath('userData')`. YAML config files and the previous command-line interface have been removed.
+App settings are stored as versioned JSON under Electrobun user data. YAML config files and the previous command-line interface have been removed.
 
 ## Anonymization Strategies
 
@@ -59,13 +59,17 @@ pnpm run dist:dir
 pnpm run dist
 ```
 
-Packaged artifacts are written to `release/<version>/`.
+Electrobun artifacts are written to `dist/electrobun/artifacts/`.
+
+On Linux, `pnpm run dist:linux` also creates `.deb`, `.rpm`, and AppImage artifacts from the Electrobun Linux output.
 
 Release steps, Linux package signing, and macOS notarization prerequisites are documented in `docs/releasing.md`.
 
 ## Linux Install And Updates
 
-On Debian/Ubuntu systems, enable the signed APT repository once:
+The active Electrobun release path publishes Linux `.tar.zst`, setup `.tar.gz`, `.deb`, `.rpm`, AppImage, update metadata, and detached signatures through GitHub Releases.
+
+Debian/Ubuntu users can enable the signed APT repository once:
 
 ```bash
 bash <(curl -fsSL https://github.com/ddv1982/csv-data-anonymizer/releases/latest/download/install-apt-repo.sh)
@@ -73,6 +77,4 @@ sudo apt update
 sudo apt install csv-anonymizer
 ```
 
-After that, normal `sudo apt update` and `sudo apt upgrade` runs handle CSV Anonymizer updates through the package manager.
-
-Direct `.deb`, `.rpm`, and AppImage downloads remain available from GitHub Releases for users who do not want to enable the repository.
+After that, normal `sudo apt update` and `sudo apt upgrade` runs handle package-manager updates.

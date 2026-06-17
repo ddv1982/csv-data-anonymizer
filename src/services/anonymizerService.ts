@@ -2,13 +2,13 @@ import { access } from 'node:fs/promises'
 import { constants, createReadStream, existsSync } from 'node:fs'
 import { dirname, isAbsolute, normalize, resolve } from 'node:path'
 import Papa from 'papaparse'
-import { readSample } from '../../core/sampleReader.js'
-import { getFatalParseError } from '../../core/papaParseErrors.js'
-import { buildColumnMetadata, applyColumnSelection } from '../../core/metadataBuilder.js'
-import { transformValue, createTransformContext } from '../../core/transformer.js'
-import { processFile } from '../../core/processor.js'
-import { AnonymizerError, ErrorCodes, OutputExistsError } from '../../types/errors.js'
-import type { ColumnMetadata } from '../../types/column.js'
+import { readSample } from '../core/sampleReader.js'
+import { getFatalParseError } from '../core/papaParseErrors.js'
+import { buildColumnMetadata, applyColumnSelection } from '../core/metadataBuilder.js'
+import { transformValue, createTransformContext } from '../core/transformer.js'
+import { processFile } from '../core/processor.js'
+import { AnonymizerError, ErrorCodes, OutputExistsError } from '../types/errors.js'
+import type { ColumnMetadata } from '../types/column.js'
 import type {
   AnonymizeData,
   AnonymizeParams,
@@ -20,7 +20,7 @@ import type {
   HealthData,
   PreviewData,
   SampleTransform
-} from '../../shared/contracts'
+} from '../shared/contracts'
 
 const defaultSampleRows = 100
 
