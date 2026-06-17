@@ -154,7 +154,6 @@ jobs:
           missing=()
           [ -n "$CSC_LINK" ] || missing+=("CSC_LINK")
           [ -n "$CSC_KEY_PASSWORD" ] || missing+=("CSC_KEY_PASSWORD")
-          [ -n "$ELECTROBUN_DEVELOPER_ID" ] || missing+=("ELECTROBUN_DEVELOPER_ID")
           [ -n "$ELECTROBUN_APPLEAPIKEY_BASE64" ] || missing+=("APPLE_API_KEY")
           [ -n "$ELECTROBUN_APPLEAPIKEY" ] || missing+=("APPLE_API_KEY_ID")
           [ -n "$ELECTROBUN_APPLEAPIISSUER" ] || missing+=("APPLE_API_ISSUER")
@@ -180,7 +179,29 @@ jobs:
           security default-keychain -d user -s "$keychain_path"
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain_path"
 
+          if [ -z "${ELECTROBUN_DEVELOPER_ID}" ]; then
+            ELECTROBUN_DEVELOPER_ID="$(security find-identity -v -p codesigning "$keychain_path" | awk -F'"' '/Developer ID Application/ { print $2; exit }')"
+          fi
+
+          if [ -z "${ELECTROBUN_DEVELOPER_ID}" ]; then
+            ELECTROBUN_DEVELOPER_ID="$(security find-identity -v -p codesigning "$keychain_path" | awk -F'"' '/"/ { print $2; exit }')"
+          fi
+
+          if [ -z "${ELECTROBUN_DEVELOPER_ID}" ]; then
+            echo "Could not derive a codesigning identity from CSC_LINK." >&2
+            security find-identity -v -p codesigning "$keychain_path" >&2 || true
+            exit 1
+          fi
+
+          if [ -z "${ELECTROBUN_TEAMID}" ] && [[ "${ELECTROBUN_DEVELOPER_ID}" =~ \(([A-Z0-9]{10})\)$ ]]; then
+            ELECTROBUN_TEAMID="${BASH_REMATCH[1]}"
+          fi
+
           chmod 600 "$api_key_path"
+          echo "ELECTROBUN_DEVELOPER_ID=${ELECTROBUN_DEVELOPER_ID}" >> "$GITHUB_ENV"
+          if [ -n "${ELECTROBUN_TEAMID}" ]; then
+            echo "ELECTROBUN_TEAMID=${ELECTROBUN_TEAMID}" >> "$GITHUB_ENV"
+          fi
           echo "ELECTROBUN_APPLEAPIKEYPATH=${api_key_path}" >> "$GITHUB_ENV"
 
       - name: Validate release metadata
