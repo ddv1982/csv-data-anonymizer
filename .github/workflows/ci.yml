@@ -97,7 +97,7 @@ jobs:
       - name: Install Linux package tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y fakeroot rpm dpkg-sig gnupg
+          sudo apt-get install -y fakeroot rpm gnupg
 
       - name: Build application
         run: pnpm run build
@@ -111,7 +111,7 @@ jobs:
       - name: Build Linux release packages
         run: pnpm exec electron-builder --linux AppImage deb rpm --x64 --publish never
 
-      - name: Sign Debian packages
+      - name: Sign Linux release artifacts
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           DEB_SIGNING_PRIVATE_KEY: ${{ secrets.DEB_SIGNING_PRIVATE_KEY }}
@@ -129,13 +129,13 @@ jobs:
           [ -n "${DEB_SIGNING_PUBLIC_KEY}" ] || missing+=("DEB_SIGNING_PUBLIC_KEY repository variable")
 
           if [ ${#missing[@]} -gt 0 ]; then
-            echo "Required Debian signing inputs are missing: ${missing[*]}" >&2
+            echo "Required Linux artifact signing inputs are missing: ${missing[*]}" >&2
             exit 1
           fi
 
-          deb_packages=(release/**/*.deb)
-          if [ ${#deb_packages[@]} -eq 0 ]; then
-            echo "No Debian packages found under release/." >&2
+          linux_packages=(release/**/*.AppImage release/**/*.deb release/**/*.rpm)
+          if [ ${#linux_packages[@]} -eq 0 ]; then
+            echo "No Linux packages found under release/." >&2
             exit 1
           fi
 
@@ -144,13 +144,9 @@ jobs:
           private_key_file="$(mktemp)"
           public_key_file="$(mktemp)"
           passphrase_file="$(mktemp)"
-          safe_deb_file=""
           cleanup() {
             rm -rf "${gnupg_home}" "${verification_home}"
             rm -f "${private_key_file}" "${public_key_file}" "${passphrase_file}"
-            if [ -n "${safe_deb_file}" ]; then
-              rm -f "${safe_deb_file}"
-            fi
           }
           trap cleanup EXIT
 
@@ -168,27 +164,18 @@ jobs:
           expected_fingerprint="$(printf '%s' "${DEB_SIGNING_KEY_FINGERPRINT}" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
           imported_fingerprint="$(gpg --batch --with-colons --fingerprint "${expected_fingerprint}" | awk -F: '$1 == "fpr" { print toupper($10); exit }')"
           if [ "${imported_fingerprint}" != "${expected_fingerprint}" ]; then
-            echo "Imported Debian signing key fingerprint did not match DEB_SIGNING_KEY_FINGERPRINT." >&2
+            echo "Imported Linux artifact signing key fingerprint did not match DEB_SIGNING_KEY_FINGERPRINT." >&2
             exit 1
           fi
 
           GNUPGHOME="${verification_home}" gpg --batch --import "${public_key_file}"
-          gpg_options="--batch --pinentry-mode loopback --passphrase-file ${passphrase_file}"
-
-          for deb in "${deb_packages[@]}"; do
-            echo "Signing ${deb}"
-            deb_dirname="$(dirname "${deb}")"
-            deb_basename="$(basename "${deb}")"
-            safe_basename="$(printf '%s' "${deb_basename}" | tr ' ' '_' | tr -cd '[:alnum:]_.-')"
-            safe_deb_file="${deb_dirname}/${safe_basename}"
-            if [ "${safe_deb_file}" = "${deb}" ] || [ -e "${safe_deb_file}" ]; then
-              safe_deb_file="${deb_dirname}/signing-${RANDOM}-${safe_basename}"
-            fi
-            mv "${deb}" "${safe_deb_file}"
-            dpkg-sig -g "${gpg_options}" --sign builder -k "${expected_fingerprint}" "${safe_deb_file}"
-            GNUPGHOME="${verification_home}" dpkg-sig --verify-role builder "${safe_deb_file}"
-            mv "${safe_deb_file}" "${deb}"
-            safe_deb_file=""
+          for package in "${linux_packages[@]}"; do
+            signature="${package}.asc"
+            echo "Signing ${package}"
+            gpg --batch --yes --pinentry-mode loopback --passphrase-file "${passphrase_file}" \
+              --local-user "${expected_fingerprint}" --armor --detach-sign \
+              --output "${signature}" "${package}"
+            GNUPGHOME="${verification_home}" gpg --batch --verify "${signature}" "${package}"
           done
 
       - name: Upload reusable Linux package artifact
@@ -199,5 +186,6 @@ jobs:
             release/**/*.AppImage
             release/**/*.deb
             release/**/*.rpm
+            release/**/*.asc
           if-no-files-found: error
           retention-days: 7
