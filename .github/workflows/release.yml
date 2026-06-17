@@ -1,0 +1,342 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  LINUX_RELEASE_ARTIFACT_NAME: csv-anonymizer-linux-x86_64-release-bundle
+
+jobs:
+  validate-release:
+    name: Validate Release
+    runs-on: ubuntu-24.04
+    outputs:
+      ci_run_id: ${{ steps.wait_for_ci.outputs.ci_run_id }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.7.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate release metadata
+        run: pnpm run release:check -- --expected-tag "${{ github.ref_name }}"
+
+      - name: Wait for CI on tagged commit
+        id: wait_for_ci
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          TAGGED_SHA: ${{ github.sha }}
+          LINUX_RELEASE_ARTIFACT_NAME: ${{ env.LINUX_RELEASE_ARTIFACT_NAME }}
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 3600))
+
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            run_json="$(gh api "repos/${REPOSITORY}/actions/runs?head_sha=${TAGGED_SHA}&event=push&per_page=20")"
+            run_state="$(printf '%s' "$run_json" | python3 -c "import json, sys; runs = json.load(sys.stdin).get('workflow_runs', []); match = next((run for run in runs if run.get('name') == 'CI' and run.get('head_branch') == 'main'), None); print('' if match is None else f\"{match.get('id', '')}\\t{match.get('status', '')}\\t{match.get('conclusion') or ''}\\t{match.get('html_url', '')}\")")"
+
+            if [ -z "$run_state" ]; then
+              echo "Waiting for CI run for commit ${TAGGED_SHA} to appear..."
+              sleep 20
+              continue
+            fi
+
+            run_id="${run_state%%$'\t'*}"
+            remainder="${run_state#*$'\t'}"
+            status="${remainder%%$'\t'*}"
+            remainder="${remainder#*$'\t'}"
+            conclusion="${remainder%%$'\t'*}"
+            run_url="${remainder#*$'\t'}"
+
+            echo "Observed CI run status: ${status:-unknown} ${conclusion:-}"
+
+            if [ "$status" = "completed" ] && [ "$conclusion" = "success" ]; then
+              artifact_count="$(gh api "repos/${REPOSITORY}/actions/runs/${run_id}/artifacts?name=${LINUX_RELEASE_ARTIFACT_NAME}" --jq '[.artifacts[] | select(.expired == false)] | length')"
+              if [ "$artifact_count" -eq 0 ]; then
+                echo "CI succeeded for ${TAGGED_SHA} but did not publish a non-expired artifact named ${LINUX_RELEASE_ARTIFACT_NAME}." >&2
+                exit 1
+              fi
+
+              echo "ci_run_id=${run_id}" >> "$GITHUB_OUTPUT"
+              echo "CI succeeded for ${TAGGED_SHA}: ${run_url}"
+              exit 0
+            fi
+
+            if [ "$status" = "completed" ]; then
+              echo "CI did not succeed for ${TAGGED_SHA}: ${run_url}" >&2
+              exit 1
+            fi
+
+            sleep 20
+          done
+
+          echo "Timed out waiting for CI to finish for ${TAGGED_SHA}." >&2
+          exit 1
+
+  create-release:
+    name: Create Draft Release
+    needs: validate-release
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.7.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Extract changelog notes
+        run: pnpm run release:check -- --expected-tag "${{ github.ref_name }}" --write-notes release-notes.md
+
+      - name: Create or refresh draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release edit "${{ github.ref_name }}" \
+              --repo "${{ github.repository }}" \
+              --title "CSV Anonymizer ${{ github.ref_name }}" \
+              --notes-file release-notes.md \
+              --draft=true \
+              --prerelease=false
+          else
+            gh release create "${{ github.ref_name }}" \
+              --repo "${{ github.repository }}" \
+              --title "CSV Anonymizer ${{ github.ref_name }}" \
+              --notes-file release-notes.md \
+              --draft \
+              --verify-tag \
+              --latest
+          fi
+
+  build-macos-release:
+    name: Build macOS ${{ matrix.arch }}
+    needs: create-release
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+
+    env:
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.7.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare Apple signing environment
+        run: |
+          missing=()
+          [ -n "$CSC_LINK" ] || missing+=("CSC_LINK")
+          [ -n "$CSC_KEY_PASSWORD" ] || missing+=("CSC_KEY_PASSWORD")
+          [ -n "$APPLE_API_KEY_BASE64" ] || missing+=("APPLE_API_KEY")
+          [ -n "$APPLE_API_KEY_ID" ] || missing+=("APPLE_API_KEY_ID")
+          [ -n "$APPLE_API_ISSUER" ] || missing+=("APPLE_API_ISSUER")
+
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "Required macOS release secrets are missing: ${missing[*]}" >&2
+            exit 1
+          fi
+
+          api_key_path="${RUNNER_TEMP}/AuthKey_${APPLE_API_KEY_ID}.p8"
+          APPLE_API_KEY_PATH="$api_key_path" node <<'NODE'
+          const { writeFileSync } = require('node:fs');
+
+          writeFileSync(
+            process.env.APPLE_API_KEY_PATH,
+            Buffer.from(process.env.APPLE_API_KEY_BASE64, 'base64')
+          );
+          NODE
+          chmod 600 "$api_key_path"
+          echo "APPLE_API_KEY=${api_key_path}" >> "$GITHUB_ENV"
+
+      - name: Validate release metadata
+        run: pnpm run release:check -- --expected-tag "${{ github.ref_name }}"
+
+      - name: Build signed and notarized macOS app
+        run: pnpm exec electron-builder --mac --${{ matrix.arch }} --publish never -c.forceCodeSigning=true
+
+      - name: Verify macOS signing and notarization
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          release_dir="release/${version}"
+          app_path="$(find "$release_dir" -type d -name "CSV Anonymizer.app" -prune -print | head -n 1)"
+
+          if [ -z "$app_path" ]; then
+            echo "Could not find packaged CSV Anonymizer.app under ${release_dir}." >&2
+            find "$release_dir" -maxdepth 3 -print >&2
+            exit 1
+          fi
+
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          xcrun stapler validate "$app_path"
+          spctl --assess --verbose --type exec "$app_path"
+
+      - name: Upload macOS release assets
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            release/**/*.dmg
+            release/**/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  upload-linux-release:
+    name: Upload Linux Release Assets
+    needs: [validate-release, create-release]
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Download reusable Linux package artifact from CI
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.LINUX_RELEASE_ARTIFACT_NAME }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.validate-release.outputs.ci_run_id }}
+          path: release-artifacts
+
+      - name: Install Linux signature validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-sig gnupg
+
+      - name: Verify Debian package signatures
+        env:
+          DEB_SIGNING_PUBLIC_KEY: ${{ vars.DEB_SIGNING_PUBLIC_KEY }}
+          DEB_SIGNING_KEY_FINGERPRINT: ${{ secrets.DEB_SIGNING_KEY_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+
+          missing=()
+          [ -n "${DEB_SIGNING_PUBLIC_KEY}" ] || missing+=("DEB_SIGNING_PUBLIC_KEY repository variable")
+          [ -n "${DEB_SIGNING_KEY_FINGERPRINT}" ] || missing+=("DEB_SIGNING_KEY_FINGERPRINT")
+
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "Required Debian signature verification inputs are missing: ${missing[*]}" >&2
+            exit 1
+          fi
+
+          deb_packages=(release-artifacts/**/*.deb)
+          if [ ${#deb_packages[@]} -eq 0 ]; then
+            echo "No Debian packages found under release-artifacts." >&2
+            exit 1
+          fi
+
+          verification_home="$(mktemp -d)"
+          public_key_file="$(mktemp)"
+          safe_deb_file=""
+          cleanup() {
+            rm -rf "${verification_home}"
+            rm -f "${public_key_file}"
+            if [ -n "${safe_deb_file}" ]; then
+              rm -f "${safe_deb_file}"
+            fi
+          }
+          trap cleanup EXIT
+
+          printf '%s' "${DEB_SIGNING_PUBLIC_KEY}" | base64 --decode > "${public_key_file}"
+          chmod 700 "${verification_home}"
+          GNUPGHOME="${verification_home}" gpg --batch --import "${public_key_file}"
+
+          expected_fingerprint="$(printf '%s' "${DEB_SIGNING_KEY_FINGERPRINT}" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
+          imported_fingerprint="$(GNUPGHOME="${verification_home}" gpg --batch --with-colons --fingerprint "${expected_fingerprint}" | awk -F: '$1 == "fpr" { print toupper($10); exit }')"
+          if [ "${imported_fingerprint}" != "${expected_fingerprint}" ]; then
+            echo "Imported Debian signing public key fingerprint did not match DEB_SIGNING_KEY_FINGERPRINT." >&2
+            exit 1
+          fi
+
+          for deb in "${deb_packages[@]}"; do
+            echo "Verifying ${deb}"
+            deb_basename="$(basename "${deb}")"
+            safe_basename="$(printf '%s' "${deb_basename}" | tr ' ' '_' | tr -cd '[:alnum:]_.-')"
+            safe_deb_file="${RUNNER_TEMP:-/tmp}/${safe_basename}"
+            if [ -e "${safe_deb_file}" ]; then
+              safe_deb_file="${RUNNER_TEMP:-/tmp}/verify-${RANDOM}-${safe_basename}"
+            fi
+            cp "${deb}" "${safe_deb_file}"
+            GNUPGHOME="${verification_home}" dpkg-sig --verify-role builder "${safe_deb_file}"
+            rm -f "${safe_deb_file}"
+            safe_deb_file=""
+          done
+
+      - name: Upload Linux release assets
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            release-artifacts/**/*.AppImage
+            release-artifacts/**/*.deb
+            release-artifacts/**/*.rpm
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-release:
+    name: Publish Release
+    needs: [create-release, build-macos-release, upload-linux-release]
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${{ github.ref_name }}" --repo "${{ github.repository }}" --draft=false --prerelease=false

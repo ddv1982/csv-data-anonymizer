@@ -32,7 +32,6 @@ function createWindow(): void {
     minHeight: minimumWindowBounds.height,
     resizable: true,
     show: false,
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     backgroundColor: '#09090b',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

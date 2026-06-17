@@ -2,14 +2,21 @@
   "name": "csv-anonymizer",
   "version": "1.0.0",
   "description": "Desktop CSV anonymizer for local-first anonymization workflows.",
+  "desktopName": "csv-anonymizer.desktop",
   "main": "out/main/index.js",
-  "packageManager": "pnpm@11.5.3",
+  "packageManager": "pnpm@11.7.0",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "tsc -b --noEmit && electron-vite build",
     "preview": "electron-vite preview",
-    "dist": "pnpm run build && electron-builder",
-    "dist:dir": "pnpm run build && electron-builder --dir",
+    "dist": "pnpm run build && electron-builder --publish never",
+    "dist:dir": "pnpm run build && electron-builder --dir --publish never",
+    "dist:mac": "pnpm run build && electron-builder --mac --publish never",
+    "dist:mac:dir": "pnpm run build && electron-builder --mac --dir --publish never",
+    "dist:linux": "pnpm run build && electron-builder --linux AppImage deb rpm --x64 --publish never",
+    "dist:linux:dir": "pnpm run build && electron-builder --linux dir --x64 --publish never",
+    "icons:linux": "node scripts/generate-linux-icons.mjs",
+    "release:check": "node scripts/check-release-metadata.mjs",
     "smoke:packaged": "node scripts/packaged-smoke.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -25,7 +32,7 @@
     "data",
     "desktop"
   ],
-  "author": "",
+  "author": "Douwe de Vries <douwe.de.vries.82@gmail.com>",
   "license": "MIT",
   "engines": {
     "node": ">=22.13.0"
@@ -33,13 +40,13 @@
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",
     "@faker-js/faker": "^10.4.0",
+    "@lucide/vue": "^1.20.0",
     "@vueuse/core": "^14.3.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "@lucide/vue": "^1.0.0",
     "papaparse": "^5.5.3",
     "reka-ui": "^2.9.10",
-    "tailwind-merge": "^3.4.0",
+    "tailwind-merge": "^3.6.0",
     "vue": "^3.5.38",
     "zod": "^4.4.3"
   },
@@ -50,13 +57,13 @@
     "@types/papaparse": "^5.5.2",
     "@vitejs/plugin-vue": "^6.0.7",
     "@vitest/coverage-v8": "^4.1.9",
-    "@vue/test-utils": "^2.4.6",
-    "autoprefixer": "^10.4.23",
+    "@vue/test-utils": "^2.4.11",
+    "autoprefixer": "^10.5.0",
     "electron": "^42.4.1",
-    "electron-builder": "^26.15.3",
+    "electron-builder": "^26.15.4",
     "electron-vite": "^5.0.0",
-    "happy-dom": "^20.1.0",
-    "postcss": "^8.5.6",
+    "happy-dom": "^20.10.4",
+    "postcss": "^8.5.15",
     "tailwindcss": "^3.4.19",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^6.0.3",
@@ -81,6 +88,10 @@
     "publish": null,
     "mac": {
       "category": "public.app-category.productivity",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+      "notarize": true,
       "target": [
         "dmg",
         "zip"
@@ -94,10 +105,24 @@
     },
     "linux": {
       "category": "Utility",
+      "executableName": "csv-anonymizer",
+      "icon": "build/icons",
+      "maintainer": "Douwe de Vries <douwe.de.vries.82@gmail.com>",
+      "syncDesktopName": true,
+      "synopsis": "Local-first CSV anonymization desktop app",
+      "description": "Desktop CSV anonymizer for local-first anonymization workflows.",
       "target": [
         "AppImage",
-        "deb"
+        "deb",
+        "rpm"
       ]
+    },
+    "deb": {
+      "packageCategory": "utils",
+      "priority": "optional"
+    },
+    "rpm": {
+      "packageCategory": "Applications/Productivity"
     }
   }
 }

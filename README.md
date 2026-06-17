@@ -26,6 +26,8 @@ pnpm test               # Run unit and integration tests
 pnpm run test:coverage  # Run tests with coverage
 pnpm run test:e2e       # Build and run Electron smoke tests
 pnpm run dist           # Package installers with electron-builder
+pnpm run dist:linux     # Package Linux AppImage, deb, and rpm artifacts
+pnpm run release:check  # Validate package version and changelog metadata
 ```
 
 ## Architecture
@@ -58,3 +60,5 @@ pnpm run dist
 ```
 
 Packaged artifacts are written to `release/<version>/`.
+
+Release steps, Linux package signing, and macOS notarization prerequisites are documented in `docs/releasing.md`.
