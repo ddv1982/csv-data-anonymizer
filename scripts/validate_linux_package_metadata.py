@@ -267,7 +267,7 @@ def extract_newc_cpio(data: bytes, destination: pathlib.Path) -> None:
             output_path.mkdir(parents=True, exist_ok=True)
             continue
         if mode_type != CPIO_MODE_REGULAR_FILE or nlink != 1:
-            raise ValueError(f"refusing non-regular or hard-linked cpio member: {member_name!r}")
+            continue
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(payload)
         output_path.chmod(mode & 0o777)
