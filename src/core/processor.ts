@@ -4,8 +4,11 @@
  */
 
 import { createReadStream, createWriteStream } from 'node:fs';
+import { rename, rm } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import Papa from 'papaparse';
 import { validateFile, stripBom } from './fileReader.js';
+import { getFatalParseError } from './papaParseErrors.js';
 import { createRowTransformer } from './transformer.js';
 import { CsvParseError } from '../types/errors.js';
 import type { ColumnMetadata } from '../types/column.js';
@@ -27,6 +30,11 @@ function rowToCsvLine(row: string[]): string {
     }
     return value;
   }).join(',');
+}
+
+function createTemporaryOutputPath(outputPath: string): string {
+  const suffix = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return join(dirname(outputPath), `.${basename(outputPath)}.${suffix}.tmp`);
 }
 
 /**
@@ -62,28 +70,42 @@ export async function processFile(
     let headerProcessed = false;
     let firstChunk = true;
     let writeStream: ReturnType<typeof createWriteStream> | null = null;
+    let settled = false;
+    const temporaryOutputPath = createTemporaryOutputPath(outputPath);
 
     const inputStream = createReadStream(inputPath, { encoding: 'utf-8' });
 
+    const removeTemporaryOutput = async (): Promise<void> => {
+      await rm(temporaryOutputPath, { force: true }).catch(() => undefined);
+    };
+
+    const fail = (error: CsvParseError): void => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      inputStream.destroy();
+      writeStream?.destroy();
+      removeTemporaryOutput().finally(() => reject(error));
+    };
+
     // Handle input stream errors
     inputStream.on('error', (error) => {
-      if (writeStream) {
-        writeStream.end();
-      }
-      reject(new CsvParseError(`Failed to read input file: ${error.message}`));
+      fail(new CsvParseError(`Failed to read input file: ${error.message}`));
     });
 
     // Create output stream
     try {
-      writeStream = createWriteStream(outputPath, { encoding: 'utf-8' });
+      writeStream = createWriteStream(temporaryOutputPath, { encoding: 'utf-8' });
     } catch (error) {
-      reject(new CsvParseError(`Failed to create output file: ${(error as Error).message}`));
+      fail(new CsvParseError(`Failed to create output file: ${(error as Error).message}`));
       return;
     }
 
     // Handle output stream errors
     writeStream.on('error', (error) => {
-      reject(new CsvParseError(`Failed to write output file: ${error.message}`));
+      fail(new CsvParseError(`Failed to write output file: ${error.message}`));
     });
 
     Papa.parse<string[]>(inputStream, {
@@ -92,13 +114,10 @@ export async function processFile(
 
       step: (results, parserInstance) => {
         // Handle parse errors
-        if (results.errors.length > 0) {
-          const error = results.errors[0];
+        const fatalError = getFatalParseError(results.errors);
+        if (fatalError) {
           parserInstance.abort();
-          if (writeStream) {
-            writeStream.end();
-          }
-          reject(new CsvParseError(error.message, error.row));
+          fail(new CsvParseError(fatalError.message, fatalError.row));
           return;
         }
 
@@ -132,29 +151,42 @@ export async function processFile(
       },
 
       complete: () => {
+        if (settled) {
+          return;
+        }
+
         // Final progress callback
         if (options.onProgress) {
           options.onProgress(rowCount);
         }
 
         // Close write stream properly
-        writeStream!.end(() => {
+        writeStream!.end(async () => {
+          if (settled) {
+            return;
+          }
+
           const duration = Date.now() - startTime;
 
-          resolve({
-            rowCount,
-            success: true,
-            outputPath,
-            duration,
-          });
+          try {
+            await rename(temporaryOutputPath, outputPath);
+            settled = true;
+
+            resolve({
+              rowCount,
+              success: true,
+              outputPath,
+              duration,
+            });
+          } catch (error) {
+            await removeTemporaryOutput();
+            fail(new CsvParseError(`Failed to finalize output file: ${(error as Error).message}`));
+          }
         });
       },
 
       error: (error: Error) => {
-        if (writeStream) {
-          writeStream.end();
-        }
-        reject(new CsvParseError(`CSV parsing error: ${error.message}`));
+        fail(new CsvParseError(`CSV parsing error: ${error.message}`));
       },
     });
   });

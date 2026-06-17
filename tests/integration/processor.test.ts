@@ -1,5 +1,6 @@
 import { describe, it, expect, afterAll } from 'vitest';
 import { promises as fs } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { processFile } from '../../src/core/processor.js';
@@ -285,5 +286,68 @@ describe('processor', () => {
         }
       });
     }, 30000);
+
+    it('should process two-column CSV files when delimiter detection is inconclusive', async () => {
+      const tempDir = await fs.mkdtemp(path.join(tmpdir(), 'csv-anonymizer-processor-'));
+      const inputPath = path.join(tempDir, 'two-column.csv');
+      const twoColumnOutputPath = path.join(tempDir, 'two-column-output.csv');
+
+      try {
+        await fs.writeFile(inputPath, 'id,email\n1,alice@example.com\n2,bob@example.com\n', 'utf-8');
+        const sample = await readSample(inputPath, 100);
+        let columns = buildColumnMetadata(sample.headers, sample.rows);
+        columns = applyColumnSelection(columns, [1]);
+
+        const result = await processFile(inputPath, twoColumnOutputPath, columns, {
+          deterministic: true,
+          seed: 'two-column-seed',
+        });
+
+        const outputSample = await readSample(twoColumnOutputPath, 100);
+
+        expect(result.success).toBe(true);
+        expect(result.rowCount).toBe(2);
+        expect(outputSample.headers).toEqual(['id', 'email']);
+        expect(outputSample.rows[0][0]).toBe('1');
+        expect(outputSample.rows[0][1]).not.toBe('alice@example.com');
+      } finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should keep an existing output file intact when parsing fails', async () => {
+      const tempDir = await fs.mkdtemp(path.join(tmpdir(), 'csv-anonymizer-processor-'));
+      const inputPath = path.join(tempDir, 'broken.csv');
+      const failedOutputPath = path.join(tempDir, 'existing-output.csv');
+      const originalOutput = 'existing\ncontent\n';
+      const columns = [
+        {
+          name: 'id',
+          index: 0,
+          detectedType: 'numeric_id' as const,
+          confidence: 'high' as const,
+          piiRisk: 'high' as const,
+          sampleValues: ['1'],
+          emptyFormat: 'empty_string' as const,
+          isSelected: false,
+        },
+      ];
+
+      try {
+        await fs.writeFile(inputPath, 'id,email\n1,"unterminated\n2,bob@example.com\n', 'utf-8');
+        await fs.writeFile(failedOutputPath, originalOutput, 'utf-8');
+
+        await expect(processFile(inputPath, failedOutputPath, columns, {
+          deterministic: false,
+          seed: '',
+        })).rejects.toThrow('CSV parse error');
+
+        await expect(fs.readFile(failedOutputPath, 'utf-8')).resolves.toBe(originalOutput);
+        const tempFiles = (await fs.readdir(tempDir)).filter(fileName => fileName.endsWith('.tmp'));
+        expect(tempFiles).toEqual([]);
+      } finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    });
   });
 });

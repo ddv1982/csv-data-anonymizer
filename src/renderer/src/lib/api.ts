@@ -60,6 +60,12 @@ const DEFAULT_ERROR_MESSAGE = 'An unexpected error occurred. Please try again.'
 
 export function getErrorMessage(error: ApiFailure): string {
   const code = error.error.code as keyof typeof ERROR_MESSAGES
+  const backendMessage = error.error.message?.trim()
+  const backendSuggestion = error.error.suggestion?.trim()
+
+  if (code === 'CSV_PARSE_ERROR' && backendMessage) {
+    return backendSuggestion ? `${backendMessage} ${backendSuggestion}` : backendMessage
+  }
 
   if (code in ERROR_MESSAGES) {
     return ERROR_MESSAGES[code]

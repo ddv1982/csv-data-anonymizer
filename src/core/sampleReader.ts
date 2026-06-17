@@ -6,6 +6,7 @@
 import { createReadStream } from 'node:fs';
 import Papa from 'papaparse';
 import { validateFile, stripBom } from './fileReader.js';
+import { getFatalParseError } from './papaParseErrors.js';
 import { CsvParseError } from '../types/errors.js';
 import type { ParsedSample } from '../types/config.js';
 
@@ -67,10 +68,10 @@ export async function readSample(
 
       step: (results, parserInstance) => {
         // Handle parse errors
-        if (results.errors.length > 0) {
-          const error = results.errors[0];
+        const fatalError = getFatalParseError(results.errors);
+        if (fatalError) {
           parserInstance.abort();
-          reject(new CsvParseError(error.message, error.row));
+          reject(new CsvParseError(fatalError.message, fatalError.row));
           return;
         }
 
@@ -156,10 +157,11 @@ export async function readAllRows(
       skipEmptyLines: opts.skipEmptyRows,
       transform: opts.trimValues ? (value: string) => value.trim() : undefined,
 
-      step: (results) => {
-        if (results.errors.length > 0) {
-          const error = results.errors[0];
-          reject(new CsvParseError(error.message, error.row));
+      step: (results, parserInstance) => {
+        const fatalError = getFatalParseError(results.errors);
+        if (fatalError) {
+          parserInstance.abort();
+          reject(new CsvParseError(fatalError.message, fatalError.row));
           return;
         }
 
