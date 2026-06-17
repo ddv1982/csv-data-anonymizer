@@ -28,7 +28,7 @@ The release workflow builds Electrobun artifacts only:
 
 - macOS: signed/notarized `.dmg`, `.app.tar.zst`, update metadata, and patch artifacts when enabled
 - Linux: Electrobun `.tar.zst`, setup `.tar.gz`, `.deb`, `.rpm`, AppImage, update metadata, APT repository, and detached `.asc` signatures
-- Windows: Electrobun setup `.zip`, `.tar.zst`, and update metadata
+Windows artifacts are not published yet. Add an Authenticode signing step before enabling Windows release distribution.
 
 Artifacts are written to `dist/electrobun/artifacts/` and uploaded to the draft GitHub Release.
 
@@ -63,7 +63,7 @@ The APT repository is generated under `dist/electrobun/apt-pages/apt` and deploy
 
 ## Windows Notes
 
-Windows release jobs run on the native `windows-2025` GitHub-hosted runner because Electrobun builds the current host platform. The workflow publishes unsigned Windows artifacts unless a future Authenticode signing step is added.
+Windows distribution is deferred until Authenticode signing is configured. Electrobun builds the current host platform, so a future signed Windows release job should run on a native Windows GitHub-hosted runner.
 
 ## Release Behavior
 
@@ -77,8 +77,7 @@ The release workflow:
 - builds Linux x64 Electrobun artifacts and runs the Electrobun smoke workflow
 - wraps Linux output as `.deb`, `.rpm`, and AppImage
 - validates Linux package metadata and builds a signed APT repository
-- builds Windows x64 Electrobun artifacts and runs the Electrobun smoke workflow
-- uploads macOS, Linux, and Windows release assets
+- uploads macOS and Linux release assets
 - deploys the APT repository to GitHub Pages
 - publishes the GitHub Release only after all platform and APT jobs succeed
 

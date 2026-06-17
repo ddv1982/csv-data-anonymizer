@@ -347,11 +347,11 @@ Release migration is complete when:
 - Phase 4: Implemented. Vite builds the Vue/Tailwind renderer with a relative static base into `dist/renderer`, and Electrobun copies it into `views/mainview`.
 - Phase 5: Implemented. Unit/integration tests remain, RPC handler tests were added, and `smoke:electrobun` exercises app startup plus health, headers, preview, anonymize, and output validation through an app-internal Electrobun smoke route. The legacy Playwright Electron E2E harness has been removed.
 - Phase 6: Implemented. CI installs Bun, builds Electrobun, runs the Electrobun smoke workflow, validates Electrobun artifacts, builds `.deb`, `.rpm`, and AppImage package-manager wrappers on Linux, validates package metadata, and checks APT repository generation.
-- Phase 7: Implemented. The release workflow builds signed/notarized macOS Electrobun artifacts on native macOS runners, builds Linux Electrobun artifacts plus package-manager wrappers and a signed APT repository on Ubuntu, builds Windows x64 Electrobun artifacts on a native Windows runner, deploys the APT repository to GitHub Pages, uploads release assets, and publishes only after all platform jobs succeed.
+- Phase 7: Implemented for signed release platforms. The release workflow builds signed/notarized macOS Electrobun artifacts on native macOS runners, builds Linux Electrobun artifacts plus package-manager wrappers and a signed APT repository on Ubuntu, deploys the APT repository to GitHub Pages, uploads release assets, and publishes only after macOS, Linux, and APT jobs succeed.
 
 Remaining external release requirements:
 
 - macOS signing and notarization require the documented Apple certificate and App Store Connect secrets.
 - Linux signatures and APT publishing require the documented GPG signing secrets and GitHub Pages configured for Actions deployments.
-- Windows artifacts are currently unsigned; add an Authenticode signing step if signed Windows installers become a release requirement.
-- A real tag-triggered GitHub release run is still required to verify hosted macOS, Linux, Windows, and Pages publishing behavior end to end.
+- Windows release artifacts are deferred until Authenticode signing is configured.
+- A real tag-triggered GitHub release run is still required to verify hosted macOS, Linux, and Pages publishing behavior end to end.
