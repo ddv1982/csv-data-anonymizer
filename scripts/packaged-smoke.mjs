@@ -1,4 +1,4 @@
-import { _electron as electron } from '@playwright/test';
+import { _electron as electron, expect } from '@playwright/test';
 import { access, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -82,6 +82,28 @@ try {
 
     console.log(`${testCase.name}: ok`);
   }
+
+  const uiInputPath = join(tempDir, 'visible-workflow.csv');
+  const uiOutputPath = join(tempDir, 'visible-workflow-output.csv');
+  await writeFile(uiInputPath, 'id,email\n1,alice@example.com\n2,bob@example.com\n', 'utf-8');
+
+  await page.getByLabel('File path input').fill(uiInputPath);
+  await expect(page.getByText('1 of 2 columns selected')).toBeVisible();
+  await page.locator('#output-path').fill(uiOutputPath);
+
+  await page.getByRole('button', { name: 'Show Preview' }).click();
+  await expect(page.getByText('alice@example.com')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Anonymize File' }).click();
+  await expect(page.getByText('Success!')).toBeVisible();
+  await expect(page.getByText('An unexpected error occurred. Please try again.')).toHaveCount(0);
+
+  const uiOutput = await readFile(uiOutputPath, 'utf-8');
+  if (!uiOutput.includes('@example.com')) {
+    throw new Error('visible-workflow packaged smoke output did not contain anonymized email domain');
+  }
+
+  console.log('visible-workflow: ok');
 } finally {
   await app?.close();
   await rm(tempDir, { recursive: true, force: true });

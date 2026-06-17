@@ -50,8 +50,9 @@ const ERROR_MESSAGES = {
   CSV_PARSE_ERROR: 'Unable to parse CSV. Check file format and encoding.',
   CONFIG_INVALID: 'Invalid settings. Please check your configuration.',
   COLUMN_NOT_FOUND: 'Column selection is out of range for this CSV file.',
-  OUTPUT_EXISTS: 'Output file already exists. Disable overwrite or choose a different output path.',
+  OUTPUT_EXISTS: 'Output file already exists. Enable overwrite or choose a different output path.',
   INVALID_SELECTION: 'Column selection is invalid.',
+  BRIDGE_PAYLOAD_INVALID: 'The app could not send the selected data to the desktop process. Try selecting the columns again.',
   BRIDGE_UNAVAILABLE: 'Desktop bridge is unavailable. Restart the application.',
   UNKNOWN: 'An unexpected error occurred. Please try again.'
 } as const
@@ -64,6 +65,10 @@ export function getErrorMessage(error: ApiFailure): string {
   const backendSuggestion = error.error.suggestion?.trim()
 
   if (code === 'CSV_PARSE_ERROR' && backendMessage) {
+    return backendSuggestion ? `${backendMessage} ${backendSuggestion}` : backendMessage
+  }
+
+  if (code === 'UNKNOWN' && backendMessage && backendMessage !== DEFAULT_ERROR_MESSAGE) {
     return backendSuggestion ? `${backendMessage} ${backendSuggestion}` : backendMessage
   }
 
@@ -97,8 +102,24 @@ async function invoke<T>(operation: () => Promise<ApiResult<T>>): Promise<ApiRes
 }
 
 function toApiError(error: unknown): ApiErrorDetails {
+  if (error instanceof Error) {
+    if (error.message.includes('Desktop bridge')) {
+      return {
+        code: 'BRIDGE_UNAVAILABLE',
+        message: error.message
+      }
+    }
+
+    if (error.message.includes('could not be cloned')) {
+      return {
+        code: 'BRIDGE_PAYLOAD_INVALID',
+        message: ERROR_MESSAGES.BRIDGE_PAYLOAD_INVALID
+      }
+    }
+  }
+
   return {
-    code: error instanceof Error && error.message.includes('Desktop bridge') ? 'BRIDGE_UNAVAILABLE' : 'UNKNOWN',
+    code: 'UNKNOWN',
     message: error instanceof Error ? error.message : DEFAULT_ERROR_MESSAGE
   }
 }
