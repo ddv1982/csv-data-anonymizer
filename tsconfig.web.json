@@ -1,18 +1,30 @@
 {
-  "extends": "@electron-toolkit/tsconfig/tsconfig.web.json",
   "include": [
     "src/renderer/src/**/*.ts",
     "src/renderer/src/**/*.tsx",
     "src/renderer/src/**/*.vue",
-    "src/shared/**/*.ts"
+    "src/shared/**/*.ts",
+    "src/bun/rpc-schema.ts",
+    "src/electrobun-view/**/*.ts",
+    "src/types/electrobun-*.d.ts"
   ],
   "compilerOptions": {
     "composite": true,
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
     "strict": true,
     "types": ["vite/client", "vitest"],
+    "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
     "paths": {
       "@/*": ["./src/renderer/src/*"],
-      "@shared/*": ["./src/shared/*"]
+      "@shared/*": ["./src/shared/*"],
+      "electrobun/bun": ["./src/types/electrobun-bun.d.ts"],
+      "electrobun/view": ["./src/types/electrobun-view.d.ts"]
     },
     "noUnusedLocals": true,
     "noUnusedParameters": true,

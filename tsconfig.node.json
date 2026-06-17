@@ -1,9 +1,9 @@
 {
-  "extends": "@electron-toolkit/tsconfig/tsconfig.node.json",
   "include": [
-    "electron.vite.config.ts",
-    "src/main/**/*.ts",
-    "src/preload/**/*.ts",
+    "electrobun.config.ts",
+    "vite.renderer.config.ts",
+    "src/bun/**/*.ts",
+    "src/services/**/*.ts",
     "src/shared/**/*.ts",
     "src/core/**/*.ts",
     "src/strategies/**/*.ts",
@@ -13,11 +13,21 @@
   ],
   "compilerOptions": {
     "composite": true,
-    "types": ["node", "vitest"],
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "types": ["node", "vitest", "bun"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
     "strict": true,
     "skipLibCheck": true,
+    "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
+    "paths": {
+      "electrobun/bun": ["./src/types/electrobun-bun.d.ts"],
+      "electrobun/view": ["./src/types/electrobun-view.d.ts"]
+    },
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noImplicitReturns": true,
