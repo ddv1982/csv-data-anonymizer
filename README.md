@@ -13,20 +13,22 @@ Desktop-only Electrobun application for anonymizing CSV data locally while prese
 
 ## Development
 
+Install dependencies and run scripts with Bun.
+
 ```bash
-pnpm install
-pnpm run dev
+bun install
+bun run dev
 ```
 
 Useful commands:
 
 ```bash
-pnpm run build          # Type-check and build the Electrobun app
-pnpm test               # Run unit and integration tests
-pnpm run test:coverage  # Run tests with coverage
-pnpm run test:e2e       # Run the Electrobun smoke workflow
-pnpm run dist           # Build stable Electrobun artifacts for the host platform
-pnpm run release:check  # Validate package version and changelog metadata
+bun run build          # Type-check and build the Electrobun app
+bun run test               # Run unit and integration tests
+bun run test:coverage  # Run tests with coverage
+bun run test:e2e       # Run the Electrobun smoke workflow
+bun run dist           # Build stable Electrobun artifacts for the host platform
+bun run release:check  # Validate package version and changelog metadata
 ```
 
 ## Architecture
@@ -55,13 +57,13 @@ App settings are stored as versioned JSON under Electrobun user data. YAML confi
 ## Packaging
 
 ```bash
-pnpm run dist:dir
-pnpm run dist
+bun run dist:dir
+bun run dist
 ```
 
 Electrobun artifacts are written to `dist/electrobun/artifacts/`.
 
-On Linux, `pnpm run dist:linux` also creates `.deb`, `.rpm`, and AppImage artifacts from the Electrobun Linux output.
+On Linux, `bun run dist:linux` also creates `.deb`, `.rpm`, and AppImage artifacts from the Electrobun Linux output.
 
 Release steps, Linux package signing, and macOS notarization prerequisites are documented in `docs/releasing.md`.
 

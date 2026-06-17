@@ -35,8 +35,8 @@ Portable code to keep and retest:
 
 Manager-side verification after research:
 
-- `pnpm run typecheck` passed.
-- `pnpm test` passed: 21 files, 275 tests.
+- `bun run typecheck` passed.
+- `bun run test` passed: 21 files, 275 tests.
 
 ## Source-Backed Electrobun Facts
 
@@ -89,7 +89,7 @@ The safest first milestone is an Electrobun shell that preserves the existing re
 Decide these before implementation:
 
 1. Stable version: target `electrobun@1.18.1`.
-2. Package manager: keep `pnpm` initially for lockfile stability, but install/setup Bun in dev and CI because Electrobun runs through Bun. Run a disposable `bun install` migration later before deciding whether to commit `bun.lock`.
+2. Package manager: use Bun for dependency installation, script execution, and the committed `bun.lock`.
 3. Renderer path: keep Vite initially and package its static output through Electrobun. Spike direct Bun.build Vue/Tailwind only after the shell works.
 4. Linux distribution: decide whether current APT/deb/rpm install/update contract must remain. If yes, add a custom packaging milestone around Electrobun Linux output.
 5. Linux renderer: strongly consider `build.linux.bundleCEF: true` for distribution consistency; default WebKitGTK is smaller but more dependent on distro packages and has documented limitations.
@@ -239,8 +239,8 @@ E2E options to evaluate:
 
 Verification gate:
 
-- `pnpm run typecheck`
-- `pnpm test`
+- `bun run typecheck`
+- `bun run test`
 - Electrobun dev smoke
 - Electrobun packaged smoke
 - Platform-specific smoke on macOS and Linux before release flow migration
@@ -260,7 +260,7 @@ Initial scripts:
 CI changes:
 
 - Install Bun on runners.
-- Keep pnpm initially for dependencies and tests unless a Bun lockfile migration is accepted.
+- Use Bun for dependencies, tests, and release scripts.
 - Replace Electron dependency install steps with Electrobun/Linux webview or CEF prerequisites.
 - Use one native runner per target OS/architecture.
 - Do not assume a Linux runner can produce macOS or Windows release artifacts.
@@ -312,7 +312,7 @@ Suggested cutover:
 | `minWidth`/`minHeight` direct equivalent not found | Medium | Implement resize enforcement or accept temporary behavior difference. |
 | macOS activation behavior unclear | Medium | Platform smoke test dock reopen/last-window-close lifecycle. |
 | Native renderer differences | Medium | Prefer CEF on Linux distribution if artifact size is acceptable. |
-| pnpm-to-Bun package manager migration can lose pnpm workspace settings | Medium | Keep pnpm first; inspect Bun migration in disposable copy before committing. |
+| Bun lockfile migration can lose package-manager-specific install policy | Medium | Remove pnpm-specific policy files, commit `bun.lock`, and validate the full release workflow with Bun installs. |
 
 ## Go / No-Go Milestones
 
@@ -328,7 +328,7 @@ First implementation milestone is complete when:
 - Electrobun dev build opens the current Vue app.
 - `window.csvAnonymizer` wrapper works over Electrobun RPC.
 - CSV headers, preview, anonymize, settings, and show-output behaviors work.
-- `pnpm run typecheck` and `pnpm test` pass.
+- `bun run typecheck` and `bun run test` pass.
 - A minimal Electrobun smoke test exists.
 
 Release migration is complete when:
@@ -340,7 +340,7 @@ Release migration is complete when:
 
 ## Implementation Status - 2026-06-18
 
-- Phase 0: Implemented for the initial migration path. The project targets `electrobun@1.18.1`, keeps `pnpm`, keeps Vite for renderer output, uses Linux CEF, and uses a directory-picker output fallback until native save-dialog support is available.
+- Phase 0: Implemented. The project targets `electrobun@1.18.1`, uses Bun as the package manager, keeps Vite for renderer output, uses Linux CEF, and uses a directory-picker output fallback until native save-dialog support is available.
 - Phase 1: Implemented. The Electrobun config, Bun main process, typed RPC handlers, browser RPC bridge, and `views://mainview/index.html` renderer copy path are present.
 - Phase 2: Implemented for the core runtime path. Window state, user-data path mapping, display clamping, minimum-size enforcement, allowed external URL handling, and shell reveal behavior are ported.
 - Phase 3: Implemented. All nine renderer-facing API methods are available through Electrobun typed RPC while preserving `window.csvAnonymizer`.

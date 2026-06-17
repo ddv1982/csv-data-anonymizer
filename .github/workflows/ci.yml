@@ -25,17 +25,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 11.7.0
-
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '24'
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -43,7 +36,7 @@ jobs:
           bun-version: 1.3.13
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Install Linux desktop dependencies
         run: |
@@ -59,19 +52,19 @@ jobs:
             libgbm1
 
       - name: Validate release metadata
-        run: pnpm run release:check
+        run: bun run release:check
 
       - name: Type-check
-        run: pnpm run typecheck
+        run: bun run typecheck
 
       - name: Run unit and integration tests
-        run: pnpm test
+        run: bun run test
 
       - name: Build Electrobun app
-        run: pnpm run build
+        run: bun run build
 
       - name: Run Electrobun smoke
-        run: xvfb-run --auto-servernum pnpm run smoke:electrobun
+        run: xvfb-run --auto-servernum bun run smoke:electrobun
 
   package-linux:
     name: Package Linux Electrobun
@@ -82,17 +75,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 11.7.0
-
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: '24'
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -100,7 +86,7 @@ jobs:
           bun-version: 1.3.13
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Install Linux desktop and packaging dependencies
         run: |
@@ -130,22 +116,25 @@ jobs:
           echo "APPIMAGE_EXTRACT_AND_RUN=1" >> "$GITHUB_ENV"
 
       - name: Build stable Electrobun artifacts
-        run: pnpm run build:stable
+        run: bun run build:stable
+
+      - name: Build dev Electrobun app for smoke
+        run: bun run build
 
       - name: Smoke test Electrobun app
-        run: xvfb-run --auto-servernum pnpm run smoke:electrobun
+        run: xvfb-run --auto-servernum bun run smoke:electrobun
 
       - name: Validate Electrobun artifacts
-        run: pnpm run artifacts:electrobun:check
+        run: bun run artifacts:electrobun:check
 
       - name: Build Linux package-manager artifacts
-        run: pnpm run linux:packages
+        run: bun run linux:packages
 
       - name: Validate Linux package metadata
-        run: pnpm run linux:metadata:check
+        run: bun run linux:metadata:check
 
       - name: Validate APT repository generation
-        run: pnpm run apt:repo:check
+        run: bun run apt:repo:check
 
       - name: Sign Linux Electrobun artifacts
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
