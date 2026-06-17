@@ -1,0 +1,7 @@
+id,description,value,empty_col,null_col
+1,"Simple value",100,,null
+2,"Value with, comma",200,null,null
+3,"Value with ""quotes""",300,,
+4,"Value with
+newline",400,null,
+5,Normal value,500,,null

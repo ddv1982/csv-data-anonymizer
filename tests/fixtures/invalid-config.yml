@@ -1,0 +1,5 @@
+# Invalid config - empty columns array (violates "at least one column" rule)
+columns: []
+output: output.csv
+deterministic: true
+seed: "some-seed"
