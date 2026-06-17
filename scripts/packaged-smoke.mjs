@@ -1,22 +1,11 @@
 import { _electron as electron, expect } from '@playwright/test';
-import { access, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const packageJson = JSON.parse(await readFile(join(process.cwd(), 'package.json'), 'utf-8'));
 const releaseDir = join(process.cwd(), 'release', packageJson.version);
-const releaseEntries = await readdir(releaseDir, { withFileTypes: true });
-const macAppDir = releaseEntries.find(entry => entry.isDirectory() && entry.name.startsWith('mac'));
-
-if (!macAppDir) {
-  throw new Error(`No macOS packaged app found in ${releaseDir}. Run pnpm run dist:dir first.`);
-}
-
-const appExecutable = join(
-  releaseDir,
-  macAppDir.name,
-  'CSV Anonymizer.app/Contents/MacOS/CSV Anonymizer'
-);
+const appExecutable = await findPackagedExecutable();
 
 const cases = [
   {
@@ -30,8 +19,6 @@ const cases = [
     columns: [1],
   },
 ];
-
-await access(appExecutable);
 
 const tempDir = await mkdtemp(join(tmpdir(), 'csv-anonymizer-packaged-smoke-'));
 let app;
@@ -107,4 +94,60 @@ try {
 } finally {
   await app?.close();
   await rm(tempDir, { recursive: true, force: true });
+}
+
+async function findPackagedExecutable() {
+  if (process.platform === 'darwin') {
+    const releaseEntries = await readdir(releaseDir, { withFileTypes: true });
+    const macAppDir = releaseEntries.find(entry => entry.isDirectory() && entry.name.startsWith('mac'));
+
+    if (!macAppDir) {
+      throw new Error(`No macOS packaged app found in ${releaseDir}. Run pnpm run dist:dir first.`);
+    }
+
+    const executable = join(
+      releaseDir,
+      macAppDir.name,
+      `${packageJson.build.productName}.app/Contents/MacOS/${packageJson.build.productName}`
+    );
+    await access(executable);
+    return executable;
+  }
+
+  if (process.platform === 'linux') {
+    const linuxDir = join(releaseDir, 'linux-unpacked');
+    const explicitName = packageJson.build?.linux?.executableName;
+    const candidates = [
+      explicitName && join(linuxDir, explicitName),
+      join(linuxDir, packageJson.name),
+      join(linuxDir, packageJson.build.productName),
+    ].filter(Boolean);
+
+    for (const candidate of candidates) {
+      if (await isExecutable(candidate)) {
+        return candidate;
+      }
+    }
+
+    const releaseEntries = await readdir(linuxDir, { withFileTypes: true });
+    for (const entry of releaseEntries) {
+      const candidate = join(linuxDir, entry.name);
+      if (entry.isFile() && await isExecutable(candidate)) {
+        return candidate;
+      }
+    }
+
+    throw new Error(`No Linux packaged executable found in ${linuxDir}. Run pnpm run dist:linux:dir first.`);
+  }
+
+  throw new Error(`Packaged smoke test is not configured for ${process.platform}.`);
+}
+
+async function isExecutable(path) {
+  try {
+    const fileStat = await stat(path);
+    return fileStat.isFile() && (fileStat.mode & 0o111) !== 0;
+  } catch {
+    return false;
+  }
 }

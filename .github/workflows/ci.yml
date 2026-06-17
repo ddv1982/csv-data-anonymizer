@@ -1,0 +1,203 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  LINUX_RELEASE_ARTIFACT_NAME: csv-anonymizer-linux-x86_64-release-bundle
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.7.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Linux Electron dependencies
+        run: pnpm exec playwright install-deps chromium
+
+      - name: Validate release metadata
+        run: pnpm run release:check
+
+      - name: Type-check
+        run: pnpm run typecheck
+
+      - name: Run unit and integration tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Run Electron e2e tests
+        run: xvfb-run --auto-servernum pnpm run test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  package-linux:
+    name: Package Linux
+    needs: test
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.7.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Linux Electron dependencies
+        run: pnpm exec playwright install-deps chromium
+
+      - name: Install Linux package tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fakeroot rpm dpkg-sig gnupg
+
+      - name: Build application
+        run: pnpm run build
+
+      - name: Package unpacked Linux app
+        run: pnpm exec electron-builder --linux dir --x64 --publish never
+
+      - name: Smoke test unpacked Linux app
+        run: xvfb-run --auto-servernum pnpm run smoke:packaged
+
+      - name: Build Linux release packages
+        run: pnpm exec electron-builder --linux AppImage deb rpm --x64 --publish never
+
+      - name: Sign Debian packages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          DEB_SIGNING_PRIVATE_KEY: ${{ secrets.DEB_SIGNING_PRIVATE_KEY }}
+          DEB_SIGNING_KEY_FINGERPRINT: ${{ secrets.DEB_SIGNING_KEY_FINGERPRINT }}
+          DEB_SIGNING_KEY_PASSPHRASE: ${{ secrets.DEB_SIGNING_KEY_PASSPHRASE }}
+          DEB_SIGNING_PUBLIC_KEY: ${{ vars.DEB_SIGNING_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+
+          missing=()
+          [ -n "${DEB_SIGNING_PRIVATE_KEY}" ] || missing+=("DEB_SIGNING_PRIVATE_KEY")
+          [ -n "${DEB_SIGNING_KEY_FINGERPRINT}" ] || missing+=("DEB_SIGNING_KEY_FINGERPRINT")
+          [ -n "${DEB_SIGNING_KEY_PASSPHRASE}" ] || missing+=("DEB_SIGNING_KEY_PASSPHRASE")
+          [ -n "${DEB_SIGNING_PUBLIC_KEY}" ] || missing+=("DEB_SIGNING_PUBLIC_KEY repository variable")
+
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "Required Debian signing inputs are missing: ${missing[*]}" >&2
+            exit 1
+          fi
+
+          deb_packages=(release/**/*.deb)
+          if [ ${#deb_packages[@]} -eq 0 ]; then
+            echo "No Debian packages found under release/." >&2
+            exit 1
+          fi
+
+          gnupg_home="$(mktemp -d)"
+          verification_home="$(mktemp -d)"
+          private_key_file="$(mktemp)"
+          public_key_file="$(mktemp)"
+          passphrase_file="$(mktemp)"
+          safe_deb_file=""
+          cleanup() {
+            rm -rf "${gnupg_home}" "${verification_home}"
+            rm -f "${private_key_file}" "${public_key_file}" "${passphrase_file}"
+            if [ -n "${safe_deb_file}" ]; then
+              rm -f "${safe_deb_file}"
+            fi
+          }
+          trap cleanup EXIT
+
+          chmod 700 "${gnupg_home}" "${verification_home}"
+          chmod 600 "${passphrase_file}"
+          export GNUPGHOME="${gnupg_home}"
+          echo allow-loopback-pinentry > "${GNUPGHOME}/gpg-agent.conf"
+          gpgconf --kill gpg-agent || true
+
+          printf '%s' "${DEB_SIGNING_PRIVATE_KEY}" | base64 --decode > "${private_key_file}"
+          printf '%s' "${DEB_SIGNING_PUBLIC_KEY}" | base64 --decode > "${public_key_file}"
+          printf '%s' "${DEB_SIGNING_KEY_PASSPHRASE}" > "${passphrase_file}"
+          gpg --batch --import "${private_key_file}"
+
+          expected_fingerprint="$(printf '%s' "${DEB_SIGNING_KEY_FINGERPRINT}" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
+          imported_fingerprint="$(gpg --batch --with-colons --fingerprint "${expected_fingerprint}" | awk -F: '$1 == "fpr" { print toupper($10); exit }')"
+          if [ "${imported_fingerprint}" != "${expected_fingerprint}" ]; then
+            echo "Imported Debian signing key fingerprint did not match DEB_SIGNING_KEY_FINGERPRINT." >&2
+            exit 1
+          fi
+
+          GNUPGHOME="${verification_home}" gpg --batch --import "${public_key_file}"
+          gpg_options="--batch --pinentry-mode loopback --passphrase-file ${passphrase_file}"
+
+          for deb in "${deb_packages[@]}"; do
+            echo "Signing ${deb}"
+            deb_dirname="$(dirname "${deb}")"
+            deb_basename="$(basename "${deb}")"
+            safe_basename="$(printf '%s' "${deb_basename}" | tr ' ' '_' | tr -cd '[:alnum:]_.-')"
+            safe_deb_file="${deb_dirname}/${safe_basename}"
+            if [ "${safe_deb_file}" = "${deb}" ] || [ -e "${safe_deb_file}" ]; then
+              safe_deb_file="${deb_dirname}/signing-${RANDOM}-${safe_basename}"
+            fi
+            mv "${deb}" "${safe_deb_file}"
+            dpkg-sig -g "${gpg_options}" --sign builder -k "${expected_fingerprint}" "${safe_deb_file}"
+            GNUPGHOME="${verification_home}" dpkg-sig --verify-role builder "${safe_deb_file}"
+            mv "${safe_deb_file}" "${deb}"
+            safe_deb_file=""
+          done
+
+      - name: Upload reusable Linux package artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.LINUX_RELEASE_ARTIFACT_NAME }}
+          path: |
+            release/**/*.AppImage
+            release/**/*.deb
+            release/**/*.rpm
+          if-no-files-found: error
+          retention-days: 7
