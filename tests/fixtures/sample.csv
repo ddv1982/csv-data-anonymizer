@@ -1,0 +1,6 @@
+id,email,user_uuid,created_at,country,status,name
+1001,john.doe@example.com,550e8400-e29b-41d4-a716-446655440001,2024-01-15 10:30:00,US,active,John Doe
+1002,jane.smith@gmail.com,550e8400-e29b-41d4-a716-446655440002,2024-02-20 14:45:30.123456,GB,inactive,Jane Smith
+1003,bob.wilson@company.org,550e8400-e29b-41d4-a716-446655440003,2024-03-10,CA,active,Bob Wilson
+1004,alice.jones@test.io,550e8400-e29b-41d4-a716-446655440004,2024-04-05 09:15:00,AU,pending,Alice Jones
+1005,charlie.brown@example.net,550e8400-e29b-41d4-a716-446655440005,2024-05-18 16:00:00.000000,NZ,active,Charlie Brown

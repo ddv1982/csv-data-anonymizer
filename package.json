@@ -1,0 +1,62 @@
+{
+  "name": "csv-anonymizer",
+  "version": "1.0.0",
+  "description": "Interactive CSV Anonymizer - A TypeScript CLI tool for anonymizing CSV data",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "csv-anonymizer": "dist/index.js"
+  },
+  "workspaces": [
+    "ui"
+  ],
+  "scripts": {
+    "build": "tsc && npm run build:ui",
+    "build:cli": "tsc",
+    "build:ui": "npm run build --workspace=ui",
+    "dev": "npm run dev --workspace=ui",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "csv",
+    "anonymizer",
+    "privacy",
+    "data",
+    "cli"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@faker-js/faker": "^8.4.1",
+    "chalk": "^5.6.2",
+    "commander": "^12.1.0",
+    "express": "^5.2.1",
+    "js-yaml": "^4.1.1",
+    "open": "^11.0.0",
+    "ora": "^8.2.0",
+    "papaparse": "^5.5.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^25.0.6",
+    "@types/papaparse": "^5.5.2",
+    "@types/supertest": "^6.0.3",
+    "@vitest/coverage-v8": "^4.0.17",
+    "cors": "^2.8.5",
+    "supertest": "^7.2.2",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.17"
+  }
+}
