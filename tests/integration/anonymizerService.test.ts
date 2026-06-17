@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -71,5 +71,34 @@ describe('AnonymizerService', () => {
     expect(result.outputPath).toBe(outputPath);
     expect(result.rowCount).toBe(5);
     expect(result.columnsAnonymized).toBe(1);
+  });
+
+  it('previews and anonymizes one-column CSV files', async () => {
+    const inputPath = join(tempDir, 'one-column.csv');
+    const outputPath = join(tempDir, 'one-column-anonymized.csv');
+    await writeFile(inputPath, 'email\nalice@example.com\nbob@example.com\n', 'utf-8');
+
+    const headers = await service.analyzeCsv({ filePath: inputPath });
+    const preview = await service.previewAnonymization({
+      filePath: inputPath,
+      columns: [0],
+      deterministic: true,
+      seed: 'service-one-column',
+      sampleCount: 2,
+    });
+    const result = await service.anonymizeCsv({
+      filePath: inputPath,
+      outputPath,
+      columns: [0],
+      deterministic: true,
+      seed: 'service-one-column',
+      force: false,
+    });
+
+    expect(headers.columns.map((column) => column.name)).toEqual(['email']);
+    expect(headers.rowCount).toBe(2);
+    expect(preview.previews[0].samples).toHaveLength(2);
+    expect(result.rowCount).toBe(2);
+    expect(await readFile(outputPath, 'utf-8')).toContain('@example.com');
   });
 });

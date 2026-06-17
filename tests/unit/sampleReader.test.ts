@@ -1,4 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect } from 'vitest';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readSample, readAllRows } from '../../src/core/sampleReader.js';
@@ -11,6 +13,15 @@ describe('sampleReader', () => {
   const sampleCsvPath = path.join(fixturesDir, 'sample.csv');
   const bomFilePath = path.join(fixturesDir, 'bom-file.csv');
   const edgeCasesPath = path.join(fixturesDir, 'edge-cases.csv');
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), 'csv-anonymizer-sample-'));
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
 
   describe('readSample', () => {
     it('should read headers correctly', async () => {
@@ -86,6 +97,16 @@ describe('sampleReader', () => {
         });
       });
     });
+
+    it('should read one-column CSV files when delimiter detection is inconclusive', async () => {
+      const oneColumnPath = path.join(tempDir, 'one-column.csv');
+      await writeFile(oneColumnPath, 'email\nalice@example.com\nbob@example.com\n', 'utf-8');
+
+      const result = await readSample(oneColumnPath, 5);
+
+      expect(result.headers).toEqual(['email']);
+      expect(result.rows).toEqual([['alice@example.com'], ['bob@example.com']]);
+    });
   });
 
   describe('readAllRows', () => {
@@ -106,6 +127,16 @@ describe('sampleReader', () => {
       const nonExistentPath = path.join(fixturesDir, 'missing.csv');
 
       await expect(readAllRows(nonExistentPath)).rejects.toThrow(FileNotFoundError);
+    });
+
+    it('should read all rows from one-column CSV files when delimiter detection is inconclusive', async () => {
+      const oneColumnPath = path.join(tempDir, 'one-column-all.csv');
+      await writeFile(oneColumnPath, 'email\nalice@example.com\nbob@example.com\n', 'utf-8');
+
+      const result = await readAllRows(oneColumnPath);
+
+      expect(result.headers).toEqual(['email']);
+      expect(result.rows).toEqual([['alice@example.com'], ['bob@example.com']]);
     });
   });
 });

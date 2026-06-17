@@ -3,6 +3,7 @@ import { constants, createReadStream, existsSync } from 'node:fs'
 import { dirname, isAbsolute, normalize, resolve } from 'node:path'
 import Papa from 'papaparse'
 import { readSample } from '../../core/sampleReader.js'
+import { getFatalParseError } from '../../core/papaParseErrors.js'
 import { buildColumnMetadata, applyColumnSelection } from '../../core/metadataBuilder.js'
 import { transformValue, createTransformContext } from '../../core/transformer.js'
 import { processFile } from '../../core/processor.js'
@@ -198,9 +199,10 @@ function countCsvDataRows(filePath: string): Promise<number> {
       header: false,
       skipEmptyLines: true,
       step: (results, parserInstance) => {
-        if (results.errors.length > 0) {
+        const fatalError = getFatalParseError(results.errors)
+        if (fatalError) {
           parserInstance.abort()
-          finish(() => reject(new Error(results.errors[0].message)))
+          finish(() => reject(new Error(fatalError.message)))
           return
         }
 
