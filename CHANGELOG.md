@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.7 - 2026-06-18
+
+- Route the macOS Quit menu item through an explicit Cmd+Q accelerator and `Utils.quit()` handler.
+- Publish the Linux APT installer and repository setup assets through GitHub Pages for unauthenticated installs.
+- Update the Debian/Ubuntu install command to use the public GitHub Pages bootstrap URL.
+- Replace unsigned APT repository validation with a temporary-key signed repository check.
+- Reduce Linux CI signing noise by filtering irrelevant Electrobun macOS codesign/notarization skip messages and quieting trusted verification output.
+
 ## v1.0.6 - 2026-06-18
 
 - Restore the native macOS application menu for packaged Electrobun builds.

@@ -20,6 +20,7 @@ import { startSmokeServer } from './smoke-server'
 const appName = 'CSV Anonymizer'
 const appIdentifier = 'com.csv-anonymizer.app'
 const defaultRendererUrl = 'views://mainview/index.html'
+const quitMenuAction = 'quit-app'
 const rpcTimeoutMs = 5 * 60 * 1000
 
 let mainWindow: BrowserWindow | null = null
@@ -69,7 +70,7 @@ function setupApplicationMenu(): void {
         { role: 'hideOthers' },
         { role: 'showAll' },
         { type: 'divider' },
-        { role: 'quit' }
+        { label: `Quit ${appName}`, action: quitMenuAction, accelerator: 'q' }
       ]
     },
     {
@@ -106,6 +107,9 @@ function setupApplicationMenu(): void {
     }
   ]
 
+  ApplicationMenu.on('application-menu-clicked', (event) => {
+    if (extractMenuAction(event) === quitMenuAction) Utils.quit()
+  })
   ApplicationMenu.setApplicationMenu(menu)
 }
 
@@ -200,6 +204,18 @@ function extractEventUrl(event: unknown): string | null {
   if (typeof detail === 'string') return detail
   if (detail && typeof detail === 'object' && 'url' in detail && typeof (detail as { url?: unknown }).url === 'string') {
     return (detail as { url: string }).url
+  }
+
+  return null
+}
+
+function extractMenuAction(event: unknown): string | null {
+  const data = event && typeof event === 'object' && 'data' in event ? (event as { data?: unknown }).data : event
+  const detail = data && typeof data === 'object' && 'detail' in data ? (data as { detail?: unknown }).detail : data
+
+  if (typeof detail === 'string') return detail
+  if (detail && typeof detail === 'object' && 'action' in detail && typeof (detail as { action?: unknown }).action === 'string') {
+    return (detail as { action: string }).action
   }
 
   return null

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-setup_url="${CSV_ANONYMIZER_REPOSITORY_SETUP_URL:-https://github.com/ddv1982/csv-data-anonymizer/releases/latest/download/csv-anonymizer-repository-setup_1.0_all.deb}"
+setup_url="${CSV_ANONYMIZER_REPOSITORY_SETUP_URL:-https://ddv1982.github.io/csv-data-anonymizer/apt/csv-anonymizer-repository-setup_1.0_all.deb}"
 setup_sha256_url="${CSV_ANONYMIZER_REPOSITORY_SETUP_SHA256_URL:-${setup_url}.sha256}"
 setup_sha256_sig_url="${CSV_ANONYMIZER_REPOSITORY_SETUP_SHA256_SIG_URL:-${setup_sha256_url}.asc}"
 signing_key_url="${CSV_ANONYMIZER_REPOSITORY_SETUP_SIGNING_KEY_URL:-https://ddv1982.github.io/csv-data-anonymizer/apt/csv-anonymizer-archive-keyring.pgp}"

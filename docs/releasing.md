@@ -32,7 +32,7 @@ The release workflow builds Electrobun artifacts only:
 - Linux: Electrobun `.tar.zst`, setup `.tar.gz`, `.deb`, `.rpm`, AppImage, update metadata, APT repository, APT repository setup `.deb`, `install-apt-repo.sh`, keyring, checksum sidecars, and detached `.asc` signatures
 Windows artifacts are not published yet. Add an Authenticode signing step before enabling Windows release distribution.
 
-Artifacts are written to `dist/electrobun/artifacts/` and uploaded to the draft GitHub Release.
+Artifacts are written to `dist/electrobun/artifacts/` and uploaded to the draft GitHub Release. Public APT bootstrap assets are also copied into `dist/electrobun/apt-pages/` for GitHub Pages so unauthenticated Linux installs do not depend on GitHub Release asset access.
 
 ## macOS Prerequisites
 
@@ -63,7 +63,7 @@ The names are historical. The key now signs Linux Electrobun archives, `.deb`, `
 
 The APT repository is generated under `dist/electrobun/apt-pages/apt` and deployed with GitHub Pages. Repository Pages must be configured to use GitHub Actions as the Pages source.
 
-The release workflow exports the archive keyring to both the GitHub Release assets and the APT Pages root because `install-apt-repo.sh` verifies the setup package checksum sidecar against the keyring URL before installing the repository setup package.
+The release workflow exports the archive keyring, repository setup package, setup checksum sidecar, setup checksum signature, and `install-apt-repo.sh` to GitHub Pages because Linux installs use public Pages URLs for the bootstrap flow.
 
 ## Windows Notes
 
@@ -81,8 +81,8 @@ The release workflow:
 - builds Linux x64 Electrobun artifacts and runs the Electrobun smoke workflow
 - wraps Linux output as `.deb`, `.rpm`, and AppImage
 - validates Linux package metadata and builds a signed APT repository
-- stages the release `install-apt-repo.sh` asset with the pinned APT signing key fingerprint
-- publishes the archive keyring in the APT Pages root for installer-side signature verification
+- stages `install-apt-repo.sh` with the pinned APT signing key fingerprint
+- publishes public APT bootstrap assets in the APT Pages artifact for installer-side signature verification
 - uploads macOS and Linux release assets
 - deploys the APT repository to GitHub Pages
 - publishes the GitHub Release only after all platform and APT jobs succeed

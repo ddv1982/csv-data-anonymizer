@@ -375,7 +375,7 @@ jobs:
             --passphrase-file "${LINUX_GPG_PASSPHRASE_FILE}" \
             --local-user "${LINUX_GPG_FINGERPRINT}" --armor --detach-sign \
             --output "${setup_sha256_sig}" "${setup_sha256}"
-          GNUPGHOME="${LINUX_VERIFICATION_GNUPGHOME}" gpg --batch --verify "${setup_sha256_sig}" "${setup_sha256}"
+          GNUPGHOME="${LINUX_VERIFICATION_GNUPGHOME}" gpg --quiet --batch --trust-model always --verify "${setup_sha256_sig}" "${setup_sha256}"
 
       - name: Stage APT repository installer
         run: |
@@ -409,8 +409,24 @@ jobs:
               --passphrase-file "${LINUX_GPG_PASSPHRASE_FILE}" \
               --local-user "${LINUX_GPG_FINGERPRINT}" --armor --detach-sign \
               --output "${signature}" "${artifact}"
-            GNUPGHOME="${LINUX_VERIFICATION_GNUPGHOME}" gpg --batch --verify "${signature}" "${artifact}"
+            GNUPGHOME="${LINUX_VERIFICATION_GNUPGHOME}" gpg --quiet --batch --trust-model always --verify "${signature}" "${artifact}"
           done
+
+      - name: Stage public APT installer assets
+        run: |
+          set -euo pipefail
+
+          cp dist/electrobun/artifacts/install-apt-repo.sh \
+            dist/electrobun/apt-pages/install-apt-repo.sh
+          cp dist/electrobun/artifacts/install-apt-repo.sh.asc \
+            dist/electrobun/apt-pages/install-apt-repo.sh.asc
+          cp dist/electrobun/artifacts/csv-anonymizer-repository-setup_1.0_all.deb \
+            dist/electrobun/apt-pages/apt/csv-anonymizer-repository-setup_1.0_all.deb
+          cp dist/electrobun/artifacts/csv-anonymizer-repository-setup_1.0_all.deb.sha256 \
+            dist/electrobun/apt-pages/apt/csv-anonymizer-repository-setup_1.0_all.deb.sha256
+          cp dist/electrobun/artifacts/csv-anonymizer-repository-setup_1.0_all.deb.sha256.asc \
+            dist/electrobun/apt-pages/apt/csv-anonymizer-repository-setup_1.0_all.deb.sha256.asc
+          sh -n dist/electrobun/apt-pages/install-apt-repo.sh
 
       - name: Upload Linux release assets
         uses: softprops/action-gh-release@v3

@@ -199,7 +199,7 @@ jobs:
             gpg --batch --yes --pinentry-mode loopback --passphrase-file "${passphrase_file}" \
               --local-user "${expected_fingerprint}" --armor --detach-sign \
               --output "${signature}" "${artifact}"
-            GNUPGHOME="${verification_home}" gpg --batch --verify "${signature}" "${artifact}"
+            GNUPGHOME="${verification_home}" gpg --quiet --batch --trust-model always --verify "${signature}" "${artifact}"
           done
 
       - name: Upload reusable Linux Electrobun artifact

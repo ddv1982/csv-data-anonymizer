@@ -82,10 +82,10 @@ The active Electrobun release path publishes Linux `.tar.zst`, Electrobun setup 
 Debian/Ubuntu users can enable the signed APT repository once:
 
 ```bash
-bash <(curl -fsSL https://github.com/ddv1982/csv-data-anonymizer/releases/latest/download/install-apt-repo.sh)
+bash <(curl -fsSL https://ddv1982.github.io/csv-data-anonymizer/install-apt-repo.sh)
 ```
 
-The setup script downloads the repository setup package to a temporary file, verifies it against a GPG-signed SHA256 sidecar from the release, installs the CSV Anonymizer archive keyring and APT source configuration, then removes the temporary files.
+The setup script downloads the repository setup package to a temporary file, verifies it against a GPG-signed SHA256 sidecar from GitHub Pages, installs the CSV Anonymizer archive keyring and APT source configuration, then removes the temporary files.
 
 Refresh APT metadata:
 
