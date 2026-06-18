@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.14 - 2026-06-18
+
+- Supersede v1.0.13 with RPM metadata validation that can extract Tauri RPM payloads through `bsdtar` when `rpm2cpio` cannot.
+- Install `libarchive-tools` in Linux packaging workflows so Debian/RPM metadata validation keeps inspecting package contents.
+- Keep the v1.0.13 Linux package identity fix for `csv-anonymizer.desktop`.
+
 ## v1.0.13 - 2026-06-18
 
 - Supersede v1.0.12 with Linux Tauri packages whose installed desktop file is `csv-anonymizer.desktop`.

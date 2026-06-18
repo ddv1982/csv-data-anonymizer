@@ -201,6 +201,7 @@ jobs:
             zstd \
             rpm \
             rpm2cpio \
+            libarchive-tools \
             desktop-file-utils \
             appstream
 
