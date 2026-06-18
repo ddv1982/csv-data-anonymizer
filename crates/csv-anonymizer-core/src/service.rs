@@ -37,14 +37,38 @@ impl AnonymizerService {
         file_path: impl AsRef<Path>,
         sample_rows: usize,
     ) -> Result<HeadersData> {
+        self.analyze_csv_with_options(file_path, sample_rows, true)
+    }
+
+    pub fn analyze_csv_sampled(
+        &self,
+        file_path: impl AsRef<Path>,
+        sample_rows: usize,
+    ) -> Result<HeadersData> {
+        self.analyze_csv_with_options(file_path, sample_rows, false)
+    }
+
+    fn analyze_csv_with_options(
+        &self,
+        file_path: impl AsRef<Path>,
+        sample_rows: usize,
+        count_all_rows: bool,
+    ) -> Result<HeadersData> {
         let file_path = normalize_path(file_path.as_ref())?;
         let sample = read_sample(&file_path, sample_rows.max(1))?;
         let metadata = build_column_metadata(&sample.headers, &sample.rows);
-        let row_count = count_csv_data_rows(&file_path).unwrap_or(sample.rows.len());
+        let counted_rows = if count_all_rows {
+            count_csv_data_rows(&file_path).ok()
+        } else {
+            None
+        };
+        let row_count = counted_rows.unwrap_or(sample.rows.len());
+        let row_count_is_complete = counted_rows.is_some() || sample.is_complete;
 
         Ok(HeadersData {
             file_path: file_path.clone(),
             row_count,
+            row_count_is_complete,
             default_output_path: generate_default_output_path(&file_path),
             columns: metadata,
         })
@@ -71,6 +95,11 @@ impl AnonymizerService {
             .collect();
 
         Ok(PreviewData { previews })
+    }
+
+    pub fn count_csv_rows(&self, file_path: impl AsRef<Path>) -> Result<usize> {
+        let file_path = normalize_path(file_path.as_ref())?;
+        count_csv_data_rows(&file_path)
     }
 
     pub fn anonymize_csv(&self, input: AnonymizeParams) -> Result<AnonymizeData> {
@@ -231,12 +260,28 @@ mod tests {
         let result = service.analyze_csv(fixture("sample.csv")).unwrap();
 
         assert_eq!(result.row_count, 5);
+        assert!(result.row_count_is_complete);
         assert!(
             result
                 .default_output_path
                 .ends_with("sample_anonymized.csv")
         );
         assert_eq!(result.columns[1].name, "email");
+    }
+
+    #[test]
+    fn sampled_analysis_defers_full_row_count() {
+        let service = AnonymizerService::new("test-version");
+        let result = service
+            .analyze_csv_sampled(fixture("large.csv"), 25)
+            .unwrap();
+
+        assert_eq!(result.row_count, 25);
+        assert!(!result.row_count_is_complete);
+        assert_eq!(
+            service.count_csv_rows(fixture("large.csv")).unwrap(),
+            10_500
+        );
     }
 
     #[test]

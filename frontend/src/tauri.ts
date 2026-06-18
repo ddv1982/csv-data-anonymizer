@@ -9,8 +9,8 @@ export function saveSettings(settings: AppSettings): Promise<void> {
   return invoke('save_settings', { settings })
 }
 
-export function pickInputCsv(): Promise<string | null> {
-  return invoke('pick_input_csv')
+export function pickInputCsv(initialDirectory: string | null): Promise<string | null> {
+  return invoke('pick_input_csv', { initialDirectory })
 }
 
 export function pickOutputCsv(suggestedOutputPath: string | null): Promise<string | null> {
@@ -23,6 +23,10 @@ export function analyzeCsv(
   outputSuffix: string,
 ): Promise<AnalyzeResponse> {
   return invoke('analyze_csv', { filePath, sampleRowCount, outputSuffix })
+}
+
+export function countCsvRows(filePath: string): Promise<number> {
+  return invoke('count_csv_rows', { filePath })
 }
 
 export function previewAnonymization(

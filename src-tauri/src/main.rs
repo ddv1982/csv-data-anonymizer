@@ -2,8 +2,8 @@ mod commands;
 mod settings;
 
 use commands::{
-    analyze_csv, anonymize_csv, load_settings, open_output_location, pick_input_csv,
-    pick_output_csv, preview_anonymization, save_settings,
+    analyze_csv, anonymize_csv, count_csv_rows, load_settings, open_output_location,
+    pick_input_csv, pick_output_csv, preview_anonymization, save_settings,
 };
 
 fn main() {
@@ -15,6 +15,7 @@ fn main() {
             pick_input_csv,
             pick_output_csv,
             analyze_csv,
+            count_csv_rows,
             preview_anonymization,
             anonymize_csv,
             open_output_location,

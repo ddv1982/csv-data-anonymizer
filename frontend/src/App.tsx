@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   analyzeCsv,
   anonymizeCsv,
+  countCsvRows,
   loadSettings,
   openOutputLocation,
   pickInputCsv,
@@ -37,7 +38,7 @@ const defaultSettings: AppSettings = {
   lastOutputDirectory: null,
 }
 
-type BusyState = 'idle' | 'loading' | 'preview' | 'running'
+type BusyState = 'idle' | 'picking' | 'loading' | 'preview' | 'running'
 
 function App() {
   const [settings, setSettings] = useState<AppSettings>(defaultSettings)
@@ -57,12 +58,6 @@ function App() {
       .then((loaded) => {
         if (!isMounted) return
         setSettings(loaded)
-        if (loaded.lastInputDirectory) {
-          setInputPath(loaded.lastInputDirectory)
-        }
-        if (loaded.lastOutputDirectory) {
-          setOutputPath(loaded.lastOutputDirectory)
-        }
       })
       .catch((caught: unknown) => {
         if (isMounted) {
@@ -81,7 +76,7 @@ function App() {
   }, [headers, selectedColumns])
 
   const canPreview = Boolean(headers && inputPath && selectedColumns.length > 0)
-  const canRun = Boolean(canPreview && outputPath && busy !== 'running')
+  const canRun = Boolean(canPreview && outputPath && busy === 'idle')
 
   async function persistSettings(next: AppSettings) {
     setSettings(next)
@@ -97,10 +92,21 @@ function App() {
   }
 
   async function handlePickInput() {
+    if (busy !== 'idle') {
+      return
+    }
+
     setError(null)
-    const picked = await pickInputCsv()
-    if (picked) {
-      await loadCsv(picked)
+    setBusy('picking')
+    try {
+      const picked = await pickInputCsv(settings.rememberLastPaths ? settings.lastInputDirectory : null)
+      if (picked) {
+        await loadCsv(picked)
+      }
+    } catch (caught) {
+      setError(messageFrom(caught))
+    } finally {
+      setBusy('idle')
     }
   }
 
@@ -144,6 +150,10 @@ function App() {
       if (response.selectedColumns.length > 0) {
         await previewCsv(response.headers.filePath, response.selectedColumns)
       }
+
+      if (!response.headers.rowCountIsComplete) {
+        void refreshExactRowCount(response.headers.filePath)
+      }
     } catch (caught) {
       resetData()
       setError(messageFrom(caught))
@@ -154,7 +164,9 @@ function App() {
 
   async function handlePickOutput() {
     setError(null)
-    const picked = await pickOutputCsv(outputPath || null)
+    const picked = await pickOutputCsv(
+      outputPath || (settings.rememberLastPaths ? settings.lastOutputDirectory : null),
+    )
     if (picked) {
       setOutputPath(picked)
       setResult(null)
@@ -186,6 +198,19 @@ function App() {
       setError(messageFrom(caught))
     } finally {
       setBusy('idle')
+    }
+  }
+
+  async function refreshExactRowCount(path: string) {
+    try {
+      const rowCount = await countCsvRows(path)
+      setHeaders((current) =>
+        current?.filePath === path ? { ...current, rowCount, rowCountIsComplete: true } : current,
+      )
+    } catch {
+      setHeaders((current) =>
+        current?.filePath === path ? { ...current, rowCountIsComplete: false } : current,
+      )
     }
   }
 
@@ -253,7 +278,7 @@ function App() {
           <img src="/icon.png" alt="" className="app-icon" />
           <div>
             <h1>CSV Anonymizer</h1>
-            <p>{headers ? `${headers.rowCount.toLocaleString()} rows loaded` : 'Local CSV privacy workflow'}</p>
+            <p>{headers ? `${formatRowCount(headers)} loaded` : 'Local CSV privacy workflow'}</p>
           </div>
         </div>
         <div className="header-actions">
@@ -273,6 +298,7 @@ function App() {
               <span className="eyebrow">Files</span>
               <h2>Input and output</h2>
             </div>
+            {busy === 'picking' ? <SpinnerLabel label="Opening" /> : null}
             {busy === 'loading' ? <SpinnerLabel label="Reading" /> : null}
           </div>
 
@@ -289,13 +315,24 @@ function App() {
                 }}
                 placeholder="Select or paste a CSV path"
               />
-              <button type="button" className="btn icon" onClick={handlePickInput} title="Choose CSV file">
-                <FileUp size={18} aria-hidden="true" />
-                Open
+              <button
+                type="button"
+                className="btn icon"
+                onClick={handlePickInput}
+                disabled={busy !== 'idle'}
+                title="Choose CSV file"
+              >
+                {busy === 'picking' ? <Loader2 className="spin" size={18} aria-hidden="true" /> : <FileUp size={18} aria-hidden="true" />}
+                {busy === 'picking' ? 'Opening' : 'Open'}
               </button>
-              <button type="button" className="btn primary" onClick={() => void loadCsv()}>
-                <RefreshCw size={18} aria-hidden="true" />
-                Load
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => void loadCsv()}
+                disabled={busy !== 'idle'}
+              >
+                {busy === 'loading' ? <Loader2 className="spin" size={18} aria-hidden="true" /> : <RefreshCw size={18} aria-hidden="true" />}
+                {busy === 'loading' ? 'Loading' : 'Load'}
               </button>
             </div>
           </label>
@@ -562,6 +599,11 @@ function clampNumber(value: number, min: number, max: number) {
 function directoryOf(path: string) {
   const slashIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
   return slashIndex > 0 ? path.slice(0, slashIndex) : null
+}
+
+function formatRowCount(headers: { rowCount: number; rowCountIsComplete: boolean }) {
+  const rows = headers.rowCount.toLocaleString()
+  return headers.rowCountIsComplete ? `${rows} rows` : `${rows}+ sampled rows`
 }
 
 function formatToken(value: string) {

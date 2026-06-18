@@ -43,6 +43,7 @@ export interface ColumnMetadata {
 export interface HeadersData {
   filePath: string
   rowCount: number
+  rowCountIsComplete: boolean
   defaultOutputPath: string
   columns: ColumnMetadata[]
 }

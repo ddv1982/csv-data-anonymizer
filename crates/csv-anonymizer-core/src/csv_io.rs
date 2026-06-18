@@ -28,6 +28,8 @@ pub fn read_sample(file_path: &Path, row_count: usize) -> Result<ParsedSample> {
     let mut headers: Vec<String> = Vec::new();
     let mut rows: Vec<Vec<String>> = Vec::new();
 
+    let mut is_complete = true;
+
     for result in reader.records() {
         let record = result.map_err(csv_error)?;
         let mut row = record_to_vec(&record);
@@ -50,10 +52,11 @@ pub fn read_sample(file_path: &Path, row_count: usize) -> Result<ParsedSample> {
             continue;
         }
 
-        rows.push(row);
         if rows.len() >= row_count {
+            is_complete = false;
             break;
         }
+        rows.push(row);
     }
 
     if headers.is_empty() {
@@ -63,7 +66,11 @@ pub fn read_sample(file_path: &Path, row_count: usize) -> Result<ParsedSample> {
         ));
     }
 
-    Ok(ParsedSample { headers, rows })
+    Ok(ParsedSample {
+        headers,
+        rows,
+        is_complete,
+    })
 }
 
 pub fn count_csv_data_rows(file_path: &Path) -> Result<usize> {
