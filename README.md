@@ -57,13 +57,13 @@ App settings are stored as versioned JSON in the platform user config directory.
 ## Packaging
 
 ```bash
-node scripts/package-rust-macos.mjs
-node scripts/package-rust-linux.mjs
+cd src-tauri && cargo tauri build --bundles app
+node scripts/package-tauri-linux.mjs
 ```
 
-Rust artifacts are written to `dist/rust/artifacts/`.
+Release packaging stages uploadable artifacts in `dist/rust/artifacts/`. Direct Tauri builds write platform bundles under `target/release/bundle/`.
 
-On Linux, the packaging script creates a portable `.tar.gz`, `.deb`, `.rpm`, and AppImage from the native Rust binary.
+On Linux, the packaging script creates `.deb`, `.rpm`, and AppImage installers from the Tauri desktop app.
 
 Release steps, Linux package signing, APT publishing, and macOS notarization prerequisites are documented in `docs/releasing.md`.
 
@@ -73,11 +73,11 @@ Desktop builds are published on [GitHub Releases](https://github.com/ddv1982/csv
 
 ### macOS
 
-Download the `.dmg` for your Mac from the latest release. Use the `arm64` build for Apple Silicon Macs and the `x64` build for Intel Macs, then drag CSV Anonymizer into Applications.
+Download the `.dmg` for your Mac from the latest release. Use the `aarch64` build for Apple Silicon Macs and the `x64` build for Intel Macs, then drag CSV Anonymizer into Applications.
 
 ### Linux
 
-Linux releases publish a portable `.tar.gz`, `.deb`, `.rpm`, AppImage, signed APT repository, APT repository setup `.deb`, `install-apt-repo.sh`, keyring, checksum sidecars, and detached signatures.
+Linux releases publish `.deb`, `.rpm`, AppImage, a signed APT repository, the APT repository setup `.deb`, its signed checksum, and `install-apt-repo.sh`.
 
 Debian/Ubuntu users can enable the signed APT repository once:
 
