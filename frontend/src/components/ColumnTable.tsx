@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronUp } from 'lucide-react'
-import type { ColumnMetadata } from '../types'
+import type { AnonymizationStrategy, ColumnControl, ColumnMetadata, DataType } from '../types'
 import { formatToken } from '../utils/format'
 import { hasSampleData, isSelectableColumn, maxVisibleColumns } from '../utils/columns'
 import { RiskBadge } from './RiskBadge'
@@ -12,6 +12,9 @@ export function ColumnTable({
   showAllColumns,
   hiddenColumnCount,
   onToggleColumn,
+  controls,
+  onTypeChange,
+  onStrategyChange,
   onToggleShowAll,
 }: {
   columns: ColumnMetadata[]
@@ -21,6 +24,9 @@ export function ColumnTable({
   showAllColumns: boolean
   hiddenColumnCount: number
   onToggleColumn: (column: ColumnMetadata) => void
+  controls: Record<number, ColumnControl>
+  onTypeChange: (column: ColumnMetadata, value: DataType | 'auto') => void
+  onStrategyChange: (column: ColumnMetadata, value: AnonymizationStrategy) => void
   onToggleShowAll: () => void
 }) {
   return (
@@ -32,6 +38,8 @@ export function ColumnTable({
             <th className="index-column">#</th>
             <th>Column Name</th>
             <th>Type</th>
+            <th>Type Override</th>
+            <th>Strategy</th>
             <th>Risk</th>
           </tr>
         </thead>
@@ -39,7 +47,7 @@ export function ColumnTable({
           {loading ? <ColumnSkeletonRows /> : null}
           {!loading && allColumnCount === 0 ? (
             <tr>
-              <td colSpan={5} className="empty-table-cell">
+              <td colSpan={7} className="empty-table-cell">
                 No columns to display
               </td>
             </tr>
@@ -48,6 +56,7 @@ export function ColumnTable({
             ? columns.map((column) => {
                 const selectable = isSelectableColumn(column)
                 const sampleDataAvailable = hasSampleData(column)
+                const control = controls[column.index]
                 return (
                   <tr
                     key={`${column.index}-${column.name}`}
@@ -81,6 +90,37 @@ export function ColumnTable({
                     </td>
                     <td className="muted-text">{formatToken(column.detectedType)}</td>
                     <td>
+                      <select
+                        value={control?.typeOverride ?? 'auto'}
+                        disabled={!selectable || loading}
+                        aria-label={`Type override for ${column.name}`}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={(event) => onTypeChange(column, event.target.value as DataType | 'auto')}
+                      >
+                        <option value="auto">Auto</option>
+                        {dataTypes.map((dataType) => (
+                          <option key={dataType} value={dataType}>
+                            {formatToken(dataType)}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <select
+                        value={control?.strategy ?? column.strategy ?? 'auto'}
+                        disabled={!selectable || loading}
+                        aria-label={`Strategy for ${column.name}`}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={(event) => onStrategyChange(column, event.target.value as AnonymizationStrategy)}
+                      >
+                        {strategies.map((strategy) => (
+                          <option key={strategy} value={strategy}>
+                            {formatToken(strategy)}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
                       <RiskBadge risk={column.piiRisk} />
                     </td>
                   </tr>
@@ -89,7 +129,7 @@ export function ColumnTable({
             : null}
           {!loading && allColumnCount > maxVisibleColumns ? (
             <tr>
-              <td colSpan={5} className="show-more-cell">
+              <td colSpan={7} className="show-more-cell">
                 <button type="button" className="button button-ghost button-sm" onClick={onToggleShowAll}>
                   {showAllColumns ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
                   {showAllColumns ? 'Show Less' : `Show ${hiddenColumnCount} More Columns`}
@@ -102,6 +142,33 @@ export function ColumnTable({
     </div>
   )
 }
+
+const dataTypes: DataType[] = [
+  'email',
+  'uuid',
+  'timestamp',
+  'numericId',
+  'numericValue',
+  'postalCode',
+  'address',
+  'ipAddress',
+  'url',
+  'macAddress',
+  'taxId',
+  'boolean',
+  'currency',
+  'percentage',
+  'countryCode',
+  'phone',
+  'firstName',
+  'lastName',
+  'fullName',
+  'enum',
+  'string',
+  'unknown',
+]
+
+const strategies: AnonymizationStrategy[] = ['auto', 'pseudonymize', 'mask', 'passThrough']
 
 function ColumnSkeletonRows() {
   return (

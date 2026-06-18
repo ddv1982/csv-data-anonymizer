@@ -76,6 +76,7 @@ class PackageReport:
     release_date: str | None = None
     desktop_fields: dict[str, str] = field(default_factory=dict)
     detected_desktop_ids: list[str] = field(default_factory=list)
+    icon_paths: list[str] = field(default_factory=list)
     rpm_header_fields: dict[str, str] = field(default_factory=dict)
     appstream_validation: ToolResult | None = None
     desktop_validation: ToolResult | None = None
@@ -100,6 +101,7 @@ class PackageReport:
             "release_date": self.release_date,
             "desktop_fields": self.desktop_fields,
             "detected_desktop_ids": self.detected_desktop_ids,
+            "icon_paths": self.icon_paths,
             "rpm_header_fields": self.rpm_header_fields,
             "appstream_validation": self.appstream_validation.to_json() if self.appstream_validation else None,
             "desktop_validation": self.desktop_validation.to_json() if self.desktop_validation else None,
@@ -375,6 +377,29 @@ def exec_binary(exec_field: str | None) -> str | None:
     return pathlib.PurePosixPath(binary).name
 
 
+def installed_icon_paths(root: pathlib.Path, icon_name: str | None) -> list[str]:
+    if not icon_name or "/" in icon_name:
+        return []
+    candidates = []
+    for path in (root / "usr/share/icons/hicolor").glob(f"*/apps/{icon_name}.*"):
+        if path.is_file():
+            candidates.append(path)
+    pixmap = root / "usr/share/pixmaps" / f"{icon_name}.png"
+    if pixmap.is_file():
+        candidates.append(pixmap)
+    return sorted(f"/{path.relative_to(root).as_posix()}" for path in candidates)
+
+
+def require_installed_icon(errors: list[str], root: pathlib.Path, icon_name: str | None) -> list[str]:
+    paths = installed_icon_paths(root, icon_name)
+    if icon_name and not paths:
+        errors.append(
+            "desktop Icon does not resolve to an installed hicolor/pixmaps icon: "
+            f"{icon_name!r}"
+        )
+    return paths
+
+
 def require_equal(errors: list[str], label: str, actual: str | None, expected: str) -> None:
     if actual != expected:
         errors.append(f"{label} mismatch: expected {expected!r}, got {actual!r}")
@@ -454,6 +479,8 @@ def validate_package(
                 report.errors.append(f"desktop file {report.desktop_path} is missing Name")
             if report.desktop_fields.get("Icon") is None:
                 report.errors.append(f"desktop file {report.desktop_path} is missing Icon")
+            else:
+                report.icon_paths = require_installed_icon(report.errors, extract_root, report.desktop_fields.get("Icon"))
             if report.desktop_fields.get("NoDisplay", "").strip().lower() == "true":
                 report.errors.append(f"desktop file {report.desktop_path} must be visible")
 
@@ -530,6 +557,8 @@ def print_summary(report: PackageReport) -> None:
             f"Exec={report.desktop_fields.get('Exec')!r} "
             f"Icon={report.desktop_fields.get('Icon')!r}"
         )
+    if report.icon_paths:
+        print(f"  icons: {', '.join(report.icon_paths)}")
     if report.rpm_header_fields:
         print(
             "  RPM header: "

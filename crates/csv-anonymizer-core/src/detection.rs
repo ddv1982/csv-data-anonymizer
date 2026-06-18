@@ -27,6 +27,18 @@ pub fn detect_column_type_with_name(column_name: &str, values: &[String]) -> Det
         };
     }
 
+    if let Some(result) = detect_header_postal_code(column_name, &non_empty_values, values.len()) {
+        return result;
+    }
+
+    if let Some(result) = detect_header_address(column_name, &non_empty_values, values.len()) {
+        return result;
+    }
+
+    if let Some(result) = detect_header_tax_id(column_name, &non_empty_values, values.len()) {
+        return result;
+    }
+
     for (data_type, matches) in detection_priority() {
         let match_count = values
             .iter()
@@ -42,6 +54,14 @@ pub fn detect_column_type_with_name(column_name: &str, values: &[String]) -> Det
                 total_samples: values.len(),
             };
         }
+    }
+
+    if let Some(result) = detect_header_numeric_id(column_name, &non_empty_values, values.len()) {
+        return result;
+    }
+
+    if let Some(result) = detect_numeric_value_type(values, total_non_empty) {
+        return result;
     }
 
     if let Some(result) = detect_name_type(column_name, &non_empty_values, values.len()) {
@@ -67,11 +87,24 @@ pub fn detect_column_type_with_name(column_name: &str, values: &[String]) -> Det
 
 pub fn classify_pii_risk(data_type: DataType) -> PiiRisk {
     match data_type {
-        DataType::Email | DataType::Phone | DataType::FullName => PiiRisk::High,
-        DataType::FirstName | DataType::LastName | DataType::Uuid | DataType::NumericId => {
-            PiiRisk::Medium
-        }
+        DataType::Email
+        | DataType::Phone
+        | DataType::FullName
+        | DataType::Address
+        | DataType::TaxId => PiiRisk::High,
+        DataType::FirstName
+        | DataType::LastName
+        | DataType::Uuid
+        | DataType::NumericId
+        | DataType::PostalCode
+        | DataType::IpAddress
+        | DataType::Url
+        | DataType::MacAddress => PiiRisk::Medium,
         DataType::Timestamp
+        | DataType::NumericValue
+        | DataType::Boolean
+        | DataType::Currency
+        | DataType::Percentage
         | DataType::CountryCode
         | DataType::Enum
         | DataType::String
@@ -130,12 +163,19 @@ fn detect_enum_type(non_empty_values: &[&String]) -> bool {
 
 type DetectionPredicate = fn(&str) -> bool;
 
-fn detection_priority() -> [(DataType, DetectionPredicate); 6] {
+fn detection_priority() -> [(DataType, DetectionPredicate); 13] {
     [
         (DataType::Email, is_email),
         (DataType::Uuid, is_uuid),
         (DataType::Timestamp, is_timestamp),
         (DataType::Phone, is_phone),
+        (DataType::IpAddress, is_ip_address),
+        (DataType::MacAddress, is_mac_address),
+        (DataType::Url, is_url),
+        (DataType::TaxId, is_tax_id),
+        (DataType::Boolean, is_boolean),
+        (DataType::Currency, is_currency),
+        (DataType::Percentage, is_percentage),
         (DataType::NumericId, is_numeric_id),
         (DataType::CountryCode, is_country_code),
     ]
@@ -178,6 +218,52 @@ fn is_numeric_id(value: &str) -> bool {
     numeric_id_pattern().is_match(value)
 }
 
+fn is_unsigned_integer(value: &str) -> bool {
+    unsigned_integer_pattern().is_match(value)
+}
+
+fn is_numeric_value(value: &str) -> bool {
+    numeric_value_pattern().is_match(value)
+}
+
+fn is_ip_address(value: &str) -> bool {
+    let parts: Vec<&str> = value.split('.').collect();
+    parts.len() == 4
+        && parts.iter().all(|part| {
+            !part.is_empty()
+                && part.len() <= 3
+                && part.chars().all(|character| character.is_ascii_digit())
+                && part.parse::<u8>().is_ok()
+        })
+}
+
+fn is_mac_address(value: &str) -> bool {
+    mac_address_pattern().is_match(value)
+}
+
+fn is_url(value: &str) -> bool {
+    url_pattern().is_match(value)
+}
+
+fn is_tax_id(value: &str) -> bool {
+    tax_id_pattern().is_match(value)
+}
+
+fn is_boolean(value: &str) -> bool {
+    matches!(
+        value.to_ascii_lowercase().as_str(),
+        "true" | "false" | "yes" | "no"
+    )
+}
+
+fn is_currency(value: &str) -> bool {
+    currency_pattern().is_match(value)
+}
+
+fn is_percentage(value: &str) -> bool {
+    percentage_pattern().is_match(value)
+}
+
 fn is_country_code(value: &str) -> bool {
     country_code_pattern().is_match(value)
 }
@@ -211,9 +297,288 @@ fn numeric_id_pattern() -> &'static Regex {
     PATTERN.get_or_init(|| Regex::new(r"^\d{4,}$").unwrap())
 }
 
+fn unsigned_integer_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| Regex::new(r"^\d+$").unwrap())
+}
+
+fn numeric_value_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| Regex::new(r"^[+-]?(?:\d+|\d+\.\d+|\.\d+)$").unwrap())
+}
+
+fn mac_address_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| Regex::new(r"^(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$").unwrap())
+}
+
+fn url_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| Regex::new(r"^(https?://|www\.)[^\s/$.?#].[^\s]*$").unwrap())
+}
+
+fn tax_id_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| Regex::new(r"^(\d{3}-\d{2}-\d{4}|\d{2}-\d{7})$").unwrap())
+}
+
+fn currency_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| Regex::new(r"^\$\s?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{2})?$").unwrap())
+}
+
+fn percentage_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| Regex::new(r"^[+-]?\d+(?:\.\d+)?%$").unwrap())
+}
+
 fn country_code_pattern() -> &'static Regex {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
     PATTERN.get_or_init(|| Regex::new(r"^[A-Z]{2}$").unwrap())
+}
+
+fn detect_header_numeric_id(
+    column_name: &str,
+    non_empty_values: &[&String],
+    total_samples: usize,
+) -> Option<DetectionResult> {
+    if !infer_numeric_id_from_header(column_name) {
+        return None;
+    }
+
+    let match_count = non_empty_values
+        .iter()
+        .filter(|value| is_unsigned_integer(value))
+        .count();
+    let confidence = calculate_confidence(match_count, non_empty_values.len());
+
+    if confidence == Confidence::Low {
+        return None;
+    }
+
+    Some(DetectionResult {
+        data_type: DataType::NumericId,
+        confidence,
+        sample_matches: match_count,
+        total_samples,
+    })
+}
+
+fn detect_numeric_value_type(values: &[String], total_non_empty: usize) -> Option<DetectionResult> {
+    let match_count = values
+        .iter()
+        .filter(|value| !is_empty_value(value) && is_numeric_value(value))
+        .count();
+    let confidence = calculate_confidence(match_count, total_non_empty);
+
+    if confidence == Confidence::Low {
+        return None;
+    }
+
+    Some(DetectionResult {
+        data_type: DataType::NumericValue,
+        confidence,
+        sample_matches: match_count,
+        total_samples: values.len(),
+    })
+}
+
+fn infer_numeric_id_from_header(column_name: &str) -> bool {
+    let compact: String = column_name
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    let tokens: HashSet<String> = column_name
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .map(|token| token.to_ascii_lowercase())
+        .collect();
+
+    matches!(
+        compact.as_str(),
+        "id" | "userid"
+            | "usernumber"
+            | "customerid"
+            | "customernumber"
+            | "clientid"
+            | "clientnumber"
+            | "accountid"
+            | "accountnumber"
+            | "orderid"
+            | "ordernumber"
+            | "code"
+    ) || tokens.contains("id")
+        || tokens.contains("identifier")
+        || tokens.contains("code")
+        || tokens.contains("account") && tokens.contains("number")
+        || tokens.contains("customer") && tokens.contains("number")
+        || tokens.contains("client") && tokens.contains("number")
+        || tokens.contains("order") && tokens.contains("number")
+}
+
+fn detect_header_postal_code(
+    column_name: &str,
+    non_empty_values: &[&String],
+    total_samples: usize,
+) -> Option<DetectionResult> {
+    if !infer_postal_code_from_header(column_name) {
+        return None;
+    }
+
+    let match_count = non_empty_values
+        .iter()
+        .filter(|value| is_postal_code(value))
+        .count();
+    let confidence = calculate_confidence(match_count, non_empty_values.len());
+    if confidence == Confidence::Low {
+        return None;
+    }
+
+    Some(DetectionResult {
+        data_type: DataType::PostalCode,
+        confidence,
+        sample_matches: match_count,
+        total_samples,
+    })
+}
+
+fn detect_header_address(
+    column_name: &str,
+    non_empty_values: &[&String],
+    total_samples: usize,
+) -> Option<DetectionResult> {
+    if !infer_address_from_header(column_name) {
+        return None;
+    }
+
+    let match_count = non_empty_values
+        .iter()
+        .filter(|value| is_plausible_address(value))
+        .count();
+    let confidence = calculate_confidence(match_count, non_empty_values.len());
+    if confidence == Confidence::Low {
+        return None;
+    }
+
+    Some(DetectionResult {
+        data_type: DataType::Address,
+        confidence,
+        sample_matches: match_count,
+        total_samples,
+    })
+}
+
+fn detect_header_tax_id(
+    column_name: &str,
+    non_empty_values: &[&String],
+    total_samples: usize,
+) -> Option<DetectionResult> {
+    if !infer_tax_id_from_header(column_name) {
+        return None;
+    }
+
+    let match_count = non_empty_values
+        .iter()
+        .filter(|value| is_tax_id(value) || is_unformatted_tax_id(value))
+        .count();
+    let confidence = calculate_confidence(match_count, non_empty_values.len());
+    if confidence == Confidence::Low {
+        return None;
+    }
+
+    Some(DetectionResult {
+        data_type: DataType::TaxId,
+        confidence,
+        sample_matches: match_count,
+        total_samples,
+    })
+}
+
+fn infer_postal_code_from_header(column_name: &str) -> bool {
+    let compact = compact_header(column_name);
+    let tokens = header_tokens(column_name);
+
+    matches!(
+        compact.as_str(),
+        "zip" | "zipcode" | "postalcode" | "postcode"
+    ) || tokens.contains("zip")
+        || tokens.contains("postal") && tokens.contains("code")
+        || tokens.contains("post") && tokens.contains("code")
+}
+
+fn infer_address_from_header(column_name: &str) -> bool {
+    let compact = compact_header(column_name);
+    let tokens = header_tokens(column_name);
+
+    matches!(
+        compact.as_str(),
+        "address" | "streetaddress" | "mailingaddress"
+    ) || tokens.contains("address")
+        || tokens.contains("street")
+}
+
+fn infer_tax_id_from_header(column_name: &str) -> bool {
+    let compact = compact_header(column_name);
+    let tokens = header_tokens(column_name);
+
+    matches!(compact.as_str(), "ssn" | "taxid" | "taxnumber" | "ein")
+        || tokens.contains("ssn")
+        || tokens.contains("ein")
+        || tokens.contains("tax") && (tokens.contains("id") || tokens.contains("number"))
+}
+
+fn compact_header(column_name: &str) -> String {
+    column_name
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+fn header_tokens(column_name: &str) -> HashSet<String> {
+    column_name
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .map(|token| token.to_ascii_lowercase())
+        .collect()
+}
+
+fn is_postal_code(value: &str) -> bool {
+    let trimmed = value.trim();
+    (3..=12).contains(&trimmed.len())
+        && trimmed.chars().any(|character| character.is_ascii_digit())
+        && trimmed
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, ' ' | '-'))
+}
+
+fn is_plausible_address(value: &str) -> bool {
+    let trimmed = value.trim().to_ascii_lowercase();
+    trimmed.chars().any(|character| character.is_ascii_digit())
+        && [
+            " st",
+            " street",
+            " ave",
+            " avenue",
+            " rd",
+            " road",
+            " blvd",
+            " boulevard",
+            " dr",
+            " drive",
+            " ln",
+            " lane",
+            " way",
+            " court",
+            " ct",
+        ]
+        .iter()
+        .any(|suffix| trimmed.contains(suffix))
+}
+
+fn is_unformatted_tax_id(value: &str) -> bool {
+    value.len() == 9 && value.chars().all(|character| character.is_ascii_digit())
 }
 
 fn detect_name_type(

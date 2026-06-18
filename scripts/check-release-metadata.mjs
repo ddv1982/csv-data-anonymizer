@@ -124,6 +124,16 @@ if (tauriConfig.identifier !== 'io.github.ddv1982.csv-data-anonymizer') {
   throw new Error(`src-tauri/tauri.conf.json identifier must stay io.github.ddv1982.csv-data-anonymizer, got ${tauriConfig.identifier}`);
 }
 
+const requiredLinuxIcons = [16, 32, 48, 64, 128, 256, 512, 1024].map(size => `../build/icons/${size}x${size}.png`);
+for (const icon of requiredLinuxIcons) {
+  if (!tauriConfig.bundle?.icon?.includes(icon)) {
+    throw new Error(`src-tauri/tauri.conf.json bundle.icon must include ${icon}`);
+  }
+  await readFile(icon.replace(/^\.\.\//, '')).catch(() => {
+    throw new Error(`required Linux icon file is missing or unreadable: ${icon}`);
+  });
+}
+
 if (packageJson.desktopName !== 'csv-anonymizer.desktop') {
   throw new Error(`package.json desktopName must stay csv-anonymizer.desktop, got ${packageJson.desktopName}`);
 }

@@ -10,7 +10,8 @@ pub mod types;
 pub use error::{AnonymizerError, Result};
 pub use service::AnonymizerService;
 pub use types::{
-    AnonymizeData, AnonymizeParams, ColumnMetadata, ColumnPreview, Confidence, DataType,
-    DetectionResult, EmptyFormat, HeadersData, ParsedSample, PiiRisk, PreviewData, PreviewParams,
-    ProcessControl, ProcessOptions, ProcessProgress, ProcessResult, SampleTransform,
+    AnonymizationStrategy, AnonymizeData, AnonymizeParams, ColumnControl, ColumnMetadata,
+    ColumnPreview, Confidence, DataType, DetectionResult, EmptyFormat, HeadersData, ParsedSample,
+    PiiRisk, PreviewData, PreviewParams, PreviewWarning, PrivacyReport, ProcessControl,
+    ProcessOptions, ProcessProgress, ProcessResult, SampleTransform, WarningSeverity,
 };

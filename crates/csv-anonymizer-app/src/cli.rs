@@ -175,6 +175,7 @@ pub(crate) fn run_cli(action: CliAction) -> Result<(), String> {
                 .preview_anonymization(PreviewParams {
                     file_path: input.clone(),
                     columns: columns.clone(),
+                    controls: vec![],
                     deterministic: true,
                     seed: "csv-anonymizer-smoke".to_string(),
                     sample_count: 2,
@@ -189,6 +190,7 @@ pub(crate) fn run_cli(action: CliAction) -> Result<(), String> {
                     file_path: input,
                     output_path: output,
                     columns,
+                    controls: vec![],
                     deterministic: true,
                     seed: "csv-anonymizer-smoke".to_string(),
                     force: true,
@@ -215,6 +217,7 @@ pub(crate) fn run_cli(action: CliAction) -> Result<(), String> {
                     file_path: input,
                     output_path: output,
                     columns,
+                    controls: vec![],
                     deterministic,
                     seed,
                     force,

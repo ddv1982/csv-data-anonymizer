@@ -4,7 +4,7 @@ Tauri desktop application for anonymizing CSV data locally while preserving file
 
 ## Features
 
-- Auto-detects column types such as email, UUID, timestamp, numeric ID, phone, and country codes.
+- Auto-detects column types such as email, UUID, timestamp, numeric values/IDs, phone, names, addresses, postal codes, IPs, URLs, MAC addresses, tax IDs, booleans, currency, percentages, and country codes.
 - Classifies PII risk and auto-selects high/medium risk columns.
 - Previews sample transformations before writing output.
 - Streams CSV processing so large files do not need to be loaded fully into memory.
@@ -55,15 +55,31 @@ App settings are stored as versioned JSON in the platform user config directory.
 
 ## Anonymization Strategies
 
+The app performs local masking and pseudonymization for selected CSV columns. It preserves useful file structure and some value formats, but it does not currently claim formal anonymization models such as k-anonymity, l-diversity, t-closeness, differential privacy, or synthetic data generation.
+
 | Data Type | Strategy | Format Preservation |
 |-----------|----------|---------------------|
 | Email | Fake local part | Domain preserved |
-| UUID | Deterministic hash | Valid UUID v4 format |
+| UUID | Hash/random UUID | Valid UUID v4 format |
 | Timestamp | Date offset | Precision preserved |
 | Numeric ID | Random/hash | Exact digit count preserved |
-| Phone | Generic replacement | Approximate format |
+| Numeric Value | Random/hash | Sign, integer width, decimal point, and decimal precision preserved |
+| Postal Code, Address, IP, URL, MAC, Tax ID | Generic replacement | Similar length, not format-specific yet |
+| Boolean, Currency, Percentage | Pass-through | Unchanged |
+| Phone | Digit replacement | Separators and digit count preserved |
+| First/Last/Full Name | Plausible replacement names | Name token count preserved for full names |
 | Country Code | Pass-through | Unchanged |
 | Enum | Pass-through | Unchanged |
+| String/Unknown | Generic replacement | Similar length, not semantic type |
+
+Current detection treats empty strings and case-insensitive `null` values as empty. General number-looking values are preserved as numeric shapes when selected, while integer columns inferred from headers containing terms such as `id`, `identifier`, `code`, `customer number`, or `account number` are treated as numeric IDs.
+
+Completed runs include a privacy report that counts direct identifiers, quasi-identifiers, pseudonymized columns, masked columns, generalized columns, and pass-through/no-op columns. Generalized columns currently report as zero because no generalization strategy is implemented yet. Treat the output as lower-risk transformed data, not as guaranteed anonymous data. Stronger privacy models remain roadmap items:
+
+- k-anonymity and l-diversity for grouped quasi-identifiers.
+- t-closeness for sensitive attribute distribution checks.
+- Differential privacy for aggregate releases, not raw row replacement.
+- Synthetic data generation for statistically similar replacement datasets.
 
 ## Packaging
 

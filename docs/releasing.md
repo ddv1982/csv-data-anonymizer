@@ -18,7 +18,7 @@ Validate metadata before tagging:
 node scripts/check-release-metadata.mjs --expected-tag v1.0.0
 ```
 
-The metadata check also gates the Linux Tauri package identity: `src-tauri/tauri.linux.conf.json` keeps the installed desktop file at `csv-anonymizer.desktop`, while `build/linux/csv-anonymizer.desktop.hbs` keeps the visible app name as CSV Anonymizer.
+The metadata check also gates the Linux Tauri package identity: `src-tauri/tauri.linux.conf.json` keeps the installed desktop file at `csv-anonymizer.desktop`, while `build/linux/csv-anonymizer.desktop.hbs` keeps the visible app name as CSV Anonymizer. `src-tauri/tauri.conf.json` must list every generated Linux PNG icon size from `build/icons/16x16.png` through `build/icons/1024x1024.png` so `.deb`/`.rpm` installers provide a desktop-resolvable hicolor icon.
 
 Then commit, tag, and push:
 
@@ -118,7 +118,7 @@ cd src-tauri
 CSV_ANONYMIZER_USE_PREBUILT_FRONTEND=1 cargo tauri build --bundles app
 ```
 
-On Linux, also validate package-manager artifacts:
+On Linux, also validate package-manager artifacts. The package metadata validator extracts each `.deb`/`.rpm`, reads the installed desktop file, and fails when `Icon=` does not resolve to an installed `/usr/share/icons/hicolor/*/apps/` or `/usr/share/pixmaps/` icon.
 
 ```bash
 node scripts/package-tauri-linux.mjs
