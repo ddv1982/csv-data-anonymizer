@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.19 - 2026-06-19
+
+- Improve name pseudonymization so generic `name` columns with single-token values use name-like replacements instead of generic alphanumeric strings.
+- Make full-name replacements compose consistent first/last token pseudonyms and avoid preserving original full-name tokens where the local replacement pool allows it.
+- Add a representative people-name CSV fixture and regression tests for name detection, preview output, token consistency, and replacement quality.
+
 ## v1.0.18 - 2026-06-19
 
 - Improve anonymization quality with numeric-shape-preserving values, expanded sensitive type detection, type-specific phone/name strategies, per-column type and strategy controls, preview warnings, and a privacy report that distinguishes masking/pseudonymization from stronger anonymization guarantees.

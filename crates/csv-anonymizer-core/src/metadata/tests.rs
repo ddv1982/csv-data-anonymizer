@@ -31,22 +31,26 @@ fn detects_name_types_from_header_context() {
         "first_name".to_string(),
         "last_name".to_string(),
         "full_name".to_string(),
+        "name".to_string(),
     ];
     let samples = vec![
         vec![
             "Alice".to_string(),
             "Smith".to_string(),
             "Alice Smith".to_string(),
+            "Alice".to_string(),
         ],
         vec![
             "Bob".to_string(),
             "Jones".to_string(),
             "Bob Jones".to_string(),
+            "Bob".to_string(),
         ],
         vec![
             "Carol".to_string(),
             "O'Neil".to_string(),
             "Carol O'Neil".to_string(),
+            "Carol".to_string(),
         ],
     ];
 
@@ -55,6 +59,7 @@ fn detects_name_types_from_header_context() {
     assert_eq!(metadata[0].detected_type, DataType::FirstName);
     assert_eq!(metadata[1].detected_type, DataType::LastName);
     assert_eq!(metadata[2].detected_type, DataType::FullName);
+    assert_eq!(metadata[3].detected_type, DataType::FirstName);
 }
 
 #[test]

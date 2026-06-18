@@ -317,6 +317,91 @@ fn preview_uses_type_specific_phone_and_name_strategies() {
 }
 
 #[test]
+fn people_names_fixture_previews_name_like_full_names() {
+    let service = AnonymizerService::new("test-version");
+
+    let preview = service
+        .preview_anonymization(PreviewParams {
+            file_path: fixture("people-names.csv"),
+            columns: vec![2],
+            controls: vec![],
+            deterministic: true,
+            seed: "people-name-quality-seed".to_string(),
+            sample_count: 5,
+        })
+        .unwrap();
+
+    assert_eq!(preview.previews[0].column_name, "full_name");
+    assert_eq!(preview.previews[0].samples.len(), 5);
+    for sample in &preview.previews[0].samples {
+        assert_ne!(sample.anonymized, sample.original);
+        assert_eq!(
+            sample.anonymized.split_whitespace().count(),
+            sample.original.split_whitespace().count()
+        );
+        assert!(
+            sample
+                .anonymized
+                .chars()
+                .all(|character| character.is_alphabetic() || character.is_whitespace())
+        );
+        assert!(
+            !sample
+                .anonymized
+                .chars()
+                .any(|character| character.is_ascii_digit() || matches!(character, '_' | '-'))
+        );
+    }
+}
+
+#[test]
+fn people_names_fixture_treats_single_token_name_column_as_name() {
+    let service = AnonymizerService::new("test-version");
+
+    let preview = service
+        .preview_anonymization(PreviewParams {
+            file_path: fixture("people-names.csv"),
+            columns: vec![0, 1, 2, 3],
+            controls: vec![],
+            deterministic: true,
+            seed: "people-name-quality-seed".to_string(),
+            sample_count: 5,
+        })
+        .unwrap();
+
+    assert_eq!(preview.previews[3].column_name, "name");
+
+    for row_index in 0..preview.previews[3].samples.len() {
+        let first = &preview.previews[0].samples[row_index].anonymized;
+        let last = &preview.previews[1].samples[row_index].anonymized;
+        let full = &preview.previews[2].samples[row_index].anonymized;
+        let name = &preview.previews[3].samples[row_index].anonymized;
+        let original_first = &preview.previews[0].samples[row_index].original;
+        let original_last = &preview.previews[1].samples[row_index].original;
+        let original_name = &preview.previews[3].samples[row_index].original;
+        let original_tokens: Vec<&str> = original_first
+            .split_whitespace()
+            .chain(original_last.split_whitespace())
+            .collect();
+
+        assert_eq!(name, first);
+        assert_eq!(full, &format!("{first} {last}"));
+        assert_ne!(name, original_name);
+        assert!(!full.split_whitespace().any(|token| {
+            original_tokens
+                .iter()
+                .any(|original| token.eq_ignore_ascii_case(original))
+        }));
+        assert!(name.chars().all(|character| character.is_alphabetic()));
+        assert!(
+            !name
+                .chars()
+                .any(|character| character.is_ascii_digit() || matches!(character, '_' | '-'))
+        );
+    }
+}
+
+#[test]
 fn preview_applies_per_column_type_and_strategy_controls() {
     let service = AnonymizerService::new("test-version");
     let temp_dir = tempfile::tempdir().unwrap();
