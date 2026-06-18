@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.9 - 2026-06-18
+
+- Install the verified Linux APT repository setup package from an `_apt`-accessible staging directory to avoid Ubuntu's unsandboxed local package notice.
+- Extend APT installer validation to prove the package path handed to `apt install` uses `0755` directory and `0644` file permissions.
+
 ## v1.0.8 - 2026-06-18
 
 - Fix the published Linux APT installer so the pinned setup signing fingerprint is not cleared after release-time rendering.

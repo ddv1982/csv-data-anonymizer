@@ -8,13 +8,18 @@ signing_key_url="${CSV_ANONYMIZER_REPOSITORY_SETUP_SIGNING_KEY_URL:-https://ddv1
 expected_sha256="${CSV_ANONYMIZER_REPOSITORY_SETUP_SHA256:-}"
 expected_signing_fingerprint="${CSV_ANONYMIZER_REPOSITORY_SETUP_SIGNING_KEY_FINGERPRINT:-__CSV_ANONYMIZER_APT_SIGNING_KEY_FINGERPRINT__}"
 tmp_dir=""
+apt_install_dir=""
 setup_deb=""
+apt_setup_deb=""
 setup_sha256_file=""
 setup_sha256_sig_file=""
 signing_key_file=""
 gnupg_home=""
 
 cleanup() {
+  if [ -n "$apt_install_dir" ]; then
+    rm -rf "$apt_install_dir"
+  fi
   if [ -n "$tmp_dir" ]; then
     rm -rf "$tmp_dir"
   fi
@@ -255,8 +260,14 @@ if [ "$actual_sha256" != "$expected_sha256" ]; then
 fi
 printf 'Verified CSV Anonymizer repository setup package SHA256.\n'
 
+apt_install_dir="$(mktemp -d "${TMPDIR:-/tmp}/csv-anonymizer-repository-install.XXXXXX")"
+apt_setup_deb="$apt_install_dir/csv-anonymizer-repository-setup_1.0_all.deb"
+cp "$setup_deb" "$apt_setup_deb"
+chmod 0755 "$apt_install_dir"
+chmod 0644 "$apt_setup_deb"
+
 printf 'Installing CSV Anonymizer APT repository setup package...\n'
-sudo apt install -y "$setup_deb"
+sudo apt install -y "$apt_setup_deb"
 
 printf '\nCSV Anonymizer APT repository is enabled. Next run:\n'
 printf '  sudo apt update\n'
