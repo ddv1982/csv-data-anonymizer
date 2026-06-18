@@ -1,0 +1,87 @@
+.app-root {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+  background: hsl(var(--background));
+}
+
+.container {
+  width: min(100% - 2rem, 56rem);
+  margin-inline: auto;
+}
+
+.app-topbar,
+.app-footer {
+  border-color: hsl(var(--border));
+  background: hsl(var(--card));
+}
+
+.app-topbar {
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.app-topbar-inner {
+  display: flex;
+  min-height: 4rem;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.brand-icon {
+  width: 1.75rem;
+  height: 1.75rem;
+  color: hsl(var(--primary));
+}
+
+.app-main {
+  flex: 1 1 auto;
+  padding: 2rem 0;
+}
+
+.workflow-stack,
+.columns-stack,
+.config-stack,
+.result-stack,
+.preview-stack,
+.progress-stack {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.card {
+  overflow: hidden;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+  box-shadow:
+    0 1px 2px hsl(0 0% 0% / 0.24),
+    0 10px 30px hsl(0 0% 0% / 0.18);
+}
+
+.card-header {
+  padding: 1.5rem;
+}
+
+.card-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.card-content {
+  padding: 0 1.5rem 1.5rem;
+}
+
+.card-header + .card-content {
+  padding-top: 0;
+}
+
+.section-disabled {
+  opacity: 0.5;
+}
+
+.section-disabled .card-content {
+  pointer-events: none;
+}

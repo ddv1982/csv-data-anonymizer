@@ -1,6 +1,6 @@
 # CSV Data Anonymizer
 
-Native Rust desktop application for anonymizing CSV data locally while preserving file structure and useful formats.
+Tauri desktop application for anonymizing CSV data locally while preserving file structure and useful formats. The app keeps CSV processing local in Rust and ships a bundled Vite frontend for the desktop UI.
 
 ## Features
 
@@ -13,29 +13,40 @@ Native Rust desktop application for anonymizing CSV data locally while preservin
 
 ## Development
 
-Install Rust stable and run the native app:
+Install Rust stable, Node.js 22.13 or newer, and the frontend dependencies:
 
 ```bash
-cargo run -p csv-anonymizer-app
+npm ci --prefix frontend
+```
+
+Run the active Tauri desktop app:
+
+```bash
+npm run tauri:dev
 ```
 
 Useful commands:
 
 ```bash
+npm run frontend:build
+npm run frontend:typecheck
+npm run frontend:audit
 cargo fmt --all --check
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
-cargo build --release -p csv-anonymizer-app
+cd src-tauri && cargo tauri build
 node scripts/rust-smoke.mjs
 node scripts/check-release-metadata.mjs
 ```
 
-The thin `package.json` wrapper exposes the same commands through `npm run` when convenient.
+The root `package.json` exposes wrappers for the common frontend, Tauri, Rust validation, and packaging commands.
 
 ## Architecture
 
 - `crates/csv-anonymizer-core` contains the CSV detection, metadata, preview, transformation, and file processing engine.
-- `crates/csv-anonymizer-app` contains the native `egui`/`eframe` desktop shell and CLI smoke/anonymize entrypoints.
+- `src-tauri` contains the active Tauri desktop shell and Rust commands used by the bundled app.
+- `frontend` contains the Vite UI bundled into macOS, `.deb`, `.rpm`, and AppImage releases.
+- `crates/csv-anonymizer-app` remains as a lightweight CLI and smoke-test harness for the shared Rust core.
 - `tests/fixtures` contains CSV fixtures shared by Rust tests and smoke checks.
 - `build/linux` and `build/macos` contain package metadata, icons, and signing assets.
 - `scripts` contains release packaging, APT repository, installer validation, and metadata checks.
@@ -57,7 +68,9 @@ App settings are stored as versioned JSON in the platform user config directory.
 ## Packaging
 
 ```bash
-cd src-tauri && cargo tauri build --bundles app
+npm run frontend:build
+CSV_ANONYMIZER_USE_PREBUILT_FRONTEND=1 scripts/build_frontend_for_tauri.sh
+(cd src-tauri && cargo tauri build --bundles app)
 node scripts/package-tauri-linux.mjs
 ```
 

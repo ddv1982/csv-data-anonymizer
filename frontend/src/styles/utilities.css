@@ -1,0 +1,59 @@
+.muted-text {
+  color: hsl(var(--muted-foreground));
+}
+
+.text-sm {
+  font-size: 0.875rem;
+  line-height: 1.35;
+}
+
+.mono {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
+}
+
+.italic {
+  font-style: italic;
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+.app-footer {
+  border-top: 1px solid hsl(var(--border));
+  padding: 1rem 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@keyframes progress-slide {
+  0% {
+    transform: translateX(0);
+  }
+
+  50% {
+    transform: translateX(190%);
+  }
+
+  100% {
+    transform: translateX(385%);
+  }
+}

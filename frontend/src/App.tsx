@@ -1,29 +1,44 @@
 import {
-  CheckCircle2,
-  Eye,
-  FileUp,
+  AlertCircle,
+  ChevronDown,
   FolderOpen,
   Loader2,
-  Play,
-  RefreshCw,
-  RotateCcw,
-  Save,
-  ShieldCheck,
-  XCircle,
+  Shield,
+  X,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { Alert } from './components/Alert'
+import { Card } from './components/Card'
+import { ColumnTable } from './components/ColumnTable'
+import { PreviewTable } from './components/PreviewTable'
+import { ProcessingStatus } from './components/ProcessingStatus'
+import { ResultDisplay } from './components/ResultDisplay'
+import { SwitchRow } from './components/SwitchRow'
 import {
+  cancelAnonymizeJob,
   analyzeCsv,
-  anonymizeCsv,
   countCsvRows,
+  getAnonymizeJobStatus,
   loadSettings,
-  openOutputLocation,
   pickInputCsv,
   pickOutputCsv,
   previewAnonymization,
   saveSettings,
+  startAnonymizeJob,
 } from './tauri'
-import type { AnalyzeResponse, AnonymizeData, AppSettings, ColumnMetadata, PreviewData } from './types'
+import type {
+  AnalyzeResponse,
+  AnonymizeData,
+  AnonymizeJobStatus,
+  AppSettings,
+  ColumnMetadata,
+  PreviewData,
+} from './types'
+import { isSelectableColumn, maxVisibleColumns } from './utils/columns'
+import { messageFrom } from './utils/errors'
+import { formatRowCount } from './utils/format'
+import { clampNumber } from './utils/numbers'
+import { directoryOf } from './utils/paths'
 
 const defaultSettings: AppSettings = {
   schemaVersion: 1,
@@ -48,21 +63,21 @@ function App() {
   const [selectedColumns, setSelectedColumns] = useState<number[]>([])
   const [preview, setPreview] = useState<PreviewData | null>(null)
   const [result, setResult] = useState<AnonymizeData | null>(null)
+  const [activeJobId, setActiveJobId] = useState<string | null>(null)
+  const [jobStatus, setJobStatus] = useState<AnonymizeJobStatus | null>(null)
   const [busy, setBusy] = useState<BusyState>('idle')
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [showAllColumns, setShowAllColumns] = useState(false)
 
   useEffect(() => {
     let isMounted = true
     loadSettings()
       .then((loaded) => {
-        if (!isMounted) return
-        setSettings(loaded)
+        if (isMounted) setSettings(loaded)
       })
       .catch((caught: unknown) => {
-        if (isMounted) {
-          setError(messageFrom(caught))
-        }
+        if (isMounted) setError(messageFrom(caught))
       })
 
     return () => {
@@ -70,13 +85,61 @@ function App() {
     }
   }, [])
 
-  const selectedColumnData = useMemo(() => {
-    const selected = new Set(selectedColumns)
-    return headers?.columns.filter((column) => selected.has(column.index)) ?? []
-  }, [headers, selectedColumns])
+  useEffect(() => {
+    setShowAllColumns(false)
+  }, [headers?.columns.length])
 
-  const canPreview = Boolean(headers && inputPath && selectedColumns.length > 0)
-  const canRun = Boolean(canPreview && outputPath && busy === 'idle')
+  useEffect(() => {
+    if (busy !== 'running' || !activeJobId) return
+
+    const jobId = activeJobId
+    let isMounted = true
+    let timeoutId: number | undefined
+
+    async function pollJob() {
+      try {
+        const status = await getAnonymizeJobStatus(jobId)
+        if (!isMounted) return
+        const finished = handleJobStatus(status)
+        if (!finished) {
+          timeoutId = window.setTimeout(pollJob, 300)
+        }
+      } catch (caught) {
+        if (!isMounted) return
+        setActiveJobId(null)
+        setJobStatus(null)
+        setBusy('idle')
+        setError(messageFrom(caught))
+      }
+    }
+
+    timeoutId = window.setTimeout(pollJob, 300)
+
+    return () => {
+      isMounted = false
+      if (timeoutId) window.clearTimeout(timeoutId)
+    }
+  }, [activeJobId, busy])
+
+  const columns = headers?.columns ?? []
+  const selectedSet = useMemo(() => new Set(selectedColumns), [selectedColumns])
+  const selectableColumns = useMemo(() => columns.filter(isSelectableColumn), [columns])
+  const highRiskColumns = useMemo(
+    () => selectableColumns.filter((column) => column.piiRisk === 'high').map((column) => column.index),
+    [selectableColumns],
+  )
+  const visibleColumns =
+    showAllColumns || columns.length <= maxVisibleColumns ? columns : columns.slice(0, maxVisibleColumns)
+  const hiddenColumnCount = Math.max(columns.length - maxVisibleColumns, 0)
+  const allSelected =
+    selectableColumns.length > 0 && selectableColumns.every((column) => selectedSet.has(column.index))
+
+  const hasFile = Boolean(inputPath.trim())
+  const hasColumns = Boolean(headers)
+  const hasSelectedColumns = selectedColumns.length > 0
+  const isLoading = busy !== 'idle'
+  const canPreview = Boolean(hasColumns && hasSelectedColumns && inputPath && busy === 'idle')
+  const canAnonymize = Boolean(hasColumns && hasSelectedColumns && inputPath && outputPath && busy === 'idle')
 
   async function persistSettings(next: AppSettings) {
     setSettings(next)
@@ -92,9 +155,7 @@ function App() {
   }
 
   async function handlePickInput() {
-    if (busy !== 'idle') {
-      return
-    }
+    if (busy !== 'idle') return
 
     setError(null)
     setBusy('picking')
@@ -119,25 +180,15 @@ function App() {
 
     setBusy('loading')
     setError(null)
-    setNotice(null)
     setPreview(null)
     setResult(null)
 
     try {
-      const response = await analyzeCsv(
-        normalized,
-        settings.sampleRowCount,
-        settings.defaultOutputSuffix,
-      )
+      const response = await analyzeCsv(normalized, settings.sampleRowCount, settings.defaultOutputSuffix)
       setInputPath(response.headers.filePath)
       setHeaders(response.headers)
       setSelectedColumns(response.selectedColumns)
       setOutputPath(response.suggestedOutputPath)
-      setNotice(
-        response.selectedColumns.length > 0
-          ? `Selected ${response.selectedColumns.length} likely sensitive columns.`
-          : 'No columns were auto-selected. Select columns to anonymize.',
-      )
 
       if (settings.rememberLastPaths) {
         void persistSettings({
@@ -145,10 +196,6 @@ function App() {
           lastInputDirectory: directoryOf(response.headers.filePath),
           lastOutputDirectory: directoryOf(response.suggestedOutputPath),
         })
-      }
-
-      if (response.selectedColumns.length > 0) {
-        await previewCsv(response.headers.filePath, response.selectedColumns)
       }
 
       if (!response.headers.rowCountIsComplete) {
@@ -163,21 +210,30 @@ function App() {
   }
 
   async function handlePickOutput() {
+    if (!hasColumns || isLoading) return
+
     setError(null)
-    const picked = await pickOutputCsv(
-      outputPath || (settings.rememberLastPaths ? settings.lastOutputDirectory : null),
-    )
-    if (picked) {
-      setOutputPath(picked)
-      setResult(null)
-      if (settings.rememberLastPaths) {
-        void persistSettings({ ...settings, lastOutputDirectory: directoryOf(picked) })
+    setBusy('picking')
+    try {
+      const picked = await pickOutputCsv(
+        outputPath || (settings.rememberLastPaths ? settings.lastOutputDirectory : null),
+      )
+      if (picked) {
+        setOutputPath(picked)
+        setResult(null)
+        if (settings.rememberLastPaths) {
+          void persistSettings({ ...settings, lastOutputDirectory: directoryOf(picked) })
+        }
       }
+    } catch (caught) {
+      setError(messageFrom(caught))
+    } finally {
+      setBusy('idle')
     }
   }
 
-  async function previewCsv(path = inputPath, columns = selectedColumns) {
-    if (!path || columns.length === 0) {
+  async function previewCsv(path = inputPath, columnsToPreview = selectedColumns) {
+    if (!path || columnsToPreview.length === 0) {
       setPreview(null)
       return
     }
@@ -187,7 +243,7 @@ function App() {
     try {
       const nextPreview = await previewAnonymization(
         path,
-        columns,
+        columnsToPreview,
         settings.deterministicDefault,
         settings.seed,
         settings.previewSampleCount,
@@ -214,18 +270,47 @@ function App() {
     }
   }
 
+  function handleJobStatus(status: AnonymizeJobStatus) {
+    setJobStatus(status)
+
+    if (status.state === 'running') {
+      return false
+    }
+
+    setActiveJobId(null)
+    setBusy('idle')
+
+    if (status.state === 'succeeded' && status.result) {
+      setResult(status.result)
+      setJobStatus(null)
+      if (settings.rememberLastPaths) {
+        void persistSettings({ ...settings, lastOutputDirectory: directoryOf(status.result.outputPath) })
+      }
+      return true
+    }
+
+    setJobStatus(null)
+    if (status.state === 'canceled') {
+      setError('Anonymization canceled.')
+    } else {
+      setError(status.error ?? 'Anonymization failed.')
+    }
+    return true
+  }
+
   async function runAnonymization() {
-    if (!canRun) {
+    if (!canAnonymize) {
       setError('Load a CSV, select at least one column, and choose an output path.')
       return
     }
 
     setBusy('running')
     setError(null)
-    setNotice(null)
+    setResult(null)
+    setJobStatus(null)
 
     try {
-      const nextResult = await anonymizeCsv(
+      const status = await startAnonymizeJob(
         inputPath,
         outputPath,
         selectedColumns,
@@ -233,27 +318,44 @@ function App() {
         settings.seed,
         settings.overwriteOutput,
         settings.sampleRowCount,
+        headers?.rowCountIsComplete ? headers.rowCount : null,
       )
-      setResult(nextResult)
-      setNotice(`Wrote ${nextResult.rowCount.toLocaleString()} rows to ${nextResult.outputPath}.`)
-      if (settings.rememberLastPaths) {
-        void persistSettings({ ...settings, lastOutputDirectory: directoryOf(nextResult.outputPath) })
-      }
+      setActiveJobId(status.jobId)
+      handleJobStatus(status)
     } catch (caught) {
-      setError(messageFrom(caught))
-    } finally {
+      setActiveJobId(null)
+      setJobStatus(null)
       setBusy('idle')
+      setError(messageFrom(caught))
     }
   }
 
-  function toggleColumn(column: ColumnMetadata) {
-    const next = selectedColumns.includes(column.index)
-      ? selectedColumns.filter((index) => index !== column.index)
-      : [...selectedColumns, column.index].sort((left, right) => left - right)
+  async function cancelCurrentJob() {
+    if (!activeJobId || busy !== 'running') return
 
-    setSelectedColumns(next)
+    try {
+      const status = await cancelAnonymizeJob(activeJobId)
+      handleJobStatus(status)
+    } catch (caught) {
+      setError(messageFrom(caught))
+    }
+  }
+
+  function setColumnSelection(nextColumns: number[]) {
+    const uniqueSorted = [...new Set(nextColumns)].sort((left, right) => left - right)
+    setSelectedColumns(uniqueSorted)
     setPreview(null)
     setResult(null)
+  }
+
+  function toggleColumn(column: ColumnMetadata) {
+    if (!isSelectableColumn(column)) return
+
+    const next = selectedSet.has(column.index)
+      ? selectedColumns.filter((index) => index !== column.index)
+      : [...selectedColumns, column.index]
+
+    setColumnSelection(next)
   }
 
   function resetData() {
@@ -261,7 +363,9 @@ function App() {
     setSelectedColumns([])
     setPreview(null)
     setResult(null)
-    setNotice(null)
+    setActiveJobId(null)
+    setJobStatus(null)
+    setShowAllColumns(false)
   }
 
   function clearFile() {
@@ -271,352 +375,323 @@ function App() {
     setError(null)
   }
 
+  function handleInputChange(value: string) {
+    setInputPath(value)
+    if (headers && value.trim() !== headers.filePath) {
+      resetData()
+    }
+  }
+
+  function maybeLoadManualPath() {
+    const normalized = inputPath.trim()
+    if (busy === 'idle' && normalized && normalized !== headers?.filePath) {
+      void loadCsv(normalized)
+    }
+  }
+
   return (
-    <main className="app-shell">
-      <header className="app-header">
-        <div className="brand-block">
-          <img src="/icon.png" alt="" className="app-icon" />
-          <div>
-            <h1>CSV Anonymizer</h1>
-            <p>{headers ? `${formatRowCount(headers)} loaded` : 'Local CSV privacy workflow'}</p>
-          </div>
-        </div>
-        <div className="header-actions">
-          <Metric label="Columns" value={selectedColumns.length.toString()} />
-          <Metric label="Mode" value={settings.deterministicDefault ? 'Deterministic' : 'Random'} />
-          <button type="button" className="btn ghost" onClick={clearFile} title="Reset current file">
-            <RotateCcw size={17} aria-hidden="true" />
-            Reset
-          </button>
+    <div className="app-root">
+      <header className="app-topbar">
+        <div className="container app-topbar-inner">
+          <Shield className="brand-icon" aria-hidden="true" />
+          <h1>CSV Anonymizer</h1>
         </div>
       </header>
 
-      <section className="workflow-grid">
-        <section className="panel file-panel">
-          <div className="panel-heading">
-            <div>
-              <span className="eyebrow">Files</span>
-              <h2>Input and output</h2>
-            </div>
-            {busy === 'picking' ? <SpinnerLabel label="Opening" /> : null}
-            {busy === 'loading' ? <SpinnerLabel label="Reading" /> : null}
-          </div>
-
-          <label className="field">
-            <span>Input CSV</span>
-            <div className="field-row">
-              <input
-                value={inputPath}
-                onChange={(event) => setInputPath(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    void loadCsv()
-                  }
-                }}
-                placeholder="Select or paste a CSV path"
-              />
-              <button
-                type="button"
-                className="btn icon"
-                onClick={handlePickInput}
-                disabled={busy !== 'idle'}
-                title="Choose CSV file"
-              >
-                {busy === 'picking' ? <Loader2 className="spin" size={18} aria-hidden="true" /> : <FileUp size={18} aria-hidden="true" />}
-                {busy === 'picking' ? 'Opening' : 'Open'}
-              </button>
-              <button
-                type="button"
-                className="btn primary"
-                onClick={() => void loadCsv()}
-                disabled={busy !== 'idle'}
-              >
-                {busy === 'loading' ? <Loader2 className="spin" size={18} aria-hidden="true" /> : <RefreshCw size={18} aria-hidden="true" />}
-                {busy === 'loading' ? 'Loading' : 'Load'}
-              </button>
-            </div>
-          </label>
-
-          <label className="field">
-            <span>Output CSV</span>
-            <div className="field-row">
-              <input
-                value={outputPath}
-                onChange={(event) => {
-                  setOutputPath(event.target.value)
-                  setResult(null)
-                }}
-                placeholder="Choose where to write the anonymized CSV"
-              />
-              <button
-                type="button"
-                className="btn icon"
-                onClick={handlePickOutput}
-                disabled={!headers}
-                title="Choose output file"
-              >
-                <Save size={18} aria-hidden="true" />
-                Save As
-              </button>
-            </div>
-          </label>
-        </section>
-
-        <section className="panel settings-panel">
-          <div className="panel-heading">
-            <div>
-              <span className="eyebrow">Settings</span>
-              <h2>Transform rules</h2>
-            </div>
-            <ShieldCheck size={22} aria-hidden="true" />
-          </div>
-
-          <div className="toggle-grid">
-            <label className="switch-row">
-              <input
-                type="checkbox"
-                checked={settings.deterministicDefault}
-                onChange={(event) => updateSetting('deterministicDefault', event.target.checked)}
-              />
-              <span>Deterministic</span>
-            </label>
-            <label className="switch-row">
-              <input
-                type="checkbox"
-                checked={settings.overwriteOutput}
-                onChange={(event) => updateSetting('overwriteOutput', event.target.checked)}
-              />
-              <span>Overwrite output</span>
-            </label>
-            <label className="switch-row">
-              <input
-                type="checkbox"
-                checked={settings.rememberLastPaths}
-                onChange={(event) => updateSetting('rememberLastPaths', event.target.checked)}
-              />
-              <span>Remember paths</span>
-            </label>
-          </div>
-
-          <div className="number-grid">
-            <label className="field compact">
-              <span>Seed</span>
-              <input
-                value={settings.seed}
-                onChange={(event) => updateSetting('seed', event.target.value)}
-                placeholder="Optional deterministic seed"
-              />
-            </label>
-            <label className="field compact">
-              <span>Output suffix</span>
-              <input
-                value={settings.defaultOutputSuffix}
-                onChange={(event) => updateSetting('defaultOutputSuffix', event.target.value)}
-              />
-            </label>
-            <label className="field compact">
-              <span>Sample rows</span>
-              <input
-                type="number"
-                min={1}
-                max={10000}
-                value={settings.sampleRowCount}
-                onChange={(event) =>
-                  updateSetting('sampleRowCount', clampNumber(event.target.valueAsNumber, 1, 10000))
-                }
-              />
-            </label>
-            <label className="field compact">
-              <span>Preview rows</span>
-              <input
-                type="number"
-                min={1}
-                max={100}
-                value={settings.previewSampleCount}
-                onChange={(event) =>
-                  updateSetting('previewSampleCount', clampNumber(event.target.valueAsNumber, 1, 100))
-                }
-              />
-            </label>
-          </div>
-        </section>
-      </section>
-
-      <section className="workspace-grid">
-        <section className="panel columns-panel">
-          <div className="panel-heading">
-            <div>
-              <span className="eyebrow">Detected columns</span>
-              <h2>{headers ? `${headers.columns.length} columns` : 'No file loaded'}</h2>
-            </div>
-            <button
-              type="button"
-              className="btn ghost"
-              disabled={!canPreview || busy !== 'idle'}
-              onClick={() => void previewCsv()}
-            >
-              <Eye size={17} aria-hidden="true" />
-              Preview
-            </button>
-          </div>
-
-          <div className="columns-table" role="table" aria-label="Detected columns">
-            <div className="columns-row columns-head" role="row">
-              <span>Select</span>
-              <span>Column</span>
-              <span>Type</span>
-              <span>Risk</span>
-              <span>Samples</span>
-            </div>
-            {headers?.columns.map((column) => (
-              <button
-                type="button"
-                className={`columns-row column-button risk-${column.piiRisk}`}
-                key={`${column.index}-${column.name}`}
-                onClick={() => toggleColumn(column)}
-              >
-                <span className="check-cell">
-                  <input type="checkbox" checked={selectedColumns.includes(column.index)} readOnly />
-                </span>
-                <span>
-                  <strong>{column.name}</strong>
-                  <small>#{column.index}</small>
-                </span>
-                <span>{formatToken(column.detectedType)}</span>
-                <span>
-                  <RiskBadge risk={column.piiRisk} />
-                </span>
-                <span className="sample-list">{column.sampleValues.slice(0, 3).join(', ') || 'No samples'}</span>
-              </button>
-            ))}
-            {!headers ? <div className="empty-state">Load a CSV to inspect columns.</div> : null}
-          </div>
-        </section>
-
-        <section className="panel preview-panel">
-          <div className="panel-heading">
-            <div>
-              <span className="eyebrow">Preview</span>
-              <h2>{selectedColumnData.length} selected</h2>
-            </div>
-            {busy === 'preview' ? <SpinnerLabel label="Previewing" /> : null}
-          </div>
-
-          <div className="preview-list">
-            {preview?.previews.map((columnPreview) => (
-              <article className="preview-column" key={columnPreview.columnIndex}>
-                <h3>{columnPreview.columnName}</h3>
-                {columnPreview.samples.length > 0 ? (
-                  columnPreview.samples.map((sample, index) => (
-                    <div className="preview-sample" key={`${columnPreview.columnIndex}-${index}`}>
-                      <code>{sample.original}</code>
-                      <span>to</span>
-                      <code>{sample.anonymized}</code>
-                    </div>
-                  ))
-                ) : (
-                  <p className="muted">No non-empty sample values found.</p>
-                )}
-              </article>
-            ))}
-            {!preview ? <div className="empty-state">Select columns and preview transformations.</div> : null}
-          </div>
-        </section>
-      </section>
-
-      <section className="run-strip">
-        <div className="run-copy">
-          <span className="eyebrow">Run</span>
-          <strong>{result ? 'Anonymized output is ready' : 'Write anonymized CSV output'}</strong>
-          <p>
-            {result
-              ? `${result.columnsAnonymized} columns in ${result.durationMs} ms`
-              : 'Selected columns are transformed locally and written to the output path.'}
-          </p>
-        </div>
-        <div className="run-actions">
-          {result ? (
-            <button
-              type="button"
-              className="btn icon"
-              onClick={() => void openOutputLocation(result.outputPath)}
-              title="Open output folder"
-            >
-              <FolderOpen size={18} aria-hidden="true" />
-              Open Folder
-            </button>
+      <main className="container app-main">
+        <div className="workflow-stack">
+          {error ? (
+            <Alert variant="destructive" icon={<AlertCircle aria-hidden="true" />}>
+              <div className="alert-line">
+                <span>{error}</span>
+                <button type="button" className="button button-ghost button-sm" onClick={() => setError(null)}>
+                  Dismiss
+                </button>
+              </div>
+            </Alert>
           ) : null}
-          <button type="button" className="btn primary run-button" onClick={runAnonymization} disabled={!canRun}>
-            {busy === 'running' ? <Loader2 className="spin" size={18} aria-hidden="true" /> : <Play size={18} aria-hidden="true" />}
-            Anonymize
-          </button>
-        </div>
-      </section>
 
-      {notice ? (
-        <div className="status-banner ok">
-          <CheckCircle2 size={18} aria-hidden="true" />
-          {notice}
-        </div>
-      ) : null}
-      {error ? (
-        <div className="status-banner error">
-          <XCircle size={18} aria-hidden="true" />
-          {error}
-        </div>
-      ) : null}
-    </main>
-  )
-}
+          {result ? (
+            <ResultDisplay result={result} onReset={clearFile} onError={setError} />
+          ) : (
+            <>
+              <Card title="1. Select File">
+                <div className="file-row">
+                  <button
+                    type="button"
+                    className="button button-outline"
+                    onClick={handlePickInput}
+                    disabled={isLoading}
+                    aria-label="Browse for CSV file"
+                  >
+                    {busy === 'picking' ? <Loader2 className="spin" aria-hidden="true" /> : <FolderOpen aria-hidden="true" />}
+                    Browse
+                  </button>
+                  <input
+                    type="text"
+                    value={inputPath}
+                    disabled={isLoading}
+                    placeholder="Select a CSV file..."
+                    aria-label="File path input"
+                    onChange={(event) => handleInputChange(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') maybeLoadManualPath()
+                    }}
+                  />
+                  {inputPath ? (
+                    <button
+                      type="button"
+                      className="button button-ghost button-icon"
+                      onClick={clearFile}
+                      disabled={isLoading}
+                      aria-label="Clear file selection"
+                    >
+                      <X aria-hidden="true" />
+                    </button>
+                  ) : null}
+                </div>
+              </Card>
 
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="metric">
-      <span>{label}</span>
-      <strong>{value}</strong>
+              <Card title="2. Select Columns" disabled={!hasFile}>
+                <div className="columns-stack">
+                  <div className="bulk-actions">
+                    <button
+                      type="button"
+                      className="button button-outline button-sm"
+                      disabled={busy === 'loading' || allSelected || selectableColumns.length === 0}
+                      onClick={() => setColumnSelection(selectableColumns.map((column) => column.index))}
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      className="button button-outline button-sm"
+                      disabled={busy === 'loading' || selectedColumns.length === 0}
+                      onClick={() => setColumnSelection([])}
+                    >
+                      Deselect All
+                    </button>
+                    <button
+                      type="button"
+                      className="button button-outline button-sm"
+                      disabled={busy === 'loading' || highRiskColumns.length === 0}
+                      onClick={() => setColumnSelection(highRiskColumns)}
+                    >
+                      Select High Risk
+                    </button>
+                    <button
+                      type="button"
+                      className="button button-outline button-sm"
+                      disabled={busy === 'loading' || selectableColumns.length === 0}
+                      onClick={() =>
+                        setColumnSelection(
+                          selectableColumns
+                            .filter((column) => column.piiRisk === 'high' || column.piiRisk === 'medium')
+                            .map((column) => column.index),
+                        )
+                      }
+                    >
+                      Select PII Risk
+                    </button>
+                  </div>
+
+                  <ColumnTable
+                    columns={visibleColumns}
+                    allColumnCount={columns.length}
+                    selectedSet={selectedSet}
+                    loading={busy === 'loading'}
+                    showAllColumns={showAllColumns}
+                    hiddenColumnCount={hiddenColumnCount}
+                    onToggleColumn={toggleColumn}
+                    onToggleShowAll={() => setShowAllColumns((current) => !current)}
+                  />
+
+                  <p className="muted-text text-sm">
+                    {selectedColumns.length} of {columns.length} columns selected
+                    {headers ? `, ${formatRowCount(headers)} loaded` : ''}
+                  </p>
+                </div>
+              </Card>
+
+              <Card title="3. Configuration" disabled={!hasColumns}>
+                <div className="config-stack">
+                  <div className="field">
+                    <label htmlFor="output-path">Output Path</label>
+                    <div className="file-row">
+                      <input
+                        id="output-path"
+                        type="text"
+                        value={outputPath}
+                        disabled={!hasColumns || isLoading}
+                        placeholder="e.g., data_anonymized.csv"
+                        aria-describedby="output-path-description"
+                        onChange={(event) => {
+                          setOutputPath(event.target.value)
+                          setResult(null)
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="button button-outline"
+                        disabled={!hasColumns || isLoading}
+                        onClick={handlePickOutput}
+                        aria-label="Choose output CSV file"
+                      >
+                        <FolderOpen aria-hidden="true" />
+                        Browse
+                      </button>
+                    </div>
+                    <p id="output-path-description" className="muted-text text-sm">
+                      The path where the anonymized file will be saved
+                    </p>
+                  </div>
+
+                  <div className="collapsible">
+                    <button
+                      type="button"
+                      className="button button-ghost settings-trigger"
+                      disabled={!hasColumns || isLoading}
+                      onClick={() => setSettingsOpen((current) => !current)}
+                      aria-expanded={settingsOpen}
+                    >
+                      <span>App Settings</span>
+                      <ChevronDown className={settingsOpen ? 'chevron open' : 'chevron'} aria-hidden="true" />
+                    </button>
+                    {settingsOpen ? (
+                      <div className="settings-panel">
+                        <SwitchRow
+                          id="deterministic-mode"
+                          label="Deterministic Mode"
+                          description="The same input value produces the same anonymized output."
+                          checked={settings.deterministicDefault}
+                          disabled={!hasColumns || isLoading}
+                          onChange={(checked) => updateSetting('deterministicDefault', checked)}
+                        />
+                        <div className={settings.deterministicDefault ? 'field' : 'field disabled-soft'}>
+                          <label htmlFor="seed-input">Seed</label>
+                          <input
+                            id="seed-input"
+                            type="text"
+                            value={settings.seed}
+                            disabled={!hasColumns || isLoading || !settings.deterministicDefault}
+                            placeholder="Enter seed for reproducible results"
+                            aria-describedby="seed-description"
+                            onChange={(event) => updateSetting('seed', event.target.value)}
+                          />
+                          <p id="seed-description" className="muted-text text-sm">
+                            Use the same seed to repeat anonymization across sessions.
+                          </p>
+                        </div>
+                        <SwitchRow
+                          id="overwrite-output"
+                          label="Overwrite Output"
+                          description="Replace the output file when it already exists."
+                          checked={settings.overwriteOutput}
+                          disabled={!hasColumns || isLoading}
+                          onChange={(checked) => updateSetting('overwriteOutput', checked)}
+                        />
+                        <div className="settings-grid">
+                          <div className="field">
+                            <label htmlFor="output-suffix">Output suffix</label>
+                            <input
+                              id="output-suffix"
+                              value={settings.defaultOutputSuffix}
+                              disabled={!hasColumns || isLoading}
+                              onChange={(event) => updateSetting('defaultOutputSuffix', event.target.value)}
+                            />
+                          </div>
+                          <div className="field">
+                            <label htmlFor="sample-rows">Sample rows</label>
+                            <input
+                              id="sample-rows"
+                              type="number"
+                              min={1}
+                              max={10000}
+                              value={settings.sampleRowCount}
+                              disabled={!hasColumns || isLoading}
+                              onChange={(event) =>
+                                updateSetting('sampleRowCount', clampNumber(event.target.valueAsNumber, 1, 10000))
+                              }
+                            />
+                          </div>
+                          <div className="field">
+                            <label htmlFor="preview-rows">Preview rows</label>
+                            <input
+                              id="preview-rows"
+                              type="number"
+                              min={1}
+                              max={100}
+                              value={settings.previewSampleCount}
+                              disabled={!hasColumns || isLoading}
+                              onChange={(event) =>
+                                updateSetting('previewSampleCount', clampNumber(event.target.valueAsNumber, 1, 100))
+                              }
+                            />
+                          </div>
+                          <SwitchRow
+                            id="remember-paths"
+                            label="Remember paths"
+                            checked={settings.rememberLastPaths}
+                            disabled={!hasColumns || isLoading}
+                            compact
+                            onChange={(checked) => updateSetting('rememberLastPaths', checked)}
+                          />
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </Card>
+
+              <Card
+                title="4. Preview (Optional)"
+                disabled={!hasSelectedColumns}
+                action={
+                  <button
+                    type="button"
+                    className="button button-outline button-sm"
+                    disabled={!canPreview}
+                    onClick={() => void previewCsv()}
+                  >
+                    {busy === 'preview' ? <Loader2 className="spin" aria-hidden="true" /> : null}
+                    Show Preview
+                  </button>
+                }
+              >
+                <PreviewTable preview={preview} loading={busy === 'preview'} />
+              </Card>
+
+              <Card contentClassName="anonymize-card-content">
+                {busy === 'running' ? (
+                  <ProcessingStatus
+                    status={jobStatus}
+                    fallbackRowCount={headers?.rowCountIsComplete ? headers.rowCount : 0}
+                    onCancel={() => void cancelCurrentJob()}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="button button-primary button-lg full-width"
+                    disabled={!canAnonymize}
+                    onClick={runAnonymization}
+                  >
+                    <Shield aria-hidden="true" />
+                    Anonymize File
+                  </button>
+                )}
+              </Card>
+            </>
+          )}
+        </div>
+      </main>
+
+      <footer className="app-footer">
+        <div className="container">
+          <p>CSV Anonymizer - Protect sensitive data in your CSV files</p>
+        </div>
+      </footer>
     </div>
   )
-}
-
-function RiskBadge({ risk }: { risk: string }) {
-  return <span className={`risk-badge risk-${risk}`}>{formatToken(risk)}</span>
-}
-
-function SpinnerLabel({ label }: { label: string }) {
-  return (
-    <span className="spinner-label">
-      <Loader2 className="spin" size={16} aria-hidden="true" />
-      {label}
-    </span>
-  )
-}
-
-function clampNumber(value: number, min: number, max: number) {
-  if (!Number.isFinite(value)) return min
-  return Math.min(max, Math.max(min, Math.trunc(value)))
-}
-
-function directoryOf(path: string) {
-  const slashIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
-  return slashIndex > 0 ? path.slice(0, slashIndex) : null
-}
-
-function formatRowCount(headers: { rowCount: number; rowCountIsComplete: boolean }) {
-  const rows = headers.rowCount.toLocaleString()
-  return headers.rowCountIsComplete ? `${rows} rows` : `${rows}+ sampled rows`
-}
-
-function formatToken(value: string) {
-  return value
-    .replace(/([A-Z])/g, ' $1')
-    .replace(/^./, (first) => first.toUpperCase())
-    .trim()
-}
-
-function messageFrom(value: unknown) {
-  if (value instanceof Error) return value.message
-  if (typeof value === 'string') return value
-  return 'Unexpected application error.'
 }
 
 export default App

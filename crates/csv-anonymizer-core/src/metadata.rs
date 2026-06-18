@@ -1,4 +1,4 @@
-use crate::detection::{classify_pii_risk, detect_column_type, detect_empty_format};
+use crate::detection::{classify_pii_risk, detect_column_type_with_name, detect_empty_format};
 use crate::types::{ColumnMetadata, PiiRisk};
 use std::collections::HashSet;
 
@@ -53,7 +53,7 @@ fn build_single_column_metadata(
     values: &[String],
     sample_count: usize,
 ) -> ColumnMetadata {
-    let detection = detect_column_type(values);
+    let detection = detect_column_type_with_name(name, values);
     let pii_risk = classify_pii_risk(detection.data_type);
     let empty_format = detect_empty_format(values);
     let sample_values = values
@@ -76,50 +76,4 @@ fn build_single_column_metadata(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::types::DataType;
-
-    #[test]
-    fn builds_metadata_for_all_columns() {
-        let headers = vec!["email".to_string(), "id".to_string(), "country".to_string()];
-        let samples = vec![
-            vec![
-                "john@example.com".to_string(),
-                "1001".to_string(),
-                "US".to_string(),
-            ],
-            vec![
-                "jane@test.org".to_string(),
-                "1002".to_string(),
-                "GB".to_string(),
-            ],
-        ];
-
-        let metadata = build_column_metadata(&headers, &samples);
-
-        assert_eq!(metadata.len(), 3);
-        assert_eq!(metadata[0].detected_type, DataType::Email);
-        assert_eq!(metadata[1].detected_type, DataType::NumericId);
-        assert_eq!(metadata[2].detected_type, DataType::CountryCode);
-    }
-
-    #[test]
-    fn applies_column_selection_without_mutating_source() {
-        let metadata = vec![ColumnMetadata {
-            name: "email".to_string(),
-            index: 0,
-            detected_type: DataType::Email,
-            confidence: crate::types::Confidence::High,
-            pii_risk: PiiRisk::High,
-            sample_values: vec![],
-            empty_format: crate::types::EmptyFormat::EmptyString,
-            is_selected: false,
-        }];
-
-        let selected = apply_column_selection(&metadata, &[0]);
-
-        assert!(selected[0].is_selected);
-        assert!(!metadata[0].is_selected);
-    }
-}
+mod tests;

@@ -39,6 +39,8 @@ The release workflow builds Tauri desktop artifacts:
 
 Artifacts are written to `dist/rust/artifacts/`. The GitHub Release intentionally publishes only user-facing installers and APT bootstrap files; the archive keyring stays on GitHub Pages because it is consumed by `install-apt-repo.sh`.
 
+CI and release jobs install the Tauri CLI with the pinned workflow `TAURI_CLI_VERSION`, which should match the Tauri crate version resolved in `Cargo.lock`.
+
 ## macOS Prerequisites
 
 Configure these GitHub Actions secrets before pushing a release tag:
@@ -80,9 +82,11 @@ Pushing a `v*` tag triggers `.github/workflows/release.yml`.
 The release workflow:
 
 - validates tag, package version, changelog, Rust workspace, and Linux metainfo metadata
+- audits frontend dependencies with `npm run frontend:audit`
 - creates or refreshes a draft GitHub Release
 - builds and verifies signed/notarized macOS arm64 and x64 artifacts
 - builds the frontend once for Tauri packaging
+- validates the prebuilt frontend contains `index.html` and non-empty CSS assets before Tauri consumes it
 - builds Linux output as `.deb`, `.rpm`, and AppImage through Tauri
 - validates Linux package metadata and builds a signed APT repository
 - stages `install-apt-repo.sh` with the pinned APT signing key fingerprint and validates the rendered installer keeps that effective fingerprint
@@ -98,7 +102,9 @@ Before pushing a release tag, run on the host platform:
 ```bash
 cargo fmt --all --check
 npm ci --prefix frontend
+npm run frontend:audit
 npm run frontend:build
+CSV_ANONYMIZER_USE_PREBUILT_FRONTEND=1 scripts/build_frontend_for_tauri.sh
 npm run test
 npm run lint
 node scripts/rust-smoke.mjs

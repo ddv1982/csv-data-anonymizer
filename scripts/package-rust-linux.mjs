@@ -23,6 +23,13 @@ const skipRpm = args.has('--skip-rpm')
 const skipAppImage = args.has('--skip-appimage')
 const skipMissingTools = args.has('--skip-missing-tools')
 
+if (process.env.CSV_ANONYMIZER_ALLOW_LEGACY_NATIVE_PACKAGING !== '1') {
+  console.error('scripts/package-rust-linux.mjs is the legacy native packaging path and is disabled.')
+  console.error('Use scripts/package-tauri-linux.mjs so Linux packages and AppImages include the bundled web frontend.')
+  console.error('Set CSV_ANONYMIZER_ALLOW_LEGACY_NATIVE_PACKAGING=1 only for explicit legacy investigations.')
+  process.exit(1)
+}
+
 const packageJson = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8'))
 const packageName = 'csv-anonymizer'
 const binaryName = 'csv-anonymizer'

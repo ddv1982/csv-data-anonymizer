@@ -57,8 +57,18 @@ function collectArtifacts(root) {
 }
 
 if (!skipBuild) {
+  if (process.env.CSV_ANONYMIZER_USE_PREBUILT_FRONTEND === '1') {
+    run('bash', ['scripts/build_frontend_for_tauri.sh'], {
+      env: { ...process.env, CSV_ANONYMIZER_USE_PREBUILT_FRONTEND: '1' },
+    });
+  }
+
   run('cargo', ['tauri', 'build', '--target', target], {
     cwd: path.join(repoRoot, 'src-tauri'),
+  });
+} else {
+  run('bash', ['scripts/build_frontend_for_tauri.sh'], {
+    env: { ...process.env, CSV_ANONYMIZER_USE_PREBUILT_FRONTEND: '1' },
   });
 }
 

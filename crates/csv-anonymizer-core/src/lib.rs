@@ -12,5 +12,5 @@ pub use service::AnonymizerService;
 pub use types::{
     AnonymizeData, AnonymizeParams, ColumnMetadata, ColumnPreview, Confidence, DataType,
     DetectionResult, EmptyFormat, HeadersData, ParsedSample, PiiRisk, PreviewData, PreviewParams,
-    ProcessOptions, ProcessResult, SampleTransform,
+    ProcessControl, ProcessOptions, ProcessProgress, ProcessResult, SampleTransform,
 };

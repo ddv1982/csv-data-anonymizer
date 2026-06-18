@@ -1,6 +1,6 @@
 {
   "name": "csv-anonymizer",
-  "version": "1.0.15",
+  "version": "1.0.16",
   "description": "Desktop CSV anonymizer for local-first anonymization workflows.",
   "desktopName": "csv-anonymizer.desktop",
   "homepage": "https://github.com/ddv1982/csv-data-anonymizer",
@@ -8,6 +8,7 @@
     "dev": "cd src-tauri && cargo tauri dev",
     "frontend:build": "npm --prefix frontend run build",
     "frontend:typecheck": "npm --prefix frontend run typecheck",
+    "frontend:audit": "npm audit --prefix frontend --audit-level=high",
     "tauri:dev": "cd src-tauri && cargo tauri dev",
     "tauri:build": "cd src-tauri && cargo tauri build",
     "build": "npm run frontend:build && cargo build --workspace",

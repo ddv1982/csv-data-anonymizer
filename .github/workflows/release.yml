@@ -6,9 +6,7 @@ on:
       - 'v*'
 
 permissions:
-  contents: write
-  pages: write
-  id-token: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref_name }}
@@ -17,11 +15,14 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  TAURI_CLI_VERSION: 2.11.3
 
 jobs:
   validate-release:
     name: Validate Release
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout repository
@@ -50,6 +51,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --prefix frontend
 
+      - name: Audit frontend dependencies
+        run: npm run frontend:audit
+
       - name: Validate release metadata
         run: node scripts/check-release-metadata.mjs --expected-tag "${{ github.ref_name }}"
 
@@ -66,6 +70,8 @@ jobs:
     name: Create Draft Release
     needs: validate-release
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -104,6 +110,8 @@ jobs:
     name: Build macOS ${{ matrix.arch }}
     needs: create-release
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -154,7 +162,7 @@ jobs:
         run: npm run frontend:build
 
       - name: Install Tauri CLI
-        run: cargo install tauri-cli --locked --version "^2"
+        run: cargo install tauri-cli --locked --version "=${TAURI_CLI_VERSION}"
 
       - name: Build macOS Tauri app bundle
         env:
@@ -317,6 +325,10 @@ jobs:
     name: Build Linux x64
     needs: create-release
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
 
     env:
       DEB_SIGNING_PRIVATE_KEY: ${{ secrets.DEB_SIGNING_PRIVATE_KEY }}
@@ -376,7 +388,7 @@ jobs:
         run: npm run frontend:build
 
       - name: Install Tauri CLI
-        run: cargo install tauri-cli --locked --version "^2"
+        run: cargo install tauri-cli --locked --version "=${TAURI_CLI_VERSION}"
 
       - name: Build Linux artifacts
         env:
@@ -519,7 +531,7 @@ jobs:
           draft: true
           files: |
             dist/rust/artifacts/csv-anonymizer-*.rpm
-            dist/rust/artifacts/csv-anonymizer_*.AppImage
+            dist/rust/artifacts/*.AppImage
             dist/rust/artifacts/csv-anonymizer_*.deb
             dist/rust/artifacts/csv-anonymizer-repository-setup_*.deb
             dist/rust/artifacts/csv-anonymizer-repository-setup_*.deb.sha256
@@ -540,6 +552,9 @@ jobs:
     name: Publish APT Repository
     needs: build-linux-release
     runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -553,6 +568,8 @@ jobs:
     name: Publish Release
     needs: [create-release, build-macos-release, build-linux-release, publish-apt-repository]
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
 
     steps:
       - name: Publish GitHub Release

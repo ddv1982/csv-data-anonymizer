@@ -5,7 +5,6 @@ use std::path::PathBuf;
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum CliAction {
-    Gui,
     Help,
     Version,
     Analyze {
@@ -30,12 +29,12 @@ pub(crate) fn parse_cli_args(
 ) -> Result<CliAction, String> {
     let args = args.into_iter().collect::<Vec<_>>();
     if args.is_empty() {
-        return Ok(CliAction::Gui);
+        return Ok(CliAction::Help);
     }
 
     let command = args[0].to_string_lossy();
     if args.len() == 1 && command.starts_with("-psn_") {
-        return Ok(CliAction::Gui);
+        return Ok(CliAction::Help);
     }
 
     match command.as_ref() {
@@ -229,7 +228,7 @@ pub(crate) fn run_cli(action: CliAction) -> Result<(), String> {
             );
             Ok(())
         }
-        CliAction::Gui | CliAction::Help | CliAction::Version => Ok(()),
+        CliAction::Help | CliAction::Version => Ok(()),
     }
 }
 
@@ -270,10 +269,10 @@ mod tests {
     }
 
     #[test]
-    fn macos_process_serial_arg_starts_gui() {
+    fn macos_process_serial_arg_shows_help() {
         assert_eq!(
             parse_cli_args(os_args(&["-psn_0_123"])).unwrap(),
-            CliAction::Gui
+            CliAction::Help
         );
     }
 

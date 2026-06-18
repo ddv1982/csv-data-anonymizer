@@ -8,6 +8,10 @@ pub fn is_empty_value(value: &str) -> bool {
 }
 
 pub fn detect_column_type(values: &[String]) -> DetectionResult {
+    detect_column_type_with_name("", values)
+}
+
+pub fn detect_column_type_with_name(column_name: &str, values: &[String]) -> DetectionResult {
     let non_empty_values: Vec<&String> = values
         .iter()
         .filter(|value| !is_empty_value(value))
@@ -23,10 +27,10 @@ pub fn detect_column_type(values: &[String]) -> DetectionResult {
         };
     }
 
-    for (data_type, pattern) in detection_priority() {
+    for (data_type, matches) in detection_priority() {
         let match_count = values
             .iter()
-            .filter(|value| !is_empty_value(value) && pattern.is_match(value))
+            .filter(|value| !is_empty_value(value) && matches(value))
             .count();
         let confidence = calculate_confidence(match_count, total_non_empty);
 
@@ -38,6 +42,10 @@ pub fn detect_column_type(values: &[String]) -> DetectionResult {
                 total_samples: values.len(),
             };
         }
+    }
+
+    if let Some(result) = detect_name_type(column_name, &non_empty_values, values.len()) {
+        return result;
     }
 
     if detect_enum_type(&non_empty_values) {
@@ -120,15 +128,58 @@ fn detect_enum_type(non_empty_values: &[&String]) -> bool {
     unique_values.len() <= 20
 }
 
-fn detection_priority() -> [(DataType, &'static Regex); 6] {
+type DetectionPredicate = fn(&str) -> bool;
+
+fn detection_priority() -> [(DataType, DetectionPredicate); 6] {
     [
-        (DataType::Email, email_pattern()),
-        (DataType::Uuid, uuid_pattern()),
-        (DataType::Timestamp, timestamp_pattern()),
-        (DataType::Phone, phone_pattern()),
-        (DataType::NumericId, numeric_id_pattern()),
-        (DataType::CountryCode, country_code_pattern()),
+        (DataType::Email, is_email),
+        (DataType::Uuid, is_uuid),
+        (DataType::Timestamp, is_timestamp),
+        (DataType::Phone, is_phone),
+        (DataType::NumericId, is_numeric_id),
+        (DataType::CountryCode, is_country_code),
     ]
+}
+
+fn is_email(value: &str) -> bool {
+    email_pattern().is_match(value)
+}
+
+fn is_uuid(value: &str) -> bool {
+    uuid_pattern().is_match(value)
+}
+
+fn is_timestamp(value: &str) -> bool {
+    timestamp_pattern().is_match(value)
+}
+
+fn is_phone(value: &str) -> bool {
+    let trimmed = value.trim();
+    if !phone_pattern().is_match(trimmed) {
+        return false;
+    }
+
+    let digit_count = trimmed
+        .chars()
+        .filter(|character| character.is_ascii_digit())
+        .count();
+    if !(10..=15).contains(&digit_count) {
+        return false;
+    }
+
+    trimmed.starts_with('+') || trimmed.chars().any(is_phone_separator)
+}
+
+fn is_phone_separator(character: char) -> bool {
+    matches!(character, ' ' | '-' | '(' | ')' | '.')
+}
+
+fn is_numeric_id(value: &str) -> bool {
+    numeric_id_pattern().is_match(value)
+}
+
+fn is_country_code(value: &str) -> bool {
+    country_code_pattern().is_match(value)
 }
 
 fn email_pattern() -> &'static Regex {
@@ -165,47 +216,120 @@ fn country_code_pattern() -> &'static Regex {
     PATTERN.get_or_init(|| Regex::new(r"^[A-Z]{2}$").unwrap())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+fn detect_name_type(
+    column_name: &str,
+    non_empty_values: &[&String],
+    total_samples: usize,
+) -> Option<DetectionResult> {
+    let data_type = infer_name_type_from_header(column_name)?;
+    let match_count = non_empty_values
+        .iter()
+        .filter(|value| match data_type {
+            DataType::FirstName => is_plausible_name_part(value, 2),
+            DataType::LastName => is_plausible_name_part(value, 4),
+            DataType::FullName => is_plausible_full_name(value),
+            _ => false,
+        })
+        .count();
+    let confidence = calculate_confidence(match_count, non_empty_values.len());
 
-    fn strings(values: &[&str]) -> Vec<String> {
-        values.iter().map(|value| (*value).to_string()).collect()
+    if confidence == Confidence::Low {
+        return None;
     }
 
-    #[test]
-    fn detects_email_with_high_confidence() {
-        let result = detect_column_type(&strings(&[
-            "user1@example.com",
-            "user2@example.com",
-            "user3@example.com",
-        ]));
-        assert_eq!(result.data_type, DataType::Email);
-        assert_eq!(result.confidence, Confidence::High);
-    }
-
-    #[test]
-    fn long_numeric_strings_follow_phone_priority() {
-        let result = detect_column_type(&strings(&[
-            "1234567890123",
-            "9876543210987",
-            "1111222233334",
-        ]));
-        assert_eq!(result.data_type, DataType::Phone);
-    }
-
-    #[test]
-    fn detects_enum_after_patterns() {
-        let result = detect_column_type(&strings(&[
-            "active", "inactive", "pending", "active", "inactive", "pending", "active", "inactive",
-            "pending", "active", "inactive",
-        ]));
-        assert_eq!(result.data_type, DataType::Enum);
-    }
-
-    #[test]
-    fn detects_mixed_empty_format() {
-        let result = detect_empty_format(&strings(&["", "null", "value"]));
-        assert_eq!(result, EmptyFormat::Mixed);
-    }
+    Some(DetectionResult {
+        data_type,
+        confidence,
+        sample_matches: match_count,
+        total_samples,
+    })
 }
+
+fn infer_name_type_from_header(column_name: &str) -> Option<DataType> {
+    let compact: String = column_name
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    let tokens: HashSet<String> = column_name
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .map(|token| token.to_ascii_lowercase())
+        .collect();
+
+    if matches!(compact.as_str(), "firstname" | "givenname" | "forename")
+        || tokens.contains("firstname")
+        || tokens.contains("forename")
+        || tokens.contains("given")
+        || tokens.contains("first") && tokens.contains("name")
+    {
+        return Some(DataType::FirstName);
+    }
+
+    if matches!(compact.as_str(), "lastname" | "surname" | "familyname")
+        || tokens.contains("lastname")
+        || tokens.contains("surname")
+        || tokens.contains("family") && tokens.contains("name")
+        || tokens.contains("last") && tokens.contains("name")
+    {
+        return Some(DataType::LastName);
+    }
+
+    if matches!(
+        compact.as_str(),
+        "name"
+            | "fullname"
+            | "displayname"
+            | "legalname"
+            | "personname"
+            | "contactname"
+            | "customername"
+            | "clientname"
+    ) || tokens.contains("fullname")
+        || tokens.contains("display") && tokens.contains("name")
+        || tokens.contains("legal") && tokens.contains("name")
+        || tokens.contains("person") && tokens.contains("name")
+        || tokens.contains("contact") && tokens.contains("name")
+        || tokens.contains("customer") && tokens.contains("name")
+        || tokens.contains("client") && tokens.contains("name")
+        || tokens.contains("full") && tokens.contains("name")
+    {
+        return Some(DataType::FullName);
+    }
+
+    None
+}
+
+fn is_plausible_name_part(value: &str, max_tokens: usize) -> bool {
+    let trimmed = value.trim();
+    if !(2..=80).contains(&trimmed.len()) {
+        return false;
+    }
+
+    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+    !tokens.is_empty()
+        && tokens.len() <= max_tokens
+        && tokens.iter().all(|token| is_plausible_name_token(token))
+}
+
+fn is_plausible_full_name(value: &str) -> bool {
+    let trimmed = value.trim();
+    if !(5..=120).contains(&trimmed.len()) {
+        return false;
+    }
+
+    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+    (2..=6).contains(&tokens.len()) && tokens.iter().all(|token| is_plausible_name_token(token))
+}
+
+fn is_plausible_name_token(token: &str) -> bool {
+    let mut chars = token.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    first.is_alphabetic()
+        && chars.all(|character| character.is_alphabetic() || matches!(character, '\'' | '-' | '.'))
+}
+
+#[cfg(test)]
+mod tests;

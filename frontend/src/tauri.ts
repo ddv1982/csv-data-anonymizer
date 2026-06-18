@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { AnalyzeResponse, AnonymizeData, AppSettings, PreviewData } from './types'
+import type { AnalyzeResponse, AnonymizeData, AnonymizeJobStatus, AppSettings, PreviewData } from './types'
 
 export function loadSettings(): Promise<AppSettings> {
   return invoke('load_settings')
@@ -55,14 +55,48 @@ export function anonymizeCsv(
   sampleRowCount: number,
 ): Promise<AnonymizeData> {
   return invoke('anonymize_csv', {
-    filePath,
-    outputPath,
-    columns,
-    deterministic,
-    seed,
-    force,
-    sampleRowCount,
+    request: {
+      filePath,
+      outputPath,
+      columns,
+      deterministic,
+      seed,
+      force,
+      sampleRowCount,
+    },
   })
+}
+
+export function startAnonymizeJob(
+  filePath: string,
+  outputPath: string,
+  columns: number[],
+  deterministic: boolean,
+  seed: string,
+  force: boolean,
+  sampleRowCount: number,
+  totalRowCount: number | null,
+): Promise<AnonymizeJobStatus> {
+  return invoke('start_anonymize_job', {
+    request: {
+      filePath,
+      outputPath,
+      columns,
+      deterministic,
+      seed,
+      force,
+      sampleRowCount,
+      totalRowCount,
+    },
+  })
+}
+
+export function getAnonymizeJobStatus(jobId: string): Promise<AnonymizeJobStatus> {
+  return invoke('get_anonymize_job_status', { jobId })
+}
+
+export function cancelAnonymizeJob(jobId: string): Promise<AnonymizeJobStatus> {
+  return invoke('cancel_anonymize_job', { jobId })
 }
 
 export function openOutputLocation(outputPath: string): Promise<void> {
