@@ -204,6 +204,24 @@ jobs:
           app_path="dist/rust/build/CSV Anonymizer.app"
           app_zip="${RUNNER_TEMP}/csv-anonymizer-app.zip"
 
+          notarize_with_retry() {
+            local artifact="$1"
+            local attempt
+            for attempt in 1 2 3; do
+              if xcrun notarytool submit "${artifact}" \
+                --key "${APPLE_API_KEY_PATH}" \
+                --key-id "${APPLE_API_KEY_ID}" \
+                --issuer "${APPLE_API_ISSUER}" \
+                --wait; then
+                return 0
+              fi
+              if [ "${attempt}" -lt 3 ]; then
+                sleep $((attempt * 60))
+              fi
+            done
+            return 1
+          }
+
           codesign --force --deep --timestamp --options runtime \
             --entitlements build/entitlements.mac.plist \
             --sign "${MACOS_DEVELOPER_ID}" \
@@ -211,11 +229,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "${app_path}"
 
           ditto -c -k --keepParent "${app_path}" "${app_zip}"
-          xcrun notarytool submit "${app_zip}" \
-            --key "${APPLE_API_KEY_PATH}" \
-            --key-id "${APPLE_API_KEY_ID}" \
-            --issuer "${APPLE_API_ISSUER}" \
-            --wait
+          notarize_with_retry "${app_zip}"
           xcrun stapler staple "${app_path}"
           xcrun stapler validate "${app_path}"
           spctl --assess --verbose --type exec "${app_path}"
@@ -233,13 +247,27 @@ jobs:
           version="$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")"
           dmg="dist/rust/artifacts/csv-anonymizer-${version}-macos-${{ matrix.arch }}.dmg"
 
+          notarize_with_retry() {
+            local artifact="$1"
+            local attempt
+            for attempt in 1 2 3; do
+              if xcrun notarytool submit "${artifact}" \
+                --key "${APPLE_API_KEY_PATH}" \
+                --key-id "${APPLE_API_KEY_ID}" \
+                --issuer "${APPLE_API_ISSUER}" \
+                --wait; then
+                return 0
+              fi
+              if [ "${attempt}" -lt 3 ]; then
+                sleep $((attempt * 60))
+              fi
+            done
+            return 1
+          }
+
           codesign --force --timestamp --sign "${MACOS_DEVELOPER_ID}" "${dmg}"
           codesign --verify --verbose=2 "${dmg}"
-          xcrun notarytool submit "${dmg}" \
-            --key "${APPLE_API_KEY_PATH}" \
-            --key-id "${APPLE_API_KEY_ID}" \
-            --issuer "${APPLE_API_ISSUER}" \
-            --wait
+          notarize_with_retry "${dmg}"
           xcrun stapler staple "${dmg}"
           xcrun stapler validate "${dmg}"
           spctl --assess --verbose --type open --context context:primary-signature "${dmg}"
