@@ -1,8 +1,8 @@
 mod settings;
 
 use csv_anonymizer_core::{
-    AnonymizeData, AnonymizeParams, AnonymizerService, ColumnMetadata, HeadersData, PreviewData,
-    PreviewParams,
+    AnonymizeData, AnonymizeParams, AnonymizerService, ColumnMetadata, Confidence, DataType,
+    HeadersData, PiiRisk, PreviewData, PreviewParams,
 };
 use eframe::egui;
 use settings::{AppSettings, SettingsStore};
@@ -38,15 +38,192 @@ fn run_gui() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("CSV Anonymizer")
-            .with_inner_size([1180.0, 760.0]),
+            .with_inner_size([1180.0, 760.0])
+            .with_min_inner_size([920.0, 640.0]),
         ..Default::default()
     };
 
     eframe::run_native(
         "CSV Anonymizer",
         options,
-        Box::new(|_cc| Ok(Box::<CsvAnonymizerApp>::default())),
+        Box::new(|cc| {
+            apply_app_style(&cc.egui_ctx);
+            Ok(Box::<CsvAnonymizerApp>::default())
+        }),
     )
+}
+
+fn apply_app_style(ctx: &egui::Context) {
+    let mut style = (*ctx.global_style()).clone();
+    style.text_styles.insert(
+        egui::TextStyle::Heading,
+        egui::FontId::new(28.0, egui::FontFamily::Proportional),
+    );
+    style.spacing.item_spacing = egui::vec2(10.0, 8.0);
+    style.spacing.window_margin = egui::Margin::same(0);
+    style.spacing.button_padding = egui::vec2(11.0, 6.0);
+    style.spacing.interact_size = egui::vec2(40.0, 32.0);
+    style.spacing.text_edit_width = 320.0;
+
+    let mut visuals = egui::Visuals::light();
+    visuals.panel_fill = app_background();
+    visuals.window_fill = app_background();
+    visuals.faint_bg_color = egui::Color32::from_rgb(242, 245, 247);
+    visuals.extreme_bg_color = egui::Color32::WHITE;
+    visuals.text_edit_bg_color = Some(egui::Color32::WHITE);
+    visuals.code_bg_color = egui::Color32::from_rgb(236, 241, 244);
+    visuals.warn_fg_color = egui::Color32::from_rgb(143, 88, 16);
+    visuals.error_fg_color = egui::Color32::from_rgb(178, 39, 39);
+    visuals.hyperlink_color = accent();
+    visuals.selection.bg_fill = accent();
+    visuals.selection.stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
+    visuals.window_corner_radius = egui::CornerRadius::same(8);
+    visuals.menu_corner_radius = egui::CornerRadius::same(6);
+    visuals.button_frame = true;
+    visuals.striped = true;
+
+    visuals.widgets.noninteractive.bg_fill = section_fill();
+    visuals.widgets.noninteractive.bg_stroke = subtle_stroke();
+    visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, text_primary());
+    visuals.widgets.inactive.weak_bg_fill = egui::Color32::WHITE;
+    visuals.widgets.inactive.bg_fill = egui::Color32::WHITE;
+    visuals.widgets.inactive.bg_stroke = subtle_stroke();
+    visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(6);
+    visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(230, 247, 244);
+    visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(230, 247, 244);
+    visuals.widgets.hovered.bg_stroke =
+        egui::Stroke::new(1.0, egui::Color32::from_rgb(107, 176, 169));
+    visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(6);
+    visuals.widgets.active.weak_bg_fill = egui::Color32::from_rgb(209, 234, 230);
+    visuals.widgets.active.bg_fill = egui::Color32::from_rgb(209, 234, 230);
+    visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, accent());
+    visuals.widgets.active.corner_radius = egui::CornerRadius::same(6);
+    visuals.widgets.open = visuals.widgets.hovered;
+
+    style.visuals = visuals;
+    ctx.set_global_style(style);
+}
+
+fn app_background() -> egui::Color32 {
+    egui::Color32::from_rgb(244, 247, 249)
+}
+
+fn header_fill() -> egui::Color32 {
+    egui::Color32::from_rgb(20, 39, 46)
+}
+
+fn section_fill() -> egui::Color32 {
+    egui::Color32::from_rgb(252, 253, 253)
+}
+
+fn subtle_fill() -> egui::Color32 {
+    egui::Color32::from_rgb(247, 250, 251)
+}
+
+fn accent() -> egui::Color32 {
+    egui::Color32::from_rgb(0, 121, 113)
+}
+
+fn accent_dark() -> egui::Color32 {
+    egui::Color32::from_rgb(0, 86, 82)
+}
+
+fn text_primary() -> egui::Color32 {
+    egui::Color32::from_rgb(31, 42, 48)
+}
+
+fn text_muted() -> egui::Color32 {
+    egui::Color32::from_rgb(91, 107, 115)
+}
+
+fn border_color() -> egui::Color32 {
+    egui::Color32::from_rgb(215, 225, 229)
+}
+
+fn subtle_stroke() -> egui::Stroke {
+    egui::Stroke::new(1.0, border_color())
+}
+
+fn section_frame() -> egui::Frame {
+    egui::Frame::new()
+        .fill(section_fill())
+        .stroke(subtle_stroke())
+        .corner_radius(8)
+        .inner_margin(egui::Margin::symmetric(14, 12))
+}
+
+fn render_section(ui: &mut egui::Ui, title: &str, add_contents: impl FnOnce(&mut egui::Ui)) {
+    section_frame().show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.label(
+            egui::RichText::new(title)
+                .strong()
+                .size(15.0)
+                .color(text_primary()),
+        );
+        ui.add_space(8.0);
+        add_contents(ui);
+    });
+}
+
+fn primary_button(label: &'static str) -> egui::Button<'static> {
+    egui::Button::new(
+        egui::RichText::new(label)
+            .strong()
+            .color(egui::Color32::WHITE),
+    )
+    .fill(accent())
+    .stroke(egui::Stroke::new(1.0, accent_dark()))
+    .corner_radius(6)
+    .min_size(egui::vec2(132.0, 34.0))
+}
+
+fn secondary_button(label: &'static str) -> egui::Button<'static> {
+    egui::Button::new(egui::RichText::new(label).color(text_primary()))
+        .fill(egui::Color32::WHITE)
+        .stroke(subtle_stroke())
+        .corner_radius(6)
+        .min_size(egui::vec2(86.0, 32.0))
+}
+
+fn chip(
+    ui: &mut egui::Ui,
+    text: impl Into<String>,
+    fill: egui::Color32,
+    stroke: egui::Stroke,
+    text_color: egui::Color32,
+) {
+    let text = text.into();
+    egui::Frame::new()
+        .fill(fill)
+        .stroke(stroke)
+        .corner_radius(6)
+        .inner_margin(egui::Margin::symmetric(8, 4))
+        .show(ui, |ui| {
+            ui.label(egui::RichText::new(text).small().strong().color(text_color));
+        });
+}
+
+fn empty_state(ui: &mut egui::Ui, title: &str, detail: &str) {
+    ui.add_space(18.0);
+    ui.vertical_centered(|ui| {
+        ui.label(
+            egui::RichText::new(title)
+                .strong()
+                .size(15.0)
+                .color(text_primary()),
+        );
+        ui.label(egui::RichText::new(detail).color(text_muted()));
+    });
+    ui.add_space(18.0);
+}
+
+fn status_frame(fill: egui::Color32, stroke: egui::Color32) -> egui::Frame {
+    egui::Frame::new()
+        .fill(fill)
+        .stroke(egui::Stroke::new(1.0, stroke))
+        .corner_radius(6)
+        .inner_margin(egui::Margin::symmetric(10, 8))
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -356,22 +533,39 @@ impl eframe::App for CsvAnonymizerApp {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
         }
 
-        ui.horizontal(|ui| {
-            ui.heading("CSV Anonymizer");
-            ui.separator();
-            ui.label(format!("v{}", self.service.version()));
-        });
+        let available_size = ui.available_size();
+        egui::Frame::new()
+            .fill(app_background())
+            .inner_margin(egui::Margin::symmetric(18, 16))
+            .show(ui, |ui| {
+                ui.set_min_size(available_size);
 
-        self.render_file_controls(ui);
-        ui.separator();
-        self.render_options(ui);
-        ui.separator();
-        self.render_columns(ui);
-        ui.separator();
-        self.render_preview(ui);
-        ui.separator();
-        self.render_actions(ui);
-        self.render_status(ui);
+                self.render_header(ui);
+                ui.add_space(12.0);
+
+                egui::ScrollArea::vertical()
+                    .id_salt("main_scroll")
+                    .max_height(ui.available_height())
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        render_section(ui, "Files", |ui| self.render_file_controls(ui));
+                        ui.add_space(10.0);
+
+                        render_section(ui, "Settings", |ui| self.render_options(ui));
+                        ui.add_space(10.0);
+
+                        render_section(ui, "Detected Columns", |ui| self.render_columns(ui));
+                        ui.add_space(10.0);
+
+                        render_section(ui, "Preview", |ui| self.render_preview(ui));
+                        ui.add_space(10.0);
+
+                        render_section(ui, "Run", |ui| {
+                            self.render_actions(ui);
+                            self.render_status(ui);
+                        });
+                    });
+            });
 
         if self.state.is_anonymizing {
             ui.ctx().request_repaint_after(Duration::from_millis(100));
@@ -380,16 +574,100 @@ impl eframe::App for CsvAnonymizerApp {
 }
 
 impl CsvAnonymizerApp {
+    fn render_header(&mut self, ui: &mut egui::Ui) {
+        let file_label = self
+            .state
+            .input_path
+            .as_deref()
+            .and_then(Path::file_name)
+            .and_then(|name| name.to_str())
+            .map_or_else(|| "No CSV loaded".to_string(), ToString::to_string);
+        let rows_label = self.state.headers.as_ref().map_or_else(
+            || "No rows".to_string(),
+            |headers| format!("{} rows", headers.row_count),
+        );
+        let selected_label = format!("{} selected", self.state.selected_columns.len());
+        let mode_label = if self.settings.deterministic_default {
+            "Deterministic"
+        } else {
+            "Randomized"
+        };
+
+        egui::Frame::new()
+            .fill(header_fill())
+            .corner_radius(8)
+            .inner_margin(egui::Margin::symmetric(16, 14))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(
+                            egui::RichText::new("CSV Anonymizer")
+                                .strong()
+                                .size(27.0)
+                                .color(egui::Color32::WHITE),
+                        );
+                        ui.label(
+                            egui::RichText::new(file_label)
+                                .size(13.0)
+                                .color(egui::Color32::from_rgb(190, 211, 216)),
+                        );
+                    });
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.add(secondary_button("Quit")).clicked() {
+                            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                        }
+                        chip(
+                            ui,
+                            format!("v{}", self.service.version()),
+                            egui::Color32::from_rgb(33, 61, 69),
+                            egui::Stroke::new(1.0, egui::Color32::from_rgb(79, 112, 119)),
+                            egui::Color32::from_rgb(225, 242, 244),
+                        );
+                        chip(
+                            ui,
+                            mode_label,
+                            egui::Color32::from_rgb(231, 245, 243),
+                            egui::Stroke::new(1.0, egui::Color32::from_rgb(149, 203, 197)),
+                            accent_dark(),
+                        );
+                        chip(
+                            ui,
+                            selected_label,
+                            egui::Color32::from_rgb(239, 243, 246),
+                            egui::Stroke::new(1.0, egui::Color32::from_rgb(204, 216, 221)),
+                            text_primary(),
+                        );
+                        chip(
+                            ui,
+                            rows_label,
+                            egui::Color32::from_rgb(239, 243, 246),
+                            egui::Stroke::new(1.0, egui::Color32::from_rgb(204, 216, 221)),
+                            text_primary(),
+                        );
+                    });
+                });
+            });
+    }
+
     fn render_file_controls(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.label("Input");
-            let response = ui.text_edit_singleline(&mut self.state.input_path_text);
+            ui.add_sized(
+                [72.0, 32.0],
+                egui::Label::new(egui::RichText::new("Input").strong().color(text_primary())),
+            );
+            let text_width = (ui.available_width() - 292.0).max(260.0);
+            let response = ui.add_sized(
+                [text_width, 32.0],
+                egui::TextEdit::singleline(&mut self.state.input_path_text)
+                    .hint_text("Select or paste a CSV path"),
+            );
             if response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)) {
                 self.load_csv_from_text();
             }
 
             if ui
-                .add_enabled(!self.state.is_anonymizing, egui::Button::new("Open CSV"))
+                .add_enabled(!self.state.is_anonymizing, secondary_button("Open CSV"))
                 .clicked()
                 && let Some(path) = self.input_file_dialog().pick_file()
             {
@@ -399,7 +677,7 @@ impl CsvAnonymizerApp {
             if ui
                 .add_enabled(
                     !self.state.is_anonymizing && !self.state.input_path_text.trim().is_empty(),
-                    egui::Button::new("Load Path"),
+                    secondary_button("Load Path"),
                 )
                 .clicked()
             {
@@ -409,7 +687,7 @@ impl CsvAnonymizerApp {
             if ui
                 .add_enabled(
                     !self.state.is_anonymizing && self.state.input_path.is_some(),
-                    egui::Button::new("Clear"),
+                    secondary_button("Clear"),
                 )
                 .clicked()
             {
@@ -417,10 +695,19 @@ impl CsvAnonymizerApp {
             }
         });
 
+        ui.add_space(8.0);
         ui.horizontal(|ui| {
-            ui.label("Output");
+            ui.add_sized(
+                [72.0, 32.0],
+                egui::Label::new(egui::RichText::new("Output").strong().color(text_primary())),
+            );
+            let text_width = (ui.available_width() - 126.0).max(260.0);
             let output_changed = ui
-                .text_edit_singleline(&mut self.state.output_path_text)
+                .add_sized(
+                    [text_width, 32.0],
+                    egui::TextEdit::singleline(&mut self.state.output_path_text)
+                        .hint_text("Output CSV path"),
+                )
                 .changed();
             if output_changed {
                 self.sync_output_path_from_text();
@@ -430,7 +717,7 @@ impl CsvAnonymizerApp {
             if ui
                 .add_enabled(
                     !self.state.is_anonymizing && self.state.input_path.is_some(),
-                    egui::Button::new("Choose Folder"),
+                    secondary_button("Choose Folder"),
                 )
                 .clicked()
                 && let Some(folder) = self.output_folder_dialog().pick_folder()
@@ -452,7 +739,7 @@ impl CsvAnonymizerApp {
 
     fn render_options(&mut self, ui: &mut egui::Ui) {
         let mut settings_changed = false;
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             settings_changed |= ui
                 .checkbox(&mut self.settings.deterministic_default, "Deterministic")
                 .changed();
@@ -462,31 +749,62 @@ impl CsvAnonymizerApp {
             settings_changed |= ui
                 .checkbox(&mut self.settings.remember_last_paths, "Remember paths")
                 .changed();
-            ui.label("Seed");
-            settings_changed |= ui.text_edit_singleline(&mut self.settings.seed).changed();
         });
-        ui.horizontal(|ui| {
-            ui.label("Sample rows");
-            settings_changed |= ui
-                .add(
-                    egui::DragValue::new(&mut self.settings.sample_row_count)
-                        .range(1..=10_000)
-                        .speed(1),
-                )
-                .changed();
-            ui.label("Preview rows");
-            settings_changed |= ui
-                .add(
-                    egui::DragValue::new(&mut self.settings.preview_sample_count)
-                        .range(1..=100)
-                        .speed(1),
-                )
-                .changed();
-            ui.label("Output suffix");
-            settings_changed |= ui
-                .text_edit_singleline(&mut self.settings.default_output_suffix)
-                .changed();
-        });
+        ui.add_space(8.0);
+
+        egui::Grid::new("settings_grid")
+            .num_columns(6)
+            .spacing([12.0, 8.0])
+            .show(ui, |ui| {
+                ui.label(egui::RichText::new("Seed").strong().color(text_muted()));
+                settings_changed |= ui
+                    .add_sized(
+                        [260.0, 32.0],
+                        egui::TextEdit::singleline(&mut self.settings.seed)
+                            .hint_text("Seed for deterministic output"),
+                    )
+                    .changed();
+                ui.label(
+                    egui::RichText::new("Output suffix")
+                        .strong()
+                        .color(text_muted()),
+                );
+                settings_changed |= ui
+                    .add_sized(
+                        [140.0, 32.0],
+                        egui::TextEdit::singleline(&mut self.settings.default_output_suffix),
+                    )
+                    .changed();
+                ui.end_row();
+
+                ui.label(
+                    egui::RichText::new("Sample rows")
+                        .strong()
+                        .color(text_muted()),
+                );
+                settings_changed |= ui
+                    .add_sized(
+                        [86.0, 32.0],
+                        egui::DragValue::new(&mut self.settings.sample_row_count)
+                            .range(1..=10_000)
+                            .speed(1),
+                    )
+                    .changed();
+                ui.label(
+                    egui::RichText::new("Preview rows")
+                        .strong()
+                        .color(text_muted()),
+                );
+                settings_changed |= ui
+                    .add_sized(
+                        [86.0, 32.0],
+                        egui::DragValue::new(&mut self.settings.preview_sample_count)
+                            .range(1..=100)
+                            .speed(1),
+                    )
+                    .changed();
+                ui.end_row();
+            });
 
         if settings_changed {
             if !self.settings.remember_last_paths {
@@ -499,16 +817,40 @@ impl CsvAnonymizerApp {
 
     fn render_columns(&mut self, ui: &mut egui::Ui) {
         let Some(headers) = &self.state.headers else {
-            ui.label("Open a CSV to inspect columns.");
+            empty_state(
+                ui,
+                "No CSV selected",
+                "Open a CSV to inspect detected columns.",
+            );
             return;
         };
         let row_count = headers.row_count;
         let columns = headers.columns.clone();
 
         ui.horizontal(|ui| {
-            ui.label(format!("Rows: {}", row_count));
+            chip(
+                ui,
+                format!("{} rows", row_count),
+                subtle_fill(),
+                subtle_stroke(),
+                text_primary(),
+            );
+            chip(
+                ui,
+                format!("{} columns", columns.len()),
+                subtle_fill(),
+                subtle_stroke(),
+                text_primary(),
+            );
+            chip(
+                ui,
+                format!("{} selected", self.state.selected_columns.len()),
+                egui::Color32::from_rgb(231, 245, 243),
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(149, 203, 197)),
+                accent_dark(),
+            );
             if ui
-                .add_enabled(!self.state.is_anonymizing, egui::Button::new("Select PII"))
+                .add_enabled(!self.state.is_anonymizing, secondary_button("Select PII"))
                 .clicked()
             {
                 self.state.selected_columns = columns
@@ -522,7 +864,7 @@ impl CsvAnonymizerApp {
             if ui
                 .add_enabled(
                     !self.state.is_anonymizing,
-                    egui::Button::new("Clear Selection"),
+                    secondary_button("Clear Selection"),
                 )
                 .clicked()
             {
@@ -531,22 +873,25 @@ impl CsvAnonymizerApp {
                 self.clear_result();
             }
         });
+        ui.add_space(8.0);
 
         let selected_columns = self.state.selected_columns.clone();
         let mut selection_change = None;
 
         egui::ScrollArea::vertical()
             .id_salt("columns")
-            .max_height(220.0)
+            .max_height(260.0)
             .show(ui, |ui| {
                 egui::Grid::new("columns_grid")
                     .striped(true)
-                    .num_columns(6)
+                    .num_columns(7)
+                    .spacing([12.0, 7.0])
                     .show(ui, |ui| {
                         ui.strong("Use");
                         ui.strong("Index");
                         ui.strong("Name");
                         ui.strong("Type");
+                        ui.strong("Confidence");
                         ui.strong("PII");
                         ui.strong("Samples");
                         ui.end_row();
@@ -563,10 +908,16 @@ impl CsvAnonymizerApp {
                                 selection_change = Some((column.index, selected));
                             }
                             ui.label(column.index.to_string());
-                            ui.label(&column.name);
-                            ui.label(format!("{:?}", column.detected_type));
-                            ui.label(format!("{:?}", column.pii_risk));
-                            ui.label(column.sample_values.join(", "));
+                            ui.add(egui::Label::new(truncate_text(&column.name, 32)).truncate())
+                                .on_hover_text(&column.name);
+                            ui.label(format_data_type(column.detected_type));
+                            confidence_badge(ui, column.confidence);
+                            risk_badge(ui, column.pii_risk);
+                            let sample_text = sample_summary(&column.sample_values);
+                            let response = ui.add(egui::Label::new(sample_text).truncate());
+                            if !column.sample_values.is_empty() {
+                                response.on_hover_text(column.sample_values.join("\n"));
+                            }
                             ui.end_row();
                         }
                     });
@@ -578,34 +929,110 @@ impl CsvAnonymizerApp {
     }
 
     fn render_preview(&mut self, ui: &mut egui::Ui) {
-        if ui
-            .add_enabled(
-                !self.state.is_anonymizing
-                    && self.state.input_path.is_some()
-                    && !self.state.selected_columns.is_empty(),
-                egui::Button::new("Preview"),
-            )
-            .clicked()
-        {
+        let can_preview = !self.state.is_anonymizing
+            && self.state.input_path.is_some()
+            && !self.state.selected_columns.is_empty();
+
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(can_preview, secondary_button("Preview"))
+                .clicked()
+            {
+                self.preview();
+            }
+            chip(
+                ui,
+                format!("{} columns selected", self.state.selected_columns.len()),
+                subtle_fill(),
+                subtle_stroke(),
+                text_primary(),
+            );
+        });
+
+        if ui.ctx().input(|input| input.key_pressed(egui::Key::F5)) && can_preview {
             self.preview();
         }
 
         let Some(preview) = &self.state.preview else {
+            if self.state.input_path.is_none() {
+                empty_state(
+                    ui,
+                    "No preview available",
+                    "Open a CSV before previewing changes.",
+                );
+            } else if self.state.selected_columns.is_empty() {
+                empty_state(
+                    ui,
+                    "No columns selected",
+                    "Select at least one detected column to preview output.",
+                );
+            } else {
+                empty_state(
+                    ui,
+                    "Preview not generated",
+                    "Run a preview for selected columns.",
+                );
+            }
             return;
         };
 
+        ui.add_space(8.0);
         egui::ScrollArea::vertical()
             .id_salt("preview")
-            .max_height(180.0)
+            .max_height(220.0)
             .show(ui, |ui| {
                 for column in &preview.previews {
-                    ui.strong(format!("{} ({})", column.column_name, column.column_index));
-                    for sample in &column.samples {
-                        ui.horizontal_wrapped(|ui| {
-                            ui.monospace(&sample.original);
-                            ui.label("->");
-                            ui.monospace(&sample.anonymized);
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "{} ({})",
+                                column.column_name, column.column_index
+                            ))
+                            .strong()
+                            .color(text_primary()),
+                        );
+                        chip(
+                            ui,
+                            format!("{} samples", column.samples.len()),
+                            subtle_fill(),
+                            subtle_stroke(),
+                            text_muted(),
+                        );
+                    });
+                    egui::Grid::new(format!("preview_{}", column.column_index))
+                        .num_columns(3)
+                        .striped(true)
+                        .spacing([10.0, 5.0])
+                        .show(ui, |ui| {
+                            for sample in &column.samples {
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(truncate_text(&sample.original, 54))
+                                            .monospace()
+                                            .background_color(subtle_fill()),
+                                    )
+                                    .truncate(),
+                                )
+                                .on_hover_text(&sample.original);
+                                ui.label(egui::RichText::new("->").color(text_muted()));
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(truncate_text(&sample.anonymized, 54))
+                                            .monospace()
+                                            .background_color(subtle_fill()),
+                                    )
+                                    .truncate(),
+                                )
+                                .on_hover_text(&sample.anonymized);
+                                ui.end_row();
+                            }
                         });
+                    for sample in &column.samples {
+                        if sample.original.is_empty() && sample.anonymized.is_empty() {
+                            ui.label(
+                                egui::RichText::new("Empty value preserved").color(text_muted()),
+                            );
+                        }
                     }
                     ui.add_space(8.0);
                 }
@@ -614,50 +1041,91 @@ impl CsvAnonymizerApp {
 
     fn render_actions(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
+            let can_anonymize = !self.state.is_anonymizing
+                && self.state.input_path.is_some()
+                && !self.state.output_path_text.trim().is_empty()
+                && !self.state.selected_columns.is_empty();
             if ui
-                .add_enabled(
-                    !self.state.is_anonymizing
-                        && self.state.input_path.is_some()
-                        && !self.state.output_path_text.trim().is_empty()
-                        && !self.state.selected_columns.is_empty(),
-                    egui::Button::new("Anonymize CSV"),
-                )
+                .add_enabled(can_anonymize, primary_button("Anonymize CSV"))
                 .clicked()
             {
                 self.anonymize();
             }
 
-            if ui.button("Quit").clicked() {
-                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-            }
+            let hint = if self.state.is_anonymizing {
+                "Anonymization is running."
+            } else if self.state.input_path.is_none() {
+                "Open a CSV to begin."
+            } else if self.state.selected_columns.is_empty() {
+                "Select at least one column."
+            } else if self.state.output_path_text.trim().is_empty() {
+                "Choose an output path."
+            } else {
+                "Ready to anonymize."
+            };
+            ui.label(egui::RichText::new(hint).color(text_muted()));
         });
     }
 
     fn render_status(&mut self, ui: &mut egui::Ui) {
+        let warning = self.state.settings_warning.clone();
+        let error = self.state.error.clone();
+        let result = self.state.last_result.clone();
+
         if self.state.is_anonymizing {
-            ui.horizontal(|ui| {
+            ui.add_space(8.0);
+            status_frame(
+                egui::Color32::from_rgb(230, 247, 244),
+                egui::Color32::from_rgb(149, 203, 197),
+            )
+            .show(ui, |ui| {
                 ui.add(egui::Spinner::new());
-                ui.label("Anonymizing CSV...");
+                ui.label(egui::RichText::new("Anonymizing CSV...").color(accent_dark()));
             });
         }
 
-        if let Some(warning) = &self.state.settings_warning {
-            ui.colored_label(egui::Color32::from_rgb(145, 95, 20), warning);
+        if let Some(warning) = warning {
+            ui.add_space(8.0);
+            status_frame(
+                egui::Color32::from_rgb(255, 248, 235),
+                egui::Color32::from_rgb(237, 190, 114),
+            )
+            .show(ui, |ui| {
+                ui.label(egui::RichText::new(warning).color(egui::Color32::from_rgb(145, 95, 20)));
+            });
         }
 
-        if let Some(error) = &self.state.error {
-            ui.colored_label(egui::Color32::from_rgb(180, 30, 30), error);
+        if let Some(error) = error {
+            ui.add_space(8.0);
+            status_frame(
+                egui::Color32::from_rgb(255, 240, 240),
+                egui::Color32::from_rgb(229, 154, 154),
+            )
+            .show(ui, |ui| {
+                ui.label(egui::RichText::new(error).color(egui::Color32::from_rgb(178, 39, 39)));
+            });
         }
 
-        if let Some(result) = self.state.last_result.clone() {
-            ui.horizontal_wrapped(|ui| {
-                ui.colored_label(egui::Color32::from_rgb(30, 110, 45), result);
-                if self.state.last_output_path.is_some() && ui.button("Open Folder").clicked() {
-                    self.open_output_folder();
-                }
-                if ui.button("Anonymize Another File").clicked() {
-                    self.reset_file_state();
-                }
+        if let Some(result) = result {
+            ui.add_space(8.0);
+            status_frame(
+                egui::Color32::from_rgb(237, 249, 240),
+                egui::Color32::from_rgb(153, 210, 166),
+            )
+            .show(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(
+                        egui::RichText::new(result)
+                            .strong()
+                            .color(egui::Color32::from_rgb(30, 110, 45)),
+                    );
+                    if self.state.last_output_path.is_some() && ui.button("Open Folder").clicked() {
+                        self.open_output_folder();
+                    }
+                    if ui.button("Anonymize Another File").clicked() {
+                        self.reset_file_state();
+                    }
+                });
             });
         }
     }
@@ -953,12 +1421,99 @@ fn default_output_path_with_suffix(input_path: &Path, suffix: &str) -> PathBuf {
     input_path.with_file_name(file_name)
 }
 
+fn format_data_type(data_type: DataType) -> &'static str {
+    match data_type {
+        DataType::Email => "Email",
+        DataType::Uuid => "UUID",
+        DataType::Timestamp => "Timestamp",
+        DataType::NumericId => "Numeric ID",
+        DataType::CountryCode => "Country",
+        DataType::Phone => "Phone",
+        DataType::FirstName => "First name",
+        DataType::LastName => "Last name",
+        DataType::FullName => "Full name",
+        DataType::Enum => "Enum",
+        DataType::String => "String",
+        DataType::Unknown => "Unknown",
+    }
+}
+
+fn confidence_badge(ui: &mut egui::Ui, confidence: Confidence) {
+    let (label, fill, stroke, text_color) = match confidence {
+        Confidence::High => (
+            "High",
+            egui::Color32::from_rgb(237, 249, 240),
+            egui::Color32::from_rgb(153, 210, 166),
+            egui::Color32::from_rgb(30, 110, 45),
+        ),
+        Confidence::Medium => (
+            "Medium",
+            egui::Color32::from_rgb(255, 248, 235),
+            egui::Color32::from_rgb(237, 190, 114),
+            egui::Color32::from_rgb(145, 95, 20),
+        ),
+        Confidence::Low => ("Low", subtle_fill(), border_color(), text_muted()),
+    };
+
+    chip(ui, label, fill, egui::Stroke::new(1.0, stroke), text_color);
+}
+
+fn risk_badge(ui: &mut egui::Ui, risk: PiiRisk) {
+    let (label, fill, stroke, text_color) = match risk {
+        PiiRisk::High => (
+            "High",
+            egui::Color32::from_rgb(255, 240, 240),
+            egui::Color32::from_rgb(229, 154, 154),
+            egui::Color32::from_rgb(178, 39, 39),
+        ),
+        PiiRisk::Medium => (
+            "Medium",
+            egui::Color32::from_rgb(255, 248, 235),
+            egui::Color32::from_rgb(237, 190, 114),
+            egui::Color32::from_rgb(145, 95, 20),
+        ),
+        PiiRisk::Low => (
+            "Low",
+            egui::Color32::from_rgb(237, 249, 240),
+            egui::Color32::from_rgb(153, 210, 166),
+            egui::Color32::from_rgb(30, 110, 45),
+        ),
+    };
+
+    chip(ui, label, fill, egui::Stroke::new(1.0, stroke), text_color);
+}
+
+fn sample_summary(values: &[String]) -> String {
+    if values.is_empty() {
+        return "No samples".to_string();
+    }
+
+    let mut samples = values
+        .iter()
+        .take(3)
+        .map(|value| truncate_text(value, 30))
+        .collect::<Vec<_>>();
+    if values.len() > 3 {
+        samples.push("...".to_string());
+    }
+    samples.join(", ")
+}
+
+fn truncate_text(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+    if max_chars <= 3 {
+        return value.chars().take(max_chars).collect();
+    }
+
+    let mut truncated = value.chars().take(max_chars - 3).collect::<String>();
+    truncated.push_str("...");
+    truncated
+}
+
 fn should_auto_select(column: &ColumnMetadata) -> bool {
-    !column.sample_values.is_empty()
-        && matches!(
-            column.pii_risk,
-            csv_anonymizer_core::PiiRisk::High | csv_anonymizer_core::PiiRisk::Medium
-        )
+    !column.sample_values.is_empty() && matches!(column.pii_risk, PiiRisk::High | PiiRisk::Medium)
 }
 
 #[cfg(test)]

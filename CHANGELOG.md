@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.11 - 2026-06-18
+
+- Polish the native Rust desktop interface used by the Linux AppImage, Debian/RPM packages, tarball, and macOS app.
+- Add app-level egui theme styling, structured sections, status chips, clearer column risk badges, and a stronger primary anonymization action.
+- Keep the release packaging unchanged while making the shipped native UI look complete without relying on web CSS assets.
+
 ## v1.0.10 - 2026-06-18
 
 - Rewrite the desktop app as a native Rust `eframe/egui` application with a shared Rust anonymization core.
