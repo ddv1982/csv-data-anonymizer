@@ -274,14 +274,33 @@ def extract_newc_cpio(data: bytes, destination: pathlib.Path) -> None:
 
 
 def extract_rpm(rpm_path: pathlib.Path, destination: pathlib.Path) -> str:
+    errors: list[str] = []
     rpm2cpio = shutil.which("rpm2cpio")
-    if not rpm2cpio:
-        raise ValueError("RPM extraction requires missing tool: rpm2cpio")
-    completed = subprocess.run([rpm2cpio, str(rpm_path)], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if completed.returncode != 0:
-        raise ValueError("rpm2cpio failed: " + completed.stderr.decode("utf-8", errors="replace").strip())
-    extract_newc_cpio(completed.stdout, destination)
-    return "rpm2cpio+python-newc"
+    if rpm2cpio:
+        completed = subprocess.run([rpm2cpio, str(rpm_path)], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if completed.returncode == 0:
+            try:
+                extract_newc_cpio(completed.stdout, destination)
+                return "rpm2cpio+python-newc"
+            except Exception as error:  # noqa: BLE001 - keep fallback error context concise
+                errors.append(f"rpm2cpio output could not be read as newc cpio: {error}")
+        else:
+            stderr = completed.stderr.decode("utf-8", errors="replace").strip()
+            errors.append(f"rpm2cpio failed: {stderr or f'exit {completed.returncode}'}")
+    else:
+        errors.append("rpm2cpio is missing")
+
+    bsdtar = shutil.which("bsdtar")
+    if bsdtar:
+        completed = subprocess.run([bsdtar, "-xf", str(rpm_path), "-C", str(destination)], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if completed.returncode == 0:
+            return "bsdtar"
+        stderr = completed.stderr.decode("utf-8", errors="replace").strip()
+        errors.append(f"bsdtar failed: {stderr or f'exit {completed.returncode}'}")
+    else:
+        errors.append("bsdtar is missing")
+
+    raise ValueError("; ".join(errors))
 
 
 def package_format(package_path: pathlib.Path) -> str:
