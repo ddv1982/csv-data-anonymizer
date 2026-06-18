@@ -1,9 +1,19 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { BrowserView, BrowserWindow, Screen, Updater, Utils, type Display, type Rectangle } from 'electrobun/bun'
+import {
+  ApplicationMenu,
+  BrowserView,
+  BrowserWindow,
+  Screen,
+  Updater,
+  Utils,
+  type ApplicationMenuItemConfig,
+  type Display,
+  type Rectangle
+} from 'electrobun/bun'
 import { AnonymizerService } from '../services/anonymizerService'
 import { SettingsStore } from '../services/settingsStore'
-import { createCsvAnonymizerRpcHandlers } from './rpc'
+import { createCsvAnonymizerRpcHandlers, type DialogOptions } from './rpc'
 import type { CsvAnonymizerRpcSchema } from './rpc-schema'
 import { startSmokeServer } from './smoke-server'
 
@@ -35,7 +45,7 @@ const settingsStore = new SettingsStore(userDataPath)
 const appVersion = await getAppVersion()
 const service = new AnonymizerService(appVersion)
 const rpcHandlers = createCsvAnonymizerRpcHandlers(service, settingsStore, {
-  openFileDialog: Utils.openFileDialog,
+  openFileDialog: openFileDialogSafely,
   showItemInFolder: Utils.showItemInFolder
 })
 const rpc = BrowserView.defineRPC<CsvAnonymizerRpcSchema>({
@@ -44,9 +54,60 @@ const rpc = BrowserView.defineRPC<CsvAnonymizerRpcSchema>({
     requests: rpcHandlers
   }
 })
-
+setupApplicationMenu()
 createWindow()
 startSmokeServer(rpcHandlers)
+
+function setupApplicationMenu(): void {
+  const menu: ApplicationMenuItemConfig[] = [
+    {
+      label: appName,
+      submenu: [
+        { role: 'about' },
+        { type: 'divider' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'showAll' },
+        { type: 'divider' },
+        { role: 'quit' }
+      ]
+    },
+    {
+      label: 'File',
+      submenu: [{ role: 'close' }]
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'divider' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'pasteAndMatchStyle' },
+        { role: 'delete' },
+        { type: 'divider' },
+        { role: 'selectAll' }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [{ role: 'toggleFullScreen' }]
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        { type: 'divider' },
+        { role: 'bringAllToFront' }
+      ]
+    }
+  ]
+
+  ApplicationMenu.setApplicationMenu(menu)
+}
 
 function createWindow(): void {
   const savedBounds = windowStatePath ? loadWindowBounds(windowStatePath) : null
@@ -87,6 +148,21 @@ async function getAppVersion(): Promise<string> {
   } catch {
     return '0.0.0'
   }
+}
+
+async function openFileDialogSafely(options?: DialogOptions): Promise<string[]> {
+  try {
+    const paths = await Utils.openFileDialog(options)
+    return Array.isArray(paths) ? paths : []
+  } catch (error) {
+    if (isFileDialogCancellationError(error)) return []
+    throw error
+  }
+}
+
+function isFileDialogCancellationError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  return /Cannot read properties of (null|undefined) \(reading 'split'\)/.test(error.message)
 }
 
 function canOpenExternalUrl(value: string): boolean {

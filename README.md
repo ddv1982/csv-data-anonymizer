@@ -67,16 +67,38 @@ On Linux, `bun run dist:linux` also creates `.deb`, `.rpm`, and AppImage artifac
 
 Release steps, Linux package signing, and macOS notarization prerequisites are documented in `docs/releasing.md`.
 
-## Linux Install And Updates
+## Install From Releases
 
-The active Electrobun release path publishes Linux `.tar.zst`, setup `.tar.gz`, `.deb`, `.rpm`, AppImage, update metadata, and detached signatures through GitHub Releases.
+Desktop builds are published on [GitHub Releases](https://github.com/ddv1982/csv-data-anonymizer/releases).
+
+### macOS
+
+Download the `.dmg` for your Mac from the latest release. Use the `arm64` build for Apple Silicon Macs and the `x64` build for Intel Macs, then drag CSV Anonymizer into Applications.
+
+### Linux
+
+The active Electrobun release path publishes Linux `.tar.zst`, Electrobun setup `.tar.gz`, `.deb`, `.rpm`, AppImage, update metadata, APT repository setup `.deb`, `install-apt-repo.sh`, keyring, checksum sidecars, and detached signatures.
 
 Debian/Ubuntu users can enable the signed APT repository once:
 
 ```bash
 bash <(curl -fsSL https://github.com/ddv1982/csv-data-anonymizer/releases/latest/download/install-apt-repo.sh)
+```
+
+The setup script downloads the repository setup package to a temporary file, verifies it against a GPG-signed SHA256 sidecar from the release, installs the CSV Anonymizer archive keyring and APT source configuration, then removes the temporary files.
+
+Refresh APT metadata:
+
+```bash
 sudo apt update
+```
+
+Install CSV Anonymizer:
+
+```bash
 sudo apt install csv-anonymizer
 ```
 
-After that, normal `sudo apt update` and `sudo apt upgrade` runs handle package-manager updates.
+After the repository is enabled, normal `sudo apt update` and `sudo apt upgrade` runs handle package-manager updates. CSV Anonymizer can also be installed by searching for "CSV Anonymizer" in GNOME Software or Ubuntu Software after package/AppStream metadata has refreshed.
+
+The standalone `.AppImage`, `.deb`, and `.rpm` release assets remain available as direct-download fallback options. Package-manager installs pull the declared GTK/WebKit/AppIndicator runtime libraries from your distribution when available.

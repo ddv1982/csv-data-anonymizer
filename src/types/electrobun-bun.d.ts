@@ -14,6 +14,33 @@ declare module 'electrobun/bun' {
     isPrimary: boolean
   }
 
+  export type ApplicationMenuItemConfig =
+    | { type: 'divider' | 'separator' }
+    | {
+        type?: 'normal'
+        label: string
+        tooltip?: string
+        action?: string
+        data?: unknown
+        submenu?: ApplicationMenuItemConfig[]
+        enabled?: boolean
+        checked?: boolean
+        hidden?: boolean
+        accelerator?: string
+      }
+    | {
+        type?: 'normal'
+        label?: string
+        tooltip?: string
+        role?: string
+        data?: unknown
+        submenu?: ApplicationMenuItemConfig[]
+        enabled?: boolean
+        checked?: boolean
+        hidden?: boolean
+        accelerator?: string
+      }
+
   export interface PlatformBuildConfig {
     bundleCEF?: boolean
     bundleWGPU?: boolean
@@ -94,6 +121,11 @@ declare module 'electrobun/bun' {
   export const Screen: {
     getPrimaryDisplay(): Display
     getAllDisplays(): Display[]
+  }
+
+  export const ApplicationMenu: {
+    setApplicationMenu(menu: ApplicationMenuItemConfig[]): void
+    on(name: 'application-menu-clicked', handler: (event: unknown) => void): void
   }
 
   export const Utils: {

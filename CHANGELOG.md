@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.0.6 - 2026-06-18
+
+- Restore the native macOS application menu for packaged Electrobun builds.
+- Fix first-run Browse dialogs by omitting unset native dialog paths before they cross the Electrobun bridge.
+- Treat canceled or blank file-picker selections as normal no-op results instead of RPC failures.
+- Publish the release `install-apt-repo.sh` asset with the pinned APT signing fingerprint.
+- Publish the archive keyring in the APT Pages root so Linux installer verification can fetch the trusted key.
+- Expand macOS and Linux installation notes with the signed APT repository flow and direct-download fallback artifacts.
+
 ## v1.0.5 - 2026-06-18
 
 - Migrate the desktop runtime and packaging pipeline from Electron to Electrobun.
