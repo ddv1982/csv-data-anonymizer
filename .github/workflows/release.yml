@@ -359,6 +359,8 @@ jobs:
             --public-key-out dist/electrobun/artifacts/csv-anonymizer-archive-keyring.pgp \
             --setup-package-out dist/electrobun/artifacts/csv-anonymizer-repository-setup_1.0_all.deb \
             --clean
+          cp dist/electrobun/artifacts/csv-anonymizer-archive-keyring.pgp \
+            dist/electrobun/apt-pages/apt/csv-anonymizer-archive-keyring.pgp
 
       - name: Sign repository setup checksum
         run: |
@@ -374,6 +376,21 @@ jobs:
             --local-user "${LINUX_GPG_FINGERPRINT}" --armor --detach-sign \
             --output "${setup_sha256_sig}" "${setup_sha256}"
           GNUPGHOME="${LINUX_VERIFICATION_GNUPGHOME}" gpg --batch --verify "${setup_sha256_sig}" "${setup_sha256}"
+
+      - name: Stage APT repository installer
+        run: |
+          set -euo pipefail
+
+          installer="dist/electrobun/artifacts/install-apt-repo.sh"
+          sed "s/__CSV_ANONYMIZER_APT_SIGNING_KEY_FINGERPRINT__/${LINUX_GPG_FINGERPRINT}/g" \
+            scripts/install-apt-repo.sh > "${installer}"
+          chmod 0755 "${installer}"
+
+          if grep -q "__CSV_ANONYMIZER_APT_SIGNING_KEY_FINGERPRINT__" "${installer}"; then
+            echo "APT installer still contains the placeholder signing fingerprint." >&2
+            exit 1
+          fi
+          sh -n "${installer}"
 
       - name: Sign Linux release artifacts
         run: |

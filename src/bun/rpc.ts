@@ -17,7 +17,7 @@ import type { AnonymizerService } from '../services/anonymizerService'
 import type { SettingsStore } from '../services/settingsStore'
 import type { CsvAnonymizerRpcSchema } from './rpc-schema'
 
-type DialogOptions = {
+export type DialogOptions = {
   startingFolder?: string
   allowedFileTypes?: string
   canChooseFiles?: boolean
@@ -50,13 +50,13 @@ export function createCsvAnonymizerRpcHandlers(
     selectCsvFile: () =>
       result(async () => {
         const settings = settingsStore.getSettings()
-        const selectedPaths = await platform.openFileDialog({
-          startingFolder: settings.files.rememberLastPaths ? settings.files.lastInputDirectory ?? undefined : undefined,
+        const selectedPaths = await platform.openFileDialog(compactDialogOptions({
+          startingFolder: settings.files.rememberLastPaths ? optionalPath(settings.files.lastInputDirectory) : undefined,
           allowedFileTypes: 'csv',
           canChooseFiles: true,
           canChooseDirectory: false,
           allowsMultipleSelection: false
-        })
+        }))
         const filePath = firstSelectedPath(selectedPaths)
 
         if (filePath && settings.files.rememberLastPaths) {
@@ -69,15 +69,15 @@ export function createCsvAnonymizerRpcHandlers(
       result(async () => {
         const settings = settingsStore.getSettings()
         const parsed = outputPathDialogRequestSchema.parse(input ?? {})
-        const defaultOutputPath = parsed.defaultPath
-        const selectedPaths = await platform.openFileDialog({
+        const defaultOutputPath = optionalPath(parsed.defaultPath)
+        const selectedPaths = await platform.openFileDialog(compactDialogOptions({
           startingFolder:
             dirnameOrFallback(defaultOutputPath) ??
-            (settings.files.rememberLastPaths ? settings.files.lastOutputDirectory ?? undefined : undefined),
+            (settings.files.rememberLastPaths ? optionalPath(settings.files.lastOutputDirectory) : undefined),
           canChooseFiles: false,
           canChooseDirectory: true,
           allowsMultipleSelection: false
-        })
+        }))
         const selectedDirectory = firstSelectedPath(selectedPaths)
         const filePath = selectedDirectory ? join(selectedDirectory, outputFileName(defaultOutputPath)) : null
 
@@ -100,11 +100,26 @@ export function createCsvAnonymizerRpcHandlers(
 }
 
 function firstSelectedPath(paths: string[]): string | null {
-  return paths.find((path) => path.trim().length > 0) ?? null
+  return paths.map((path) => path.trim()).find((path) => path.length > 0) ?? null
 }
 
 function dirnameOrFallback(path: string | undefined): string | undefined {
   return path ? dirname(path) : undefined
+}
+
+function optionalPath(path: string | null | undefined): string | undefined {
+  const normalizedPath = path?.trim()
+  return normalizedPath ? normalizedPath : undefined
+}
+
+function compactDialogOptions(options: DialogOptions): DialogOptions {
+  const compacted: DialogOptions = {}
+  for (const [key, value] of Object.entries(options) as Array<[keyof DialogOptions, DialogOptions[keyof DialogOptions]]>) {
+    if (value !== undefined) {
+      compacted[key] = value as never
+    }
+  }
+  return compacted
 }
 
 function outputFileName(defaultPath: string | undefined): string {

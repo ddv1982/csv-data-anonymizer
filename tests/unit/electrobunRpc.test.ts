@@ -47,7 +47,31 @@ describe('createCsvAnonymizerRpcHandlers', () => {
       data: { filePath: '/tmp/input/customers.csv' }
     })
     expect(platform.openFileDialog).toHaveBeenCalledWith({
-      startingFolder: undefined,
+      allowedFileTypes: 'csv',
+      canChooseFiles: true,
+      canChooseDirectory: false,
+      allowsMultipleSelection: false
+    })
+    expect(settingsStore.updateSettings).toHaveBeenCalledWith({ files: { lastInputDirectory: '/tmp/input' } })
+  })
+
+  it('uses remembered input directories without sending undefined dialog fields', async () => {
+    settingsStore.getSettings.mockReturnValue({
+      ...defaultAppSettings,
+      files: {
+        ...defaultAppSettings.files,
+        lastInputDirectory: '/tmp/input'
+      }
+    })
+    const handlers = createCsvAnonymizerRpcHandlers(service as never, settingsStore as never, platform)
+    platform.openFileDialog.mockResolvedValue([' /tmp/input/customers.csv '])
+
+    await expect(handlers.selectCsvFile(undefined)).resolves.toEqual({
+      success: true,
+      data: { filePath: '/tmp/input/customers.csv' }
+    })
+    expect(platform.openFileDialog).toHaveBeenCalledWith({
+      startingFolder: '/tmp/input',
       allowedFileTypes: 'csv',
       canChooseFiles: true,
       canChooseDirectory: false,
@@ -71,6 +95,33 @@ describe('createCsvAnonymizerRpcHandlers', () => {
       allowsMultipleSelection: false
     })
     expect(settingsStore.updateSettings).toHaveBeenCalledWith({ files: { lastOutputDirectory: '/tmp/output' } })
+  })
+
+  it('omits the output starting folder when no default or remembered directory exists', async () => {
+    const handlers = createCsvAnonymizerRpcHandlers(service as never, settingsStore as never, platform)
+    platform.openFileDialog.mockResolvedValue(['/tmp/output'])
+
+    await expect(handlers.selectOutputFile(undefined)).resolves.toEqual({
+      success: true,
+      data: { filePath: '/tmp/output/anonymized.csv' }
+    })
+    expect(platform.openFileDialog).toHaveBeenCalledWith({
+      canChooseFiles: false,
+      canChooseDirectory: true,
+      allowsMultipleSelection: false
+    })
+    expect(settingsStore.updateSettings).toHaveBeenCalledWith({ files: { lastOutputDirectory: '/tmp/output' } })
+  })
+
+  it('treats blank dialog selections as cancel without updating settings', async () => {
+    const handlers = createCsvAnonymizerRpcHandlers(service as never, settingsStore as never, platform)
+    platform.openFileDialog.mockResolvedValue([' '])
+
+    await expect(handlers.selectCsvFile(undefined)).resolves.toEqual({
+      success: true,
+      data: { filePath: null }
+    })
+    expect(settingsStore.updateSettings).not.toHaveBeenCalled()
   })
 
   it('maps validation errors to CONFIG_INVALID failures', async () => {
