@@ -1,0 +1,88 @@
+.progress-copy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.progress-state {
+  color: hsl(var(--primary));
+  font-weight: 600;
+}
+
+.progress-track {
+  position: relative;
+  overflow: hidden;
+  height: 0.625rem;
+  border-radius: 999px;
+  background: hsl(var(--secondary));
+}
+
+.progress-bar-determinate {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: hsl(var(--primary));
+  transition: width 180ms ease;
+}
+
+.progress-bar-indeterminate {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -35%;
+  width: 35%;
+  border-radius: inherit;
+  background: hsl(var(--primary));
+  animation: progress-slide 1.2s ease-in-out infinite;
+}
+
+.progress-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.skeleton {
+  display: block;
+  overflow: hidden;
+  border-radius: calc(var(--radius) - 2px);
+  background: hsl(var(--muted));
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.skeleton-checkbox {
+  width: 1rem;
+  height: 1rem;
+  margin-inline: auto;
+}
+
+.skeleton-index {
+  width: 1.5rem;
+  height: 1rem;
+}
+
+.skeleton-wide {
+  width: min(100%, 18rem);
+  height: 1rem;
+}
+
+.skeleton-medium {
+  width: 5rem;
+  height: 1rem;
+}
+
+.skeleton-badge {
+  width: 3.75rem;
+  height: 1.25rem;
+  border-radius: 999px;
+}
+
+.skeleton-preview-title {
+  width: 10rem;
+  height: 1rem;
+}
+
+.skeleton-preview-value {
+  height: 2rem;
+}

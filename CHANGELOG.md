@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.16 - 2026-06-18
+
+- Add Tauri-managed background anonymization jobs with progress polling and cancel support so long CSV writes no longer block the UI.
+- Gate CSV input/output access behind native picker grants or explicit path confirmations before Rust commands read, write, or reveal files.
+- Improve CSV correctness with header-aware name detection, safer numeric ID versus phone classification, blank-row row count alignment, and sparse-column anonymization coverage.
+- Split large frontend, Tauri command, core test, and stylesheet modules; retire the legacy egui desktop shell so the remaining Rust app crate is a lightweight CLI smoke harness.
+- Harden CI and release validation with pinned Tauri CLI installs, frontend dependency audit, narrower release permissions, prebuilt frontend asset checks, and AppImage upload cleanup.
+
 ## v1.0.15 - 2026-06-18
 
 - Make CSV opening feel immediate by sampling columns first and moving the exact row count into a follow-up background command.

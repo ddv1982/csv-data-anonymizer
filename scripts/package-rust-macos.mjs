@@ -23,6 +23,13 @@ const appOnly = args.has('--app-only')
 const dmgOnly = args.has('--dmg-only')
 const skipMissingTools = args.has('--skip-missing-tools')
 
+if (!dmgOnly && process.env.CSV_ANONYMIZER_ALLOW_LEGACY_NATIVE_PACKAGING !== '1') {
+  console.error('scripts/package-rust-macos.mjs may only wrap the Tauri .app as a DMG by default.')
+  console.error('Build the app with cargo tauri build and call this script with --skip-build --dmg-only.')
+  console.error('Set CSV_ANONYMIZER_ALLOW_LEGACY_NATIVE_PACKAGING=1 only for explicit legacy native app investigations.')
+  process.exit(1)
+}
+
 const packageJson = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8'))
 const packageName = 'csv-anonymizer'
 const binaryName = 'csv-anonymizer'

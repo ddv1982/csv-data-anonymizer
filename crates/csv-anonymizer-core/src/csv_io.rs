@@ -1,6 +1,8 @@
 use crate::error::{AnonymizerError, Result, csv_error};
 use crate::strategies::transform_row;
-use crate::types::{ColumnMetadata, ParsedSample, ProcessOptions, ProcessResult};
+use crate::types::{
+    ColumnMetadata, ParsedSample, ProcessControl, ProcessOptions, ProcessProgress, ProcessResult,
+};
 use csv::{ReaderBuilder, StringRecord, Trim, WriterBuilder};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -106,6 +108,16 @@ pub fn process_file(
     columns: &[ColumnMetadata],
     options: ProcessOptions<'_>,
 ) -> Result<ProcessResult> {
+    process_file_with_control(input_path, output_path, columns, options, None)
+}
+
+pub fn process_file_with_control(
+    input_path: &Path,
+    output_path: &Path,
+    columns: &[ColumnMetadata],
+    options: ProcessOptions<'_>,
+    control: Option<&mut ProcessControl<'_>>,
+) -> Result<ProcessResult> {
     validate_file(input_path)?;
     let start_time = Instant::now();
     let temporary_output_path = temporary_output_path(output_path);
@@ -115,6 +127,7 @@ pub fn process_file(
         &temporary_output_path,
         columns,
         options,
+        control,
         start_time,
     );
 
@@ -136,6 +149,7 @@ fn process_file_to_temporary_output(
     temporary_output_path: &Path,
     columns: &[ColumnMetadata],
     options: ProcessOptions<'_>,
+    mut control: Option<&mut ProcessControl<'_>>,
     start_time: Instant,
 ) -> Result<ProcessResult> {
     let mut reader = ReaderBuilder::new()
@@ -151,6 +165,8 @@ fn process_file_to_temporary_output(
     let mut header_processed = false;
     let mut row_count = 0;
 
+    check_canceled(&mut control)?;
+
     for result in reader.records() {
         let record = result.map_err(csv_error)?;
         let mut row = record_to_vec(&record);
@@ -164,6 +180,12 @@ fn process_file_to_temporary_output(
             continue;
         }
 
+        if is_blank_data_row(&row) {
+            writer.write_record(&row).map_err(csv_error)?;
+            continue;
+        }
+
+        check_canceled(&mut control)?;
         let transformed_row = transform_row(
             &row,
             columns,
@@ -173,6 +195,7 @@ fn process_file_to_temporary_output(
         );
         writer.write_record(&transformed_row).map_err(csv_error)?;
         row_count += 1;
+        report_progress(&mut control, row_count);
     }
 
     writer.flush()?;
@@ -187,6 +210,34 @@ fn process_file_to_temporary_output(
 
 fn record_to_vec(record: &StringRecord) -> Vec<String> {
     record.iter().map(ToString::to_string).collect()
+}
+
+fn is_blank_data_row(row: &[String]) -> bool {
+    row.iter().all(|value| value.trim().is_empty())
+}
+
+fn check_canceled(control: &mut Option<&mut ProcessControl<'_>>) -> Result<()> {
+    let Some(control) = control.as_deref_mut() else {
+        return Ok(());
+    };
+    let Some(should_cancel) = control.should_cancel else {
+        return Ok(());
+    };
+    if should_cancel() {
+        Err(AnonymizerError::Canceled)
+    } else {
+        Ok(())
+    }
+}
+
+fn report_progress(control: &mut Option<&mut ProcessControl<'_>>, rows_processed: usize) {
+    let Some(control) = control.as_deref_mut() else {
+        return;
+    };
+    let Some(on_progress) = control.on_progress.as_deref_mut() else {
+        return;
+    };
+    on_progress(ProcessProgress { rows_processed });
 }
 
 fn strip_bom(value: &str) -> &str {
@@ -211,47 +262,4 @@ fn temporary_output_path(output_path: &Path) -> PathBuf {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::metadata::{apply_column_selection, build_column_metadata};
-
-    fn fixture(name: &str) -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tests/fixtures")
-            .join(name)
-    }
-
-    #[test]
-    fn reads_sample_and_strips_bom() {
-        let sample = read_sample(&fixture("bom-file.csv"), 10).unwrap();
-        assert_eq!(sample.headers[0], "id");
-    }
-
-    #[test]
-    fn processes_selected_columns() {
-        let input_path = fixture("sample.csv");
-        let temp_dir = tempfile::tempdir().unwrap();
-        let output_path = temp_dir.path().join("sample-output.csv");
-        let sample = read_sample(&input_path, 100).unwrap();
-        let columns =
-            apply_column_selection(&build_column_metadata(&sample.headers, &sample.rows), &[1]);
-
-        let result = process_file(
-            &input_path,
-            &output_path,
-            &columns,
-            ProcessOptions {
-                deterministic: true,
-                seed: "service-seed",
-            },
-        )
-        .unwrap();
-
-        assert_eq!(result.row_count, 5);
-        let output = read_sample(&output_path, 100).unwrap();
-        assert_eq!(output.headers, sample.headers);
-        assert!(output.rows[0][1].ends_with("@example.com"));
-        assert_ne!(output.rows[0][1], sample.rows[0][1]);
-        assert_eq!(output.rows[0][0], sample.rows[0][0]);
-    }
-}
+mod tests;

@@ -24,6 +24,9 @@ pub enum AnonymizerError {
     #[error("Output directory is not writable: {0}")]
     OutputDirectoryNotWritable(PathBuf),
 
+    #[error("Processing canceled")]
+    Canceled,
+
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 }

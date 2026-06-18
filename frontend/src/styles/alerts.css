@@ -1,0 +1,45 @@
+.alert {
+  display: flex;
+  gap: 0.75rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+  padding: 1rem;
+}
+
+.alert-destructive {
+  border-color: hsl(var(--destructive) / 0.55);
+  color: hsl(var(--destructive-foreground));
+}
+
+.alert-success {
+  border-color: hsl(var(--success) / 0.55);
+  background: hsl(var(--success) / 0.12);
+}
+
+.alert-icon {
+  display: inline-flex;
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.125rem;
+}
+
+.alert-icon svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.alert-description {
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.alert-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}

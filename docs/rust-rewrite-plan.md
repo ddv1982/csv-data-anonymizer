@@ -1,6 +1,7 @@
 # Rust Rewrite Status
 
-CSV Anonymizer now uses the Rust workspace as the active app and release path.
+CSV Anonymizer now uses Rust for core logic and Tauri for the active desktop
+app and release path. The production UI is the bundled Vite frontend.
 
 ## Implemented Phases
 
@@ -9,11 +10,19 @@ CSV Anonymizer now uses the Rust workspace as the active app and release path.
 - `crates/csv-anonymizer-core` owns detection, metadata, deterministic hashing, strategies, sample reading, preview, and streaming CSV anonymization.
 - Rust tests cover fixture behavior, deterministic output, selected-column transforms, BOM handling, metadata, and output safety.
 
-### Native Desktop
+### Desktop Runtime
 
-- `crates/csv-anonymizer-app` provides the native `eframe/egui` shell.
-- The app supports input/output selection, manual paths, settings persistence, remembered folders, high/medium PII auto-selection, preview, overwrite handling, non-blocking anonymization, Cmd+Q close handling, and opening the output folder after success.
-- The same binary exposes CLI entrypoints used by CI smoke checks.
+- `src-tauri` provides the Tauri desktop shell.
+- `frontend` provides the bundled Vite UI used by macOS, `.deb`, `.rpm`, and
+  AppImage builds.
+- `crates/csv-anonymizer-app` is retained as a lightweight CLI and smoke-test
+  harness for the shared Rust core. Legacy native packaging scripts require
+  `CSV_ANONYMIZER_ALLOW_LEGACY_NATIVE_PACKAGING=1` so they cannot be mistaken for
+  production packaging.
+- The desktop app supports input/output selection, manual paths, settings
+  persistence, remembered folders, high/medium PII auto-selection, preview,
+  overwrite handling, non-blocking anonymization, Cmd+Q close handling, and
+  opening the output folder after success.
 
 ### Linux Packaging
 
@@ -29,12 +38,18 @@ CSV Anonymizer now uses the Rust workspace as the active app and release path.
 ### Removal
 
 - The old Bun/Electrobun/Vue runtime and TypeScript test surface have been removed.
-- CI and release workflows no longer install Bun or build webview artifacts for the app.
+- CI and release workflows no longer install Bun. They build the Vite frontend
+  once and require Tauri to consume that prebuilt `frontend/dist`.
+- Release and package jobs install the Tauri CLI at the pinned workflow version
+  matching the Tauri crate version resolved in `Cargo.lock`.
 - Release artifacts are written under `dist/rust`.
 
 ## Active Verification
 
 ```bash
+npm run frontend:build
+npm run frontend:audit
+CSV_ANONYMIZER_USE_PREBUILT_FRONTEND=1 scripts/build_frontend_for_tauri.sh
 cargo fmt --all --check
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings

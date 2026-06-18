@@ -1,11 +1,11 @@
-use crate::csv_io::{count_csv_data_rows, process_file, read_sample};
+use crate::csv_io::{count_csv_data_rows, process_file_with_control, read_sample};
 use crate::detection::is_empty_value;
 use crate::error::{AnonymizerError, Result};
 use crate::metadata::{apply_column_selection, build_column_metadata};
 use crate::strategies::transform_value;
 use crate::types::{
     AnonymizeData, AnonymizeParams, ColumnMetadata, ColumnPreview, HeadersData, PreviewData,
-    PreviewParams, ProcessOptions, SampleTransform, TransformContext,
+    PreviewParams, ProcessControl, ProcessOptions, SampleTransform, TransformContext,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -111,13 +111,30 @@ impl AnonymizerService {
         input: AnonymizeParams,
         sample_rows: usize,
     ) -> Result<AnonymizeData> {
+        self.anonymize_csv_with_sample_rows_and_control(input, sample_rows, None)
+    }
+
+    pub fn anonymize_csv_with_control(
+        &self,
+        input: AnonymizeParams,
+        control: &mut ProcessControl<'_>,
+    ) -> Result<AnonymizeData> {
+        self.anonymize_csv_with_sample_rows_and_control(input, DEFAULT_SAMPLE_ROWS, Some(control))
+    }
+
+    pub fn anonymize_csv_with_sample_rows_and_control(
+        &self,
+        input: AnonymizeParams,
+        sample_rows: usize,
+        control: Option<&mut ProcessControl<'_>>,
+    ) -> Result<AnonymizeData> {
         let input_path = normalize_path(&input.file_path)?;
         let output_path = validate_output_path(&input.output_path, input.force)?;
         let sample = read_sample(&input_path, sample_rows.max(1))?;
         let metadata = build_column_metadata(&sample.headers, &sample.rows);
         validate_column_indices(&metadata, &input.columns)?;
         let selected_metadata = apply_column_selection(&metadata, &input.columns);
-        let result = process_file(
+        let result = process_file_with_control(
             &input_path,
             &output_path,
             &selected_metadata,
@@ -125,6 +142,7 @@ impl AnonymizerService {
                 deterministic: input.deterministic,
                 seed: &input.seed,
             },
+            control,
         )?;
 
         Ok(AnonymizeData {
@@ -245,82 +263,4 @@ fn generate_column_preview(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn fixture(name: &str) -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tests/fixtures")
-            .join(name)
-    }
-
-    #[test]
-    fn analyzes_csv_headers_and_default_output_path() {
-        let service = AnonymizerService::new("test-version");
-        let result = service.analyze_csv(fixture("sample.csv")).unwrap();
-
-        assert_eq!(result.row_count, 5);
-        assert!(result.row_count_is_complete);
-        assert!(
-            result
-                .default_output_path
-                .ends_with("sample_anonymized.csv")
-        );
-        assert_eq!(result.columns[1].name, "email");
-    }
-
-    #[test]
-    fn sampled_analysis_defers_full_row_count() {
-        let service = AnonymizerService::new("test-version");
-        let result = service
-            .analyze_csv_sampled(fixture("large.csv"), 25)
-            .unwrap();
-
-        assert_eq!(result.row_count, 25);
-        assert!(!result.row_count_is_complete);
-        assert_eq!(
-            service.count_csv_rows(fixture("large.csv")).unwrap(),
-            10_500
-        );
-    }
-
-    #[test]
-    fn previews_are_deterministic() {
-        let service = AnonymizerService::new("test-version");
-        let params = PreviewParams {
-            file_path: fixture("sample.csv"),
-            columns: vec![1],
-            deterministic: true,
-            seed: "preview-seed".to_string(),
-            sample_count: 2,
-        };
-
-        let first = service.preview_anonymization(params.clone()).unwrap();
-        let second = service.preview_anonymization(params).unwrap();
-
-        assert_eq!(first, second);
-        assert_eq!(first.previews[0].samples.len(), 2);
-    }
-
-    #[test]
-    fn anonymizes_selected_columns_without_web_runtime() {
-        let service = AnonymizerService::new("test-version");
-        let temp_dir = tempfile::tempdir().unwrap();
-        let output_path = temp_dir.path().join("sample-anonymized.csv");
-
-        let result = service
-            .anonymize_csv(AnonymizeParams {
-                file_path: fixture("sample.csv"),
-                output_path: output_path.clone(),
-                columns: vec![1],
-                deterministic: true,
-                seed: "service-seed".to_string(),
-                force: false,
-            })
-            .unwrap();
-
-        assert_eq!(result.output_path, output_path);
-        assert_eq!(result.row_count, 5);
-        assert_eq!(result.columns_anonymized, 1);
-    }
-}
+mod tests;

@@ -1,0 +1,53 @@
+@media (max-width: 760px) {
+  .container {
+    width: min(100% - 1rem, 56rem);
+  }
+
+  .app-main {
+    padding: 1rem 0;
+  }
+
+  .card-header,
+  .card-content,
+  .anonymize-card-content {
+    padding: 1rem;
+  }
+
+  .card-header + .card-content {
+    padding-top: 0;
+  }
+
+  .card-header-row,
+  .file-row,
+  .result-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .preview-row {
+    grid-template-columns: 1fr;
+  }
+
+  .preview-row svg {
+    justify-self: center;
+    transform: rotate(90deg);
+  }
+
+  .button,
+  .button-icon {
+    width: 100%;
+  }
+
+  .column-name {
+    max-width: 44vw;
+  }
+
+  th,
+  td {
+    padding: 0.75rem;
+  }
+}

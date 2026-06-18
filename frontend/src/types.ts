@@ -75,3 +75,15 @@ export interface AnonymizeData {
   columnsAnonymized: number
   durationMs: number
 }
+
+export type AnonymizeJobState = 'running' | 'succeeded' | 'failed' | 'canceled'
+
+export interface AnonymizeJobStatus {
+  jobId: string
+  state: AnonymizeJobState
+  rowsProcessed: number
+  totalRows: number | null
+  cancelRequested: boolean
+  result: AnonymizeData | null
+  error: string | null
+}

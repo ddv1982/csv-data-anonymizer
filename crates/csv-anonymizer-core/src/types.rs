@@ -78,6 +78,25 @@ pub struct ProcessOptions<'a> {
     pub seed: &'a str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProcessProgress {
+    pub rows_processed: usize,
+}
+
+pub struct ProcessControl<'a> {
+    pub on_progress: Option<&'a mut dyn FnMut(ProcessProgress)>,
+    pub should_cancel: Option<&'a dyn Fn() -> bool>,
+}
+
+impl ProcessControl<'_> {
+    pub fn none() -> Self {
+        Self {
+            on_progress: None,
+            should_cancel: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProcessResult {
