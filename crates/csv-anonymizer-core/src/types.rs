@@ -69,6 +69,7 @@ pub struct ColumnMetadata {
 pub struct ParsedSample {
     pub headers: Vec<String>,
     pub rows: Vec<Vec<String>>,
+    pub is_complete: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,6 +102,7 @@ pub struct TransformContext<'a> {
 pub struct HeadersData {
     pub file_path: PathBuf,
     pub row_count: usize,
+    pub row_count_is_complete: bool,
     pub default_output_path: PathBuf,
     pub columns: Vec<ColumnMetadata>,
 }

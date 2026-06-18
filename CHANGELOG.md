@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.15 - 2026-06-18
+
+- Make CSV opening feel immediate by sampling columns first and moving the exact row count into a follow-up background command.
+- Move CSV analyze, preview, row-count, and anonymize work onto Tauri blocking tasks so synchronous file I/O does not tie up the async command runtime.
+- Fix remembered file-picker directories so they seed the native dialogs without being shown as fake input or output file paths.
+- Add clearer opening/loading button states and regression coverage for the sampled analysis path.
+
 ## v1.0.14 - 2026-06-18
 
 - Supersede v1.0.13 with RPM metadata validation that can extract Tauri RPM payloads through `bsdtar` when `rpm2cpio` cannot.

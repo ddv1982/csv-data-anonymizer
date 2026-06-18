@@ -31,23 +31,27 @@ pub fn save_settings(mut settings: AppSettings) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn pick_input_csv(app: tauri::AppHandle) -> Result<Option<PathBuf>, String> {
+pub async fn pick_input_csv(
+    app: tauri::AppHandle,
+    initial_directory: Option<PathBuf>,
+) -> Result<Option<PathBuf>, String> {
     pick_file_path(
         &app,
         "Select CSV file",
         "CSV files",
         &["csv", "tsv", "txt"],
         "input CSV",
+        initial_directory.as_deref(),
     )
 }
 
 #[tauri::command]
-pub fn pick_output_csv(
+pub async fn pick_output_csv(
     app: tauri::AppHandle,
     suggested_output_path: Option<PathBuf>,
 ) -> Result<Option<PathBuf>, String> {
-    let default_name = suggested_output_path
-        .as_ref()
+    let suggested_output_file = suggested_output_path.as_ref().filter(|path| !path.is_dir());
+    let default_name = suggested_output_file
         .and_then(|path| path.file_name())
         .and_then(|name| name.to_str())
         .unwrap_or("anonymized.csv");
@@ -58,11 +62,14 @@ pub fn pick_output_csv(
         .set_file_name(default_name)
         .add_filter("CSV files", &["csv"]);
 
-    if let Some(parent) = suggested_output_path
-        .as_ref()
-        .and_then(|path| path.parent())
-    {
-        dialog = dialog.set_directory(parent);
+    if let Some(directory) = suggested_output_path.as_ref().and_then(|path| {
+        if path.is_dir() {
+            Some(path.as_path())
+        } else {
+            path.parent()
+        }
+    }) {
+        dialog = dialog.set_directory(directory);
     }
 
     dialog
@@ -77,23 +84,27 @@ pub async fn analyze_csv(
     sample_row_count: usize,
     output_suffix: String,
 ) -> Result<AnalyzeResponse, String> {
-    let service = service();
-    let headers = service
-        .analyze_csv_with_sample_rows(&file_path, sample_row_count)
-        .map_err(|error| error.to_string())?;
-    let selected_columns = headers
-        .columns
-        .iter()
-        .filter(|column| should_auto_select(column))
-        .map(|column| column.index)
-        .collect::<Vec<_>>();
-    let suggested_output_path = default_output_path_with_suffix(&headers.file_path, &output_suffix);
+    run_blocking(move || {
+        let service = service();
+        let headers = service
+            .analyze_csv_sampled(&file_path, sample_row_count)
+            .map_err(|error| error.to_string())?;
+        let selected_columns = headers
+            .columns
+            .iter()
+            .filter(|column| should_auto_select(column))
+            .map(|column| column.index)
+            .collect::<Vec<_>>();
+        let suggested_output_path =
+            default_output_path_with_suffix(&headers.file_path, &output_suffix);
 
-    Ok(AnalyzeResponse {
-        headers,
-        selected_columns,
-        suggested_output_path,
+        Ok(AnalyzeResponse {
+            headers,
+            selected_columns,
+            suggested_output_path,
+        })
     })
+    .await
 }
 
 #[tauri::command]
@@ -104,15 +115,28 @@ pub async fn preview_anonymization(
     seed: String,
     sample_count: usize,
 ) -> Result<PreviewData, String> {
-    service()
-        .preview_anonymization(PreviewParams {
-            file_path,
-            columns,
-            deterministic,
-            seed,
-            sample_count,
-        })
-        .map_err(|error| error.to_string())
+    run_blocking(move || {
+        service()
+            .preview_anonymization(PreviewParams {
+                file_path,
+                columns,
+                deterministic,
+                seed,
+                sample_count,
+            })
+            .map_err(|error| error.to_string())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn count_csv_rows(file_path: PathBuf) -> Result<usize, String> {
+    run_blocking(move || {
+        service()
+            .count_csv_rows(&file_path)
+            .map_err(|error| error.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -125,19 +149,22 @@ pub async fn anonymize_csv(
     force: bool,
     sample_row_count: usize,
 ) -> Result<AnonymizeData, String> {
-    service()
-        .anonymize_csv_with_sample_rows(
-            AnonymizeParams {
-                file_path,
-                output_path,
-                columns,
-                deterministic,
-                seed,
-                force,
-            },
-            sample_row_count,
-        )
-        .map_err(|error| error.to_string())
+    run_blocking(move || {
+        service()
+            .anonymize_csv_with_sample_rows(
+                AnonymizeParams {
+                    file_path,
+                    output_path,
+                    columns,
+                    deterministic,
+                    seed,
+                    force,
+                },
+                sample_row_count,
+            )
+            .map_err(|error| error.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -148,6 +175,17 @@ pub fn open_output_location(output_path: PathBuf) -> Result<(), String> {
         .unwrap_or(output_path);
     open::that_detached(&location)
         .map_err(|error| format!("Could not open {}: {error}", location.display()))
+}
+
+async fn run_blocking<T>(
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String>
+where
+    T: Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|error| format!("Background task failed: {error}"))?
 }
 
 fn service() -> AnonymizerService {
@@ -186,11 +224,19 @@ fn pick_file_path(
     filter_name: &str,
     extensions: &[&str],
     file_kind: &str,
+    initial_directory: Option<&Path>,
 ) -> Result<Option<PathBuf>, String> {
-    app.dialog()
+    let mut dialog = app
+        .dialog()
         .file()
         .set_title(title)
-        .add_filter(filter_name, extensions)
+        .add_filter(filter_name, extensions);
+
+    if let Some(directory) = initial_directory.filter(|path| path.is_dir()) {
+        dialog = dialog.set_directory(directory);
+    }
+
+    dialog
         .blocking_pick_file()
         .map(|path| selected_dialog_path(path, file_kind))
         .transpose()
