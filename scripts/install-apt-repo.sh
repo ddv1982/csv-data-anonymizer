@@ -22,9 +22,11 @@ cleanup() {
 trap cleanup EXIT
 trap 'trap - EXIT; cleanup; exit 130' HUP INT TERM
 
-if [ "$expected_signing_fingerprint" = "__CSV_ANONYMIZER_APT_SIGNING_KEY_FINGERPRINT__" ]; then
-  expected_signing_fingerprint=""
-fi
+case "$expected_signing_fingerprint" in
+  __CSV_ANONYMIZER_*_SIGNING_KEY_FINGERPRINT__)
+    expected_signing_fingerprint=""
+    ;;
+esac
 expected_signing_fingerprint="$(printf '%s' "$expected_signing_fingerprint" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
 
 if command -v curl >/dev/null 2>&1; then

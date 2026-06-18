@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.8 - 2026-06-18
+
+- Fix the published Linux APT installer so the pinned setup signing fingerprint is not cleared after release-time rendering.
+- Add APT installer rendering validation to CI and release publishing so staged and GitHub Pages installers keep the effective pinned fingerprint.
+
 ## v1.0.7 - 2026-06-18
 
 - Route the macOS Quit menu item through an explicit Cmd+Q accelerator and `Utils.quit()` handler.

@@ -81,7 +81,7 @@ The release workflow:
 - builds Linux x64 Electrobun artifacts and runs the Electrobun smoke workflow
 - wraps Linux output as `.deb`, `.rpm`, and AppImage
 - validates Linux package metadata and builds a signed APT repository
-- stages `install-apt-repo.sh` with the pinned APT signing key fingerprint
+- stages `install-apt-repo.sh` with the pinned APT signing key fingerprint and validates the rendered installer keeps that effective fingerprint
 - publishes public APT bootstrap assets in the APT Pages artifact for installer-side signature verification
 - uploads macOS and Linux release assets
 - deploys the APT repository to GitHub Pages
@@ -107,4 +107,5 @@ On Linux, also validate package-manager artifacts:
 bun run linux:packages
 bun run linux:metadata:check
 bun run apt:repo:check
+bun run apt:installer:check
 ```
