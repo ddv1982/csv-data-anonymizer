@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.10 - 2026-06-18
+
+- Rewrite the desktop app as a native Rust `eframe/egui` application with a shared Rust anonymization core.
+- Replace Bun/Electrobun/Vue app builds with Rust CI, Rust smoke checks, and Rust release artifacts under `dist/rust`.
+- Add Rust macOS `.app`/`.dmg` packaging and Linux `.deb`, `.rpm`, AppImage, portable tarball, and signed APT repository packaging.
+- Persist native app settings, remembered file-picker directories, deterministic seed, overwrite behavior, sample counts, and output suffix.
+- Keep Cmd+Q close handling in the native app and add output-folder reveal after successful anonymization.
+
 ## v1.0.9 - 2026-06-18
 
 - Install the verified Linux APT repository setup package from an `_apt`-accessible staging directory to avoid Ubuntu's unsandboxed local package notice.

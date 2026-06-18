@@ -14,12 +14,16 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ELECTROBUN_LINUX_ARTIFACT_NAME: csv-anonymizer-electrobun-linux-x64-release-bundle
+  RUST_LINUX_ARTIFACT_NAME: csv-anonymizer-rust-linux-x64-release-bundle
 
 jobs:
-  test:
-    name: Test
-    runs-on: ubuntu-24.04
+  rust:
+    name: Rust ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-26]
 
     steps:
       - name: Checkout repository
@@ -30,45 +34,53 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.13
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Install Linux desktop dependencies
+      - name: Install Linux Rust desktop dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            xvfb \
-            libgtk-3-0 \
-            libwebkit2gtk-4.1-0 \
-            libayatana-appindicator3-1 \
-            libnss3 \
-            libxss1 \
-            libasound2t64 \
-            libgbm1
+            pkg-config \
+            libasound2-dev \
+            libgtk-3-dev \
+            libssl-dev \
+            libwayland-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+          key: rust-${{ runner.os }}
 
       - name: Validate release metadata
-        run: bun run release:check
+        run: node scripts/check-release-metadata.mjs
 
-      - name: Type-check
-        run: bun run typecheck
+      - name: Check Rust formatting
+        run: cargo fmt --all --check
 
-      - name: Run unit and integration tests
-        run: bun run test
+      - name: Run Rust tests
+        run: cargo test --workspace
 
-      - name: Build Electrobun app
-        run: bun run build
+      - name: Run Rust clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: Run Electrobun smoke
-        run: xvfb-run --auto-servernum bun run smoke:electrobun
+      - name: Build Rust workspace
+        run: cargo build --workspace
+
+      - name: Smoke test Rust binary
+        run: node scripts/rust-smoke.mjs
 
   package-linux:
-    name: Package Linux Electrobun
-    needs: test
+    name: Package Linux Rust
+    needs: rust
     runs-on: ubuntu-24.04
 
     steps:
@@ -80,31 +92,35 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.13
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+          key: rust-linux-package
 
       - name: Install Linux desktop and packaging dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            xvfb \
+            pkg-config \
+            libasound2-dev \
+            libgtk-3-dev \
+            libssl-dev \
+            libwayland-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
             zstd \
             rpm \
             desktop-file-utils \
             appstream \
-            wget \
-            libgtk-3-0 \
-            libwebkit2gtk-4.1-0 \
-            libayatana-appindicator3-1 \
-            libnss3 \
-            libxss1 \
-            libasound2t64 \
-            libgbm1
+            wget
 
       - name: Install appimagetool
         run: |
@@ -115,100 +131,31 @@ jobs:
           echo "APPIMAGETOOL=${appimagetool}" >> "$GITHUB_ENV"
           echo "APPIMAGE_EXTRACT_AND_RUN=1" >> "$GITHUB_ENV"
 
-      - name: Build stable Electrobun artifacts
-        run: bun run build:stable
+      - name: Build release binary
+        run: cargo build --release -p csv-anonymizer-app
 
-      - name: Build dev Electrobun app for smoke
-        run: bun run build
+      - name: Smoke test release binary
+        run: CSV_ANONYMIZER_BINARY=target/release/csv-anonymizer node scripts/rust-smoke.mjs
 
-      - name: Smoke test Electrobun app
-        run: xvfb-run --auto-servernum bun run smoke:electrobun
+      - name: Build Linux artifacts
+        run: node scripts/package-rust-linux.mjs --skip-build
 
-      - name: Validate Electrobun artifacts
-        run: bun run artifacts:electrobun:check
-
-      - name: Build Linux package-manager artifacts
-        run: bun run linux:packages
+      - name: Validate Rust artifacts
+        run: node scripts/check-rust-artifacts.mjs --platform linux --require-rpm --require-appimage
 
       - name: Validate Linux package metadata
-        run: bun run linux:metadata:check
+        run: python3 scripts/validate_linux_package_metadata.py "dist/rust/artifacts/*.deb" "dist/rust/artifacts/*.rpm"
 
       - name: Validate APT repository generation
-        run: bun run apt:repo:check
+        run: node scripts/check-apt-repository.mjs
 
       - name: Validate APT installer rendering
-        run: bun run apt:installer:check
+        run: node scripts/check-apt-installer.mjs
 
-      - name: Sign Linux Electrobun artifacts
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          DEB_SIGNING_PRIVATE_KEY: ${{ secrets.DEB_SIGNING_PRIVATE_KEY }}
-          DEB_SIGNING_KEY_FINGERPRINT: ${{ secrets.DEB_SIGNING_KEY_FINGERPRINT }}
-          DEB_SIGNING_KEY_PASSPHRASE: ${{ secrets.DEB_SIGNING_KEY_PASSPHRASE }}
-          DEB_SIGNING_PUBLIC_KEY: ${{ vars.DEB_SIGNING_PUBLIC_KEY }}
-        run: |
-          set -euo pipefail
-
-          missing=()
-          [ -n "${DEB_SIGNING_PRIVATE_KEY}" ] || missing+=("DEB_SIGNING_PRIVATE_KEY")
-          [ -n "${DEB_SIGNING_KEY_FINGERPRINT}" ] || missing+=("DEB_SIGNING_KEY_FINGERPRINT")
-          [ -n "${DEB_SIGNING_KEY_PASSPHRASE}" ] || missing+=("DEB_SIGNING_KEY_PASSPHRASE")
-          [ -n "${DEB_SIGNING_PUBLIC_KEY}" ] || missing+=("DEB_SIGNING_PUBLIC_KEY repository variable")
-
-          if [ ${#missing[@]} -gt 0 ]; then
-            echo "Required Linux artifact signing inputs are missing: ${missing[*]}" >&2
-            exit 1
-          fi
-
-          mapfile -t artifacts < <(find dist/electrobun/artifacts -type f ! -name '*.asc' | sort)
-          if [ ${#artifacts[@]} -eq 0 ]; then
-            echo "No Electrobun artifacts found under dist/electrobun/artifacts." >&2
-            exit 1
-          fi
-
-          gnupg_home="$(mktemp -d)"
-          verification_home="$(mktemp -d)"
-          private_key_file="$(mktemp)"
-          public_key_file="$(mktemp)"
-          passphrase_file="$(mktemp)"
-          cleanup() {
-            rm -rf "${gnupg_home}" "${verification_home}"
-            rm -f "${private_key_file}" "${public_key_file}" "${passphrase_file}"
-          }
-          trap cleanup EXIT
-
-          chmod 700 "${gnupg_home}" "${verification_home}"
-          chmod 600 "${passphrase_file}"
-          export GNUPGHOME="${gnupg_home}"
-          echo allow-loopback-pinentry > "${GNUPGHOME}/gpg-agent.conf"
-          gpgconf --kill gpg-agent || true
-
-          printf '%s' "${DEB_SIGNING_PRIVATE_KEY}" | base64 --decode > "${private_key_file}"
-          printf '%s' "${DEB_SIGNING_PUBLIC_KEY}" | base64 --decode > "${public_key_file}"
-          printf '%s' "${DEB_SIGNING_KEY_PASSPHRASE}" > "${passphrase_file}"
-          gpg --batch --import "${private_key_file}"
-
-          expected_fingerprint="$(printf '%s' "${DEB_SIGNING_KEY_FINGERPRINT}" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
-          imported_fingerprint="$(gpg --batch --with-colons --fingerprint "${expected_fingerprint}" | awk -F: '$1 == "fpr" { print toupper($10); exit }')"
-          if [ "${imported_fingerprint}" != "${expected_fingerprint}" ]; then
-            echo "Imported Linux artifact signing key fingerprint did not match DEB_SIGNING_KEY_FINGERPRINT." >&2
-            exit 1
-          fi
-
-          GNUPGHOME="${verification_home}" gpg --batch --import "${public_key_file}"
-          for artifact in "${artifacts[@]}"; do
-            signature="${artifact}.asc"
-            echo "Signing ${artifact}"
-            gpg --batch --yes --pinentry-mode loopback --passphrase-file "${passphrase_file}" \
-              --local-user "${expected_fingerprint}" --armor --detach-sign \
-              --output "${signature}" "${artifact}"
-            GNUPGHOME="${verification_home}" gpg --quiet --batch --trust-model always --verify "${signature}" "${artifact}"
-          done
-
-      - name: Upload reusable Linux Electrobun artifact
+      - name: Upload reusable Linux Rust artifact
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ env.ELECTROBUN_LINUX_ARTIFACT_NAME }}
-          path: dist/electrobun/artifacts/**
+          name: ${{ env.RUST_LINUX_ARTIFACT_NAME }}
+          path: dist/rust/artifacts/**
           if-no-files-found: error
           retention-days: 7

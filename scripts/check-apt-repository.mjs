@@ -40,7 +40,7 @@ Expire-Date: 0
 
   run('python3', [
     'scripts/build_apt_repository.py',
-    'dist/electrobun/artifacts/*.deb',
+    'dist/rust/artifacts/*.deb',
     '--output',
     outputDir,
     '--gpg-key',
