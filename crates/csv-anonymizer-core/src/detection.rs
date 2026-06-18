@@ -587,7 +587,7 @@ fn detect_name_type(
     total_samples: usize,
 ) -> Option<DetectionResult> {
     let data_type = infer_name_type_from_header(column_name)?;
-    let match_count = non_empty_values
+    let mut match_count = non_empty_values
         .iter()
         .filter(|value| match data_type {
             DataType::FirstName => is_plausible_name_part(value, 2),
@@ -599,6 +599,23 @@ fn detect_name_type(
     let confidence = calculate_confidence(match_count, non_empty_values.len());
 
     if confidence == Confidence::Low {
+        if data_type == DataType::FullName && infer_generic_name_header(column_name) {
+            match_count = non_empty_values
+                .iter()
+                .filter(|value| is_plausible_name_part(value, 1))
+                .count();
+            let confidence = calculate_confidence(match_count, non_empty_values.len());
+
+            if confidence != Confidence::Low {
+                return Some(DetectionResult {
+                    data_type: DataType::FirstName,
+                    confidence,
+                    sample_matches: match_count,
+                    total_samples,
+                });
+            }
+        }
+
         return None;
     }
 
@@ -663,6 +680,10 @@ fn infer_name_type_from_header(column_name: &str) -> Option<DataType> {
     }
 
     None
+}
+
+fn infer_generic_name_header(column_name: &str) -> bool {
+    compact_header(column_name) == "name"
 }
 
 fn is_plausible_name_part(value: &str, max_tokens: usize) -> bool {

@@ -151,6 +151,29 @@ fn first_and_last_names_use_plausible_name_values() {
 }
 
 #[test]
+fn name_tokens_do_not_preserve_original_pool_values() {
+    let first = transform_value("Dana", &column(DataType::FirstName), &context("seed"));
+    let full = transform_value("Dana Morgan", &column(DataType::FullName), &context("seed"));
+
+    assert_ne!(first, "Dana");
+    assert!(!full.split_whitespace().any(|token| {
+        token.eq_ignore_ascii_case("Dana") || token.eq_ignore_ascii_case("Morgan")
+    }));
+}
+
+#[test]
+fn full_name_excludes_original_tokens_across_seed_variations() {
+    for index in 0..100 {
+        let seed = format!("seed-{index}");
+        let result = transform_value("Dana Morgan", &column(DataType::FullName), &context(&seed));
+
+        assert!(!result.split_whitespace().any(|token| {
+            token.eq_ignore_ascii_case("Dana") || token.eq_ignore_ascii_case("Morgan")
+        }));
+    }
+}
+
+#[test]
 fn full_name_preserves_token_shape_with_plausible_names() {
     let result = transform_value("Alice Smith", &column(DataType::FullName), &context("seed"));
     assert_ne!(result, "Alice Smith");
@@ -160,6 +183,49 @@ fn full_name_preserves_token_shape_with_plausible_names() {
             .split_whitespace()
             .all(|token| token.chars().all(|character| character.is_alphabetic()))
     );
+}
+
+#[test]
+fn full_name_uses_alphabetic_name_tokens() {
+    let result = transform_value(
+        "Carol O'Neil",
+        &column(DataType::FullName),
+        &context("name-quality-seed"),
+    );
+
+    assert_ne!(result, "Carol O'Neil");
+    assert_eq!(result.split_whitespace().count(), 2);
+    assert!(
+        result
+            .chars()
+            .all(|character| character.is_alphabetic() || character.is_whitespace())
+    );
+    assert!(
+        !result
+            .chars()
+            .any(|character| character.is_ascii_digit() || matches!(character, '_' | '-'))
+    );
+}
+
+#[test]
+fn full_name_reuses_first_and_last_token_pseudonyms() {
+    let first = transform_value(
+        "Alice",
+        &column(DataType::FirstName),
+        &context("consistent-name-seed"),
+    );
+    let last = transform_value(
+        "Smith",
+        &column(DataType::LastName),
+        &context("consistent-name-seed"),
+    );
+    let full = transform_value(
+        "Alice Smith",
+        &column(DataType::FullName),
+        &context("consistent-name-seed"),
+    );
+
+    assert_eq!(full, format!("{first} {last}"));
 }
 
 #[test]

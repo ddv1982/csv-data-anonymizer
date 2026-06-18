@@ -172,3 +172,10 @@ fn value_only_names_remain_strings() {
     let result = detect_column_type(&strings(&["Alice", "Bob", "Carol"]));
     assert_eq!(result.data_type, DataType::String);
 }
+
+#[test]
+fn generic_name_header_with_single_names_detects_first_name() {
+    let result = detect_column_type_with_name("name", &strings(&["Alice", "Bob", "Carol"]));
+    assert_eq!(result.data_type, DataType::FirstName);
+    assert_eq!(result.confidence, Confidence::High);
+}

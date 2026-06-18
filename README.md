@@ -67,7 +67,7 @@ The app performs local masking and pseudonymization for selected CSV columns. It
 | Postal Code, Address, IP, URL, MAC, Tax ID | Generic replacement | Similar length, not format-specific yet |
 | Boolean, Currency, Percentage | Pass-through | Unchanged |
 | Phone | Digit replacement | Separators and digit count preserved |
-| First/Last/Full Name | Plausible replacement names | Name token count preserved for full names |
+| First/Last/Full Name | Plausible replacement names | Name token count preserved for full names; generic `name` headers with single-token names are treated as first-name columns |
 | Country Code | Pass-through | Unchanged |
 | Enum | Pass-through | Unchanged |
 | String/Unknown | Generic replacement | Similar length, not semantic type |

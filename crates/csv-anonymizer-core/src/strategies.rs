@@ -329,51 +329,90 @@ fn transform_phone(value: &str, context: &TransformContext<'_>) -> String {
 }
 
 fn transform_first_name(value: &str, context: &TransformContext<'_>) -> String {
-    choose_name(value, context, FIRST_NAMES).to_string()
+    let excluded_tokens: Vec<&str> = value.split_whitespace().collect();
+    transform_name_tokens(value, context, FIRST_NAMES, &excluded_tokens)
 }
 
 fn transform_last_name(value: &str, context: &TransformContext<'_>) -> String {
-    choose_name(value, context, LAST_NAMES).to_string()
+    let excluded_tokens: Vec<&str> = value.split_whitespace().collect();
+    transform_name_tokens(value, context, LAST_NAMES, &excluded_tokens)
 }
 
 fn transform_full_name(value: &str, context: &TransformContext<'_>) -> String {
-    let token_count = value.split_whitespace().count();
+    let tokens: Vec<&str> = value.split_whitespace().collect();
+    let token_count = tokens.len();
     if token_count <= 1 {
         return transform_first_name(value, context);
     }
 
-    let first = transform_first_name(value, context);
-    let last = transform_last_name(value, context);
-    if token_count == 2 {
-        return format!("{first} {last}");
-    }
-
-    let middle_count = token_count.saturating_sub(2);
-    let middle = (0..middle_count)
-        .map(|index| {
-            let seed = format!("{}:middle:{index}", context.seed);
-            choose_name_with_seed(value, &seed, context.deterministic, FIRST_NAMES).to_string()
-        })
+    let first = choose_name_excluding(tokens[0], context, FIRST_NAMES, &tokens);
+    let last = tokens[1..]
+        .iter()
+        .map(|token| choose_name_excluding(token, context, LAST_NAMES, &tokens).to_string())
         .collect::<Vec<_>>()
         .join(" ");
-    format!("{first} {middle} {last}")
+    format!("{first} {last}")
 }
 
-fn choose_name<'a>(value: &str, context: &TransformContext<'_>, names: &'a [&str]) -> &'a str {
-    choose_name_with_seed(value, context.seed, context.deterministic, names)
+fn transform_name_tokens(
+    value: &str,
+    context: &TransformContext<'_>,
+    names: &[&str],
+    excluded_tokens: &[&str],
+) -> String {
+    value
+        .split_whitespace()
+        .map(|token| choose_name_excluding(token, context, names, excluded_tokens).to_string())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
-fn choose_name_with_seed<'a>(
+fn choose_name_excluding<'a>(
+    value: &str,
+    context: &TransformContext<'_>,
+    names: &'a [&str],
+    excluded_tokens: &[&str],
+) -> &'a str {
+    choose_name_with_seed_excluding(
+        value,
+        context.seed,
+        context.deterministic,
+        names,
+        excluded_tokens,
+    )
+}
+
+fn choose_name_with_seed_excluding<'a>(
     value: &str,
     seed: &str,
     deterministic: bool,
     names: &'a [&str],
+    excluded_tokens: &[&str],
 ) -> &'a str {
-    let index = if deterministic {
+    let mut index = if deterministic {
         deterministic_number(value, seed, 0, names.len() as i64 - 1) as usize
     } else {
         rand::thread_rng().gen_range(0..names.len())
     };
+    if names.iter().any(|name| {
+        excluded_tokens
+            .iter()
+            .all(|token| !name.eq_ignore_ascii_case(token.trim()))
+    }) && excluded_tokens
+        .iter()
+        .any(|token| names[index].eq_ignore_ascii_case(token.trim()))
+    {
+        for offset in 1..names.len() {
+            let candidate_index = (index + offset) % names.len();
+            if excluded_tokens
+                .iter()
+                .all(|token| !names[candidate_index].eq_ignore_ascii_case(token.trim()))
+            {
+                index = candidate_index;
+                break;
+            }
+        }
+    }
     names[index]
 }
 
