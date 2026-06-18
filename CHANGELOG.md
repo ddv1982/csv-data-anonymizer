@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.17 - 2026-06-18
+
+- Add `esbuild` as an explicit frontend dev dependency so clean CI and release `npm ci` installs can run the Vite 8 production build.
+- Supersede v1.0.16 without moving the failed tag, keeping the same background job, file access, cleanup, and CI hardening changes.
+
 ## v1.0.16 - 2026-06-18
 
 - Add Tauri-managed background anonymization jobs with progress polling and cancel support so long CSV writes no longer block the UI.

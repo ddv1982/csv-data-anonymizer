@@ -461,7 +461,7 @@ dependencies = [
 
 [[package]]
 name = "csv-anonymizer-app"
-version = "1.0.16"
+version = "1.0.17"
 dependencies = [
  "csv-anonymizer-core",
  "tempfile",
@@ -469,7 +469,7 @@ dependencies = [
 
 [[package]]
 name = "csv-anonymizer-core"
-version = "1.0.16"
+version = "1.0.17"
 dependencies = [
  "chrono",
  "csv",
@@ -483,7 +483,7 @@ dependencies = [
 
 [[package]]
 name = "csv-anonymizer-tauri"
-version = "1.0.16"
+version = "1.0.17"
 dependencies = [
  "csv-anonymizer-core",
  "directories",
