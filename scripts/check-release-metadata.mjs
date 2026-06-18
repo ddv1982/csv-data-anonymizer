@@ -72,12 +72,32 @@ function validateSemver(version) {
   return /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version);
 }
 
+function readWorkspaceCargoVersion(cargoToml) {
+  const workspacePackageMatch = cargoToml.match(/\[workspace\.package\]([\s\S]*?)(?:\n\[|$)/);
+  if (!workspacePackageMatch) {
+    return null;
+  }
+
+  const versionMatch = workspacePackageMatch[1].match(/^\s*version\s*=\s*"([^"]+)"\s*$/m);
+  return versionMatch?.[1] ?? null;
+}
+
 const expectedTag = readOption('--expected-tag');
 const releaseNotesPath = readOption('--write-notes');
 const packageJson = JSON.parse(await readFile('package.json', 'utf-8'));
+const cargoToml = await readFile('Cargo.toml', 'utf-8');
+const cargoVersion = readWorkspaceCargoVersion(cargoToml);
 
 if (!validateSemver(packageJson.version)) {
   throw new Error(`package.json version must be semver-compatible, got ${packageJson.version}`);
+}
+
+if (!cargoVersion) {
+  throw new Error('Cargo.toml must declare [workspace.package] version');
+}
+
+if (cargoVersion !== packageJson.version) {
+  throw new Error(`Cargo.toml workspace package version ${cargoVersion} does not match package.json version ${packageJson.version}`);
 }
 
 const tag = expectedTag ?? `v${packageJson.version}`;

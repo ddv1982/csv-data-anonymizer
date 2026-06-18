@@ -1,0 +1,19 @@
+[package]
+name = "csv-anonymizer-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Rust core engine for local CSV anonymization."
+
+[dependencies]
+chrono.workspace = true
+csv.workspace = true
+rand.workspace = true
+regex.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
