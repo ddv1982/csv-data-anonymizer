@@ -136,6 +136,9 @@ jobs:
       - name: Validate APT repository generation
         run: bun run apt:repo:check
 
+      - name: Validate APT installer rendering
+        run: bun run apt:installer:check
+
       - name: Sign Linux Electrobun artifacts
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
