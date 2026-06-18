@@ -6,6 +6,7 @@ dist/
 out/
 release/
 target/
+src-tauri/gen/
 *.tsbuildinfo
 
 # Coverage

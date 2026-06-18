@@ -1,0 +1,24 @@
+[package]
+name = "csv-anonymizer-tauri"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Tauri desktop shell for CSV Anonymizer."
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+csv-anonymizer-core = { path = "../crates/csv-anonymizer-core" }
+directories.workspace = true
+open.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tauri.workspace = true
+tauri-plugin-dialog.workspace = true
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

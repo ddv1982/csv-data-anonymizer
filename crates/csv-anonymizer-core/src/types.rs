@@ -1,6 +1,8 @@
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum DataType {
     Email,
     Uuid,
@@ -16,28 +18,32 @@ pub enum DataType {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Confidence {
     High,
     Medium,
     Low,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum PiiRisk {
     High,
     Medium,
     Low,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum EmptyFormat {
     EmptyString,
     Null,
     Mixed,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DetectionResult {
     pub data_type: DataType,
     pub confidence: Confidence,
@@ -45,7 +51,8 @@ pub struct DetectionResult {
     pub total_samples: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ColumnMetadata {
     pub name: String,
     pub index: usize,
@@ -57,7 +64,8 @@ pub struct ColumnMetadata {
     pub is_selected: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ParsedSample {
     pub headers: Vec<String>,
     pub rows: Vec<Vec<String>>,
@@ -69,7 +77,8 @@ pub struct ProcessOptions<'a> {
     pub seed: &'a str,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProcessResult {
     pub row_count: usize,
     pub success: bool,
@@ -87,7 +96,8 @@ pub struct TransformContext<'a> {
     pub empty_format: EmptyFormat,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HeadersData {
     pub file_path: PathBuf,
     pub row_count: usize,
@@ -95,25 +105,29 @@ pub struct HeadersData {
     pub columns: Vec<ColumnMetadata>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SampleTransform {
     pub original: String,
     pub anonymized: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ColumnPreview {
     pub column_index: usize,
     pub column_name: String,
     pub samples: Vec<SampleTransform>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PreviewData {
     pub previews: Vec<ColumnPreview>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PreviewParams {
     pub file_path: PathBuf,
     pub columns: Vec<usize>,
@@ -122,7 +136,8 @@ pub struct PreviewParams {
     pub sample_count: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AnonymizeParams {
     pub file_path: PathBuf,
     pub output_path: PathBuf,
@@ -132,7 +147,8 @@ pub struct AnonymizeParams {
     pub force: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AnonymizeData {
     pub output_path: PathBuf,
     pub row_count: usize,

@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.12 - 2026-06-18
+
+- Ship the desktop app through a Tauri web frontend so Linux AppImage, Debian/RPM packages, and macOS builds share the same bundled UI styling.
+- Add a React/Vite frontend for CSV selection, settings, detected columns, previews, and anonymization results.
+- Add Tauri command wrappers over the Rust anonymization core while preserving the existing CLI smoke path.
+- Update CI and release packaging to build `frontend/dist`, use Tauri/WebKitGTK dependencies on Linux, and package Tauri desktop artifacts.
+
 ## v1.0.11 - 2026-06-18
 
 - Polish the native Rust desktop interface used by the Linux AppImage, Debian/RPM packages, tarball, and macOS app.
