@@ -263,18 +263,18 @@ jobs:
           xcrun stapler validate "${app_path}"
           spctl --assess --verbose --type exec "${app_path}"
 
-          version="$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")"
-          archive="dist/rust/artifacts/csv-anonymizer-${version}-macos-${{ matrix.arch }}.app.tar.gz"
-          rm -f "${archive}"
-          COPYFILE_DISABLE=1 tar -czf "${archive}" -C dist/rust/build "CSV Anonymizer.app"
-
       - name: Build, sign, and notarize macOS DMG
         run: |
           set -euo pipefail
 
           MACOS_ARCH="${{ matrix.arch }}" node scripts/package-rust-macos.mjs --skip-build --dmg-only
           version="$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")"
-          dmg="dist/rust/artifacts/csv-anonymizer-${version}-macos-${{ matrix.arch }}.dmg"
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            artifact_arch="aarch64"
+          else
+            artifact_arch="${{ matrix.arch }}"
+          fi
+          dmg="dist/rust/artifacts/CSV.Anonymizer_${version}_${artifact_arch}.dmg"
 
           notarize_with_retry() {
             local artifact="$1"
@@ -309,7 +309,7 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           draft: true
-          files: dist/rust/artifacts/**
+          files: dist/rust/artifacts/*.dmg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -495,34 +495,12 @@ jobs:
             --expected-fingerprint "${LINUX_GPG_FINGERPRINT}"
           sh -n "${installer}"
 
-      - name: Sign Linux release artifacts
-        run: |
-          set -euo pipefail
-
-          mapfile -t artifacts < <(find dist/rust/artifacts -type f ! -name '*.asc' | sort)
-          if [ ${#artifacts[@]} -eq 0 ]; then
-            echo "No Linux release artifacts found under dist/rust/artifacts." >&2
-            exit 1
-          fi
-
-          for artifact in "${artifacts[@]}"; do
-            signature="${artifact}.asc"
-            echo "Signing ${artifact}"
-            GNUPGHOME="${LINUX_GNUPGHOME}" gpg --batch --yes --pinentry-mode loopback \
-              --passphrase-file "${LINUX_GPG_PASSPHRASE_FILE}" \
-              --local-user "${LINUX_GPG_FINGERPRINT}" --armor --detach-sign \
-              --output "${signature}" "${artifact}"
-            GNUPGHOME="${LINUX_VERIFICATION_GNUPGHOME}" gpg --quiet --batch --trust-model always --verify "${signature}" "${artifact}"
-          done
-
       - name: Stage public APT installer assets
         run: |
           set -euo pipefail
 
           cp dist/rust/artifacts/install-apt-repo.sh \
             dist/rust/apt-pages/install-apt-repo.sh
-          cp dist/rust/artifacts/install-apt-repo.sh.asc \
-            dist/rust/apt-pages/install-apt-repo.sh.asc
           cp dist/rust/artifacts/csv-anonymizer-repository-setup_1.0_all.deb \
             dist/rust/apt-pages/apt/csv-anonymizer-repository-setup_1.0_all.deb
           cp dist/rust/artifacts/csv-anonymizer-repository-setup_1.0_all.deb.sha256 \
@@ -539,7 +517,14 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           draft: true
-          files: dist/rust/artifacts/**
+          files: |
+            dist/rust/artifacts/csv-anonymizer-*.rpm
+            dist/rust/artifacts/csv-anonymizer_*.AppImage
+            dist/rust/artifacts/csv-anonymizer_*.deb
+            dist/rust/artifacts/csv-anonymizer-repository-setup_*.deb
+            dist/rust/artifacts/csv-anonymizer-repository-setup_*.deb.sha256
+            dist/rust/artifacts/csv-anonymizer-repository-setup_*.deb.sha256.asc
+            dist/rust/artifacts/install-apt-repo.sh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

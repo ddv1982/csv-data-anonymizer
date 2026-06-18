@@ -30,6 +30,7 @@ const appName = 'CSV Anonymizer'
 const bundleIdentifier = 'io.github.ddv1982.csv-data-anonymizer'
 const version = packageJson.version
 const macArch = process.env.MACOS_ARCH || (process.arch === 'arm64' ? 'arm64' : 'x64')
+const artifactArch = macArch === 'arm64' ? 'aarch64' : macArch
 const artifactsDir = join(projectRoot, 'dist', 'rust', 'artifacts')
 const buildDir = join(projectRoot, 'dist', 'rust', 'build')
 const appDir = join(buildDir, `${appName}.app`)
@@ -114,7 +115,7 @@ function createIcon(resourcesDir) {
 }
 
 function buildAppArchive() {
-  const archivePath = join(artifactsDir, `${packageName}-${version}-macos-${macArch}.app.tar.gz`)
+  const archivePath = join(artifactsDir, `${packageName}-${version}-macos-${artifactArch}.app.tar.gz`)
   rmSync(archivePath, { force: true })
   run('tar', ['-czf', archivePath, '-C', buildDir, basename(appDir)], {
     env: { ...process.env, COPYFILE_DISABLE: '1' }
@@ -136,7 +137,7 @@ function buildDmg() {
   }
 
   const dmgRoot = join(tmpdir(), `${packageName}-dmg-${Date.now()}`)
-  const dmgPath = join(artifactsDir, `${packageName}-${version}-macos-${macArch}.dmg`)
+  const dmgPath = join(artifactsDir, `CSV.Anonymizer_${version}_${artifactArch}.dmg`)
   rmSync(dmgRoot, { recursive: true, force: true })
   rmSync(dmgPath, { force: true })
   mkdirSync(dmgRoot, { recursive: true })
@@ -187,8 +188,8 @@ function infoPlist() {
 
 function listArtifacts() {
   const candidates = [
-    join(artifactsDir, `${packageName}-${version}-macos-${macArch}.app.tar.gz`),
-    join(artifactsDir, `${packageName}-${version}-macos-${macArch}.dmg`)
+    join(artifactsDir, `${packageName}-${version}-macos-${artifactArch}.app.tar.gz`),
+    join(artifactsDir, `CSV.Anonymizer_${version}_${artifactArch}.dmg`)
   ]
   return candidates.filter((candidate) => existsSync(candidate))
 }

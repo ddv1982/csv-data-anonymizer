@@ -17,13 +17,13 @@ CSV Anonymizer now uses the Rust workspace as the active app and release path.
 
 ### Linux Packaging
 
-- `scripts/package-rust-linux.mjs` packages the Rust binary as a portable `.tar.gz`, `.deb`, `.rpm`, and AppImage.
+- `scripts/package-tauri-linux.mjs` packages the Tauri desktop app as `.deb`, `.rpm`, and AppImage installers.
 - `scripts/build_apt_repository.py`, `scripts/install-apt-repo.sh`, `scripts/check-apt-repository.mjs`, and `scripts/check-apt-installer.mjs` remain the signed APT publishing path.
 - Linux package metadata validation uses the existing Python validator against `dist/rust/artifacts`.
 
 ### macOS Packaging
 
-- `scripts/package-rust-macos.mjs` creates `CSV Anonymizer.app`, `.app.tar.gz`, and `.dmg` artifacts from the Rust binary.
+- The release workflow creates signed and notarized `.dmg` installers from the Tauri app bundle.
 - GitHub Actions signs, notarizes, staples, and verifies macOS release artifacts.
 
 ### Removal
@@ -45,12 +45,11 @@ node scripts/check-release-metadata.mjs
 Platform package checks:
 
 ```bash
-node scripts/package-rust-macos.mjs
-node scripts/check-rust-artifacts.mjs --platform macos --require-dmg
+(cd src-tauri && CSV_ANONYMIZER_USE_PREBUILT_FRONTEND=1 cargo tauri build --bundles dmg)
 ```
 
 ```bash
-node scripts/package-rust-linux.mjs
+node scripts/package-tauri-linux.mjs
 python3 scripts/validate_linux_package_metadata.py "dist/rust/artifacts/*.deb" "dist/rust/artifacts/*.rpm"
 node scripts/check-apt-repository.mjs
 node scripts/check-apt-installer.mjs

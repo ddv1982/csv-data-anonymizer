@@ -34,10 +34,10 @@ git push origin v1.0.0
 
 The release workflow builds Tauri desktop artifacts:
 
-- macOS: signed and notarized `.dmg`, plus a signed/notarized `.app.tar.gz`
-- Linux: `.deb`, `.rpm`, AppImage, APT repository, APT repository setup `.deb`, `install-apt-repo.sh`, keyring, checksum sidecars, and detached `.asc` signatures
+- macOS: signed and notarized `.dmg` installers named with standard architecture suffixes, for example `CSV.Anonymizer_1.0.0_aarch64.dmg` and `CSV.Anonymizer_1.0.0_x64.dmg`
+- Linux: `.deb`, `.rpm`, AppImage, APT repository, APT repository setup `.deb`, setup checksum sidecar, setup checksum signature, and `install-apt-repo.sh`
 
-Artifacts are written to `dist/rust/artifacts/` and uploaded to the draft GitHub Release. Public APT bootstrap assets are copied into `dist/rust/apt-pages/` for GitHub Pages so unauthenticated Linux installs do not depend on GitHub Release asset access.
+Artifacts are written to `dist/rust/artifacts/`. The GitHub Release intentionally publishes only user-facing installers and APT bootstrap files; the archive keyring stays on GitHub Pages because it is consumed by `install-apt-repo.sh`.
 
 ## macOS Prerequisites
 
@@ -67,11 +67,11 @@ Configure these signing inputs:
 - `DEB_SIGNING_KEY_PASSPHRASE`: passphrase for the Linux signing key
 - `DEB_SIGNING_PUBLIC_KEY`: repository variable containing the base64-encoded ASCII-armored public key
 
-The names are historical. The key signs Linux archives, `.deb`, `.rpm`, AppImage, APT metadata, the APT setup package checksum, and release sidecar signatures.
+The names are historical. The key signs APT metadata and the APT setup package checksum.
 
 The APT repository is generated under `dist/rust/apt-pages/apt` and deployed with GitHub Pages. Repository Pages must be configured to use GitHub Actions as the Pages source.
 
-The release workflow exports the archive keyring, repository setup package, setup checksum sidecar, setup checksum signature, and `install-apt-repo.sh` to GitHub Pages because Linux installs use public Pages URLs for the bootstrap flow.
+The release workflow exports the archive keyring, repository setup package, setup checksum sidecar, setup checksum signature, and `install-apt-repo.sh` to GitHub Pages because Linux installs use public Pages URLs for the bootstrap flow. The installer script itself is not published with a detached signature; it authenticates the setup package through the pinned key and signed checksum.
 
 ## Release Behavior
 
