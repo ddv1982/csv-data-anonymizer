@@ -18,6 +18,8 @@ Validate metadata before tagging:
 node scripts/check-release-metadata.mjs --expected-tag v1.0.0
 ```
 
+The metadata check also gates the Linux Tauri package identity: `src-tauri/tauri.linux.conf.json` keeps the installed desktop file at `csv-anonymizer.desktop`, while `build/linux/csv-anonymizer.desktop.hbs` keeps the visible app name as CSV Anonymizer.
+
 Then commit, tag, and push:
 
 ```bash

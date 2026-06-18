@@ -88,6 +88,7 @@ const packageJson = JSON.parse(await readFile('package.json', 'utf-8'));
 const frontendPackageJson = JSON.parse(await readFile('frontend/package.json', 'utf-8'));
 const frontendPackageLock = JSON.parse(await readFile('frontend/package-lock.json', 'utf-8'));
 const tauriConfig = JSON.parse(await readFile('src-tauri/tauri.conf.json', 'utf-8'));
+const linuxTauriConfig = JSON.parse(await readFile('src-tauri/tauri.linux.conf.json', 'utf-8'));
 const cargoToml = await readFile('Cargo.toml', 'utf-8');
 const cargoVersion = readWorkspaceCargoVersion(cargoToml);
 
@@ -121,6 +122,23 @@ if (tauriConfig.version !== packageJson.version) {
 
 if (tauriConfig.identifier !== 'io.github.ddv1982.csv-data-anonymizer') {
   throw new Error(`src-tauri/tauri.conf.json identifier must stay io.github.ddv1982.csv-data-anonymizer, got ${tauriConfig.identifier}`);
+}
+
+if (packageJson.desktopName !== 'csv-anonymizer.desktop') {
+  throw new Error(`package.json desktopName must stay csv-anonymizer.desktop, got ${packageJson.desktopName}`);
+}
+
+if (linuxTauriConfig.productName !== packageJson.name) {
+  throw new Error(`src-tauri/tauri.linux.conf.json productName ${linuxTauriConfig.productName} must match package.json name ${packageJson.name}`);
+}
+
+const linuxDesktopTemplate = '../build/linux/csv-anonymizer.desktop.hbs';
+if (linuxTauriConfig.bundle?.linux?.deb?.desktopTemplate !== linuxDesktopTemplate) {
+  throw new Error(`src-tauri/tauri.linux.conf.json deb desktopTemplate must be ${linuxDesktopTemplate}`);
+}
+
+if (linuxTauriConfig.bundle?.linux?.rpm?.desktopTemplate !== linuxDesktopTemplate) {
+  throw new Error(`src-tauri/tauri.linux.conf.json rpm desktopTemplate must be ${linuxDesktopTemplate}`);
 }
 
 const tag = expectedTag ?? `v${packageJson.version}`;
@@ -158,6 +176,19 @@ if (metainfoRelease.date !== release.date) {
 
 if (!metainfo.includes('<project_license>MIT</project_license>')) {
   throw new Error(`${metainfoPath} must declare <project_license>MIT</project_license>`);
+}
+
+if (!metainfo.includes(`<launchable type="desktop-id">${packageJson.desktopName}</launchable>`)) {
+  throw new Error(`${metainfoPath} must launch ${packageJson.desktopName}`);
+}
+
+const desktopTemplate = await readFile('build/linux/csv-anonymizer.desktop.hbs', 'utf-8');
+if (!desktopTemplate.includes('Name=CSV Anonymizer')) {
+  throw new Error('build/linux/csv-anonymizer.desktop.hbs must preserve the visible Name=CSV Anonymizer label');
+}
+
+if (!desktopTemplate.includes('Exec={{exec}}') || !desktopTemplate.includes('Icon={{icon}}')) {
+  throw new Error('build/linux/csv-anonymizer.desktop.hbs must keep Tauri Exec and Icon template variables');
 }
 
 if (releaseNotesPath) {

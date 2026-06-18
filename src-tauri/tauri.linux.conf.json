@@ -1,0 +1,23 @@
+{
+  "productName": "csv-anonymizer",
+  "bundle": {
+    "linux": {
+      "deb": {
+        "depends": [],
+        "desktopTemplate": "../build/linux/csv-anonymizer.desktop.hbs",
+        "files": {
+          "/usr/share/doc/csv-anonymizer/copyright": "../build/linux/debian/copyright",
+          "/usr/share/metainfo/io.github.ddv1982.csv-data-anonymizer.metainfo.xml": "../build/linux/io.github.ddv1982.csv-data-anonymizer.metainfo.xml"
+        }
+      },
+      "rpm": {
+        "depends": [],
+        "desktopTemplate": "../build/linux/csv-anonymizer.desktop.hbs",
+        "files": {
+          "/usr/share/licenses/csv-anonymizer/LICENSE": "../LICENSE",
+          "/usr/share/metainfo/io.github.ddv1982.csv-data-anonymizer.metainfo.xml": "../build/linux/io.github.ddv1982.csv-data-anonymizer.metainfo.xml"
+        }
+      }
+    }
+  }
+}

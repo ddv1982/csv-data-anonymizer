@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.13 - 2026-06-18
+
+- Supersede v1.0.12 with Linux Tauri packages whose installed desktop file is `csv-anonymizer.desktop`.
+- Keep the Linux package identity aligned with the AppStream launchable contract while preserving the visible app name as CSV Anonymizer.
+- Add a Linux-specific Tauri configuration and desktop template so Debian/RPM metadata validation passes before APT repository publishing.
+
 ## v1.0.12 - 2026-06-18
 
 - Ship the desktop app through a Tauri web frontend so Linux AppImage, Debian/RPM packages, and macOS builds share the same bundled UI styling.
