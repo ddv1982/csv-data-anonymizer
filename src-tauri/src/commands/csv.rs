@@ -4,7 +4,7 @@ use super::shared::{
 };
 use crate::path_access::PathAccess;
 use csv_anonymizer_core::{
-    AnonymizeData, AnonymizeParams, HeadersData, PreviewData, PreviewParams,
+    AnonymizeData, AnonymizeParams, ColumnControl, HeadersData, PreviewData, PreviewParams,
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -24,6 +24,8 @@ pub struct AnonymizeRequest {
     pub file_path: PathBuf,
     pub output_path: PathBuf,
     pub columns: Vec<usize>,
+    #[serde(default)]
+    pub controls: Vec<ColumnControl>,
     pub deterministic: bool,
     pub seed: String,
     pub force: bool,
@@ -70,6 +72,7 @@ pub async fn preview_anonymization(
     path_access: State<'_, PathAccess>,
     file_path: PathBuf,
     columns: Vec<usize>,
+    controls: Vec<ColumnControl>,
     deterministic: bool,
     seed: String,
     sample_count: usize,
@@ -80,6 +83,7 @@ pub async fn preview_anonymization(
             .preview_anonymization(PreviewParams {
                 file_path,
                 columns,
+                controls,
                 deterministic,
                 seed,
                 sample_count,
@@ -118,6 +122,7 @@ pub async fn anonymize_csv(
                     file_path,
                     output_path,
                     columns: request.columns,
+                    controls: request.controls,
                     deterministic: request.deterministic,
                     seed: request.seed,
                     force: request.force,

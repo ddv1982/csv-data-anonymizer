@@ -1,5 +1,12 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { AnalyzeResponse, AnonymizeData, AnonymizeJobStatus, AppSettings, PreviewData } from './types'
+import type {
+  AnalyzeResponse,
+  AnonymizeData,
+  AnonymizeJobStatus,
+  AppSettings,
+  ColumnControl,
+  PreviewData,
+} from './types'
 
 export function loadSettings(): Promise<AppSettings> {
   return invoke('load_settings')
@@ -32,6 +39,7 @@ export function countCsvRows(filePath: string): Promise<number> {
 export function previewAnonymization(
   filePath: string,
   columns: number[],
+  controls: ColumnControl[],
   deterministic: boolean,
   seed: string,
   sampleCount: number,
@@ -39,6 +47,7 @@ export function previewAnonymization(
   return invoke('preview_anonymization', {
     filePath,
     columns,
+    controls,
     deterministic,
     seed,
     sampleCount,
@@ -49,6 +58,7 @@ export function anonymizeCsv(
   filePath: string,
   outputPath: string,
   columns: number[],
+  controls: ColumnControl[],
   deterministic: boolean,
   seed: string,
   force: boolean,
@@ -59,6 +69,7 @@ export function anonymizeCsv(
       filePath,
       outputPath,
       columns,
+      controls,
       deterministic,
       seed,
       force,
@@ -71,6 +82,7 @@ export function startAnonymizeJob(
   filePath: string,
   outputPath: string,
   columns: number[],
+  controls: ColumnControl[],
   deterministic: boolean,
   seed: string,
   force: boolean,
@@ -82,6 +94,7 @@ export function startAnonymizeJob(
       filePath,
       outputPath,
       columns,
+      controls,
       deterministic,
       seed,
       force,

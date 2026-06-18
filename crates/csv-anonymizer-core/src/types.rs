@@ -8,6 +8,16 @@ pub enum DataType {
     Uuid,
     Timestamp,
     NumericId,
+    NumericValue,
+    PostalCode,
+    Address,
+    IpAddress,
+    Url,
+    MacAddress,
+    TaxId,
+    Boolean,
+    Currency,
+    Percentage,
     CountryCode,
     Phone,
     FirstName,
@@ -62,6 +72,24 @@ pub struct ColumnMetadata {
     pub sample_values: Vec<String>,
     pub empty_format: EmptyFormat,
     pub is_selected: bool,
+    pub strategy: AnonymizationStrategy,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AnonymizationStrategy {
+    Auto,
+    Pseudonymize,
+    Mask,
+    PassThrough,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColumnControl {
+    pub column_index: usize,
+    pub type_override: Option<DataType>,
+    pub strategy: AnonymizationStrategy,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -143,8 +171,25 @@ pub struct ColumnPreview {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PreviewWarning {
+    pub column_index: usize,
+    pub column_name: String,
+    pub message: String,
+    pub severity: WarningSeverity,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WarningSeverity {
+    Info,
+    Warning,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PreviewData {
     pub previews: Vec<ColumnPreview>,
+    pub warnings: Vec<PreviewWarning>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -152,6 +197,8 @@ pub struct PreviewData {
 pub struct PreviewParams {
     pub file_path: PathBuf,
     pub columns: Vec<usize>,
+    #[serde(default)]
+    pub controls: Vec<ColumnControl>,
     pub deterministic: bool,
     pub seed: String,
     pub sample_count: usize,
@@ -163,6 +210,8 @@ pub struct AnonymizeParams {
     pub file_path: PathBuf,
     pub output_path: PathBuf,
     pub columns: Vec<usize>,
+    #[serde(default)]
+    pub controls: Vec<ColumnControl>,
     pub deterministic: bool,
     pub seed: String,
     pub force: bool,
@@ -175,4 +224,17 @@ pub struct AnonymizeData {
     pub row_count: usize,
     pub columns_anonymized: usize,
     pub duration_ms: u128,
+    pub privacy_report: PrivacyReport,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivacyReport {
+    pub direct_identifiers: usize,
+    pub quasi_identifiers: usize,
+    pub pseudonymized_columns: usize,
+    pub masked_columns: usize,
+    pub generalized_columns: usize,
+    pub pass_through_columns: usize,
+    pub notes: Vec<String>,
 }

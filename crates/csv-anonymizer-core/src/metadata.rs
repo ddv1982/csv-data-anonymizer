@@ -1,5 +1,5 @@
 use crate::detection::{classify_pii_risk, detect_column_type_with_name, detect_empty_format};
-use crate::types::{ColumnMetadata, PiiRisk};
+use crate::types::{AnonymizationStrategy, ColumnMetadata, PiiRisk};
 use std::collections::HashSet;
 
 const DEFAULT_SAMPLE_COUNT: usize = 5;
@@ -72,6 +72,7 @@ fn build_single_column_metadata(
         sample_values,
         empty_format,
         is_selected: false,
+        strategy: AnonymizationStrategy::Auto,
     }
 }
 

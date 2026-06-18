@@ -4,8 +4,10 @@ use crate::error::{AnonymizerError, Result};
 use crate::metadata::{apply_column_selection, build_column_metadata};
 use crate::strategies::transform_value;
 use crate::types::{
-    AnonymizeData, AnonymizeParams, ColumnMetadata, ColumnPreview, HeadersData, PreviewData,
-    PreviewParams, ProcessControl, ProcessOptions, SampleTransform, TransformContext,
+    AnonymizationStrategy, AnonymizeData, AnonymizeParams, ColumnControl, ColumnMetadata,
+    ColumnPreview, DataType, HeadersData, PreviewData, PreviewParams, PreviewWarning,
+    PrivacyReport, ProcessControl, ProcessOptions, SampleTransform, TransformContext,
+    WarningSeverity,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -79,7 +81,8 @@ impl AnonymizerService {
         let sample = read_sample(&file_path, input.sample_count.saturating_mul(2).max(1))?;
         let metadata = build_column_metadata(&sample.headers, &sample.rows);
         validate_column_indices(&metadata, &input.columns)?;
-        let selected_metadata = apply_column_selection(&metadata, &input.columns);
+        let controlled_metadata = apply_column_controls(&metadata, &input.controls)?;
+        let selected_metadata = apply_column_selection(&controlled_metadata, &input.columns);
         let previews = selected_metadata
             .iter()
             .filter(|column| column.is_selected)
@@ -93,8 +96,13 @@ impl AnonymizerService {
                 )
             })
             .collect();
+        let warnings = selected_metadata
+            .iter()
+            .filter(|column| column.is_selected)
+            .filter_map(preview_warning_for_column)
+            .collect();
 
-        Ok(PreviewData { previews })
+        Ok(PreviewData { previews, warnings })
     }
 
     pub fn count_csv_rows(&self, file_path: impl AsRef<Path>) -> Result<usize> {
@@ -133,7 +141,8 @@ impl AnonymizerService {
         let sample = read_sample(&input_path, sample_rows.max(1))?;
         let metadata = build_column_metadata(&sample.headers, &sample.rows);
         validate_column_indices(&metadata, &input.columns)?;
-        let selected_metadata = apply_column_selection(&metadata, &input.columns);
+        let controlled_metadata = apply_column_controls(&metadata, &input.controls)?;
+        let selected_metadata = apply_column_selection(&controlled_metadata, &input.columns);
         let result = process_file_with_control(
             &input_path,
             &output_path,
@@ -150,6 +159,7 @@ impl AnonymizerService {
             row_count: result.row_count,
             columns_anonymized: input.columns.len(),
             duration_ms: result.duration_ms,
+            privacy_report: build_privacy_report(&selected_metadata),
         })
     }
 }
@@ -218,6 +228,107 @@ fn validate_column_indices(metadata: &[ColumnMetadata], columns: &[usize]) -> Re
         }
     }
     Ok(())
+}
+
+fn apply_column_controls(
+    metadata: &[ColumnMetadata],
+    controls: &[ColumnControl],
+) -> Result<Vec<ColumnMetadata>> {
+    let mut controlled = metadata.to_vec();
+    for control in controls {
+        let Some(column) = controlled.get_mut(control.column_index) else {
+            return Err(AnonymizerError::ColumnOutOfRange {
+                index: control.column_index,
+                max_index: metadata.len().saturating_sub(1),
+            });
+        };
+
+        if let Some(data_type) = control.type_override {
+            column.detected_type = data_type;
+        }
+        column.strategy = control.strategy;
+    }
+    Ok(controlled)
+}
+
+fn preview_warning_for_column(column: &ColumnMetadata) -> Option<PreviewWarning> {
+    let message = match column.strategy {
+        AnonymizationStrategy::PassThrough => {
+            "Pass-through leaves selected values unchanged.".to_string()
+        }
+        AnonymizationStrategy::Mask => return None,
+        AnonymizationStrategy::Auto | AnonymizationStrategy::Pseudonymize => {
+            match column.detected_type {
+                DataType::CountryCode
+                | DataType::Enum
+                | DataType::Boolean
+                | DataType::Currency
+                | DataType::Percentage => {
+                    format!("{} currently uses pass-through behavior.", column.name)
+                }
+                _ => return None,
+            }
+        }
+    };
+
+    Some(PreviewWarning {
+        column_index: column.index,
+        column_name: column.name.clone(),
+        message,
+        severity: WarningSeverity::Warning,
+    })
+}
+
+fn build_privacy_report(columns: &[ColumnMetadata]) -> PrivacyReport {
+    let mut report = PrivacyReport {
+        direct_identifiers: 0,
+        quasi_identifiers: 0,
+        pseudonymized_columns: 0,
+        masked_columns: 0,
+        generalized_columns: 0,
+        pass_through_columns: 0,
+        notes: vec![
+            "This app performs local masking and pseudonymization, not formal anonymization."
+                .to_string(),
+            "k-anonymity, l-diversity, t-closeness, differential privacy, and synthetic data generation are not implemented."
+                .to_string(),
+        ],
+    };
+
+    for column in columns.iter().filter(|column| column.is_selected) {
+        match column.detected_type {
+            DataType::Email
+            | DataType::Phone
+            | DataType::FullName
+            | DataType::FirstName
+            | DataType::LastName
+            | DataType::TaxId
+            | DataType::Address => report.direct_identifiers += 1,
+            DataType::Uuid
+            | DataType::NumericId
+            | DataType::PostalCode
+            | DataType::IpAddress
+            | DataType::Url
+            | DataType::MacAddress
+            | DataType::Timestamp
+            | DataType::CountryCode => report.quasi_identifiers += 1,
+            _ => {}
+        }
+
+        match column.strategy {
+            AnonymizationStrategy::Mask => report.masked_columns += 1,
+            AnonymizationStrategy::PassThrough => report.pass_through_columns += 1,
+            AnonymizationStrategy::Auto | AnonymizationStrategy::Pseudonymize => {
+                if preview_warning_for_column(column).is_some() {
+                    report.pass_through_columns += 1;
+                } else {
+                    report.pseudonymized_columns += 1;
+                }
+            }
+        }
+    }
+
+    report
 }
 
 fn generate_column_preview(

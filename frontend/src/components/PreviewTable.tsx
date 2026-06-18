@@ -27,6 +27,18 @@ export function PreviewTable({ preview, loading }: { preview: PreviewData | null
 
   return (
     <div className="preview-stack">
+      {preview.warnings.length > 0 ? (
+        <div className="preview-group">
+          <h3>Warnings</h3>
+          <div className="preview-frame">
+            {preview.warnings.map((warning) => (
+              <p className="muted-text text-sm" key={`${warning.columnIndex}-${warning.message}`}>
+                <strong>{warning.columnName}:</strong> {warning.message}
+              </p>
+            ))}
+          </div>
+        </div>
+      ) : null}
       {preview.previews.map((columnPreview) => (
         <div className="preview-group" key={columnPreview.columnIndex}>
           <h3>

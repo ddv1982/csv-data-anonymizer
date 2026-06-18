@@ -1,7 +1,7 @@
 use super::shared::authorize_or_confirm_output_file;
 use crate::jobs::{AnonymizeJobState, AnonymizeJobStatus, AnonymizeJobStore, run_anonymize_job};
 use crate::path_access::PathAccess;
-use csv_anonymizer_core::AnonymizeParams;
+use csv_anonymizer_core::{AnonymizeParams, ColumnControl};
 use serde::Deserialize;
 use std::path::PathBuf;
 use tauri::State;
@@ -12,6 +12,8 @@ pub struct StartAnonymizeJobRequest {
     pub file_path: PathBuf,
     pub output_path: PathBuf,
     pub columns: Vec<usize>,
+    #[serde(default)]
+    pub controls: Vec<ColumnControl>,
     pub deterministic: bool,
     pub seed: String,
     pub force: bool,
@@ -39,6 +41,7 @@ pub async fn start_anonymize_job(
                 file_path,
                 output_path,
                 columns: request.columns,
+                controls: request.controls,
                 deterministic: request.deterministic,
                 seed: request.seed,
                 force: request.force,

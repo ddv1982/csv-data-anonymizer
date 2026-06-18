@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.18 - 2026-06-19
+
+- Improve anonymization quality with numeric-shape-preserving values, expanded sensitive type detection, type-specific phone/name strategies, per-column type and strategy controls, preview warnings, and a privacy report that distinguishes masking/pseudonymization from stronger anonymization guarantees.
+- Fix Linux Debian package icon readiness by bundling standard hicolor PNG sizes and validating installed desktop `Icon=` resolution during release checks.
+
 ## v1.0.17 - 2026-06-18
 
 - Add `esbuild` as an explicit frontend dev dependency so clean CI and release `npm ci` installs can run the Vite 8 production build.

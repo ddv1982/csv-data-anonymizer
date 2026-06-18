@@ -33,6 +33,24 @@ export function ResultDisplay({
         </div>
       </Alert>
 
+      <div className="preview-group">
+        <h3>Privacy Report</h3>
+        <div className="preview-frame">
+          <p className="muted-text text-sm">
+            Direct identifiers: {result.privacyReport.directIdentifiers}; Quasi-identifiers:{' '}
+            {result.privacyReport.quasiIdentifiers}; Pseudonymized: {result.privacyReport.pseudonymizedColumns};
+            Masked: {result.privacyReport.maskedColumns}; Generalized:{' '}
+            {result.privacyReport.generalizedColumns}; Pass-through/no-op:{' '}
+            {result.privacyReport.passThroughColumns}
+          </p>
+          {result.privacyReport.notes.map((note) => (
+            <p className="muted-text text-sm" key={note}>
+              {note}
+            </p>
+          ))}
+        </div>
+      </div>
+
       <div className="result-actions">
         <button type="button" className="button button-outline" onClick={() => void handleOpenFolder()}>
           <FolderOpen aria-hidden="true" />

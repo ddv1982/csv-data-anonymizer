@@ -3,6 +3,16 @@ export type DataType =
   | 'uuid'
   | 'timestamp'
   | 'numericId'
+  | 'numericValue'
+  | 'postalCode'
+  | 'address'
+  | 'ipAddress'
+  | 'url'
+  | 'macAddress'
+  | 'taxId'
+  | 'boolean'
+  | 'currency'
+  | 'percentage'
   | 'countryCode'
   | 'phone'
   | 'firstName'
@@ -15,6 +25,13 @@ export type DataType =
 export type Confidence = 'high' | 'medium' | 'low'
 export type PiiRisk = 'high' | 'medium' | 'low'
 export type EmptyFormat = 'emptyString' | 'null' | 'mixed'
+export type AnonymizationStrategy = 'auto' | 'pseudonymize' | 'mask' | 'passThrough'
+
+export interface ColumnControl {
+  columnIndex: number
+  typeOverride: DataType | null
+  strategy: AnonymizationStrategy
+}
 
 export interface AppSettings {
   schemaVersion: number
@@ -38,6 +55,7 @@ export interface ColumnMetadata {
   sampleValues: string[]
   emptyFormat: EmptyFormat
   isSelected: boolean
+  strategy: AnonymizationStrategy
 }
 
 export interface HeadersData {
@@ -65,8 +83,18 @@ export interface ColumnPreview {
   samples: SampleTransform[]
 }
 
+export type WarningSeverity = 'info' | 'warning'
+
+export interface PreviewWarning {
+  columnIndex: number
+  columnName: string
+  message: string
+  severity: WarningSeverity
+}
+
 export interface PreviewData {
   previews: ColumnPreview[]
+  warnings: PreviewWarning[]
 }
 
 export interface AnonymizeData {
@@ -74,6 +102,17 @@ export interface AnonymizeData {
   rowCount: number
   columnsAnonymized: number
   durationMs: number
+  privacyReport: PrivacyReport
+}
+
+export interface PrivacyReport {
+  directIdentifiers: number
+  quasiIdentifiers: number
+  pseudonymizedColumns: number
+  maskedColumns: number
+  generalizedColumns: number
+  passThroughColumns: number
+  notes: string[]
 }
 
 export type AnonymizeJobState = 'running' | 'succeeded' | 'failed' | 'canceled'

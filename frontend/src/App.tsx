@@ -31,8 +31,11 @@ import type {
   AnonymizeData,
   AnonymizeJobStatus,
   AppSettings,
+  ColumnControl,
   ColumnMetadata,
+  DataType,
   PreviewData,
+  AnonymizationStrategy,
 } from './types'
 import { isSelectableColumn, maxVisibleColumns } from './utils/columns'
 import { messageFrom } from './utils/errors'
@@ -61,6 +64,7 @@ function App() {
   const [outputPath, setOutputPath] = useState('')
   const [headers, setHeaders] = useState<AnalyzeResponse['headers'] | null>(null)
   const [selectedColumns, setSelectedColumns] = useState<number[]>([])
+  const [columnControls, setColumnControls] = useState<Record<number, ColumnControl>>({})
   const [preview, setPreview] = useState<PreviewData | null>(null)
   const [result, setResult] = useState<AnonymizeData | null>(null)
   const [activeJobId, setActiveJobId] = useState<string | null>(null)
@@ -123,6 +127,10 @@ function App() {
 
   const columns = headers?.columns ?? []
   const selectedSet = useMemo(() => new Set(selectedColumns), [selectedColumns])
+  const selectedControls = useMemo(
+    () => selectedColumns.map((index) => columnControls[index]).filter(Boolean),
+    [columnControls, selectedColumns],
+  )
   const selectableColumns = useMemo(() => columns.filter(isSelectableColumn), [columns])
   const highRiskColumns = useMemo(
     () => selectableColumns.filter((column) => column.piiRisk === 'high').map((column) => column.index),
@@ -151,6 +159,10 @@ function App() {
   }
 
   function updateSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
+    if (key === 'deterministicDefault' || key === 'seed' || key === 'previewSampleCount') {
+      setPreview(null)
+      setResult(null)
+    }
     void persistSettings({ ...settings, [key]: value })
   }
 
@@ -182,6 +194,7 @@ function App() {
     setError(null)
     setPreview(null)
     setResult(null)
+    setColumnControls({})
 
     try {
       const response = await analyzeCsv(normalized, settings.sampleRowCount, settings.defaultOutputSuffix)
@@ -244,6 +257,7 @@ function App() {
       const nextPreview = await previewAnonymization(
         path,
         columnsToPreview,
+        controlsForColumns(columnsToPreview),
         settings.deterministicDefault,
         settings.seed,
         settings.previewSampleCount,
@@ -314,6 +328,7 @@ function App() {
         inputPath,
         outputPath,
         selectedColumns,
+        selectedControls,
         settings.deterministicDefault,
         settings.seed,
         settings.overwriteOutput,
@@ -348,6 +363,38 @@ function App() {
     setResult(null)
   }
 
+  function controlsForColumns(columnIndexes: number[]) {
+    return columnIndexes.map((index) => columnControls[index]).filter(Boolean)
+  }
+
+  function defaultControl(column: ColumnMetadata): ColumnControl {
+    return {
+      columnIndex: column.index,
+      typeOverride: null,
+      strategy: column.strategy ?? 'auto',
+    }
+  }
+
+  function updateColumnControl(
+    column: ColumnMetadata,
+    patch: Partial<Pick<ColumnControl, 'typeOverride' | 'strategy'>>,
+  ) {
+    setColumnControls((current) => ({
+      ...current,
+      [column.index]: { ...defaultControl(column), ...current[column.index], ...patch },
+    }))
+    setPreview(null)
+    setResult(null)
+  }
+
+  function updateColumnType(column: ColumnMetadata, value: DataType | 'auto') {
+    updateColumnControl(column, { typeOverride: value === 'auto' ? null : value })
+  }
+
+  function updateColumnStrategy(column: ColumnMetadata, strategy: AnonymizationStrategy) {
+    updateColumnControl(column, { strategy })
+  }
+
   function toggleColumn(column: ColumnMetadata) {
     if (!isSelectableColumn(column)) return
 
@@ -361,6 +408,7 @@ function App() {
   function resetData() {
     setHeaders(null)
     setSelectedColumns([])
+    setColumnControls({})
     setPreview(null)
     setResult(null)
     setActiveJobId(null)
@@ -499,10 +547,13 @@ function App() {
                     columns={visibleColumns}
                     allColumnCount={columns.length}
                     selectedSet={selectedSet}
-                    loading={busy === 'loading'}
+                    loading={isLoading}
                     showAllColumns={showAllColumns}
                     hiddenColumnCount={hiddenColumnCount}
                     onToggleColumn={toggleColumn}
+                    controls={columnControls}
+                    onTypeChange={updateColumnType}
+                    onStrategyChange={updateColumnStrategy}
                     onToggleShowAll={() => setShowAllColumns((current) => !current)}
                   />
 
