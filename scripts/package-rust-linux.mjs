@@ -149,6 +149,7 @@ function desktopEntry(appImage) {
   return `[Desktop Entry]
 Type=Application
 Name=${appName}
+GenericName=CSV anonymizer
 Comment=${description}
 Exec=${appImage ? 'AppRun' : binaryName} %F
 Icon=${packageName}
@@ -156,6 +157,7 @@ Terminal=false
 Categories=Utility;
 MimeType=text/csv;text/plain;
 Keywords=CSV;Privacy;Anonymization;Data;
+StartupNotify=true
 StartupWMClass=${appName}
 `
 }
@@ -266,7 +268,7 @@ cp -a "%{_sourcedir}/payload/." "%{buildroot}/"
 %license /usr/share/licenses/${packageName}/LICENSE
 
 %changelog
-* Thu Jun 18 2026 ${maintainer} - ${version}-1
+* ${rpmChangelogDate()} ${maintainer} - ${version}-1
 - Package native Rust Linux build.
 `
   )
@@ -408,6 +410,25 @@ function writeText(path, contents) {
 function writeExecutable(path, contents) {
   writeText(path, contents)
   chmodSync(path, 0o755)
+}
+
+function rpmChangelogDate(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+    timeZone: 'UTC'
+  })
+    .formatToParts(date)
+    .reduce((accumulator, part) => {
+      if (part.type !== 'literal') {
+        accumulator[part.type] = part.value
+      }
+      return accumulator
+    }, {})
+
+  return `${parts.weekday} ${parts.month} ${parts.day} ${parts.year}`
 }
 
 function shellQuote(value) {

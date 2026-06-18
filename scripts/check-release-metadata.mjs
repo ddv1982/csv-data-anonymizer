@@ -85,6 +85,9 @@ function readWorkspaceCargoVersion(cargoToml) {
 const expectedTag = readOption('--expected-tag');
 const releaseNotesPath = readOption('--write-notes');
 const packageJson = JSON.parse(await readFile('package.json', 'utf-8'));
+const frontendPackageJson = JSON.parse(await readFile('frontend/package.json', 'utf-8'));
+const frontendPackageLock = JSON.parse(await readFile('frontend/package-lock.json', 'utf-8'));
+const tauriConfig = JSON.parse(await readFile('src-tauri/tauri.conf.json', 'utf-8'));
 const cargoToml = await readFile('Cargo.toml', 'utf-8');
 const cargoVersion = readWorkspaceCargoVersion(cargoToml);
 
@@ -98,6 +101,26 @@ if (!cargoVersion) {
 
 if (cargoVersion !== packageJson.version) {
   throw new Error(`Cargo.toml workspace package version ${cargoVersion} does not match package.json version ${packageJson.version}`);
+}
+
+if (frontendPackageJson.version !== packageJson.version) {
+  throw new Error(`frontend/package.json version ${frontendPackageJson.version} does not match package.json version ${packageJson.version}`);
+}
+
+if (frontendPackageLock.version !== packageJson.version) {
+  throw new Error(`frontend/package-lock.json version ${frontendPackageLock.version} does not match package.json version ${packageJson.version}`);
+}
+
+if (frontendPackageLock.packages?.['']?.version !== packageJson.version) {
+  throw new Error(`frontend/package-lock.json root package version ${frontendPackageLock.packages?.['']?.version} does not match package.json version ${packageJson.version}`);
+}
+
+if (tauriConfig.version !== packageJson.version) {
+  throw new Error(`src-tauri/tauri.conf.json version ${tauriConfig.version} does not match package.json version ${packageJson.version}`);
+}
+
+if (tauriConfig.identifier !== 'io.github.ddv1982.csv-data-anonymizer') {
+  throw new Error(`src-tauri/tauri.conf.json identifier must stay io.github.ddv1982.csv-data-anonymizer, got ${tauriConfig.identifier}`);
 }
 
 const tag = expectedTag ?? `v${packageJson.version}`;

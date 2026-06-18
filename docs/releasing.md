@@ -2,11 +2,15 @@
 
 Use this workflow when publishing downloadable CSV Anonymizer desktop artifacts.
 
-The app runtime is native Rust. Node is used only for repository release scripts.
+The app runtime is Tauri with a bundled Vite frontend. Node is used for the
+frontend build and repository release scripts.
 
 ## Version And Tag
 
-Update `package.json`, `Cargo.toml`, `CHANGELOG.md`, and the latest `<release>` entry in `build/linux/io.github.ddv1982.csv-data-anonymizer.metainfo.xml` to the same version and date.
+Update `package.json`, `frontend/package.json`, `frontend/package-lock.json`,
+`Cargo.toml`, `src-tauri/tauri.conf.json`, `CHANGELOG.md`, and the latest
+`<release>` entry in `build/linux/io.github.ddv1982.csv-data-anonymizer.metainfo.xml`
+to the same version and date.
 
 Validate metadata before tagging:
 
@@ -26,10 +30,10 @@ git push origin v1.0.0
 
 ## Artifact Model
 
-The release workflow builds Rust artifacts:
+The release workflow builds Tauri desktop artifacts:
 
 - macOS: signed and notarized `.dmg`, plus a signed/notarized `.app.tar.gz`
-- Linux: portable `.tar.gz`, `.deb`, `.rpm`, AppImage, APT repository, APT repository setup `.deb`, `install-apt-repo.sh`, keyring, checksum sidecars, and detached `.asc` signatures
+- Linux: `.deb`, `.rpm`, AppImage, APT repository, APT repository setup `.deb`, `install-apt-repo.sh`, keyring, checksum sidecars, and detached `.asc` signatures
 
 Artifacts are written to `dist/rust/artifacts/` and uploaded to the draft GitHub Release. Public APT bootstrap assets are copied into `dist/rust/apt-pages/` for GitHub Pages so unauthenticated Linux installs do not depend on GitHub Release asset access.
 
@@ -51,7 +55,8 @@ The previous `ELECTROBUN_DEVELOPER_ID` and `ELECTROBUN_TEAMID` secrets are still
 
 ## Linux Prerequisites
 
-Linux release jobs run on Ubuntu and build the current host platform from the Rust binary.
+Linux release jobs run on Ubuntu and build the current host platform through
+Tauri, embedding `frontend/dist` into the desktop bundle.
 
 Configure these signing inputs:
 
@@ -75,8 +80,8 @@ The release workflow:
 - validates tag, package version, changelog, Rust workspace, and Linux metainfo metadata
 - creates or refreshes a draft GitHub Release
 - builds and verifies signed/notarized macOS arm64 and x64 artifacts
-- builds the Linux x64 Rust binary and runs the Rust smoke workflow
-- wraps Linux output as `.deb`, `.rpm`, AppImage, and a portable `.tar.gz`
+- builds the frontend once for Tauri packaging
+- builds Linux output as `.deb`, `.rpm`, and AppImage through Tauri
 - validates Linux package metadata and builds a signed APT repository
 - stages `install-apt-repo.sh` with the pinned APT signing key fingerprint and validates the rendered installer keeps that effective fingerprint
 - publishes public APT bootstrap assets in the APT Pages artifact for installer-side signature verification
@@ -90,9 +95,10 @@ Before pushing a release tag, run on the host platform:
 
 ```bash
 cargo fmt --all --check
-cargo test --workspace
-cargo clippy --workspace --all-targets -- -D warnings
-cargo build --release -p csv-anonymizer-app
+npm ci --prefix frontend
+npm run frontend:build
+npm run test
+npm run lint
 node scripts/rust-smoke.mjs
 node scripts/check-release-metadata.mjs --expected-tag v1.0.0
 ```
@@ -100,14 +106,14 @@ node scripts/check-release-metadata.mjs --expected-tag v1.0.0
 On macOS, validate app packaging:
 
 ```bash
-node scripts/package-rust-macos.mjs --skip-missing-tools
-node scripts/check-rust-artifacts.mjs --platform macos
+cd src-tauri
+CSV_ANONYMIZER_USE_PREBUILT_FRONTEND=1 cargo tauri build --bundles app
 ```
 
 On Linux, also validate package-manager artifacts:
 
 ```bash
-node scripts/package-rust-linux.mjs
+node scripts/package-tauri-linux.mjs
 python3 scripts/validate_linux_package_metadata.py "dist/rust/artifacts/*.deb" "dist/rust/artifacts/*.rpm"
 node scripts/check-apt-repository.mjs
 node scripts/check-apt-installer.mjs

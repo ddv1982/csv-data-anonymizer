@@ -7,43 +7,42 @@ const platform = readOption('--platform') ?? process.platform
 const requireRpm = args.has('--require-rpm')
 const requireAppImage = args.has('--require-appimage')
 const requireDmg = args.has('--require-dmg')
+const requireTarGz = args.has('--require-tar-gz')
 const artifactsDir = join(process.cwd(), 'dist', 'rust', 'artifacts')
 const buildDir = join(process.cwd(), 'dist', 'rust', 'build')
 
 const artifacts = await collectFiles(artifactsDir)
 const builds = await collectFiles(buildDir)
 
-if (builds.length === 0) {
-  throw new Error(`No Rust build output found under ${relative(process.cwd(), buildDir)}.`)
-}
-
 if (artifacts.length === 0) {
-  throw new Error(`No Rust artifacts found under ${relative(process.cwd(), artifactsDir)}.`)
+  throw new Error(`No desktop artifacts found under ${relative(process.cwd(), artifactsDir)}.`)
 }
 
 const hasTarGz = artifacts.some((file) => file.endsWith('.tar.gz'))
-if (!hasTarGz) {
-  throw new Error('Rust artifacts are missing a portable .tar.gz archive.')
+if (requireTarGz && !hasTarGz) {
+  throw new Error('Desktop artifacts are missing a portable .tar.gz archive.')
 }
 
 if (platform === 'linux') {
-  requireArtifact((file) => file.endsWith('.deb'), 'Linux Rust artifacts are missing a .deb package.')
+  requireArtifact((file) => file.endsWith('.deb'), 'Linux desktop artifacts are missing a .deb package.')
   if (requireRpm) {
-    requireArtifact((file) => file.endsWith('.rpm'), 'Linux Rust artifacts are missing an .rpm package.')
+    requireArtifact((file) => file.endsWith('.rpm'), 'Linux desktop artifacts are missing an .rpm package.')
   }
   if (requireAppImage) {
-    requireArtifact((file) => file.endsWith('.AppImage'), 'Linux Rust artifacts are missing an AppImage.')
+    requireArtifact((file) => file.endsWith('.AppImage'), 'Linux desktop artifacts are missing an AppImage.')
   }
 }
 
 if (platform === 'darwin' || platform === 'macos') {
-  requireArtifact((file) => file.endsWith('.app.tar.gz'), 'macOS Rust artifacts are missing an app bundle archive.')
+  if (builds.length === 0) {
+    throw new Error(`No desktop build output found under ${relative(process.cwd(), buildDir)}.`)
+  }
   if (requireDmg) {
-    requireArtifact((file) => file.endsWith('.dmg'), 'macOS Rust artifacts are missing a .dmg installer.')
+    requireArtifact((file) => file.endsWith('.dmg'), 'macOS desktop artifacts are missing a .dmg installer.')
   }
 }
 
-console.log('Rust artifacts:')
+console.log('Desktop artifacts:')
 for (const artifact of artifacts) {
   console.log(`- ${relative(process.cwd(), artifact)}`)
 }

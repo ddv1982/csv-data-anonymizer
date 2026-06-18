@@ -14,11 +14,62 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   RUST_LINUX_ARTIFACT_NAME: csv-anonymizer-rust-linux-x64-release-bundle
+  TAURI_TARGET: x86_64-unknown-linux-gnu
 
 jobs:
+  changes:
+    name: Detect changed files
+    runs-on: ubuntu-24.04
+    outputs:
+      run_package_ci: ${{ steps.filter.outputs.run_package_ci }}
+      run_rust_ci: ${{ steps.filter.outputs.run_rust_ci }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect code changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            run_rust_ci:
+              - '.github/workflows/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'crates/**'
+              - 'src-tauri/**'
+              - 'frontend/**'
+              - 'tests/**'
+              - 'build/icons/**'
+              - 'package.json'
+              - 'scripts/rust-smoke.mjs'
+              - 'scripts/check-release-metadata.mjs'
+              - 'scripts/build_frontend_for_tauri.sh'
+            run_package_ci:
+              - '.github/workflows/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'crates/**'
+              - 'src-tauri/**'
+              - 'frontend/**'
+              - 'tests/**'
+              - 'build/**'
+              - 'scripts/**'
+              - 'README.md'
+              - 'LICENSE'
+              - 'CHANGELOG.md'
+              - 'package.json'
+
   rust:
     name: Rust ${{ matrix.os }}
+    needs: changes
+    if: needs.changes.outputs.run_rust_ci == 'true' || needs.changes.outputs.run_package_ci == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -33,35 +84,61 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Linux Rust desktop dependencies
+      - name: Install Linux Tauri desktop dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             pkg-config \
-            libasound2-dev \
-            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
             libssl-dev \
-            libwayland-dev \
-            libxcb-render0-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev \
-            libxkbcommon-dev \
-            libxkbcommon-x11-dev
+            libwebkit2gtk-4.1-dev
 
       - name: Setup Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
             . -> target
+            src-tauri -> src-tauri/target
           key: rust-${{ runner.os }}
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
 
       - name: Validate release metadata
         run: node scripts/check-release-metadata.mjs
+
+      - name: Build frontend
+        run: npm run frontend:build
+
+      - name: Validate Tauri prebuilt frontend contract
+        run: |
+          set -euo pipefail
+          temp_dir="$(mktemp -d)"
+          cleanup() {
+            if [ -d "${temp_dir}/dist" ]; then
+              rm -rf frontend/dist
+              mv "${temp_dir}/dist" frontend/dist
+            fi
+            rm -rf "${temp_dir}"
+          }
+          trap cleanup EXIT
+
+          mv frontend/dist "${temp_dir}/dist"
+          if CSV_ANONYMIZER_USE_PREBUILT_FRONTEND=1 scripts/build_frontend_for_tauri.sh; then
+            echo "Expected prebuilt frontend mode to fail without frontend/dist/index.html." >&2
+            exit 1
+          fi
+
+          mv "${temp_dir}/dist" frontend/dist
+          CSV_ANONYMIZER_USE_PREBUILT_FRONTEND=1 scripts/build_frontend_for_tauri.sh
 
       - name: Check Rust formatting
         run: cargo fmt --all --check
@@ -80,7 +157,11 @@ jobs:
 
   package-linux:
     name: Package Linux Rust
-    needs: rust
+    needs: [changes, rust]
+    if: |
+      always() &&
+      needs.changes.outputs.run_package_ci == 'true' &&
+      needs.rust.result == 'success'
     runs-on: ubuntu-24.04
 
     steps:
@@ -91,60 +172,68 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ env.TAURI_TARGET }}
 
       - name: Setup Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
             . -> target
+            src-tauri -> src-tauri/target
           key: rust-linux-package
 
-      - name: Install Linux desktop and packaging dependencies
+      - name: Install Linux Tauri and packaging dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             pkg-config \
-            libasound2-dev \
-            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
             libssl-dev \
-            libwayland-dev \
-            libxcb-render0-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev \
-            libxkbcommon-dev \
-            libxkbcommon-x11-dev \
+            libwebkit2gtk-4.1-dev \
+            patchelf \
             zstd \
             rpm \
+            rpm2cpio \
             desktop-file-utils \
-            appstream \
-            wget
+            appstream
 
-      - name: Install appimagetool
-        run: |
-          set -euo pipefail
-          appimagetool="${RUNNER_TEMP}/appimagetool-x86_64.AppImage"
-          wget -O "${appimagetool}" "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
-          chmod +x "${appimagetool}"
-          echo "APPIMAGETOOL=${appimagetool}" >> "$GITHUB_ENV"
-          echo "APPIMAGE_EXTRACT_AND_RUN=1" >> "$GITHUB_ENV"
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
 
-      - name: Build release binary
-        run: cargo build --release -p csv-anonymizer-app
+      - name: Build frontend
+        run: npm run frontend:build
 
-      - name: Smoke test release binary
-        run: CSV_ANONYMIZER_BINARY=target/release/csv-anonymizer node scripts/rust-smoke.mjs
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --locked --version "^2"
 
       - name: Build Linux artifacts
-        run: node scripts/package-rust-linux.mjs --skip-build
+        env:
+          CSV_ANONYMIZER_USE_PREBUILT_FRONTEND: '1'
+        run: node scripts/package-tauri-linux.mjs
 
       - name: Validate Rust artifacts
         run: node scripts/check-rust-artifacts.mjs --platform linux --require-rpm --require-appimage
 
       - name: Validate Linux package metadata
-        run: python3 scripts/validate_linux_package_metadata.py "dist/rust/artifacts/*.deb" "dist/rust/artifacts/*.rpm"
+        run: |
+          set +e
+          python3 scripts/validate_linux_package_metadata.py \
+            "dist/rust/artifacts/*.deb" \
+            "dist/rust/artifacts/*.rpm" \
+            --json-report linux-package-metadata-report.json
+          validator_status=$?
+          set -e
+          if [ -f linux-package-metadata-report.json ]; then
+            node scripts/write-linux-metadata-summary.mjs linux-package-metadata-report.json
+          fi
+          exit "${validator_status}"
 
       - name: Validate APT repository generation
         run: node scripts/check-apt-repository.mjs

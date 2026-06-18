@@ -1,16 +1,20 @@
+mod app_logic;
+mod cli;
 mod settings;
+mod theme;
 
+use app_logic::{default_output_path_with_suffix, should_auto_select};
+use cli::{CliAction, parse_cli_args, print_help, run_cli};
 use csv_anonymizer_core::{
-    AnonymizeData, AnonymizeParams, AnonymizerService, ColumnMetadata, Confidence, DataType,
-    HeadersData, PiiRisk, PreviewData, PreviewParams,
+    AnonymizeData, AnonymizeParams, AnonymizerService, HeadersData, PreviewData, PreviewParams,
 };
 use eframe::egui;
 use settings::{AppSettings, SettingsStore};
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 use std::time::Duration;
+use theme::*;
 
 fn main() {
     if let Err(error) = run() {
@@ -35,11 +39,17 @@ fn run() -> Result<(), String> {
 }
 
 fn run_gui() -> eframe::Result {
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_title("CSV Anonymizer")
+        .with_app_id("io.github.ddv1982.csv-data-anonymizer")
+        .with_inner_size([1180.0, 760.0])
+        .with_min_inner_size([920.0, 640.0]);
+    if let Some(icon) = app_icon() {
+        viewport = viewport.with_icon(icon);
+    }
+
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("CSV Anonymizer")
-            .with_inner_size([1180.0, 760.0])
-            .with_min_inner_size([920.0, 640.0]),
+        viewport,
         ..Default::default()
     };
 
@@ -53,422 +63,8 @@ fn run_gui() -> eframe::Result {
     )
 }
 
-fn apply_app_style(ctx: &egui::Context) {
-    let mut style = (*ctx.global_style()).clone();
-    style.text_styles.insert(
-        egui::TextStyle::Heading,
-        egui::FontId::new(28.0, egui::FontFamily::Proportional),
-    );
-    style.spacing.item_spacing = egui::vec2(10.0, 8.0);
-    style.spacing.window_margin = egui::Margin::same(0);
-    style.spacing.button_padding = egui::vec2(11.0, 6.0);
-    style.spacing.interact_size = egui::vec2(40.0, 32.0);
-    style.spacing.text_edit_width = 320.0;
-
-    let mut visuals = egui::Visuals::light();
-    visuals.panel_fill = app_background();
-    visuals.window_fill = app_background();
-    visuals.faint_bg_color = egui::Color32::from_rgb(242, 245, 247);
-    visuals.extreme_bg_color = egui::Color32::WHITE;
-    visuals.text_edit_bg_color = Some(egui::Color32::WHITE);
-    visuals.code_bg_color = egui::Color32::from_rgb(236, 241, 244);
-    visuals.warn_fg_color = egui::Color32::from_rgb(143, 88, 16);
-    visuals.error_fg_color = egui::Color32::from_rgb(178, 39, 39);
-    visuals.hyperlink_color = accent();
-    visuals.selection.bg_fill = accent();
-    visuals.selection.stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
-    visuals.window_corner_radius = egui::CornerRadius::same(8);
-    visuals.menu_corner_radius = egui::CornerRadius::same(6);
-    visuals.button_frame = true;
-    visuals.striped = true;
-
-    visuals.widgets.noninteractive.bg_fill = section_fill();
-    visuals.widgets.noninteractive.bg_stroke = subtle_stroke();
-    visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, text_primary());
-    visuals.widgets.inactive.weak_bg_fill = egui::Color32::WHITE;
-    visuals.widgets.inactive.bg_fill = egui::Color32::WHITE;
-    visuals.widgets.inactive.bg_stroke = subtle_stroke();
-    visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(6);
-    visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(230, 247, 244);
-    visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(230, 247, 244);
-    visuals.widgets.hovered.bg_stroke =
-        egui::Stroke::new(1.0, egui::Color32::from_rgb(107, 176, 169));
-    visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(6);
-    visuals.widgets.active.weak_bg_fill = egui::Color32::from_rgb(209, 234, 230);
-    visuals.widgets.active.bg_fill = egui::Color32::from_rgb(209, 234, 230);
-    visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, accent());
-    visuals.widgets.active.corner_radius = egui::CornerRadius::same(6);
-    visuals.widgets.open = visuals.widgets.hovered;
-
-    style.visuals = visuals;
-    ctx.set_global_style(style);
-}
-
-fn app_background() -> egui::Color32 {
-    egui::Color32::from_rgb(244, 247, 249)
-}
-
-fn header_fill() -> egui::Color32 {
-    egui::Color32::from_rgb(20, 39, 46)
-}
-
-fn section_fill() -> egui::Color32 {
-    egui::Color32::from_rgb(252, 253, 253)
-}
-
-fn subtle_fill() -> egui::Color32 {
-    egui::Color32::from_rgb(247, 250, 251)
-}
-
-fn accent() -> egui::Color32 {
-    egui::Color32::from_rgb(0, 121, 113)
-}
-
-fn accent_dark() -> egui::Color32 {
-    egui::Color32::from_rgb(0, 86, 82)
-}
-
-fn text_primary() -> egui::Color32 {
-    egui::Color32::from_rgb(31, 42, 48)
-}
-
-fn text_muted() -> egui::Color32 {
-    egui::Color32::from_rgb(91, 107, 115)
-}
-
-fn border_color() -> egui::Color32 {
-    egui::Color32::from_rgb(215, 225, 229)
-}
-
-fn subtle_stroke() -> egui::Stroke {
-    egui::Stroke::new(1.0, border_color())
-}
-
-fn section_frame() -> egui::Frame {
-    egui::Frame::new()
-        .fill(section_fill())
-        .stroke(subtle_stroke())
-        .corner_radius(8)
-        .inner_margin(egui::Margin::symmetric(14, 12))
-}
-
-fn render_section(ui: &mut egui::Ui, title: &str, add_contents: impl FnOnce(&mut egui::Ui)) {
-    section_frame().show(ui, |ui| {
-        ui.set_width(ui.available_width());
-        ui.label(
-            egui::RichText::new(title)
-                .strong()
-                .size(15.0)
-                .color(text_primary()),
-        );
-        ui.add_space(8.0);
-        add_contents(ui);
-    });
-}
-
-fn primary_button(label: &'static str) -> egui::Button<'static> {
-    egui::Button::new(
-        egui::RichText::new(label)
-            .strong()
-            .color(egui::Color32::WHITE),
-    )
-    .fill(accent())
-    .stroke(egui::Stroke::new(1.0, accent_dark()))
-    .corner_radius(6)
-    .min_size(egui::vec2(132.0, 34.0))
-}
-
-fn secondary_button(label: &'static str) -> egui::Button<'static> {
-    egui::Button::new(egui::RichText::new(label).color(text_primary()))
-        .fill(egui::Color32::WHITE)
-        .stroke(subtle_stroke())
-        .corner_radius(6)
-        .min_size(egui::vec2(86.0, 32.0))
-}
-
-fn chip(
-    ui: &mut egui::Ui,
-    text: impl Into<String>,
-    fill: egui::Color32,
-    stroke: egui::Stroke,
-    text_color: egui::Color32,
-) {
-    let text = text.into();
-    egui::Frame::new()
-        .fill(fill)
-        .stroke(stroke)
-        .corner_radius(6)
-        .inner_margin(egui::Margin::symmetric(8, 4))
-        .show(ui, |ui| {
-            ui.label(egui::RichText::new(text).small().strong().color(text_color));
-        });
-}
-
-fn empty_state(ui: &mut egui::Ui, title: &str, detail: &str) {
-    ui.add_space(18.0);
-    ui.vertical_centered(|ui| {
-        ui.label(
-            egui::RichText::new(title)
-                .strong()
-                .size(15.0)
-                .color(text_primary()),
-        );
-        ui.label(egui::RichText::new(detail).color(text_muted()));
-    });
-    ui.add_space(18.0);
-}
-
-fn status_frame(fill: egui::Color32, stroke: egui::Color32) -> egui::Frame {
-    egui::Frame::new()
-        .fill(fill)
-        .stroke(egui::Stroke::new(1.0, stroke))
-        .corner_radius(6)
-        .inner_margin(egui::Margin::symmetric(10, 8))
-}
-
-#[derive(Debug, PartialEq, Eq)]
-enum CliAction {
-    Gui,
-    Help,
-    Version,
-    Analyze {
-        input: PathBuf,
-    },
-    SmokeAnonymize {
-        input: PathBuf,
-        output: PathBuf,
-    },
-    Anonymize {
-        input: PathBuf,
-        output: PathBuf,
-        columns: Vec<usize>,
-        deterministic: bool,
-        seed: String,
-        force: bool,
-    },
-}
-
-fn parse_cli_args(args: impl IntoIterator<Item = OsString>) -> Result<CliAction, String> {
-    let args = args.into_iter().collect::<Vec<_>>();
-    if args.is_empty() {
-        return Ok(CliAction::Gui);
-    }
-
-    let command = args[0].to_string_lossy();
-    if args.len() == 1 && command.starts_with("-psn_") {
-        return Ok(CliAction::Gui);
-    }
-
-    match command.as_ref() {
-        "--help" | "-h" | "help" => Ok(CliAction::Help),
-        "--version" | "-V" | "version" => Ok(CliAction::Version),
-        "--smoke-anonymize" => {
-            if args.len() != 3 {
-                return Err("--smoke-anonymize requires <input> <output>".to_string());
-            }
-            Ok(CliAction::SmokeAnonymize {
-                input: PathBuf::from(&args[1]),
-                output: PathBuf::from(&args[2]),
-            })
-        }
-        "analyze" => {
-            if args.len() != 2 {
-                return Err("analyze requires <input>".to_string());
-            }
-            Ok(CliAction::Analyze {
-                input: PathBuf::from(&args[1]),
-            })
-        }
-        "anonymize" => parse_anonymize_args(&args[1..]),
-        _ => Err(format!(
-            "unknown command '{command}'. Use --help for supported commands."
-        )),
-    }
-}
-
-fn parse_anonymize_args(args: &[OsString]) -> Result<CliAction, String> {
-    let mut input = None;
-    let mut output = None;
-    let mut columns = None;
-    let mut deterministic = false;
-    let mut seed = String::new();
-    let mut force = false;
-    let mut index = 0;
-
-    while index < args.len() {
-        let flag = args[index].to_string_lossy();
-        match flag.as_ref() {
-            "--input" | "-i" => {
-                index += 1;
-                input = args.get(index).map(PathBuf::from);
-            }
-            "--output" | "-o" => {
-                index += 1;
-                output = args.get(index).map(PathBuf::from);
-            }
-            "--columns" | "-c" => {
-                index += 1;
-                let value = args
-                    .get(index)
-                    .ok_or_else(|| "--columns requires a comma-separated value".to_string())?
-                    .to_string_lossy();
-                columns = Some(parse_columns(&value)?);
-            }
-            "--deterministic" => deterministic = true,
-            "--seed" => {
-                index += 1;
-                seed = args
-                    .get(index)
-                    .ok_or_else(|| "--seed requires a value".to_string())?
-                    .to_string_lossy()
-                    .to_string();
-            }
-            "--force" => force = true,
-            _ => return Err(format!("unknown anonymize option '{flag}'")),
-        }
-        index += 1;
-    }
-
-    Ok(CliAction::Anonymize {
-        input: input.ok_or_else(|| "anonymize requires --input".to_string())?,
-        output: output.ok_or_else(|| "anonymize requires --output".to_string())?,
-        columns: columns.ok_or_else(|| "anonymize requires --columns".to_string())?,
-        deterministic,
-        seed,
-        force,
-    })
-}
-
-fn parse_columns(value: &str) -> Result<Vec<usize>, String> {
-    let columns = value
-        .split(',')
-        .filter(|part| !part.trim().is_empty())
-        .map(|part| {
-            part.trim()
-                .parse::<usize>()
-                .map_err(|_| format!("invalid column index '{part}'"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    if columns.is_empty() {
-        Err("--columns cannot be empty".to_string())
-    } else {
-        Ok(columns)
-    }
-}
-
-fn run_cli(action: CliAction) -> Result<(), String> {
-    let service = AnonymizerService::new(env!("CARGO_PKG_VERSION"));
-
-    match action {
-        CliAction::Analyze { input } => {
-            let headers = service
-                .analyze_csv(&input)
-                .map_err(|error| error.to_string())?;
-            println!(
-                "CSV Anonymizer {} inspected {} rows in {}",
-                service.version(),
-                headers.row_count,
-                headers.file_path.display()
-            );
-            for column in headers.columns {
-                println!(
-                    "{}\t{}\t{:?}\t{:?}",
-                    column.index, column.name, column.detected_type, column.pii_risk
-                );
-            }
-            Ok(())
-        }
-        CliAction::SmokeAnonymize { input, output } => {
-            let headers = service
-                .analyze_csv(&input)
-                .map_err(|error| error.to_string())?;
-            let columns = headers
-                .columns
-                .iter()
-                .filter(|column| should_auto_select(column))
-                .map(|column| column.index)
-                .collect::<Vec<_>>();
-            if columns.is_empty() {
-                return Err("smoke input did not contain auto-selectable columns".to_string());
-            }
-
-            let preview = service
-                .preview_anonymization(PreviewParams {
-                    file_path: input.clone(),
-                    columns: columns.clone(),
-                    deterministic: true,
-                    seed: "csv-anonymizer-smoke".to_string(),
-                    sample_count: 2,
-                })
-                .map_err(|error| error.to_string())?;
-            if preview.previews.is_empty() {
-                return Err("smoke preview did not produce any column samples".to_string());
-            }
-
-            let result = service
-                .anonymize_csv(AnonymizeParams {
-                    file_path: input,
-                    output_path: output,
-                    columns,
-                    deterministic: true,
-                    seed: "csv-anonymizer-smoke".to_string(),
-                    force: true,
-                })
-                .map_err(|error| error.to_string())?;
-            println!(
-                "CSV Anonymizer smoke OK: wrote {} rows to {} in {} ms",
-                result.row_count,
-                result.output_path.display(),
-                result.duration_ms
-            );
-            Ok(())
-        }
-        CliAction::Anonymize {
-            input,
-            output,
-            columns,
-            deterministic,
-            seed,
-            force,
-        } => {
-            let result = service
-                .anonymize_csv(AnonymizeParams {
-                    file_path: input,
-                    output_path: output,
-                    columns,
-                    deterministic,
-                    seed,
-                    force,
-                })
-                .map_err(|error| error.to_string())?;
-            println!(
-                "Wrote {} rows to {} in {} ms",
-                result.row_count,
-                result.output_path.display(),
-                result.duration_ms
-            );
-            Ok(())
-        }
-        CliAction::Gui | CliAction::Help | CliAction::Version => Ok(()),
-    }
-}
-
-fn print_help() {
-    println!(
-        "CSV Anonymizer {version}
-
-Usage:
-  csv-anonymizer
-  csv-anonymizer analyze <input.csv>
-  csv-anonymizer anonymize --input <input.csv> --output <output.csv> --columns <0,1> [--deterministic] [--seed <seed>] [--force]
-  csv-anonymizer --smoke-anonymize <input.csv> <output.csv>
-
-Options:
-  --help, -h       Show this help.
-  --version, -V    Print the application version.",
-        version = env!("CARGO_PKG_VERSION")
-    );
+fn app_icon() -> Option<egui::IconData> {
+    eframe::icon_data::from_png_bytes(include_bytes!("../../../build/icons/512x512.png")).ok()
 }
 
 struct CsvAnonymizerApp {
@@ -609,7 +205,7 @@ impl CsvAnonymizerApp {
                         ui.label(
                             egui::RichText::new(file_label)
                                 .size(13.0)
-                                .color(egui::Color32::from_rgb(190, 211, 216)),
+                                .color(text_muted()),
                         );
                     });
 
@@ -620,29 +216,29 @@ impl CsvAnonymizerApp {
                         chip(
                             ui,
                             format!("v{}", self.service.version()),
-                            egui::Color32::from_rgb(33, 61, 69),
-                            egui::Stroke::new(1.0, egui::Color32::from_rgb(79, 112, 119)),
-                            egui::Color32::from_rgb(225, 242, 244),
+                            header_chip_fill(),
+                            subtle_stroke(),
+                            text_primary(),
                         );
                         chip(
                             ui,
                             mode_label,
-                            egui::Color32::from_rgb(231, 245, 243),
-                            egui::Stroke::new(1.0, egui::Color32::from_rgb(149, 203, 197)),
+                            accent_chip_fill(),
+                            egui::Stroke::new(1.0, accent()),
                             accent_dark(),
                         );
                         chip(
                             ui,
                             selected_label,
-                            egui::Color32::from_rgb(239, 243, 246),
-                            egui::Stroke::new(1.0, egui::Color32::from_rgb(204, 216, 221)),
+                            muted_chip_fill(),
+                            subtle_stroke(),
                             text_primary(),
                         );
                         chip(
                             ui,
                             rows_label,
-                            egui::Color32::from_rgb(239, 243, 246),
-                            egui::Stroke::new(1.0, egui::Color32::from_rgb(204, 216, 221)),
+                            muted_chip_fill(),
+                            subtle_stroke(),
                             text_primary(),
                         );
                     });
@@ -845,8 +441,8 @@ impl CsvAnonymizerApp {
             chip(
                 ui,
                 format!("{} selected", self.state.selected_columns.len()),
-                egui::Color32::from_rgb(231, 245, 243),
-                egui::Stroke::new(1.0, egui::Color32::from_rgb(149, 203, 197)),
+                accent_chip_fill(),
+                egui::Stroke::new(1.0, accent()),
                 accent_dark(),
             );
             if ui
@@ -1074,51 +670,31 @@ impl CsvAnonymizerApp {
 
         if self.state.is_anonymizing {
             ui.add_space(8.0);
-            status_frame(
-                egui::Color32::from_rgb(230, 247, 244),
-                egui::Color32::from_rgb(149, 203, 197),
-            )
-            .show(ui, |ui| {
+            status_frame(accent_chip_fill(), accent()).show(ui, |ui| {
                 ui.add(egui::Spinner::new());
-                ui.label(egui::RichText::new("Anonymizing CSV...").color(accent_dark()));
+                ui.label(egui::RichText::new("Anonymizing CSV...").color(accent_highlight()));
             });
         }
 
         if let Some(warning) = warning {
             ui.add_space(8.0);
-            status_frame(
-                egui::Color32::from_rgb(255, 248, 235),
-                egui::Color32::from_rgb(237, 190, 114),
-            )
-            .show(ui, |ui| {
-                ui.label(egui::RichText::new(warning).color(egui::Color32::from_rgb(145, 95, 20)));
+            status_frame(warning_fill(), warning_stroke()).show(ui, |ui| {
+                ui.label(egui::RichText::new(warning).color(warning_text()));
             });
         }
 
         if let Some(error) = error {
             ui.add_space(8.0);
-            status_frame(
-                egui::Color32::from_rgb(255, 240, 240),
-                egui::Color32::from_rgb(229, 154, 154),
-            )
-            .show(ui, |ui| {
-                ui.label(egui::RichText::new(error).color(egui::Color32::from_rgb(178, 39, 39)));
+            status_frame(danger_fill(), danger_stroke()).show(ui, |ui| {
+                ui.label(egui::RichText::new(error).color(danger_text()));
             });
         }
 
         if let Some(result) = result {
             ui.add_space(8.0);
-            status_frame(
-                egui::Color32::from_rgb(237, 249, 240),
-                egui::Color32::from_rgb(153, 210, 166),
-            )
-            .show(ui, |ui| {
+            status_frame(success_fill(), success_stroke()).show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
-                    ui.label(
-                        egui::RichText::new(result)
-                            .strong()
-                            .color(egui::Color32::from_rgb(30, 110, 45)),
-                    );
+                    ui.label(egui::RichText::new(result).strong().color(success_text()));
                     if self.state.last_output_path.is_some() && ui.button("Open Folder").clicked() {
                         self.open_output_folder();
                     }
@@ -1401,196 +977,5 @@ impl CsvAnonymizerApp {
     fn clear_result(&mut self) {
         self.state.error = None;
         self.state.last_result = None;
-    }
-}
-
-fn default_output_path_with_suffix(input_path: &Path, suffix: &str) -> PathBuf {
-    let suffix = if suffix.trim().is_empty() {
-        "_anonymized"
-    } else {
-        suffix.trim()
-    };
-    let stem = input_path
-        .file_stem()
-        .and_then(|value| value.to_str())
-        .unwrap_or("output");
-    let file_name = match input_path.extension().and_then(|value| value.to_str()) {
-        Some(extension) if !extension.is_empty() => format!("{stem}{suffix}.{extension}"),
-        _ => format!("{stem}{suffix}"),
-    };
-    input_path.with_file_name(file_name)
-}
-
-fn format_data_type(data_type: DataType) -> &'static str {
-    match data_type {
-        DataType::Email => "Email",
-        DataType::Uuid => "UUID",
-        DataType::Timestamp => "Timestamp",
-        DataType::NumericId => "Numeric ID",
-        DataType::CountryCode => "Country",
-        DataType::Phone => "Phone",
-        DataType::FirstName => "First name",
-        DataType::LastName => "Last name",
-        DataType::FullName => "Full name",
-        DataType::Enum => "Enum",
-        DataType::String => "String",
-        DataType::Unknown => "Unknown",
-    }
-}
-
-fn confidence_badge(ui: &mut egui::Ui, confidence: Confidence) {
-    let (label, fill, stroke, text_color) = match confidence {
-        Confidence::High => (
-            "High",
-            egui::Color32::from_rgb(237, 249, 240),
-            egui::Color32::from_rgb(153, 210, 166),
-            egui::Color32::from_rgb(30, 110, 45),
-        ),
-        Confidence::Medium => (
-            "Medium",
-            egui::Color32::from_rgb(255, 248, 235),
-            egui::Color32::from_rgb(237, 190, 114),
-            egui::Color32::from_rgb(145, 95, 20),
-        ),
-        Confidence::Low => ("Low", subtle_fill(), border_color(), text_muted()),
-    };
-
-    chip(ui, label, fill, egui::Stroke::new(1.0, stroke), text_color);
-}
-
-fn risk_badge(ui: &mut egui::Ui, risk: PiiRisk) {
-    let (label, fill, stroke, text_color) = match risk {
-        PiiRisk::High => (
-            "High",
-            egui::Color32::from_rgb(255, 240, 240),
-            egui::Color32::from_rgb(229, 154, 154),
-            egui::Color32::from_rgb(178, 39, 39),
-        ),
-        PiiRisk::Medium => (
-            "Medium",
-            egui::Color32::from_rgb(255, 248, 235),
-            egui::Color32::from_rgb(237, 190, 114),
-            egui::Color32::from_rgb(145, 95, 20),
-        ),
-        PiiRisk::Low => (
-            "Low",
-            egui::Color32::from_rgb(237, 249, 240),
-            egui::Color32::from_rgb(153, 210, 166),
-            egui::Color32::from_rgb(30, 110, 45),
-        ),
-    };
-
-    chip(ui, label, fill, egui::Stroke::new(1.0, stroke), text_color);
-}
-
-fn sample_summary(values: &[String]) -> String {
-    if values.is_empty() {
-        return "No samples".to_string();
-    }
-
-    let mut samples = values
-        .iter()
-        .take(3)
-        .map(|value| truncate_text(value, 30))
-        .collect::<Vec<_>>();
-    if values.len() > 3 {
-        samples.push("...".to_string());
-    }
-    samples.join(", ")
-}
-
-fn truncate_text(value: &str, max_chars: usize) -> String {
-    if value.chars().count() <= max_chars {
-        return value.to_string();
-    }
-    if max_chars <= 3 {
-        return value.chars().take(max_chars).collect();
-    }
-
-    let mut truncated = value.chars().take(max_chars - 3).collect::<String>();
-    truncated.push_str("...");
-    truncated
-}
-
-fn should_auto_select(column: &ColumnMetadata) -> bool {
-    !column.sample_values.is_empty() && matches!(column.pii_risk, PiiRisk::High | PiiRisk::Medium)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn os_args(args: &[&str]) -> Vec<OsString> {
-        args.iter().map(OsString::from).collect()
-    }
-
-    #[test]
-    fn parses_smoke_command() {
-        assert_eq!(
-            parse_cli_args(os_args(&["--smoke-anonymize", "input.csv", "output.csv"])).unwrap(),
-            CliAction::SmokeAnonymize {
-                input: PathBuf::from("input.csv"),
-                output: PathBuf::from("output.csv")
-            }
-        );
-    }
-
-    #[test]
-    fn macos_process_serial_arg_starts_gui() {
-        assert_eq!(
-            parse_cli_args(os_args(&["-psn_0_123"])).unwrap(),
-            CliAction::Gui
-        );
-    }
-
-    #[test]
-    fn parses_anonymize_command() {
-        assert_eq!(
-            parse_cli_args(os_args(&[
-                "anonymize",
-                "--input",
-                "input.csv",
-                "--output",
-                "output.csv",
-                "--columns",
-                "1,3",
-                "--deterministic",
-                "--seed",
-                "stable",
-                "--force",
-            ]))
-            .unwrap(),
-            CliAction::Anonymize {
-                input: PathBuf::from("input.csv"),
-                output: PathBuf::from("output.csv"),
-                columns: vec![1, 3],
-                deterministic: true,
-                seed: "stable".to_string(),
-                force: true,
-            }
-        );
-    }
-
-    #[test]
-    fn rejects_missing_columns() {
-        assert!(
-            parse_cli_args(os_args(&[
-                "anonymize",
-                "--input",
-                "input.csv",
-                "--output",
-                "output.csv"
-            ]))
-            .unwrap_err()
-            .contains("--columns")
-        );
-    }
-
-    #[test]
-    fn builds_output_path_with_custom_suffix() {
-        assert_eq!(
-            default_output_path_with_suffix(Path::new("/tmp/data.csv"), "_private"),
-            PathBuf::from("/tmp/data_private.csv")
-        );
     }
 }
