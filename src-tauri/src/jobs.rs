@@ -1,6 +1,7 @@
+use crate::local_ai::{LocalAiRequest, smart_provider_for_request};
 use csv_anonymizer_core::{
     AnonymizeData, AnonymizeParams, AnonymizerError, AnonymizerService, ProcessControl,
-    ProcessProgress,
+    ProcessProgress, SmartReplacementProvider,
 };
 use serde::Serialize;
 use std::collections::HashMap;
@@ -140,7 +141,12 @@ impl AnonymizeJob {
     }
 }
 
-pub fn run_anonymize_job(job: Arc<AnonymizeJob>, input: AnonymizeParams, sample_row_count: usize) {
+pub fn run_anonymize_job(
+    job: Arc<AnonymizeJob>,
+    input: AnonymizeParams,
+    sample_row_count: usize,
+    local_ai: Option<LocalAiRequest>,
+) {
     let progress_job = job.clone();
     let mut on_progress = move |progress: ProcessProgress| {
         progress_job.report_progress(progress.rows_processed);
@@ -152,11 +158,20 @@ pub fn run_anonymize_job(job: Arc<AnonymizeJob>, input: AnonymizeParams, sample_
         should_cancel: Some(&should_cancel),
     };
 
-    let result = service().anonymize_csv_with_sample_rows_and_control(
-        input,
-        sample_row_count,
-        Some(&mut control),
-    );
+    let result = match smart_provider_for_request(local_ai, &input.controls) {
+        Ok(mut provider) => {
+            let provider = provider
+                .as_mut()
+                .map(|provider| provider as &mut dyn SmartReplacementProvider);
+            service().anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+                input,
+                sample_row_count,
+                Some(&mut control),
+                provider,
+            )
+        }
+        Err(error) => Err(AnonymizerError::SmartReplacement(error)),
+    };
     job.finish(result);
 }
 

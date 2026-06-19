@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Alert } from './components/Alert'
 import { Card } from './components/Card'
 import { ColumnTable } from './components/ColumnTable'
+import { LocalAiPanel } from './components/LocalAiPanel'
 import { PreviewTable } from './components/PreviewTable'
 import { ProcessingStatus } from './components/ProcessingStatus'
 import { ResultDisplay } from './components/ResultDisplay'
@@ -37,6 +38,7 @@ import type {
   PreviewData,
   AnonymizationStrategy,
 } from './types'
+import { useLocalAi } from './hooks/useLocalAi'
 import { isSelectableColumn, maxVisibleColumns } from './utils/columns'
 import { messageFrom } from './utils/errors'
 import { formatRowCount } from './utils/format'
@@ -44,7 +46,7 @@ import { clampNumber } from './utils/numbers'
 import { directoryOf } from './utils/paths'
 
 const defaultSettings: AppSettings = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   deterministicDefault: false,
   seed: '',
   overwriteOutput: false,
@@ -54,6 +56,8 @@ const defaultSettings: AppSettings = {
   rememberLastPaths: true,
   lastInputDirectory: null,
   lastOutputDirectory: null,
+  localAiEnabled: false,
+  localAiModel: 'gemma3:4b',
 }
 
 type BusyState = 'idle' | 'picking' | 'loading' | 'preview' | 'running'
@@ -73,6 +77,7 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [showAllColumns, setShowAllColumns] = useState(false)
+  const localAi = useLocalAi(settings, setError)
 
   useEffect(() => {
     let isMounted = true
@@ -141,13 +146,26 @@ function App() {
   const hiddenColumnCount = Math.max(columns.length - maxVisibleColumns, 0)
   const allSelected =
     selectableColumns.length > 0 && selectableColumns.every((column) => selectedSet.has(column.index))
+  const localAiSelected = useMemo(
+    () =>
+      selectedColumns.some((index) => {
+        const column = columns.find((candidate) => candidate.index === index)
+        return (columnControls[index]?.strategy ?? column?.strategy ?? 'auto') === 'localAi'
+      }),
+    [columnControls, columns, selectedColumns],
+  )
+  const localAiReady = localAi.ready
+  const localAiDownloadRunning = localAi.downloadRunning
 
   const hasFile = Boolean(inputPath.trim())
   const hasColumns = Boolean(headers)
   const hasSelectedColumns = selectedColumns.length > 0
   const isLoading = busy !== 'idle'
-  const canPreview = Boolean(hasColumns && hasSelectedColumns && inputPath && busy === 'idle')
-  const canAnonymize = Boolean(hasColumns && hasSelectedColumns && inputPath && outputPath && busy === 'idle')
+  const localAiBlocked = localAiSelected && (!localAiReady || localAiDownloadRunning)
+  const canPreview = Boolean(hasColumns && hasSelectedColumns && inputPath && busy === 'idle' && !localAiBlocked)
+  const canAnonymize = Boolean(
+    hasColumns && hasSelectedColumns && inputPath && outputPath && busy === 'idle' && !localAiBlocked,
+  )
 
   async function persistSettings(next: AppSettings) {
     setSettings(next)
@@ -159,7 +177,13 @@ function App() {
   }
 
   function updateSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
-    if (key === 'deterministicDefault' || key === 'seed' || key === 'previewSampleCount') {
+    if (
+      key === 'deterministicDefault' ||
+      key === 'seed' ||
+      key === 'previewSampleCount' ||
+      key === 'localAiEnabled' ||
+      key === 'localAiModel'
+    ) {
       setPreview(null)
       setResult(null)
     }
@@ -250,6 +274,10 @@ function App() {
       setPreview(null)
       return
     }
+    if (selectionUsesLocalAi(columnsToPreview) && !localAiReady) {
+      setError('Set up Local AI before previewing Smart replacement columns.')
+      return
+    }
 
     setBusy('preview')
     setError(null)
@@ -261,6 +289,7 @@ function App() {
         settings.deterministicDefault,
         settings.seed,
         settings.previewSampleCount,
+        localAi.request,
       )
       setPreview(nextPreview)
       setResult(null)
@@ -314,7 +343,11 @@ function App() {
 
   async function runAnonymization() {
     if (!canAnonymize) {
-      setError('Load a CSV, select at least one column, and choose an output path.')
+      setError(
+        localAiBlocked
+          ? 'Set up Local AI before anonymizing Smart replacement columns.'
+          : 'Load a CSV, select at least one column, and choose an output path.',
+      )
       return
     }
 
@@ -334,6 +367,7 @@ function App() {
         settings.overwriteOutput,
         settings.sampleRowCount,
         headers?.rowCountIsComplete ? headers.rowCount : null,
+        localAi.request,
       )
       setActiveJobId(status.jobId)
       handleJobStatus(status)
@@ -365,6 +399,13 @@ function App() {
 
   function controlsForColumns(columnIndexes: number[]) {
     return columnIndexes.map((index) => columnControls[index]).filter(Boolean)
+  }
+
+  function selectionUsesLocalAi(columnIndexes: number[]) {
+    return columnIndexes.some((index) => {
+      const column = columns.find((candidate) => candidate.index === index)
+      return (columnControls[index]?.strategy ?? column?.strategy ?? 'auto') === 'localAi'
+    })
   }
 
   function defaultControl(column: ColumnMetadata): ColumnControl {
@@ -597,6 +638,20 @@ function App() {
                     </p>
                   </div>
 
+                  <LocalAiPanel
+                    enabled={settings.localAiEnabled}
+                    model={settings.localAiModel}
+                    status={localAi.status}
+                    downloadStatus={localAi.downloadStatus}
+                    disabled={!hasColumns || isLoading}
+                    onToggle={(checked) => updateSetting('localAiEnabled', checked)}
+                    onModelChange={(model) => updateSetting('localAiModel', model)}
+                    onRefresh={() => void localAi.refresh()}
+                    onDownload={() => void localAi.startDownload()}
+                    onCancelDownload={() => void localAi.cancelDownload()}
+                    onOpenSetup={() => void localAi.openSetup()}
+                  />
+
                   <div className="collapsible">
                     <button
                       type="button"
@@ -612,8 +667,8 @@ function App() {
                       <div className="settings-panel">
                         <SwitchRow
                           id="deterministic-mode"
-                          label="Deterministic Mode"
-                          description="The same input value produces the same anonymized output."
+                          label="Repeatable replacements"
+                          description="Use the same private seed to get the same replacements again."
                           checked={settings.deterministicDefault}
                           disabled={!hasColumns || isLoading}
                           onChange={(checked) => updateSetting('deterministicDefault', checked)}
@@ -625,12 +680,12 @@ function App() {
                             type="text"
                             value={settings.seed}
                             disabled={!hasColumns || isLoading || !settings.deterministicDefault}
-                            placeholder="Enter seed for reproducible results"
+                            placeholder="Enter a private seed"
                             aria-describedby="seed-description"
                             onChange={(event) => updateSetting('seed', event.target.value)}
                           />
                           <p id="seed-description" className="muted-text text-sm">
-                            Use the same seed to repeat anonymization across sessions.
+                            Useful when multiple files need matching replacements. Keep the seed private.
                           </p>
                         </div>
                         <SwitchRow

@@ -115,7 +115,7 @@ export function ColumnTable({
                       >
                         {strategies.map((strategy) => (
                           <option key={strategy} value={strategy}>
-                            {formatToken(strategy)}
+                            {strategyLabel(strategy)}
                           </option>
                         ))}
                       </select>
@@ -168,7 +168,14 @@ const dataTypes: DataType[] = [
   'unknown',
 ]
 
-const strategies: AnonymizationStrategy[] = ['auto', 'pseudonymize', 'tokenize', 'mask', 'passThrough']
+const strategies: AnonymizationStrategy[] = ['auto', 'pseudonymize', 'tokenize', 'localAi', 'mask', 'passThrough']
+
+function strategyLabel(strategy: AnonymizationStrategy) {
+  if (strategy === 'localAi') {
+    return 'Smart replacement (Local AI)'
+  }
+  return formatToken(strategy)
+}
 
 function ColumnSkeletonRows() {
   return (

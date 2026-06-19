@@ -1,5 +1,6 @@
 use super::shared::authorize_or_confirm_output_file;
 use crate::jobs::{AnonymizeJobState, AnonymizeJobStatus, AnonymizeJobStore, run_anonymize_job};
+use crate::local_ai::LocalAiRequest;
 use crate::path_access::PathAccess;
 use csv_anonymizer_core::{AnonymizeParams, ColumnControl};
 use serde::Deserialize;
@@ -19,6 +20,7 @@ pub struct StartAnonymizeJobRequest {
     pub force: bool,
     pub sample_row_count: usize,
     pub total_row_count: Option<usize>,
+    pub local_ai: Option<LocalAiRequest>,
 }
 
 #[tauri::command]
@@ -47,6 +49,7 @@ pub async fn start_anonymize_job(
                 force: request.force,
             },
             request.sample_row_count,
+            request.local_ai,
         );
     });
 

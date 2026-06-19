@@ -1,4 +1,5 @@
 use super::*;
+use crate::smart::SmartReplacementMap;
 use crate::types::{AnonymizationStrategy, ColumnMetadata, Confidence, EmptyFormat, PiiRisk};
 
 fn column(detected_type: DataType) -> ColumnMetadata {
@@ -355,4 +356,34 @@ fn tokenize_strategy_emits_consistent_opaque_tokens() {
     assert_ne!(first, second);
     assert!(first.starts_with("tok_"));
     assert_eq!(state.report().opaque_token_values, 2);
+}
+
+#[test]
+fn local_ai_strategy_uses_validated_replacement_map() {
+    let mut local_ai_column = column(DataType::FullName);
+    local_ai_column.strategy = AnonymizationStrategy::LocalAi;
+    let mut replacements = SmartReplacementMap::default();
+    replacements.insert(0, "Alice Smith", "Maya Carter");
+    let mut state = TransformState::with_smart_replacements(true, "smart-seed", replacements);
+    let context = context("smart-seed");
+
+    let result = transform_value_with_state("Alice Smith", &local_ai_column, &context, &mut state);
+
+    assert_eq!(result, "Maya Carter");
+    assert_eq!(state.report().smart_replacement_values, 1);
+    assert_eq!(state.report().smart_replacement_fallbacks, 0);
+}
+
+#[test]
+fn local_ai_strategy_falls_back_when_map_is_missing() {
+    let mut local_ai_column = column(DataType::FirstName);
+    local_ai_column.strategy = AnonymizationStrategy::LocalAi;
+    let mut state = TransformState::new(true, "smart-fallback-seed");
+    let context = context("smart-fallback-seed");
+
+    let result = transform_value_with_state("Alice", &local_ai_column, &context, &mut state);
+
+    assert_ne!(result, "Alice");
+    assert!(result.chars().all(|character| character.is_alphabetic()));
+    assert_eq!(state.report().smart_replacement_fallbacks, 1);
 }

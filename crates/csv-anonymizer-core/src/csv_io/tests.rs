@@ -30,6 +30,7 @@ fn processes_selected_columns() {
         ProcessOptions {
             deterministic: true,
             seed: "service-seed",
+            smart_replacements: None,
         },
     )
     .unwrap();
@@ -63,6 +64,7 @@ fn process_row_count_skips_blank_data_rows_but_preserves_them() {
         ProcessOptions {
             deterministic: true,
             seed: "service-seed",
+            smart_replacements: None,
         },
     )
     .unwrap();
@@ -107,6 +109,7 @@ fn process_control_reports_progress_and_cancels_before_next_row() {
             ProcessOptions {
                 deterministic: true,
                 seed: "service-seed",
+                smart_replacements: None,
             },
             Some(&mut control),
         )

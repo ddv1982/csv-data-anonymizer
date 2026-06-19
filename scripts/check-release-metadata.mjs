@@ -1,7 +1,10 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { basename } from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 
 const args = process.argv.slice(2);
+const execFileAsync = promisify(execFile);
 
 function readOption(name) {
   const index = args.indexOf(name);
@@ -82,6 +85,11 @@ function readWorkspaceCargoVersion(cargoToml) {
   return versionMatch?.[1] ?? null;
 }
 
+async function readTrackedFiles() {
+  const { stdout } = await execFileAsync('git', ['ls-files'], { maxBuffer: 1024 * 1024 * 10 });
+  return stdout.split(/\r?\n/).filter(Boolean);
+}
+
 const expectedTag = readOption('--expected-tag');
 const releaseNotesPath = readOption('--write-notes');
 const packageJson = JSON.parse(await readFile('package.json', 'utf-8'));
@@ -132,6 +140,16 @@ for (const icon of requiredLinuxIcons) {
   await readFile(icon.replace(/^\.\.\//, '')).catch(() => {
     throw new Error(`required Linux icon file is missing or unreadable: ${icon}`);
   });
+}
+
+const forbiddenTrackedFiles = (await readTrackedFiles()).filter(file =>
+  file.endsWith('.gguf') ||
+  file.includes('/model-cache/') ||
+  file.includes('/ollama-cache/') ||
+  basename(file).startsWith('llama-server')
+);
+if (forbiddenTrackedFiles.length > 0) {
+  throw new Error(`release must not track Local AI model/runtime artifacts: ${forbiddenTrackedFiles.join(', ')}`);
 }
 
 if (packageJson.desktopName !== 'csv-anonymizer.desktop') {

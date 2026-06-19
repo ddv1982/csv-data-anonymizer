@@ -6,7 +6,7 @@
   <name>CSV Anonymizer</name>
   <summary>Local-first CSV anonymization desktop app</summary>
   <description>
-    <p>CSV Anonymizer detects sensitive CSV columns, previews deterministic transformations, and writes anonymized output without sending data off the device.</p>
+    <p>CSV Anonymizer detects sensitive CSV columns, previews repeatable or smart local transformations, and writes anonymized output without sending data off the device.</p>
   </description>
   <launchable type="desktop-id">csv-anonymizer.desktop</launchable>
   <provides>
@@ -17,6 +17,7 @@
     <category>Utility</category>
   </categories>
   <releases>
+    <release version="1.0.21" date="2026-06-19" />
     <release version="1.0.20" date="2026-06-19" />
     <release version="1.0.19" date="2026-06-19" />
     <release version="1.0.18" date="2026-06-19" />

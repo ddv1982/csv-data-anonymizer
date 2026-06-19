@@ -20,6 +20,8 @@ node scripts/check-release-metadata.mjs --expected-tag v1.0.0
 
 The metadata check also gates the Linux Tauri package identity: `src-tauri/tauri.linux.conf.json` keeps the installed desktop file at `csv-anonymizer.desktop`, while `build/linux/csv-anonymizer.desktop.hbs` keeps the visible app name as CSV Anonymizer. `src-tauri/tauri.conf.json` must list every generated Linux PNG icon size from `build/icons/16x16.png` through `build/icons/1024x1024.png` so `.deb`/`.rpm` installers provide a desktop-resolvable hicolor icon.
 
+The release metadata check also rejects tracked Local AI model/runtime artifacts such as `.gguf` files, model caches, Ollama caches, and `llama-server` binaries. Local AI model download remains an in-app/Ollama setup step, not a bundled release asset.
+
 Then commit, tag, and push:
 
 ```bash

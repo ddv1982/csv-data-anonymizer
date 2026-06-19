@@ -27,6 +27,9 @@ pub enum AnonymizerError {
     #[error("Processing canceled")]
     Canceled,
 
+    #[error("Smart replacement error: {0}")]
+    SmartReplacement(String),
+
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 }
