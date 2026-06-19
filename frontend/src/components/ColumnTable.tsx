@@ -168,7 +168,7 @@ const dataTypes: DataType[] = [
   'unknown',
 ]
 
-const strategies: AnonymizationStrategy[] = ['auto', 'pseudonymize', 'mask', 'passThrough']
+const strategies: AnonymizationStrategy[] = ['auto', 'pseudonymize', 'tokenize', 'mask', 'passThrough']
 
 function ColumnSkeletonRows() {
   return (

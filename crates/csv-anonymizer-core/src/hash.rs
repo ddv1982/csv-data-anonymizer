@@ -1,9 +1,28 @@
 use sha2::{Digest, Sha256};
 
 pub fn deterministic_hash(value: &str, seed: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(format!("{seed}:{value}").as_bytes());
-    format!("{:x}", hasher.finalize())
+    let mut key = seed.as_bytes().to_vec();
+    if key.len() > 64 {
+        key = Sha256::digest(&key).to_vec();
+    }
+    key.resize(64, 0);
+
+    let mut inner_key = [0x36_u8; 64];
+    let mut outer_key = [0x5c_u8; 64];
+    for (index, key_byte) in key.iter().enumerate() {
+        inner_key[index] ^= key_byte;
+        outer_key[index] ^= key_byte;
+    }
+
+    let mut inner = Sha256::new();
+    inner.update(inner_key);
+    inner.update(value.as_bytes());
+    let inner_digest = inner.finalize();
+
+    let mut outer = Sha256::new();
+    outer.update(outer_key);
+    outer.update(inner_digest);
+    format!("{:x}", outer.finalize())
 }
 
 pub fn deterministic_number(value: &str, seed: &str, min: i64, max: i64) -> i64 {
@@ -56,10 +75,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn deterministic_hash_matches_typescript_contract() {
+    fn deterministic_hash_uses_hmac_sha256_contract() {
         assert_eq!(
             deterministic_hash("test", "seed"),
-            "a80700546770fb2775577dccb0e715cbf4c5f893f18f9a1468883336b0262405"
+            "cafc65071bb5fb3cab17d223b140a52bd0417862ccc9939d6be10cfe408dc957"
         );
     }
 

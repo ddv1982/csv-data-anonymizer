@@ -2,7 +2,7 @@ use crate::csv_io::{count_csv_data_rows, process_file_with_control, read_sample}
 use crate::detection::is_empty_value;
 use crate::error::{AnonymizerError, Result};
 use crate::metadata::{apply_column_selection, build_column_metadata};
-use crate::strategies::transform_value;
+use crate::strategies::{TransformState, transform_value_with_state};
 use crate::types::{
     AnonymizationStrategy, AnonymizeData, AnonymizeParams, ColumnControl, ColumnMetadata,
     ColumnPreview, DataType, HeadersData, PreviewData, PreviewParams, PreviewWarning,
@@ -83,19 +83,18 @@ impl AnonymizerService {
         validate_column_indices(&metadata, &input.columns)?;
         let controlled_metadata = apply_column_controls(&metadata, &input.controls)?;
         let selected_metadata = apply_column_selection(&controlled_metadata, &input.columns);
-        let previews = selected_metadata
-            .iter()
-            .filter(|column| column.is_selected)
-            .map(|column| {
-                generate_column_preview(
-                    column,
-                    &sample.rows,
-                    input.sample_count,
-                    input.deterministic,
-                    &input.seed,
-                )
-            })
-            .collect();
+        let mut transform_state = TransformState::new(input.deterministic, &input.seed);
+        let mut previews = Vec::new();
+        for column in selected_metadata.iter().filter(|column| column.is_selected) {
+            previews.push(generate_column_preview(
+                column,
+                &sample.rows,
+                input.sample_count,
+                input.deterministic,
+                &input.seed,
+                &mut transform_state,
+            ));
+        }
         let warnings = selected_metadata
             .iter()
             .filter(|column| column.is_selected)
@@ -159,7 +158,11 @@ impl AnonymizerService {
             row_count: result.row_count,
             columns_anonymized: input.columns.len(),
             duration_ms: result.duration_ms,
-            privacy_report: build_privacy_report(&selected_metadata),
+            privacy_report: build_privacy_report(
+                &selected_metadata,
+                result.transform_report,
+                input.deterministic,
+            ),
         })
     }
 }
@@ -256,7 +259,7 @@ fn preview_warning_for_column(column: &ColumnMetadata) -> Option<PreviewWarning>
         AnonymizationStrategy::PassThrough => {
             "Pass-through leaves selected values unchanged.".to_string()
         }
-        AnonymizationStrategy::Mask => return None,
+        AnonymizationStrategy::Mask | AnonymizationStrategy::Tokenize => return None,
         AnonymizationStrategy::Auto | AnonymizationStrategy::Pseudonymize => {
             match column.detected_type {
                 DataType::CountryCode
@@ -279,14 +282,24 @@ fn preview_warning_for_column(column: &ColumnMetadata) -> Option<PreviewWarning>
     })
 }
 
-fn build_privacy_report(columns: &[ColumnMetadata]) -> PrivacyReport {
+fn build_privacy_report(
+    columns: &[ColumnMetadata],
+    transform_report: crate::types::TransformReport,
+    deterministic: bool,
+) -> PrivacyReport {
     let mut report = PrivacyReport {
         direct_identifiers: 0,
         quasi_identifiers: 0,
         pseudonymized_columns: 0,
+        opaque_token_columns: 0,
         masked_columns: 0,
         generalized_columns: 0,
         pass_through_columns: 0,
+        unique_pseudonym_values: transform_report.unique_pseudonym_values,
+        reused_pseudonym_values: transform_report.reused_pseudonym_values,
+        collisions_avoided: transform_report.collisions_avoided,
+        exhausted_pseudonym_pools: transform_report.exhausted_pseudonym_pools,
+        opaque_token_values: transform_report.opaque_token_values,
         notes: vec![
             "This app performs local masking and pseudonymization, not formal anonymization."
                 .to_string(),
@@ -318,6 +331,7 @@ fn build_privacy_report(columns: &[ColumnMetadata]) -> PrivacyReport {
         match column.strategy {
             AnonymizationStrategy::Mask => report.masked_columns += 1,
             AnonymizationStrategy::PassThrough => report.pass_through_columns += 1,
+            AnonymizationStrategy::Tokenize => report.opaque_token_columns += 1,
             AnonymizationStrategy::Auto | AnonymizationStrategy::Pseudonymize => {
                 if preview_warning_for_column(column).is_some() {
                     report.pass_through_columns += 1;
@@ -326,6 +340,30 @@ fn build_privacy_report(columns: &[ColumnMetadata]) -> PrivacyReport {
                 }
             }
         }
+    }
+
+    if deterministic {
+        report.notes.push(
+            "Deterministic pseudonyms use keyed HMAC-SHA256 with the configured seed; treat that seed as sensitive."
+                .to_string(),
+        );
+    } else {
+        report.notes.push(
+            "Random-mode pseudonyms are tracked within each run so repeated source values stay consistent while distinct readable names avoid reuse while capacity remains."
+                .to_string(),
+        );
+    }
+    if report.collisions_avoided > 0 {
+        report.notes.push(format!(
+            "{} pseudonym candidate collision(s) were avoided by assigning unused alternatives.",
+            report.collisions_avoided
+        ));
+    }
+    if report.exhausted_pseudonym_pools > 0 {
+        report.notes.push(format!(
+            "{} pseudonym pool exhaustion event(s) used generated fallback values.",
+            report.exhausted_pseudonym_pools
+        ));
     }
 
     report
@@ -337,6 +375,7 @@ fn generate_column_preview(
     sample_count: usize,
     deterministic: bool,
     seed: &str,
+    transform_state: &mut TransformState,
 ) -> ColumnPreview {
     let mut samples = Vec::new();
 
@@ -362,7 +401,7 @@ fn generate_column_preview(
         };
         samples.push(SampleTransform {
             original: value.clone(),
-            anonymized: transform_value(value, column, &context),
+            anonymized: transform_value_with_state(value, column, &context, transform_state),
         });
     }
 

@@ -402,6 +402,194 @@ fn people_names_fixture_treats_single_token_name_column_as_name() {
 }
 
 #[test]
+fn anonymize_reuses_repeated_name_sources_in_random_mode() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("repeated-names.csv");
+    let output_path = temp_dir.path().join("repeated-names-output.csv");
+    fs::write(&input_path, "first_name\nAlice\nAlice\nBianca\n").unwrap();
+
+    service
+        .anonymize_csv(AnonymizeParams {
+            file_path: input_path,
+            output_path: output_path.clone(),
+            columns: vec![0],
+            controls: vec![ColumnControl {
+                column_index: 0,
+                type_override: Some(DataType::FirstName),
+                strategy: AnonymizationStrategy::Auto,
+            }],
+            deterministic: false,
+            seed: "random-repeat-seed".to_string(),
+            force: false,
+        })
+        .unwrap();
+
+    let output = read_sample(&output_path, 10).unwrap();
+    assert_eq!(output.rows[0][0], output.rows[1][0]);
+    assert_ne!(output.rows[0][0], output.rows[2][0]);
+}
+
+#[test]
+fn anonymize_random_mode_avoids_duplicate_names_for_distinct_sources() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("distinct-random-names.csv");
+    let output_path = temp_dir.path().join("distinct-random-names-output.csv");
+    fs::write(
+        &input_path,
+        "first_name\nAlice\nBianca\nCeline\nDaphne\nElise\nFreya\nGemma\nHelena\nIris\nJenna\nKeira\nLena\n",
+    )
+    .unwrap();
+
+    service
+        .anonymize_csv(AnonymizeParams {
+            file_path: input_path,
+            output_path: output_path.clone(),
+            columns: vec![0],
+            controls: vec![ColumnControl {
+                column_index: 0,
+                type_override: Some(DataType::FirstName),
+                strategy: AnonymizationStrategy::Auto,
+            }],
+            deterministic: false,
+            seed: "random-unique-seed".to_string(),
+            force: false,
+        })
+        .unwrap();
+
+    let output = read_sample(&output_path, 20).unwrap();
+    let names = output
+        .rows
+        .iter()
+        .map(|row| row[0].clone())
+        .collect::<Vec<_>>();
+    let unique_names = names.iter().collect::<std::collections::HashSet<_>>();
+
+    assert_eq!(unique_names.len(), names.len());
+}
+
+#[test]
+fn anonymize_deterministic_output_is_reproducible() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("deterministic-names.csv");
+    let first_output_path = temp_dir.path().join("deterministic-names-output-a.csv");
+    let second_output_path = temp_dir.path().join("deterministic-names-output-b.csv");
+    fs::write(
+        &input_path,
+        "first_name,last_name,email\nAlice,Smith,alice@example.com\nBianca,Jones,bianca@example.com\nAlice,Smith,alice@example.com\n",
+    )
+    .unwrap();
+
+    let params = |output_path: PathBuf| AnonymizeParams {
+        file_path: input_path.clone(),
+        output_path,
+        columns: vec![0, 1, 2],
+        controls: vec![
+            ColumnControl {
+                column_index: 0,
+                type_override: Some(DataType::FirstName),
+                strategy: AnonymizationStrategy::Auto,
+            },
+            ColumnControl {
+                column_index: 1,
+                type_override: Some(DataType::LastName),
+                strategy: AnonymizationStrategy::Auto,
+            },
+            ColumnControl {
+                column_index: 2,
+                type_override: Some(DataType::Email),
+                strategy: AnonymizationStrategy::Auto,
+            },
+        ],
+        deterministic: true,
+        seed: "deterministic-output-seed".to_string(),
+        force: false,
+    };
+
+    service
+        .anonymize_csv(params(first_output_path.clone()))
+        .unwrap();
+    service
+        .anonymize_csv(params(second_output_path.clone()))
+        .unwrap();
+
+    assert_eq!(
+        fs::read_to_string(first_output_path).unwrap(),
+        fs::read_to_string(second_output_path).unwrap()
+    );
+}
+
+#[test]
+fn preview_name_mappings_match_full_output_for_previewed_rows() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("preview-full-names.csv");
+    let output_path = temp_dir.path().join("preview-full-names-output.csv");
+    fs::write(
+        &input_path,
+        "first_name,last_name,full_name\nAlice,Smith,Alice Smith\nBianca,Jones,Bianca Jones\n",
+    )
+    .unwrap();
+    let controls = vec![
+        ColumnControl {
+            column_index: 0,
+            type_override: Some(DataType::FirstName),
+            strategy: AnonymizationStrategy::Auto,
+        },
+        ColumnControl {
+            column_index: 1,
+            type_override: Some(DataType::LastName),
+            strategy: AnonymizationStrategy::Auto,
+        },
+        ColumnControl {
+            column_index: 2,
+            type_override: Some(DataType::FullName),
+            strategy: AnonymizationStrategy::Auto,
+        },
+    ];
+
+    let preview = service
+        .preview_anonymization(PreviewParams {
+            file_path: input_path.clone(),
+            columns: vec![0, 1, 2],
+            controls: controls.clone(),
+            deterministic: true,
+            seed: "preview-full-seed".to_string(),
+            sample_count: 2,
+        })
+        .unwrap();
+    service
+        .anonymize_csv(AnonymizeParams {
+            file_path: input_path,
+            output_path: output_path.clone(),
+            columns: vec![0, 1, 2],
+            controls,
+            deterministic: true,
+            seed: "preview-full-seed".to_string(),
+            force: false,
+        })
+        .unwrap();
+
+    let output = read_sample(&output_path, 10).unwrap();
+    for row_index in 0..2 {
+        assert_eq!(
+            preview.previews[0].samples[row_index].anonymized,
+            output.rows[row_index][0]
+        );
+        assert_eq!(
+            preview.previews[1].samples[row_index].anonymized,
+            output.rows[row_index][1]
+        );
+        assert_eq!(
+            preview.previews[2].samples[row_index].anonymized,
+            output.rows[row_index][2]
+        );
+    }
+}
+
+#[test]
 fn preview_applies_per_column_type_and_strategy_controls() {
     let service = AnonymizerService::new("test-version");
     let temp_dir = tempfile::tempdir().unwrap();
@@ -484,6 +672,12 @@ fn anonymize_returns_privacy_report() {
     assert_eq!(result.privacy_report.masked_columns, 1);
     assert_eq!(result.privacy_report.generalized_columns, 0);
     assert_eq!(result.privacy_report.pass_through_columns, 1);
+    assert_eq!(result.privacy_report.opaque_token_columns, 0);
+    assert_eq!(result.privacy_report.unique_pseudonym_values, 0);
+    assert_eq!(result.privacy_report.reused_pseudonym_values, 0);
+    assert_eq!(result.privacy_report.collisions_avoided, 0);
+    assert_eq!(result.privacy_report.exhausted_pseudonym_pools, 0);
+    assert_eq!(result.privacy_report.opaque_token_values, 0);
     assert!(!result.privacy_report.notes.is_empty());
 
     let json = serde_json::to_value(&result).unwrap();
@@ -491,15 +685,60 @@ fn anonymize_returns_privacy_report() {
     assert_eq!(json["privacyReport"]["directIdentifiers"], 1);
     assert_eq!(json["privacyReport"]["quasiIdentifiers"], 1);
     assert_eq!(json["privacyReport"]["pseudonymizedColumns"], 0);
+    assert_eq!(json["privacyReport"]["opaqueTokenColumns"], 0);
     assert_eq!(json["privacyReport"]["maskedColumns"], 1);
     assert_eq!(json["privacyReport"]["generalizedColumns"], 0);
     assert_eq!(json["privacyReport"]["passThroughColumns"], 1);
+    assert_eq!(json["privacyReport"]["uniquePseudonymValues"], 0);
+    assert_eq!(json["privacyReport"]["reusedPseudonymValues"], 0);
+    assert_eq!(json["privacyReport"]["collisionsAvoided"], 0);
+    assert_eq!(json["privacyReport"]["exhaustedPseudonymPools"], 0);
+    assert_eq!(json["privacyReport"]["opaqueTokenValues"], 0);
     assert!(
         json["privacyReport"]["notes"][0]
             .as_str()
             .unwrap()
             .contains("pseudonymization")
     );
+}
+
+#[test]
+fn tokenize_strategy_updates_privacy_report() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("token-report.csv");
+    let output_path = temp_dir.path().join("token-report-output.csv");
+    fs::write(&input_path, "email\nuser@example.com\nuser@example.com\n").unwrap();
+
+    let result = service
+        .anonymize_csv(AnonymizeParams {
+            file_path: input_path,
+            output_path: output_path.clone(),
+            columns: vec![0],
+            controls: vec![ColumnControl {
+                column_index: 0,
+                type_override: Some(DataType::Email),
+                strategy: AnonymizationStrategy::Tokenize,
+            }],
+            deterministic: true,
+            seed: "token-report-seed".to_string(),
+            force: false,
+        })
+        .unwrap();
+
+    let output = read_sample(&output_path, 10).unwrap();
+    assert_eq!(output.rows[0][0], output.rows[1][0]);
+    assert!(output.rows[0][0].starts_with("tok_"));
+    assert_eq!(result.privacy_report.opaque_token_columns, 1);
+    assert_eq!(result.privacy_report.opaque_token_values, 1);
+    assert_eq!(result.privacy_report.unique_pseudonym_values, 1);
+    assert_eq!(result.privacy_report.reused_pseudonym_values, 1);
+
+    let json = serde_json::to_value(&result).unwrap();
+    assert_eq!(json["privacyReport"]["opaqueTokenColumns"], 1);
+    assert_eq!(json["privacyReport"]["opaqueTokenValues"], 1);
+    assert_eq!(json["privacyReport"]["uniquePseudonymValues"], 1);
+    assert_eq!(json["privacyReport"]["reusedPseudonymValues"], 1);
 }
 
 #[test]

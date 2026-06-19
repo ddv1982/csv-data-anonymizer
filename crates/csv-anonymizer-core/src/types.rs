@@ -80,6 +80,7 @@ pub struct ColumnMetadata {
 pub enum AnonymizationStrategy {
     Auto,
     Pseudonymize,
+    Tokenize,
     Mask,
     PassThrough,
 }
@@ -132,6 +133,17 @@ pub struct ProcessResult {
     pub success: bool,
     pub output_path: PathBuf,
     pub duration_ms: u128,
+    pub transform_report: TransformReport,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransformReport {
+    pub unique_pseudonym_values: usize,
+    pub reused_pseudonym_values: usize,
+    pub collisions_avoided: usize,
+    pub exhausted_pseudonym_pools: usize,
+    pub opaque_token_values: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -233,8 +245,14 @@ pub struct PrivacyReport {
     pub direct_identifiers: usize,
     pub quasi_identifiers: usize,
     pub pseudonymized_columns: usize,
+    pub opaque_token_columns: usize,
     pub masked_columns: usize,
     pub generalized_columns: usize,
     pub pass_through_columns: usize,
+    pub unique_pseudonym_values: usize,
+    pub reused_pseudonym_values: usize,
+    pub collisions_avoided: usize,
+    pub exhausted_pseudonym_pools: usize,
+    pub opaque_token_values: usize,
     pub notes: Vec<String>,
 }

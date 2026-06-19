@@ -13,5 +13,6 @@ pub use types::{
     AnonymizationStrategy, AnonymizeData, AnonymizeParams, ColumnControl, ColumnMetadata,
     ColumnPreview, Confidence, DataType, DetectionResult, EmptyFormat, HeadersData, ParsedSample,
     PiiRisk, PreviewData, PreviewParams, PreviewWarning, PrivacyReport, ProcessControl,
-    ProcessOptions, ProcessProgress, ProcessResult, SampleTransform, WarningSeverity,
+    ProcessOptions, ProcessProgress, ProcessResult, SampleTransform, TransformReport,
+    WarningSeverity,
 };
