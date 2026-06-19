@@ -2,6 +2,10 @@ use crate::csv_io::{count_csv_data_rows, process_file_with_control, read_sample}
 use crate::detection::is_empty_value;
 use crate::error::{AnonymizerError, Result};
 use crate::metadata::{apply_column_selection, build_column_metadata};
+use crate::smart::{
+    SmartReplacementProvider, prepare_smart_replacements_from_csv,
+    prepare_smart_replacements_from_rows,
+};
 use crate::strategies::{TransformState, transform_value_with_state};
 use crate::types::{
     AnonymizationStrategy, AnonymizeData, AnonymizeParams, ColumnControl, ColumnMetadata,
@@ -77,13 +81,36 @@ impl AnonymizerService {
     }
 
     pub fn preview_anonymization(&self, input: PreviewParams) -> Result<PreviewData> {
+        self.preview_anonymization_with_smart_provider(input, None)
+    }
+
+    pub fn preview_anonymization_with_smart_provider(
+        &self,
+        input: PreviewParams,
+        provider: Option<&mut dyn SmartReplacementProvider>,
+    ) -> Result<PreviewData> {
         let file_path = normalize_path(&input.file_path)?;
         let sample = read_sample(&file_path, input.sample_count.saturating_mul(2).max(1))?;
         let metadata = build_column_metadata(&sample.headers, &sample.rows);
         validate_column_indices(&metadata, &input.columns)?;
         let controlled_metadata = apply_column_controls(&metadata, &input.controls)?;
         let selected_metadata = apply_column_selection(&controlled_metadata, &input.columns);
-        let mut transform_state = TransformState::new(input.deterministic, &input.seed);
+        let smart_replacements = prepare_smart_replacements_from_rows(
+            &sample.rows,
+            &selected_metadata,
+            input.deterministic,
+            &input.seed,
+            provider,
+        )?;
+        let mut transform_state = if smart_replacements.is_empty() {
+            TransformState::new(input.deterministic, &input.seed)
+        } else {
+            TransformState::with_smart_replacements(
+                input.deterministic,
+                &input.seed,
+                smart_replacements,
+            )
+        };
         let mut previews = Vec::new();
         for column in selected_metadata.iter().filter(|column| column.is_selected) {
             previews.push(generate_column_preview(
@@ -135,6 +162,21 @@ impl AnonymizerService {
         sample_rows: usize,
         control: Option<&mut ProcessControl<'_>>,
     ) -> Result<AnonymizeData> {
+        self.anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+            input,
+            sample_rows,
+            control,
+            None,
+        )
+    }
+
+    pub fn anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+        &self,
+        input: AnonymizeParams,
+        sample_rows: usize,
+        mut control: Option<&mut ProcessControl<'_>>,
+        provider: Option<&mut dyn SmartReplacementProvider>,
+    ) -> Result<AnonymizeData> {
         let input_path = normalize_path(&input.file_path)?;
         let output_path = validate_output_path(&input.output_path, input.force)?;
         let sample = read_sample(&input_path, sample_rows.max(1))?;
@@ -142,6 +184,15 @@ impl AnonymizerService {
         validate_column_indices(&metadata, &input.columns)?;
         let controlled_metadata = apply_column_controls(&metadata, &input.controls)?;
         let selected_metadata = apply_column_selection(&controlled_metadata, &input.columns);
+        let smart_replacements = prepare_smart_replacements_from_csv(
+            &input_path,
+            &selected_metadata,
+            input.deterministic,
+            &input.seed,
+            control.as_deref_mut(),
+            provider,
+        )?;
+        let smart_replacements = (!smart_replacements.is_empty()).then_some(smart_replacements);
         let result = process_file_with_control(
             &input_path,
             &output_path,
@@ -149,6 +200,7 @@ impl AnonymizerService {
             ProcessOptions {
                 deterministic: input.deterministic,
                 seed: &input.seed,
+                smart_replacements: smart_replacements.as_ref(),
             },
             control,
         )?;
@@ -259,6 +311,10 @@ fn preview_warning_for_column(column: &ColumnMetadata) -> Option<PreviewWarning>
         AnonymizationStrategy::PassThrough => {
             "Pass-through leaves selected values unchanged.".to_string()
         }
+        AnonymizationStrategy::LocalAi => {
+            "Smart replacement uses Local AI on your device. Review the preview before writing output."
+                .to_string()
+        }
         AnonymizationStrategy::Mask | AnonymizationStrategy::Tokenize => return None,
         AnonymizationStrategy::Auto | AnonymizationStrategy::Pseudonymize => {
             match column.detected_type {
@@ -291,6 +347,7 @@ fn build_privacy_report(
         direct_identifiers: 0,
         quasi_identifiers: 0,
         pseudonymized_columns: 0,
+        smart_replacement_columns: 0,
         opaque_token_columns: 0,
         masked_columns: 0,
         generalized_columns: 0,
@@ -300,6 +357,8 @@ fn build_privacy_report(
         collisions_avoided: transform_report.collisions_avoided,
         exhausted_pseudonym_pools: transform_report.exhausted_pseudonym_pools,
         opaque_token_values: transform_report.opaque_token_values,
+        smart_replacement_values: transform_report.smart_replacement_values,
+        smart_replacement_fallbacks: transform_report.smart_replacement_fallbacks,
         notes: vec![
             "This app performs local masking and pseudonymization, not formal anonymization."
                 .to_string(),
@@ -332,6 +391,7 @@ fn build_privacy_report(
             AnonymizationStrategy::Mask => report.masked_columns += 1,
             AnonymizationStrategy::PassThrough => report.pass_through_columns += 1,
             AnonymizationStrategy::Tokenize => report.opaque_token_columns += 1,
+            AnonymizationStrategy::LocalAi => report.smart_replacement_columns += 1,
             AnonymizationStrategy::Auto | AnonymizationStrategy::Pseudonymize => {
                 if preview_warning_for_column(column).is_some() {
                     report.pass_through_columns += 1;
@@ -363,6 +423,18 @@ fn build_privacy_report(
         report.notes.push(format!(
             "{} pseudonym pool exhaustion event(s) used generated fallback values.",
             report.exhausted_pseudonym_pools
+        ));
+    }
+    if report.smart_replacement_columns > 0 {
+        report.notes.push(
+            "Smart replacement used Local AI on this device to generate realistic replacement values; review outputs because this is not a formal anonymization guarantee."
+                .to_string(),
+        );
+    }
+    if report.smart_replacement_fallbacks > 0 {
+        report.notes.push(format!(
+            "{} smart replacement value(s) fell back to rule-based pseudonymization after missing or invalid AI output.",
+            report.smart_replacement_fallbacks
         ));
     }
 

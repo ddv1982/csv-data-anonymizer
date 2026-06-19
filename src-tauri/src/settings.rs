@@ -1,10 +1,11 @@
+use crate::local_ai::DEFAULT_OLLAMA_MODEL;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-const SETTINGS_SCHEMA_VERSION: u32 = 1;
+const SETTINGS_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -19,6 +20,10 @@ pub struct AppSettings {
     pub remember_last_paths: bool,
     pub last_input_directory: Option<PathBuf>,
     pub last_output_directory: Option<PathBuf>,
+    #[serde(default)]
+    pub local_ai_enabled: bool,
+    #[serde(default = "default_local_ai_model")]
+    pub local_ai_model: String,
 }
 
 impl Default for AppSettings {
@@ -34,6 +39,8 @@ impl Default for AppSettings {
             remember_last_paths: true,
             last_input_directory: None,
             last_output_directory: None,
+            local_ai_enabled: false,
+            local_ai_model: default_local_ai_model(),
         }
     }
 }
@@ -108,4 +115,13 @@ pub fn sanitize_settings(settings: &mut AppSettings) {
     if settings.default_output_suffix.trim().is_empty() {
         settings.default_output_suffix = "_anonymized".to_string();
     }
+    if settings.local_ai_model.trim().is_empty() {
+        settings.local_ai_model = default_local_ai_model();
+    } else {
+        settings.local_ai_model = settings.local_ai_model.trim().to_string();
+    }
+}
+
+fn default_local_ai_model() -> String {
+    DEFAULT_OLLAMA_MODEL.to_string()
 }

@@ -5,6 +5,9 @@ import type {
   AnonymizeJobStatus,
   AppSettings,
   ColumnControl,
+  LocalAiDownloadStatus,
+  LocalAiRequest,
+  LocalAiStatus,
   PreviewData,
 } from './types'
 
@@ -43,14 +46,18 @@ export function previewAnonymization(
   deterministic: boolean,
   seed: string,
   sampleCount: number,
+  localAi: LocalAiRequest,
 ): Promise<PreviewData> {
   return invoke('preview_anonymization', {
-    filePath,
-    columns,
-    controls,
-    deterministic,
-    seed,
-    sampleCount,
+    request: {
+      filePath,
+      columns,
+      controls,
+      deterministic,
+      seed,
+      sampleCount,
+      localAi,
+    },
   })
 }
 
@@ -63,6 +70,7 @@ export function anonymizeCsv(
   seed: string,
   force: boolean,
   sampleRowCount: number,
+  localAi: LocalAiRequest,
 ): Promise<AnonymizeData> {
   return invoke('anonymize_csv', {
     request: {
@@ -74,6 +82,7 @@ export function anonymizeCsv(
       seed,
       force,
       sampleRowCount,
+      localAi,
     },
   })
 }
@@ -88,6 +97,7 @@ export function startAnonymizeJob(
   force: boolean,
   sampleRowCount: number,
   totalRowCount: number | null,
+  localAi: LocalAiRequest,
 ): Promise<AnonymizeJobStatus> {
   return invoke('start_anonymize_job', {
     request: {
@@ -100,6 +110,7 @@ export function startAnonymizeJob(
       force,
       sampleRowCount,
       totalRowCount,
+      localAi,
     },
   })
 }
@@ -114,4 +125,24 @@ export function cancelAnonymizeJob(jobId: string): Promise<AnonymizeJobStatus> {
 
 export function openOutputLocation(outputPath: string): Promise<void> {
   return invoke('open_output_location', { outputPath })
+}
+
+export function getLocalAiStatus(request: LocalAiRequest): Promise<LocalAiStatus> {
+  return invoke('get_local_ai_status', { request })
+}
+
+export function startLocalAiModelDownload(request: LocalAiRequest): Promise<LocalAiDownloadStatus> {
+  return invoke('start_local_ai_model_download', { request })
+}
+
+export function getLocalAiModelDownloadStatus(jobId: string): Promise<LocalAiDownloadStatus> {
+  return invoke('get_local_ai_model_download_status', { jobId })
+}
+
+export function cancelLocalAiModelDownload(jobId: string): Promise<LocalAiDownloadStatus> {
+  return invoke('cancel_local_ai_model_download', { jobId })
+}
+
+export function openLocalAiSetupUrl(): Promise<void> {
+  return invoke('open_local_ai_setup_url')
 }

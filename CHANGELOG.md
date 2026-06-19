@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.21 - 2026-06-19
+
+- Add optional Local AI smart replacement for selected columns through Ollama and Gemma 3 4B, including status checks, model download controls, and validated replacement maps with rule-based fallbacks.
+- Rename the end-user deterministic setting to Repeatable replacements and clarify that the seed is private and useful for matching replacements across files.
+- Extend privacy reporting with smart replacement columns, generated smart values, and fallback counts while preserving the existing local-first anonymization warnings.
+- Keep model weights and local runtime binaries out of source and release metadata, with checks that block tracked `.gguf`, model-cache, Ollama-cache, and `llama-server` artifacts.
+
 ## v1.0.20 - 2026-06-19
 
 - Add run-scoped pseudonym mapping so repeated source values reuse the same replacement and distinct readable names avoid duplicate assignments while pool capacity remains.

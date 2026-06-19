@@ -1,5 +1,6 @@
 use crate::detection::is_empty_value;
 use crate::hash::{deterministic_number, deterministic_string, deterministic_uuid};
+use crate::smart::SmartReplacementMap;
 use crate::types::{
     AnonymizationStrategy, ColumnMetadata, DataType, TransformContext, TransformReport,
 };
@@ -178,6 +179,7 @@ pub struct TransformState {
     deterministic: bool,
     seed: String,
     mappers: HashMap<PseudonymDomain, PseudonymMapper>,
+    smart_replacements: SmartReplacementMap,
     report: TransformReport,
 }
 
@@ -187,7 +189,26 @@ impl TransformState {
             deterministic,
             seed: seed.into(),
             mappers: HashMap::new(),
+            smart_replacements: SmartReplacementMap::default(),
             report: TransformReport::default(),
+        }
+    }
+
+    pub fn with_smart_replacements(
+        deterministic: bool,
+        seed: impl Into<String>,
+        smart_replacements: SmartReplacementMap,
+    ) -> Self {
+        let smart_replacement_values = smart_replacements.len();
+        Self {
+            deterministic,
+            seed: seed.into(),
+            mappers: HashMap::new(),
+            smart_replacements,
+            report: TransformReport {
+                smart_replacement_values,
+                ..TransformReport::default()
+            },
         }
     }
 
@@ -366,6 +387,16 @@ impl TransformState {
         }
         output
     }
+
+    fn smart_replacement(&mut self, column_index: usize, value: &str) -> Option<String> {
+        self.smart_replacements
+            .get(column_index, value)
+            .map(ToString::to_string)
+    }
+
+    fn record_smart_fallback(&mut self) {
+        self.report.smart_replacement_fallbacks += 1;
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -428,6 +459,12 @@ pub fn transform_value_with_state(
         AnonymizationStrategy::PassThrough => return value.to_string(),
         AnonymizationStrategy::Mask => return mask_value(value),
         AnonymizationStrategy::Tokenize => return transform_opaque_token(value, context, state),
+        AnonymizationStrategy::LocalAi => {
+            if let Some(replacement) = state.smart_replacement(column.index, value) {
+                return replacement;
+            }
+            state.record_smart_fallback();
+        }
         AnonymizationStrategy::Auto | AnonymizationStrategy::Pseudonymize => {}
     }
 

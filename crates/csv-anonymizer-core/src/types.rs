@@ -81,6 +81,7 @@ pub enum AnonymizationStrategy {
     Auto,
     Pseudonymize,
     Tokenize,
+    LocalAi,
     Mask,
     PassThrough,
 }
@@ -105,6 +106,7 @@ pub struct ParsedSample {
 pub struct ProcessOptions<'a> {
     pub deterministic: bool,
     pub seed: &'a str,
+    pub smart_replacements: Option<&'a crate::smart::SmartReplacementMap>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -144,6 +146,8 @@ pub struct TransformReport {
     pub collisions_avoided: usize,
     pub exhausted_pseudonym_pools: usize,
     pub opaque_token_values: usize,
+    pub smart_replacement_values: usize,
+    pub smart_replacement_fallbacks: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -245,6 +249,7 @@ pub struct PrivacyReport {
     pub direct_identifiers: usize,
     pub quasi_identifiers: usize,
     pub pseudonymized_columns: usize,
+    pub smart_replacement_columns: usize,
     pub opaque_token_columns: usize,
     pub masked_columns: usize,
     pub generalized_columns: usize,
@@ -254,5 +259,7 @@ pub struct PrivacyReport {
     pub collisions_avoided: usize,
     pub exhausted_pseudonym_pools: usize,
     pub opaque_token_values: usize,
+    pub smart_replacement_values: usize,
+    pub smart_replacement_fallbacks: usize,
     pub notes: Vec<String>,
 }

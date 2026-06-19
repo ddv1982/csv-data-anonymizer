@@ -18,6 +18,7 @@ export function ResultDisplay({
     ['Direct identifiers', result.privacyReport.directIdentifiers],
     ['Quasi-identifiers', result.privacyReport.quasiIdentifiers],
     ['Pseudonymized columns', result.privacyReport.pseudonymizedColumns],
+    ['Smart replacement columns', result.privacyReport.smartReplacementColumns],
     ['Opaque token columns', result.privacyReport.opaqueTokenColumns],
     ['Masked columns', result.privacyReport.maskedColumns],
     ['Generalized columns', result.privacyReport.generalizedColumns],
@@ -27,6 +28,8 @@ export function ResultDisplay({
     ['Repeated source reuses', result.privacyReport.reusedPseudonymValues],
     ['Collisions avoided', result.privacyReport.collisionsAvoided],
     ['Pool exhaustions', result.privacyReport.exhaustedPseudonymPools],
+    ['Smart replacement values', result.privacyReport.smartReplacementValues],
+    ['Smart fallbacks', result.privacyReport.smartReplacementFallbacks],
   ] as const
 
   async function handleOpenFolder() {

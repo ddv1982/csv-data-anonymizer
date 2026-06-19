@@ -8,8 +8,9 @@ Tauri desktop application for anonymizing CSV data locally while preserving file
 - Classifies PII risk and auto-selects high/medium risk columns.
 - Previews sample transformations before writing output.
 - Streams CSV processing so large files do not need to be loaded fully into memory.
-- Supports deterministic anonymization with a persisted seed in native app settings.
+- Supports repeatable replacements with a persisted private seed in native app settings.
 - Tracks pseudonym mappings during each run so repeated source values stay consistent and readable name replacements avoid reuse while capacity remains.
+- Offers optional Local AI smart replacement through Ollama and Gemma 3 4B for selected columns, with model download/status controls in the app.
 - Uses native desktop file pickers, remembers recent folders, and opens completed output in Finder/Explorer.
 
 ## Development
@@ -54,6 +55,8 @@ The root `package.json` exposes wrappers for the common frontend, Tauri, Rust va
 
 App settings are stored as versioned JSON in the platform user config directory.
 
+Local AI is off by default. The first implementation uses a user-installed Ollama runtime on `localhost` and the `gemma3:4b` model. The app can open the Ollama setup page, check runtime/model readiness, and ask Ollama to download Gemma 3 4B. Model weights and local runtime binaries are not bundled in the repository or release source.
+
 ## Anonymization Strategies
 
 The app performs local masking and pseudonymization for selected CSV columns. It preserves useful file structure and some value formats, but it does not currently claim formal anonymization models such as k-anonymity, l-diversity, t-closeness, differential privacy, or synthetic data generation.
@@ -73,10 +76,11 @@ The app performs local masking and pseudonymization for selected CSV columns. It
 | Enum | Pass-through | Unchanged |
 | String/Unknown | Generic replacement | Similar length, not semantic type |
 | Any selected type with Tokenize strategy | Opaque token | Stable `tok_...` value for repeated sources within the run or deterministic seed |
+| Any selected type with Smart replacement (Local AI) strategy | Local AI replacement map | Batches unique values per selected column, validates model output, reuses replacements for repeated sources, and falls back to rule-based pseudonymization when output is missing or invalid |
 
-Current detection treats empty strings and case-insensitive `null` values as empty. General number-looking values are preserved as numeric shapes when selected, while integer columns inferred from headers containing terms such as `id`, `identifier`, `code`, `customer number`, or `account number` are treated as numeric IDs. Deterministic pseudonyms use keyed HMAC-SHA256 with the configured seed, so treat shared seeds as sensitive additional information.
+Current detection treats empty strings and case-insensitive `null` values as empty. General number-looking values are preserved as numeric shapes when selected, while integer columns inferred from headers containing terms such as `id`, `identifier`, `code`, `customer number`, or `account number` are treated as numeric IDs. Repeatable pseudonyms use keyed HMAC-SHA256 with the configured seed, so treat shared seeds as sensitive additional information. Local AI smart replacements are generated locally through Ollama when enabled; first-time model downloads use network access, and AI output should be reviewed in preview before writing output.
 
-Completed runs include a privacy report that counts direct identifiers, quasi-identifiers, pseudonymized columns, opaque token columns, masked columns, generalized columns, pass-through/no-op columns, unique pseudonym values, repeated-source reuses, avoided candidate collisions, exhausted pseudonym pools, and opaque token values. Generalized columns currently report as zero because no generalization strategy is implemented yet. Treat the output as lower-risk transformed data, not as guaranteed anonymous data. Stronger privacy models remain roadmap items:
+Completed runs include a privacy report that counts direct identifiers, quasi-identifiers, pseudonymized columns, smart replacement columns, opaque token columns, masked columns, generalized columns, pass-through/no-op columns, unique pseudonym values, repeated-source reuses, avoided candidate collisions, exhausted pseudonym pools, opaque token values, smart replacement values, and smart replacement fallbacks. Generalized columns currently report as zero because no generalization strategy is implemented yet. Treat the output as lower-risk transformed data, not as guaranteed anonymous data. Stronger privacy models remain roadmap items:
 
 - k-anonymity and l-diversity for grouped quasi-identifiers.
 - t-closeness for sensitive attribute distribution checks.

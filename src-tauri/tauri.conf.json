@@ -40,7 +40,7 @@
       "../build/macos/AppIcon.icns"
     ],
     "shortDescription": "Local-first CSV anonymization tool",
-    "longDescription": "CSV Anonymizer detects sensitive CSV columns, previews deterministic transformations, and writes anonymized output without sending data off the device.",
+    "longDescription": "CSV Anonymizer detects sensitive CSV columns, previews repeatable or smart local transformations, and writes anonymized output without sending data off the device.",
     "license": "MIT",
     "licenseFile": "../LICENSE",
     "category": "Utility",
@@ -70,5 +70,5 @@
   "productName": "CSV Anonymizer",
   "mainBinaryName": "csv-anonymizer",
   "identifier": "io.github.ddv1982.csv-data-anonymizer",
-  "version": "1.0.20"
+  "version": "1.0.21"
 }

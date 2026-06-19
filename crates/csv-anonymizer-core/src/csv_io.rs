@@ -164,7 +164,14 @@ fn process_file_to_temporary_output(
 
     let mut header_processed = false;
     let mut row_count = 0;
-    let mut transform_state = TransformState::new(options.deterministic, options.seed);
+    let mut transform_state = match options.smart_replacements {
+        Some(smart_replacements) => TransformState::with_smart_replacements(
+            options.deterministic,
+            options.seed,
+            smart_replacements.clone(),
+        ),
+        None => TransformState::new(options.deterministic, options.seed),
+    };
 
     check_canceled(&mut control)?;
 

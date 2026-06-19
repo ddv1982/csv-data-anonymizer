@@ -25,7 +25,7 @@ export type DataType =
 export type Confidence = 'high' | 'medium' | 'low'
 export type PiiRisk = 'high' | 'medium' | 'low'
 export type EmptyFormat = 'emptyString' | 'null' | 'mixed'
-export type AnonymizationStrategy = 'auto' | 'pseudonymize' | 'tokenize' | 'mask' | 'passThrough'
+export type AnonymizationStrategy = 'auto' | 'pseudonymize' | 'tokenize' | 'localAi' | 'mask' | 'passThrough'
 
 export interface ColumnControl {
   columnIndex: number
@@ -44,6 +44,8 @@ export interface AppSettings {
   rememberLastPaths: boolean
   lastInputDirectory: string | null
   lastOutputDirectory: string | null
+  localAiEnabled: boolean
+  localAiModel: string
 }
 
 export interface ColumnMetadata {
@@ -109,6 +111,7 @@ export interface PrivacyReport {
   directIdentifiers: number
   quasiIdentifiers: number
   pseudonymizedColumns: number
+  smartReplacementColumns: number
   opaqueTokenColumns: number
   maskedColumns: number
   generalizedColumns: number
@@ -118,6 +121,8 @@ export interface PrivacyReport {
   collisionsAvoided: number
   exhaustedPseudonymPools: number
   opaqueTokenValues: number
+  smartReplacementValues: number
+  smartReplacementFallbacks: number
   notes: string[]
 }
 
@@ -130,5 +135,35 @@ export interface AnonymizeJobStatus {
   totalRows: number | null
   cancelRequested: boolean
   result: AnonymizeData | null
+  error: string | null
+}
+
+export interface LocalAiRequest {
+  enabled: boolean
+  model: string
+}
+
+export interface LocalAiStatus {
+  enabled: boolean
+  provider: string
+  model: string
+  endpoint: string
+  runtimeAvailable: boolean
+  modelInstalled: boolean
+  ready: boolean
+  runtimeVersion: string | null
+  message: string
+}
+
+export type LocalAiDownloadState = 'running' | 'succeeded' | 'failed' | 'canceled'
+
+export interface LocalAiDownloadStatus {
+  jobId: string
+  state: LocalAiDownloadState
+  model: string
+  statusMessage: string
+  completedBytes: number | null
+  totalBytes: number | null
+  cancelRequested: boolean
   error: string | null
 }

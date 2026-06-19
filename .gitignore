@@ -9,6 +9,13 @@ target/
 src-tauri/gen/
 *.tsbuildinfo
 
+# Local AI model/runtime caches
+*.gguf
+models/
+model-cache/
+llama-server*
+ollama-cache/
+
 # Coverage
 coverage/
 *.lcov
