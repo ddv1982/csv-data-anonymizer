@@ -14,6 +14,21 @@ export function ResultDisplay({
   onReset: () => void
   onError: (message: string) => void
 }) {
+  const privacyMetrics = [
+    ['Direct identifiers', result.privacyReport.directIdentifiers],
+    ['Quasi-identifiers', result.privacyReport.quasiIdentifiers],
+    ['Pseudonymized columns', result.privacyReport.pseudonymizedColumns],
+    ['Opaque token columns', result.privacyReport.opaqueTokenColumns],
+    ['Masked columns', result.privacyReport.maskedColumns],
+    ['Generalized columns', result.privacyReport.generalizedColumns],
+    ['Pass-through/no-op', result.privacyReport.passThroughColumns],
+    ['Unique pseudonyms', result.privacyReport.uniquePseudonymValues],
+    ['Opaque token values', result.privacyReport.opaqueTokenValues],
+    ['Repeated source reuses', result.privacyReport.reusedPseudonymValues],
+    ['Collisions avoided', result.privacyReport.collisionsAvoided],
+    ['Pool exhaustions', result.privacyReport.exhaustedPseudonymPools],
+  ] as const
+
   async function handleOpenFolder() {
     try {
       await openOutputLocation(result.outputPath)
@@ -36,13 +51,14 @@ export function ResultDisplay({
       <div className="preview-group">
         <h3>Privacy Report</h3>
         <div className="preview-frame">
-          <p className="muted-text text-sm">
-            Direct identifiers: {result.privacyReport.directIdentifiers}; Quasi-identifiers:{' '}
-            {result.privacyReport.quasiIdentifiers}; Pseudonymized: {result.privacyReport.pseudonymizedColumns};
-            Masked: {result.privacyReport.maskedColumns}; Generalized:{' '}
-            {result.privacyReport.generalizedColumns}; Pass-through/no-op:{' '}
-            {result.privacyReport.passThroughColumns}
-          </p>
+          <div className="privacy-metrics">
+            {privacyMetrics.map(([label, value]) => (
+              <div className="privacy-metric" key={label}>
+                <span className="muted-text text-sm">{label}</span>
+                <strong>{value.toLocaleString()}</strong>
+              </div>
+            ))}
+          </div>
           {result.privacyReport.notes.map((note) => (
             <p className="muted-text text-sm" key={note}>
               {note}

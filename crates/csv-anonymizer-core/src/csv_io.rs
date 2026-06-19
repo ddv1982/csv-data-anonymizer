@@ -1,5 +1,5 @@
 use crate::error::{AnonymizerError, Result, csv_error};
-use crate::strategies::transform_row;
+use crate::strategies::{TransformState, transform_row_with_state};
 use crate::types::{
     ColumnMetadata, ParsedSample, ProcessControl, ProcessOptions, ProcessProgress, ProcessResult,
 };
@@ -164,6 +164,7 @@ fn process_file_to_temporary_output(
 
     let mut header_processed = false;
     let mut row_count = 0;
+    let mut transform_state = TransformState::new(options.deterministic, options.seed);
 
     check_canceled(&mut control)?;
 
@@ -186,12 +187,13 @@ fn process_file_to_temporary_output(
         }
 
         check_canceled(&mut control)?;
-        let transformed_row = transform_row(
+        let transformed_row = transform_row_with_state(
             &row,
             columns,
             row_count,
             options.seed,
             options.deterministic,
+            &mut transform_state,
         );
         writer.write_record(&transformed_row).map_err(csv_error)?;
         row_count += 1;
@@ -205,6 +207,7 @@ fn process_file_to_temporary_output(
         success: true,
         output_path: temporary_output_path.to_path_buf(),
         duration_ms: start_time.elapsed().as_millis(),
+        transform_report: transform_state.report(),
     })
 }
 

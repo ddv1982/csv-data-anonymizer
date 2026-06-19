@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.20 - 2026-06-19
+
+- Add run-scoped pseudonym mapping so repeated source values reuse the same replacement and distinct readable names avoid duplicate assignments while pool capacity remains.
+- Expand readable first/last-name pools, preserve first/last/full-name consistency through shared semantic domains, and report avoided candidate collisions plus pool-exhaustion fallbacks.
+- Add a Tokenize strategy for opaque `tok_...` values and upgrade deterministic pseudonyms to keyed HMAC-SHA256 with seed-sensitivity notes in the privacy report.
+- Improve the privacy report UI and serialized report fields with unique pseudonym counts, repeated-source reuses, opaque-token counts, avoided collisions, and exhausted pseudonym pools.
+
 ## v1.0.19 - 2026-06-19
 
 - Improve name pseudonymization so generic `name` columns with single-token values use name-like replacements instead of generic alphanumeric strings.

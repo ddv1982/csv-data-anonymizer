@@ -1,22 +1,424 @@
 use crate::detection::is_empty_value;
 use crate::hash::{deterministic_number, deterministic_string, deterministic_uuid};
-use crate::types::{AnonymizationStrategy, ColumnMetadata, DataType, TransformContext};
+use crate::types::{
+    AnonymizationStrategy, ColumnMetadata, DataType, TransformContext, TransformReport,
+};
 use chrono::{Duration, NaiveDate};
 use rand::Rng;
+use std::collections::HashMap;
 
 const FIRST_NAMES: &[&str] = &[
-    "Alex", "Bailey", "Casey", "Dana", "Elliot", "Finley", "Jordan", "Morgan", "Quinn", "Riley",
-    "Taylor", "Avery",
+    "Adam",
+    "Adrian",
+    "Aiden",
+    "Alex",
+    "Amelia",
+    "Andrew",
+    "Ari",
+    "Ariana",
+    "Audrey",
+    "Austin",
+    "Bailey",
+    "Blake",
+    "Brianna",
+    "Caleb",
+    "Camila",
+    "Cameron",
+    "Casey",
+    "Charlotte",
+    "Chloe",
+    "Claire",
+    "Cole",
+    "Connor",
+    "Dana",
+    "Daniel",
+    "Dylan",
+    "Eleanor",
+    "Elena",
+    "Eli",
+    "Elijah",
+    "Elliot",
+    "Emery",
+    "Emma",
+    "Ethan",
+    "Evelyn",
+    "Felix",
+    "Finley",
+    "Gabriel",
+    "Grace",
+    "Hannah",
+    "Harper",
+    "Isaac",
+    "Isabella",
+    "Ivy",
+    "Jack",
+    "Jade",
+    "Jamie",
+    "Jasmine",
+    "Jordan",
+    "Julia",
+    "Kai",
+    "Layla",
+    "Leo",
+    "Liam",
+    "Logan",
+    "Lucas",
+    "Maya",
+    "Mia",
+    "Miles",
+    "Naomi",
+    "Nora",
+    "Olivia",
+    "Owen",
+    "Parker",
+    "Quinn",
+    "Reese",
+    "Riley",
+    "Rowan",
+    "Ryan",
+    "Sam",
+    "Sofia",
+    "Taylor",
+    "Theo",
+    "Violet",
+    "Willow",
+    "Wyatt",
+    "Zoe",
 ];
 const LAST_NAMES: &[&str] = &[
-    "Bennett", "Carter", "Hayes", "Morgan", "Parker", "Reed", "Sullivan", "Turner", "Walker",
-    "Young", "Brooks", "Coleman",
+    "Adams",
+    "Anderson",
+    "Baker",
+    "Bennett",
+    "Brooks",
+    "Brown",
+    "Campbell",
+    "Carter",
+    "Clark",
+    "Coleman",
+    "Collins",
+    "Cooper",
+    "Cruz",
+    "Davis",
+    "Diaz",
+    "Edwards",
+    "Evans",
+    "Fisher",
+    "Flores",
+    "Foster",
+    "Garcia",
+    "Gomez",
+    "Gray",
+    "Green",
+    "Hall",
+    "Hayes",
+    "Henderson",
+    "Hill",
+    "Howard",
+    "Hughes",
+    "Jackson",
+    "James",
+    "Jenkins",
+    "Johnson",
+    "Kelly",
+    "King",
+    "Lee",
+    "Lewis",
+    "Lopez",
+    "Martin",
+    "Martinez",
+    "Miller",
+    "Mitchell",
+    "Moore",
+    "Morgan",
+    "Morris",
+    "Murphy",
+    "Nelson",
+    "Nguyen",
+    "Parker",
+    "Patel",
+    "Perez",
+    "Phillips",
+    "Ramirez",
+    "Reed",
+    "Rivera",
+    "Roberts",
+    "Robinson",
+    "Rodriguez",
+    "Ross",
+    "Russell",
+    "Sanchez",
+    "Scott",
+    "Simmons",
+    "Smith",
+    "Stewart",
+    "Sullivan",
+    "Taylor",
+    "Thomas",
+    "Thompson",
+    "Torres",
+    "Turner",
+    "Walker",
+    "Ward",
+    "Watson",
+    "White",
+    "Williams",
+    "Wilson",
+    "Wood",
+    "Wright",
+    "Young",
 ];
+
+const GENERATED_ATTEMPT_LIMIT: usize = 512;
+const TOKEN_CHARSET: &str = "abcdefghijklmnopqrstuvwxyz0123456789";
+const LETTER_CHARSET: &str = "abcdefghijklmnopqrstuvwxyz";
+
+#[derive(Debug, Clone)]
+pub struct TransformState {
+    deterministic: bool,
+    seed: String,
+    mappers: HashMap<PseudonymDomain, PseudonymMapper>,
+    report: TransformReport,
+}
+
+impl TransformState {
+    pub fn new(deterministic: bool, seed: impl Into<String>) -> Self {
+        Self {
+            deterministic,
+            seed: seed.into(),
+            mappers: HashMap::new(),
+            report: TransformReport::default(),
+        }
+    }
+
+    pub fn report(&self) -> TransformReport {
+        self.report
+    }
+
+    fn mapper_mut(&mut self, domain: PseudonymDomain) -> &mut PseudonymMapper {
+        self.mappers.entry(domain).or_default()
+    }
+
+    fn assign_from_pool(
+        &mut self,
+        domain: PseudonymDomain,
+        value: &str,
+        candidates: &[&str],
+        excluded_tokens: &[&str],
+    ) -> String {
+        let source_key = normalized_identity(value);
+        if let Some(existing) = self
+            .mapper_mut(domain)
+            .source_to_output
+            .get(&source_key)
+            .cloned()
+        {
+            self.report.reused_pseudonym_values += 1;
+            return existing;
+        }
+
+        let start_index = if self.deterministic {
+            deterministic_number(
+                &source_key,
+                &format!("{}:{}:pool", self.seed, domain.seed_key()),
+                0,
+                candidates.len() as i64 - 1,
+            ) as usize
+        } else {
+            rand::thread_rng().gen_range(0..candidates.len())
+        };
+        let mut collided = false;
+
+        for offset in 0..candidates.len() {
+            let candidate = candidates[(start_index + offset) % candidates.len()];
+            if excluded_tokens
+                .iter()
+                .any(|token| candidate.eq_ignore_ascii_case(token.trim()))
+            {
+                continue;
+            }
+            if self.output_is_used_by_other_source(domain, candidate, &source_key) {
+                collided = true;
+                continue;
+            }
+
+            return self.register_assignment(domain, &source_key, candidate.to_string(), collided);
+        }
+
+        self.report.exhausted_pseudonym_pools += 1;
+        for attempt in 0..GENERATED_ATTEMPT_LIMIT {
+            let base = candidates[(start_index + attempt) % candidates.len()];
+            let suffix =
+                generated_name_suffix(&source_key, &self.seed, domain, attempt, self.deterministic);
+            let candidate = format!("{base}{suffix}");
+            if excluded_tokens
+                .iter()
+                .any(|token| candidate.eq_ignore_ascii_case(token.trim()))
+            {
+                continue;
+            }
+            if !self.output_is_used_by_other_source(domain, &candidate, &source_key) {
+                return self.register_assignment(domain, &source_key, candidate, collided);
+            }
+        }
+
+        let fallback = format!(
+            "{}{}",
+            candidates[start_index],
+            generated_name_suffix(
+                &source_key,
+                &self.seed,
+                domain,
+                GENERATED_ATTEMPT_LIMIT,
+                self.deterministic,
+            )
+        );
+        self.register_exhausted_assignment(domain, &source_key, fallback)
+    }
+
+    fn assign_generated(
+        &mut self,
+        domain: PseudonymDomain,
+        source_key: &str,
+        mut generate: impl FnMut(usize) -> String,
+    ) -> String {
+        if let Some(existing) = self
+            .mapper_mut(domain)
+            .source_to_output
+            .get(source_key)
+            .cloned()
+        {
+            self.report.reused_pseudonym_values += 1;
+            return existing;
+        }
+
+        let mut collided = false;
+        for attempt in 0..GENERATED_ATTEMPT_LIMIT {
+            let candidate = generate(attempt);
+            if candidate.is_empty() {
+                continue;
+            }
+            if self.output_is_used_by_other_source(domain, &candidate, source_key) {
+                collided = true;
+                continue;
+            }
+
+            return self.register_assignment(domain, source_key, candidate, collided);
+        }
+
+        self.report.exhausted_pseudonym_pools += 1;
+        self.register_exhausted_assignment(domain, source_key, generate(GENERATED_ATTEMPT_LIMIT))
+    }
+
+    fn output_is_used_by_other_source(
+        &mut self,
+        domain: PseudonymDomain,
+        candidate: &str,
+        source_key: &str,
+    ) -> bool {
+        self.mapper_mut(domain)
+            .output_to_source
+            .get(candidate)
+            .is_some_and(|owner| owner != source_key)
+    }
+
+    fn register_assignment(
+        &mut self,
+        domain: PseudonymDomain,
+        source_key: &str,
+        output: String,
+        collided: bool,
+    ) -> String {
+        let mapper = self.mapper_mut(domain);
+        mapper
+            .source_to_output
+            .insert(source_key.to_string(), output.clone());
+        mapper
+            .output_to_source
+            .insert(output.clone(), source_key.to_string());
+        self.report.unique_pseudonym_values += 1;
+        if collided {
+            self.report.collisions_avoided += 1;
+        }
+        if domain == PseudonymDomain::OpaqueToken {
+            self.report.opaque_token_values += 1;
+        }
+        output
+    }
+
+    fn register_exhausted_assignment(
+        &mut self,
+        domain: PseudonymDomain,
+        source_key: &str,
+        output: String,
+    ) -> String {
+        let mapper = self.mapper_mut(domain);
+        mapper
+            .source_to_output
+            .insert(source_key.to_string(), output.clone());
+        mapper
+            .output_to_source
+            .entry(output.clone())
+            .or_insert_with(|| source_key.to_string());
+        self.report.unique_pseudonym_values += 1;
+        if domain == PseudonymDomain::OpaqueToken {
+            self.report.opaque_token_values += 1;
+        }
+        output
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct PseudonymMapper {
+    source_to_output: HashMap<String, String>,
+    output_to_source: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum PseudonymDomain {
+    EmailLocal,
+    Uuid,
+    Timestamp,
+    NumericId,
+    NumericValue,
+    Phone,
+    FirstName,
+    LastName,
+    GenericString,
+    OpaqueToken,
+}
+
+impl PseudonymDomain {
+    fn seed_key(self) -> &'static str {
+        match self {
+            PseudonymDomain::EmailLocal => "email-local",
+            PseudonymDomain::Uuid => "uuid",
+            PseudonymDomain::Timestamp => "timestamp",
+            PseudonymDomain::NumericId => "numeric-id",
+            PseudonymDomain::NumericValue => "numeric-value",
+            PseudonymDomain::Phone => "phone",
+            PseudonymDomain::FirstName => "first-name",
+            PseudonymDomain::LastName => "last-name",
+            PseudonymDomain::GenericString => "generic-string",
+            PseudonymDomain::OpaqueToken => "opaque-token",
+        }
+    }
+}
 
 pub fn transform_value(
     value: &str,
     column: &ColumnMetadata,
     context: &TransformContext<'_>,
+) -> String {
+    let mut state = TransformState::new(context.deterministic, context.seed);
+    transform_value_with_state(value, column, context, &mut state)
+}
+
+pub fn transform_value_with_state(
+    value: &str,
+    column: &ColumnMetadata,
+    context: &TransformContext<'_>,
+    state: &mut TransformState,
 ) -> String {
     if is_empty_value(value) {
         return value.to_string();
@@ -25,19 +427,20 @@ pub fn transform_value(
     match column.strategy {
         AnonymizationStrategy::PassThrough => return value.to_string(),
         AnonymizationStrategy::Mask => return mask_value(value),
+        AnonymizationStrategy::Tokenize => return transform_opaque_token(value, context, state),
         AnonymizationStrategy::Auto | AnonymizationStrategy::Pseudonymize => {}
     }
 
     match column.detected_type {
-        DataType::Email => transform_email(value, context),
-        DataType::Uuid => transform_uuid(value, context),
-        DataType::Timestamp => transform_timestamp(value, context),
-        DataType::NumericId => transform_numeric_id(value, context),
-        DataType::NumericValue => transform_numeric_value(value, context),
-        DataType::Phone => transform_phone(value, context),
-        DataType::FirstName => transform_first_name(value, context),
-        DataType::LastName => transform_last_name(value, context),
-        DataType::FullName => transform_full_name(value, context),
+        DataType::Email => transform_email(value, context, state),
+        DataType::Uuid => transform_uuid(value, context, state),
+        DataType::Timestamp => transform_timestamp(value, context, state),
+        DataType::NumericId => transform_numeric_id(value, context, state),
+        DataType::NumericValue => transform_numeric_value(value, context, state),
+        DataType::Phone => transform_phone(value, context, state),
+        DataType::FirstName => transform_first_name(value, state),
+        DataType::LastName => transform_last_name(value, state),
+        DataType::FullName => transform_full_name(value, state),
         DataType::PostalCode
         | DataType::Address
         | DataType::IpAddress
@@ -45,7 +448,7 @@ pub fn transform_value(
         | DataType::MacAddress
         | DataType::TaxId
         | DataType::String
-        | DataType::Unknown => transform_generic_string(value, context),
+        | DataType::Unknown => transform_generic_string(value, context, state),
         DataType::Boolean | DataType::Currency | DataType::Percentage => value.to_string(),
         DataType::CountryCode | DataType::Enum => value.to_string(),
     }
@@ -71,6 +474,18 @@ pub fn transform_row(
     seed: &str,
     deterministic: bool,
 ) -> Vec<String> {
+    let mut state = TransformState::new(deterministic, seed);
+    transform_row_with_state(row, columns, row_index, seed, deterministic, &mut state)
+}
+
+pub fn transform_row_with_state(
+    row: &[String],
+    columns: &[ColumnMetadata],
+    row_index: usize,
+    seed: &str,
+    deterministic: bool,
+    state: &mut TransformState,
+) -> Vec<String> {
     row.iter()
         .enumerate()
         .map(|(column_index, value)| {
@@ -90,39 +505,85 @@ pub fn transform_row(
                 deterministic,
                 empty_format: column.empty_format,
             };
-            transform_value(value, column, &context)
+            transform_value_with_state(value, column, &context, state)
         })
         .collect()
 }
 
-fn transform_email(value: &str, context: &TransformContext<'_>) -> String {
+fn transform_opaque_token(
+    value: &str,
+    context: &TransformContext<'_>,
+    state: &mut TransformState,
+) -> String {
+    let source_key = format!(
+        "{}:{}:{}",
+        context.column_name,
+        context.column_index,
+        normalized_identity(value)
+    );
+    state.assign_generated(PseudonymDomain::OpaqueToken, &source_key, |attempt| {
+        if context.deterministic {
+            format!(
+                "tok_{}",
+                deterministic_string(
+                    &source_key,
+                    &format!("{}:opaque:{attempt}", context.seed),
+                    16,
+                    TOKEN_CHARSET,
+                )
+            )
+        } else {
+            format!("tok_{}", random_string(16, TOKEN_CHARSET))
+        }
+    })
+}
+
+fn transform_email(
+    value: &str,
+    context: &TransformContext<'_>,
+    state: &mut TransformState,
+) -> String {
     let Some(at_index) = value.rfind('@') else {
         return value.to_string();
     };
     let domain = &value[at_index..];
-    let local_part = if context.deterministic {
-        let prefix = deterministic_string(
-            value,
-            &format!("{}:prefix", context.seed),
-            6,
-            "abcdefghijklmnopqrstuvwxyz",
-        );
-        let suffix =
-            deterministic_string(value, &format!("{}:suffix", context.seed), 3, "0123456789");
-        format!("{prefix}{suffix}")
-    } else {
-        let mut rng = rand::thread_rng();
-        format!("user{}", rng.gen_range(1..=999_999))
-    };
+    let source_key = normalized_identity(value);
+    let local_part = state.assign_generated(PseudonymDomain::EmailLocal, &source_key, |attempt| {
+        if context.deterministic {
+            let prefix = deterministic_string(
+                value,
+                &format!("{}:email-prefix:{attempt}", context.seed),
+                6,
+                LETTER_CHARSET,
+            );
+            let suffix = deterministic_string(
+                value,
+                &format!("{}:email-suffix:{attempt}", context.seed),
+                3,
+                "0123456789",
+            );
+            format!("{prefix}{suffix}")
+        } else {
+            let mut rng = rand::thread_rng();
+            format!("user{}", rng.gen_range(1..=999_999))
+        }
+    });
     format!("{local_part}{domain}")
 }
 
-fn transform_uuid(value: &str, context: &TransformContext<'_>) -> String {
-    let uuid = if context.deterministic {
-        deterministic_uuid(value, context.seed)
-    } else {
-        random_uuid_v4()
-    };
+fn transform_uuid(
+    value: &str,
+    context: &TransformContext<'_>,
+    state: &mut TransformState,
+) -> String {
+    let source_key = normalized_identity(value);
+    let uuid = state.assign_generated(PseudonymDomain::Uuid, &source_key, |attempt| {
+        if context.deterministic {
+            deterministic_uuid(value, &format!("{}:uuid:{attempt}", context.seed))
+        } else {
+            random_uuid_v4()
+        }
+    });
     if value == value.to_uppercase() {
         uuid.to_uppercase()
     } else {
@@ -156,7 +617,22 @@ fn random_uuid_v4() -> String {
     )
 }
 
-fn transform_timestamp(value: &str, context: &TransformContext<'_>) -> String {
+fn transform_timestamp(
+    value: &str,
+    context: &TransformContext<'_>,
+    state: &mut TransformState,
+) -> String {
+    let source_key = normalized_identity(value);
+    state.assign_generated(PseudonymDomain::Timestamp, &source_key, |attempt| {
+        transform_timestamp_candidate(value, context, attempt)
+    })
+}
+
+fn transform_timestamp_candidate(
+    value: &str,
+    context: &TransformContext<'_>,
+    attempt: usize,
+) -> String {
     if value.len() < 10 {
         return value.to_string();
     }
@@ -166,7 +642,12 @@ fn transform_timestamp(value: &str, context: &TransformContext<'_>) -> String {
     };
 
     let offset_days = if context.deterministic {
-        deterministic_number(value, context.seed, -365, 365)
+        deterministic_number(
+            value,
+            &format!("{}:timestamp:{attempt}", context.seed),
+            -365,
+            365,
+        )
     } else {
         rand::thread_rng().gen_range(-365..=365)
     };
@@ -178,7 +659,22 @@ fn transform_timestamp(value: &str, context: &TransformContext<'_>) -> String {
     format!("{}{}", offset_date.format("%Y-%m-%d"), &value[10..])
 }
 
-fn transform_numeric_id(value: &str, context: &TransformContext<'_>) -> String {
+fn transform_numeric_id(
+    value: &str,
+    context: &TransformContext<'_>,
+    state: &mut TransformState,
+) -> String {
+    let source_key = format!("{}:{}", value.len(), value);
+    state.assign_generated(PseudonymDomain::NumericId, &source_key, |attempt| {
+        transform_numeric_id_candidate(value, context, attempt)
+    })
+}
+
+fn transform_numeric_id_candidate(
+    value: &str,
+    context: &TransformContext<'_>,
+    attempt: usize,
+) -> String {
     let digit_count = value.len();
     if digit_count == 0 {
         return value.to_string();
@@ -189,26 +685,28 @@ fn transform_numeric_id(value: &str, context: &TransformContext<'_>) -> String {
         .take_while(|character| *character == '0')
         .count();
     if leading_zero_count > 0 && leading_zero_count < digit_count {
-        let generated = generate_numeric_id(digit_count - leading_zero_count, value, context);
+        let generated =
+            generate_numeric_id(digit_count - leading_zero_count, value, context, attempt);
         return format!("{}{}", "0".repeat(leading_zero_count), generated);
     }
 
     if leading_zero_count == digit_count {
-        return generate_zero_width_numeric_id(digit_count, value, context);
+        return generate_zero_width_numeric_id(digit_count, value, context, attempt);
     }
 
-    generate_numeric_id(digit_count, value, context)
+    generate_numeric_id(digit_count, value, context, attempt)
 }
 
 fn generate_zero_width_numeric_id(
     length: usize,
     value: &str,
     context: &TransformContext<'_>,
+    attempt: usize,
 ) -> String {
     if context.deterministic {
         deterministic_string(
             value,
-            &format!("{}:zero", context.seed),
+            &format!("{}:zero:{attempt}", context.seed),
             length,
             "0123456789",
         )
@@ -220,16 +718,25 @@ fn generate_zero_width_numeric_id(
     }
 }
 
-fn generate_numeric_id(length: usize, value: &str, context: &TransformContext<'_>) -> String {
+fn generate_numeric_id(
+    length: usize,
+    value: &str,
+    context: &TransformContext<'_>,
+    attempt: usize,
+) -> String {
     if context.deterministic {
-        let first_digit =
-            deterministic_string(value, &format!("{}:first", context.seed), 1, "123456789");
+        let first_digit = deterministic_string(
+            value,
+            &format!("{}:first:{attempt}", context.seed),
+            1,
+            "123456789",
+        );
         if length == 1 {
             return first_digit;
         }
         let rest_digits = deterministic_string(
             value,
-            &format!("{}:rest", context.seed),
+            &format!("{}:rest:{attempt}", context.seed),
             length - 1,
             "0123456789",
         );
@@ -244,7 +751,22 @@ fn generate_numeric_id(length: usize, value: &str, context: &TransformContext<'_
     }
 }
 
-fn transform_numeric_value(value: &str, context: &TransformContext<'_>) -> String {
+fn transform_numeric_value(
+    value: &str,
+    context: &TransformContext<'_>,
+    state: &mut TransformState,
+) -> String {
+    let source_key = format!("{}:{}", value.len(), value);
+    state.assign_generated(PseudonymDomain::NumericValue, &source_key, |attempt| {
+        transform_numeric_value_candidate(value, context, attempt)
+    })
+}
+
+fn transform_numeric_value_candidate(
+    value: &str,
+    context: &TransformContext<'_>,
+    attempt: usize,
+) -> String {
     let (sign, unsigned) = match value.as_bytes().first() {
         Some(b'+') | Some(b'-') => (&value[..1], &value[1..]),
         _ => ("", value),
@@ -253,12 +775,12 @@ fn transform_numeric_value(value: &str, context: &TransformContext<'_>) -> Strin
     let Some((integer_part, fractional_part)) = unsigned.split_once('.') else {
         return format!(
             "{sign}{}",
-            generate_numeric_component(unsigned, value, context)
+            generate_numeric_component(unsigned, value, context, attempt)
         );
     };
 
-    let integer = generate_numeric_component(integer_part, value, context);
-    let fraction = generate_fractional_component(fractional_part, value, context);
+    let integer = generate_numeric_component(integer_part, value, context, attempt);
+    let fraction = generate_fractional_component(fractional_part, value, context, attempt);
 
     format!("{sign}{integer}.{fraction}")
 }
@@ -267,6 +789,7 @@ fn generate_numeric_component(
     component: &str,
     value: &str,
     context: &TransformContext<'_>,
+    attempt: usize,
 ) -> String {
     if component.is_empty() {
         return String::new();
@@ -280,7 +803,12 @@ fn generate_numeric_component(
         return component.to_string();
     }
 
-    let generated = generate_numeric_id(component.len() - leading_zero_count, value, context);
+    let generated = generate_numeric_id(
+        component.len() - leading_zero_count,
+        value,
+        context,
+        attempt,
+    );
     format!("{}{}", "0".repeat(leading_zero_count), generated)
 }
 
@@ -288,6 +816,7 @@ fn generate_fractional_component(
     component: &str,
     value: &str,
     context: &TransformContext<'_>,
+    attempt: usize,
 ) -> String {
     if component.is_empty() {
         return String::new();
@@ -296,7 +825,7 @@ fn generate_fractional_component(
     if context.deterministic {
         deterministic_string(
             value,
-            &format!("{}:fraction", context.seed),
+            &format!("{}:fraction:{attempt}", context.seed),
             component.len(),
             "0123456789",
         )
@@ -308,7 +837,22 @@ fn generate_fractional_component(
     }
 }
 
-fn transform_phone(value: &str, context: &TransformContext<'_>) -> String {
+fn transform_phone(
+    value: &str,
+    context: &TransformContext<'_>,
+    state: &mut TransformState,
+) -> String {
+    let source_key = normalized_identity(value);
+    state.assign_generated(PseudonymDomain::Phone, &source_key, |attempt| {
+        transform_phone_candidate(value, context, attempt)
+    })
+}
+
+fn transform_phone_candidate(
+    value: &str,
+    context: &TransformContext<'_>,
+    attempt: usize,
+) -> String {
     let mut digit_index = 0;
     value
         .chars()
@@ -317,7 +861,7 @@ fn transform_phone(value: &str, context: &TransformContext<'_>) -> String {
                 return character.to_string();
             }
 
-            let seed = format!("{}:phone:{digit_index}", context.seed);
+            let seed = format!("{}:phone:{attempt}:{digit_index}", context.seed);
             digit_index += 1;
             if context.deterministic {
                 deterministic_string(value, &seed, 1, "0123456789")
@@ -328,27 +872,47 @@ fn transform_phone(value: &str, context: &TransformContext<'_>) -> String {
         .collect()
 }
 
-fn transform_first_name(value: &str, context: &TransformContext<'_>) -> String {
+fn transform_first_name(value: &str, state: &mut TransformState) -> String {
     let excluded_tokens: Vec<&str> = value.split_whitespace().collect();
-    transform_name_tokens(value, context, FIRST_NAMES, &excluded_tokens)
+    transform_name_tokens(
+        value,
+        state,
+        PseudonymDomain::FirstName,
+        FIRST_NAMES,
+        &excluded_tokens,
+    )
 }
 
-fn transform_last_name(value: &str, context: &TransformContext<'_>) -> String {
+fn transform_last_name(value: &str, state: &mut TransformState) -> String {
     let excluded_tokens: Vec<&str> = value.split_whitespace().collect();
-    transform_name_tokens(value, context, LAST_NAMES, &excluded_tokens)
+    transform_name_tokens(
+        value,
+        state,
+        PseudonymDomain::LastName,
+        LAST_NAMES,
+        &excluded_tokens,
+    )
 }
 
-fn transform_full_name(value: &str, context: &TransformContext<'_>) -> String {
+fn transform_full_name(value: &str, state: &mut TransformState) -> String {
     let tokens: Vec<&str> = value.split_whitespace().collect();
     let token_count = tokens.len();
     if token_count <= 1 {
-        return transform_first_name(value, context);
+        return transform_first_name(value, state);
     }
 
-    let first = choose_name_excluding(tokens[0], context, FIRST_NAMES, &tokens);
+    let first = choose_name_excluding(
+        tokens[0],
+        state,
+        PseudonymDomain::FirstName,
+        FIRST_NAMES,
+        &tokens,
+    );
     let last = tokens[1..]
         .iter()
-        .map(|token| choose_name_excluding(token, context, LAST_NAMES, &tokens).to_string())
+        .map(|token| {
+            choose_name_excluding(token, state, PseudonymDomain::LastName, LAST_NAMES, &tokens)
+        })
         .collect::<Vec<_>>()
         .join(" ");
     format!("{first} {last}")
@@ -356,67 +920,44 @@ fn transform_full_name(value: &str, context: &TransformContext<'_>) -> String {
 
 fn transform_name_tokens(
     value: &str,
-    context: &TransformContext<'_>,
+    state: &mut TransformState,
+    domain: PseudonymDomain,
     names: &[&str],
     excluded_tokens: &[&str],
 ) -> String {
     value
         .split_whitespace()
-        .map(|token| choose_name_excluding(token, context, names, excluded_tokens).to_string())
+        .map(|token| choose_name_excluding(token, state, domain, names, excluded_tokens))
         .collect::<Vec<_>>()
         .join(" ")
 }
 
-fn choose_name_excluding<'a>(
+fn choose_name_excluding(
+    value: &str,
+    state: &mut TransformState,
+    domain: PseudonymDomain,
+    names: &[&str],
+    excluded_tokens: &[&str],
+) -> String {
+    state.assign_from_pool(domain, value, names, excluded_tokens)
+}
+
+fn transform_generic_string(
     value: &str,
     context: &TransformContext<'_>,
-    names: &'a [&str],
-    excluded_tokens: &[&str],
-) -> &'a str {
-    choose_name_with_seed_excluding(
-        value,
-        context.seed,
-        context.deterministic,
-        names,
-        excluded_tokens,
-    )
+    state: &mut TransformState,
+) -> String {
+    let source_key = format!("{}:{}", value.len(), normalized_identity(value));
+    state.assign_generated(PseudonymDomain::GenericString, &source_key, |attempt| {
+        transform_generic_string_candidate(value, context, attempt)
+    })
 }
 
-fn choose_name_with_seed_excluding<'a>(
+fn transform_generic_string_candidate(
     value: &str,
-    seed: &str,
-    deterministic: bool,
-    names: &'a [&str],
-    excluded_tokens: &[&str],
-) -> &'a str {
-    let mut index = if deterministic {
-        deterministic_number(value, seed, 0, names.len() as i64 - 1) as usize
-    } else {
-        rand::thread_rng().gen_range(0..names.len())
-    };
-    if names.iter().any(|name| {
-        excluded_tokens
-            .iter()
-            .all(|token| !name.eq_ignore_ascii_case(token.trim()))
-    }) && excluded_tokens
-        .iter()
-        .any(|token| names[index].eq_ignore_ascii_case(token.trim()))
-    {
-        for offset in 1..names.len() {
-            let candidate_index = (index + offset) % names.len();
-            if excluded_tokens
-                .iter()
-                .all(|token| !names[candidate_index].eq_ignore_ascii_case(token.trim()))
-            {
-                index = candidate_index;
-                break;
-            }
-        }
-    }
-    names[index]
-}
-
-fn transform_generic_string(value: &str, context: &TransformContext<'_>) -> String {
+    context: &TransformContext<'_>,
+    attempt: usize,
+) -> String {
     let target_length = value.len();
     if target_length == 0 {
         return value.to_string();
@@ -429,7 +970,7 @@ fn transform_generic_string(value: &str, context: &TransformContext<'_>) -> Stri
     let output_length = if context.deterministic {
         deterministic_number(
             value,
-            &format!("{}:length", context.seed),
+            &format!("{}:length:{attempt}", context.seed),
             min_length as i64,
             max_length as i64,
         ) as usize
@@ -440,7 +981,7 @@ fn transform_generic_string(value: &str, context: &TransformContext<'_>) -> Stri
     if context.deterministic {
         deterministic_string(
             value,
-            &format!("{}:content", context.seed),
+            &format!("{}:content:{attempt}", context.seed),
             output_length,
             charset,
         )
@@ -450,6 +991,40 @@ fn transform_generic_string(value: &str, context: &TransformContext<'_>) -> Stri
         (0..output_length)
             .map(|_| chars[rng.gen_range(0..chars.len())])
             .collect()
+    }
+}
+
+fn normalized_identity(value: &str) -> String {
+    value.trim().to_ascii_lowercase()
+}
+
+fn random_string(length: usize, charset: &str) -> String {
+    let chars: Vec<char> = charset.chars().collect();
+    if chars.is_empty() {
+        return String::new();
+    }
+    let mut rng = rand::thread_rng();
+    (0..length)
+        .map(|_| chars[rng.gen_range(0..chars.len())])
+        .collect()
+}
+
+fn generated_name_suffix(
+    source_key: &str,
+    seed: &str,
+    domain: PseudonymDomain,
+    attempt: usize,
+    deterministic: bool,
+) -> String {
+    if deterministic {
+        deterministic_string(
+            source_key,
+            &format!("{seed}:{}:fallback:{attempt}", domain.seed_key()),
+            4,
+            LETTER_CHARSET,
+        )
+    } else {
+        random_string(4, LETTER_CHARSET)
     }
 }
 

@@ -9,6 +9,7 @@ Tauri desktop application for anonymizing CSV data locally while preserving file
 - Previews sample transformations before writing output.
 - Streams CSV processing so large files do not need to be loaded fully into memory.
 - Supports deterministic anonymization with a persisted seed in native app settings.
+- Tracks pseudonym mappings during each run so repeated source values stay consistent and readable name replacements avoid reuse while capacity remains.
 - Uses native desktop file pickers, remembers recent folders, and opens completed output in Finder/Explorer.
 
 ## Development
@@ -67,14 +68,15 @@ The app performs local masking and pseudonymization for selected CSV columns. It
 | Postal Code, Address, IP, URL, MAC, Tax ID | Generic replacement | Similar length, not format-specific yet |
 | Boolean, Currency, Percentage | Pass-through | Unchanged |
 | Phone | Digit replacement | Separators and digit count preserved |
-| First/Last/Full Name | Plausible replacement names | Name token count preserved for full names; generic `name` headers with single-token names are treated as first-name columns |
+| First/Last/Full Name | Plausible replacement names | Name token count preserved for full names; first and last name domains reuse mappings and avoid duplicate readable names while pool capacity remains |
 | Country Code | Pass-through | Unchanged |
 | Enum | Pass-through | Unchanged |
 | String/Unknown | Generic replacement | Similar length, not semantic type |
+| Any selected type with Tokenize strategy | Opaque token | Stable `tok_...` value for repeated sources within the run or deterministic seed |
 
-Current detection treats empty strings and case-insensitive `null` values as empty. General number-looking values are preserved as numeric shapes when selected, while integer columns inferred from headers containing terms such as `id`, `identifier`, `code`, `customer number`, or `account number` are treated as numeric IDs.
+Current detection treats empty strings and case-insensitive `null` values as empty. General number-looking values are preserved as numeric shapes when selected, while integer columns inferred from headers containing terms such as `id`, `identifier`, `code`, `customer number`, or `account number` are treated as numeric IDs. Deterministic pseudonyms use keyed HMAC-SHA256 with the configured seed, so treat shared seeds as sensitive additional information.
 
-Completed runs include a privacy report that counts direct identifiers, quasi-identifiers, pseudonymized columns, masked columns, generalized columns, and pass-through/no-op columns. Generalized columns currently report as zero because no generalization strategy is implemented yet. Treat the output as lower-risk transformed data, not as guaranteed anonymous data. Stronger privacy models remain roadmap items:
+Completed runs include a privacy report that counts direct identifiers, quasi-identifiers, pseudonymized columns, opaque token columns, masked columns, generalized columns, pass-through/no-op columns, unique pseudonym values, repeated-source reuses, avoided candidate collisions, exhausted pseudonym pools, and opaque token values. Generalized columns currently report as zero because no generalization strategy is implemented yet. Treat the output as lower-risk transformed data, not as guaranteed anonymous data. Stronger privacy models remain roadmap items:
 
 - k-anonymity and l-diversity for grouped quasi-identifiers.
 - t-closeness for sensitive attribute distribution checks.

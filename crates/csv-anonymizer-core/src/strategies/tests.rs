@@ -229,6 +229,69 @@ fn full_name_reuses_first_and_last_token_pseudonyms() {
 }
 
 #[test]
+fn stateful_name_mapping_keeps_distinct_sources_unique_while_pool_has_capacity() {
+    let mut state = TransformState::new(true, "unique-name-seed");
+    let first_name_column = column(DataType::FirstName);
+    let context = context("unique-name-seed");
+    let originals = [
+        "Alice", "Bianca", "Celine", "Daphne", "Elise", "Freya", "Gemma", "Helena", "Iris",
+        "Jenna", "Keira", "Lena", "Mara", "Nadia", "Opal", "Priya", "Rhea", "Selah", "Talia",
+        "Una",
+    ];
+
+    let outputs = originals
+        .iter()
+        .map(|name| transform_value_with_state(name, &first_name_column, &context, &mut state))
+        .collect::<Vec<_>>();
+    let unique_outputs = outputs.iter().collect::<std::collections::HashSet<_>>();
+
+    assert_eq!(unique_outputs.len(), originals.len());
+    assert!(
+        outputs
+            .iter()
+            .all(|name| name.chars().all(|character| character.is_alphabetic()))
+    );
+    assert_eq!(state.report().unique_pseudonym_values, originals.len());
+    assert_eq!(state.report().exhausted_pseudonym_pools, 0);
+}
+
+#[test]
+fn stateful_name_mapping_reuses_existing_source_mapping() {
+    let mut state = TransformState::new(false, "random-name-seed");
+    let first_name_column = column(DataType::FirstName);
+    let mut random_context = context("random-name-seed");
+    random_context.deterministic = false;
+
+    let first =
+        transform_value_with_state("Alice", &first_name_column, &random_context, &mut state);
+    let second =
+        transform_value_with_state("Alice", &first_name_column, &random_context, &mut state);
+    let third =
+        transform_value_with_state("Bianca", &first_name_column, &random_context, &mut state);
+
+    assert_eq!(first, second);
+    assert_ne!(first, third);
+    assert_eq!(state.report().unique_pseudonym_values, 2);
+    assert_eq!(state.report().reused_pseudonym_values, 1);
+}
+
+#[test]
+fn stateful_full_name_reuses_first_and_last_domains() {
+    let mut state = TransformState::new(true, "stateful-full-name-seed");
+    let first_name_column = column(DataType::FirstName);
+    let last_name_column = column(DataType::LastName);
+    let full_name_column = column(DataType::FullName);
+    let context = context("stateful-full-name-seed");
+
+    let first = transform_value_with_state("Alice", &first_name_column, &context, &mut state);
+    let last = transform_value_with_state("Smith", &last_name_column, &context, &mut state);
+    let full = transform_value_with_state("Alice Smith", &full_name_column, &context, &mut state);
+
+    assert_eq!(full, format!("{first} {last}"));
+    assert_eq!(state.report().reused_pseudonym_values, 2);
+}
+
+#[test]
 fn full_name_preserves_one_token_outlier_shape() {
     let result = transform_value("Alice", &column(DataType::FullName), &context("seed"));
     assert_eq!(result.split_whitespace().count(), 1);
@@ -273,4 +336,23 @@ fn strategy_overrides_can_mask_or_pass_through() {
         transform_value("john@example.com", &pass_through, &context("seed")),
         "john@example.com"
     );
+}
+
+#[test]
+fn tokenize_strategy_emits_consistent_opaque_tokens() {
+    let mut token_column = column(DataType::Email);
+    token_column.strategy = AnonymizationStrategy::Tokenize;
+    let mut state = TransformState::new(true, "token-seed");
+    let context = context("token-seed");
+
+    let first =
+        transform_value_with_state("alice@example.com", &token_column, &context, &mut state);
+    let repeated =
+        transform_value_with_state("alice@example.com", &token_column, &context, &mut state);
+    let second = transform_value_with_state("bob@example.com", &token_column, &context, &mut state);
+
+    assert_eq!(first, repeated);
+    assert_ne!(first, second);
+    assert!(first.starts_with("tok_"));
+    assert_eq!(state.report().opaque_token_values, 2);
 }

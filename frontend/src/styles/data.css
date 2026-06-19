@@ -162,6 +162,27 @@
   overflow-wrap: anywhere;
 }
 
+.privacy-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.5rem;
+}
+
+.privacy-metric {
+  display: grid;
+  gap: 0.25rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: calc(var(--radius) - 2px);
+  background: hsl(var(--background) / 0.65);
+  padding: 0.65rem;
+}
+
+.privacy-metric strong {
+  color: hsl(var(--foreground));
+  font-size: 1.1rem;
+  line-height: 1.1;
+}
+
 .result-actions {
   display: flex;
   justify-content: center;

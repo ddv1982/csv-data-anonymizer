@@ -25,7 +25,7 @@ export type DataType =
 export type Confidence = 'high' | 'medium' | 'low'
 export type PiiRisk = 'high' | 'medium' | 'low'
 export type EmptyFormat = 'emptyString' | 'null' | 'mixed'
-export type AnonymizationStrategy = 'auto' | 'pseudonymize' | 'mask' | 'passThrough'
+export type AnonymizationStrategy = 'auto' | 'pseudonymize' | 'tokenize' | 'mask' | 'passThrough'
 
 export interface ColumnControl {
   columnIndex: number
@@ -109,9 +109,15 @@ export interface PrivacyReport {
   directIdentifiers: number
   quasiIdentifiers: number
   pseudonymizedColumns: number
+  opaqueTokenColumns: number
   maskedColumns: number
   generalizedColumns: number
   passThroughColumns: number
+  uniquePseudonymValues: number
+  reusedPseudonymValues: number
+  collisionsAvoided: number
+  exhaustedPseudonymPools: number
+  opaqueTokenValues: number
   notes: string[]
 }
 
