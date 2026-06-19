@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.22 - 2026-06-19
+
+- Rewrite the README into a shorter user-facing guide with clearer install, workflow, privacy-boundary, and development sections.
+- Add concise Local LLM usage documentation for the optional Ollama and Gemma 3 4B Smart replacement flow, including setup, preview, fallback, and data locality notes.
+
 ## v1.0.21 - 2026-06-19
 
 - Add optional Local AI smart replacement for selected columns through Ollama and Gemma 3 4B, including status checks, model download controls, and validated replacement maps with rule-based fallbacks.
