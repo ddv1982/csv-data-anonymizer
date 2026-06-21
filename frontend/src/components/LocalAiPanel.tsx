@@ -27,9 +27,17 @@ export function LocalAiPanel({
   onCancelDownload: () => void
   onOpenSetup: () => void
 }) {
-  const ready = Boolean(status?.ready)
+  const selectedModel = model.trim() || 'gemma3:4b'
+  const statusMatchesModel = status?.model === selectedModel
+  const ready = Boolean(statusMatchesModel && status?.ready)
+  const availableModels = status?.availableModels ?? []
+  const selectedModelAvailable = availableModels.includes(selectedModel)
+  const modelInstalled = selectedModelAvailable || Boolean(statusMatchesModel && status?.modelInstalled)
+  const modelOptions = uniqueModels(['gemma3:4b', ...availableModels])
   const downloading = downloadStatus?.state === 'running'
   const progress = downloadProgress(downloadStatus)
+  const statusMessage = status && !statusMatchesModel ? `Checking ${selectedModel} in Ollama...` : status?.message
+  const downloadLabel = selectedModel === 'gemma3:4b' ? 'Download Gemma' : `Download ${selectedModel}`
 
   return (
     <div className="local-ai-panel">
@@ -64,28 +72,38 @@ export function LocalAiPanel({
           <label htmlFor="local-ai-model">Model</label>
           <input
             id="local-ai-model"
+            list="local-ai-model-options"
             value={model}
             disabled={disabled || !enabled}
             placeholder="gemma3:4b"
             onChange={(event) => onModelChange(event.target.value)}
           />
+          <datalist id="local-ai-model-options">
+            {modelOptions.map((option) => (
+              <option key={option} value={option} />
+            ))}
+          </datalist>
+          <p className="muted-text text-sm">Recommended lightweight default: gemma3:4b.</p>
         </div>
         <div className="local-ai-actions">
-          {!status?.runtimeAvailable ? (
+          {status && !status.runtimeAvailable ? (
             <button type="button" className="button button-outline button-sm" disabled={disabled} onClick={onOpenSetup}>
               <ExternalLink aria-hidden="true" />
               Install Ollama
             </button>
           ) : null}
-          <button
-            type="button"
-            className="button button-outline button-sm"
-            disabled={disabled || !enabled || downloading || !status?.runtimeAvailable}
-            onClick={onDownload}
-          >
-            <Download aria-hidden="true" />
-            Download Gemma
-          </button>
+          {modelInstalled ? <span className="local-ai-installed">Installed locally</span> : null}
+          {status?.runtimeAvailable && !modelInstalled ? (
+            <button
+              type="button"
+              className="button button-outline button-sm"
+              disabled={disabled || !enabled || downloading}
+              onClick={onDownload}
+            >
+              <Download aria-hidden="true" />
+              {downloadLabel}
+            </button>
+          ) : null}
           {downloading ? (
             <button type="button" className="button button-ghost button-sm" disabled={disabled} onClick={onCancelDownload}>
               <X aria-hidden="true" />
@@ -95,16 +113,44 @@ export function LocalAiPanel({
         </div>
       </div>
 
+      {status?.runtimeAvailable ? (
+        <div className="local-ai-model-list" aria-live="polite">
+          <span className="muted-text text-sm">Available local models</span>
+          {availableModels.length > 0 ? (
+            <div className="local-ai-model-options">
+              {availableModels.map((availableModel) => (
+                <button
+                  key={availableModel}
+                  type="button"
+                  className={availableModel === selectedModel ? 'local-ai-model-option selected' : 'local-ai-model-option'}
+                  disabled={disabled || !enabled}
+                  aria-pressed={availableModel === selectedModel}
+                  onClick={() => onModelChange(availableModel)}
+                >
+                  {availableModel}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="muted-text text-sm">No local Ollama models found yet.</p>
+          )}
+        </div>
+      ) : null}
+
       {downloadStatus ? (
         <p className="muted-text text-sm">
           {downloadStatus.statusMessage}
           {progress ? ` (${progress})` : ''}
         </p>
       ) : (
-        <p className="muted-text text-sm">{status?.message ?? 'Checking Local AI status...'}</p>
+        <p className="muted-text text-sm">{statusMessage ?? 'Checking Local AI status...'}</p>
       )}
     </div>
   )
+}
+
+function uniqueModels(models: string[]) {
+  return Array.from(new Set(models.filter(Boolean)))
 }
 
 function downloadProgress(status: LocalAiDownloadStatus | null) {

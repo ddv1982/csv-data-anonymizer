@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.23 - 2026-06-22
+
+- Show locally installed Ollama models in the Local AI panel so users can select models already available on their machine.
+- Keep `gemma3:4b` as the recommended lightweight default while hiding the model download action when the selected model is already installed.
+- Make Local AI setup and download messages reflect the selected model instead of always referring to Gemma.
+
 ## v1.0.22 - 2026-06-19
 
 - Rewrite the README into a shorter user-facing guide with clearer install, workflow, privacy-boundary, and development sections.

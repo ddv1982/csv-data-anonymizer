@@ -190,7 +190,48 @@
 .local-ai-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.5rem;
+}
+
+.local-ai-installed {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid hsl(142 68% 38% / 0.35);
+  border-radius: 999px;
+  background: hsl(142 68% 38% / 0.1);
+  color: hsl(142 62% 34%);
+  padding: 0.375rem 0.625rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.local-ai-model-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.local-ai-model-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.local-ai-model-option {
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  padding: 0.375rem 0.625rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.local-ai-model-option:hover:not(:disabled),
+.local-ai-model-option.selected {
+  border-color: hsl(var(--primary) / 0.55);
+  background: hsl(var(--primary) / 0.1);
+  color: hsl(var(--primary));
 }
 
 .switch-row {
