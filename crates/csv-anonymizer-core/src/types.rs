@@ -194,6 +194,14 @@ pub struct PreviewWarning {
     pub severity: WarningSeverity,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SmartReplacementEntry {
+    pub column_index: usize,
+    pub original: String,
+    pub replacement: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum WarningSeverity {
@@ -206,6 +214,7 @@ pub enum WarningSeverity {
 pub struct PreviewData {
     pub previews: Vec<ColumnPreview>,
     pub warnings: Vec<PreviewWarning>,
+    pub smart_replacements: Vec<SmartReplacementEntry>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -231,6 +240,8 @@ pub struct AnonymizeParams {
     pub deterministic: bool,
     pub seed: String,
     pub force: bool,
+    #[serde(default)]
+    pub preview_smart_replacements: Vec<SmartReplacementEntry>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

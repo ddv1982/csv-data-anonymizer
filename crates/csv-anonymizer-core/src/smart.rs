@@ -1,7 +1,7 @@
 use crate::csv_io::validate_file;
 use crate::detection::is_empty_value;
 use crate::error::{AnonymizerError, Result, csv_error};
-use crate::types::{ColumnMetadata, ProcessControl};
+use crate::types::{ColumnMetadata, ProcessControl, SmartReplacementEntry};
 use csv::{ReaderBuilder, Trim};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
@@ -31,7 +31,7 @@ pub trait SmartReplacementProvider {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SmartReplacementMap {
-    replacements: HashMap<SmartReplacementKey, String>,
+    replacements: HashMap<SmartReplacementKey, StoredSmartReplacement>,
 }
 
 impl SmartReplacementMap {
@@ -46,15 +46,61 @@ impl SmartReplacementMap {
     pub fn insert(&mut self, column_index: usize, original: &str, replacement: impl Into<String>) {
         self.replacements.insert(
             SmartReplacementKey::new(column_index, original),
-            replacement.into(),
+            StoredSmartReplacement {
+                column_index,
+                original: original.to_string(),
+                replacement: replacement.into(),
+            },
         );
+    }
+
+    pub fn contains(&self, column_index: usize, value: &str) -> bool {
+        self.replacements
+            .contains_key(&SmartReplacementKey::new(column_index, value))
     }
 
     pub fn get(&self, column_index: usize, value: &str) -> Option<&str> {
         self.replacements
             .get(&SmartReplacementKey::new(column_index, value))
-            .map(String::as_str)
+            .map(|replacement| replacement.replacement.as_str())
     }
+
+    pub fn from_entries(entries: &[SmartReplacementEntry]) -> Self {
+        let mut map = Self::default();
+        for entry in entries {
+            map.insert(
+                entry.column_index,
+                &entry.original,
+                entry.replacement.clone(),
+            );
+        }
+        map
+    }
+
+    pub fn to_entries(&self) -> Vec<SmartReplacementEntry> {
+        let mut entries = self
+            .replacements
+            .values()
+            .map(|replacement| SmartReplacementEntry {
+                column_index: replacement.column_index,
+                original: replacement.original.clone(),
+                replacement: replacement.replacement.clone(),
+            })
+            .collect::<Vec<_>>();
+        entries.sort_by(|left, right| {
+            left.column_index
+                .cmp(&right.column_index)
+                .then_with(|| left.original.cmp(&right.original))
+        });
+        entries
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StoredSmartReplacement {
+    column_index: usize,
+    original: String,
+    replacement: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -86,7 +132,7 @@ pub fn prepare_smart_replacements_from_rows(
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<SmartReplacementMap> {
     let batches = collect_unique_values_from_rows(rows, columns);
-    build_replacement_map(columns, batches, deterministic, seed, provider)
+    build_replacement_map(columns, batches, deterministic, seed, None, provider)
 }
 
 pub fn prepare_smart_replacements_from_csv(
@@ -95,11 +141,12 @@ pub fn prepare_smart_replacements_from_csv(
     deterministic: bool,
     seed: &str,
     control: Option<&mut ProcessControl<'_>>,
+    existing: Option<&SmartReplacementMap>,
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<SmartReplacementMap> {
     validate_file(file_path)?;
     let batches = collect_unique_values_from_csv(file_path, columns, control)?;
-    build_replacement_map(columns, batches, deterministic, seed, provider)
+    build_replacement_map(columns, batches, deterministic, seed, existing, provider)
 }
 
 fn collect_unique_values_from_rows(
@@ -185,29 +232,33 @@ fn build_replacement_map(
     batches: BTreeMap<usize, Vec<String>>,
     deterministic: bool,
     seed: &str,
-    provider: Option<&mut dyn SmartReplacementProvider>,
+    existing: Option<&SmartReplacementMap>,
+    mut provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<SmartReplacementMap> {
     if batches.is_empty() {
         return Ok(SmartReplacementMap::default());
     }
 
-    let Some(provider) = provider else {
-        return Err(AnonymizerError::SmartReplacement(
-            "Smart replacement needs Local AI to be ready. Enable Local AI, make sure Ollama is running, and download Gemma 3 4B before trying again."
-                .to_string(),
-        ));
-    };
-
-    let mut map = SmartReplacementMap::default();
+    let mut map = existing.cloned().unwrap_or_default();
     for (column_index, values) in batches {
-        if values.is_empty() {
+        let missing_values = values
+            .into_iter()
+            .filter(|value| !map.contains(column_index, value))
+            .collect::<Vec<_>>();
+        if missing_values.is_empty() {
             continue;
         }
         let Some(column) = find_column_by_index(column_index, columns) else {
             continue;
         };
+        let Some(provider) = provider.as_deref_mut() else {
+            return Err(AnonymizerError::SmartReplacement(
+                "Smart replacement needs Local AI to be ready. Enable Local AI, make sure Ollama is running, and download Gemma 3 4B before trying again."
+                    .to_string(),
+            ));
+        };
 
-        for chunk in values.chunks(SMART_REPLACEMENT_BATCH_SIZE) {
+        for chunk in missing_values.chunks(SMART_REPLACEMENT_BATCH_SIZE) {
             let replacements = provider.generate_replacements(SmartReplacementRequest {
                 column,
                 values: chunk,

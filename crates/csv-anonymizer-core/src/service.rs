@@ -3,8 +3,8 @@ use crate::detection::is_empty_value;
 use crate::error::{AnonymizerError, Result};
 use crate::metadata::{apply_column_selection, build_column_metadata};
 use crate::smart::{
-    SmartReplacementProvider, prepare_smart_replacements_from_csv,
-    prepare_smart_replacements_from_rows,
+    SmartReplacementMap, SmartReplacementProvider, has_smart_replacement_columns,
+    prepare_smart_replacements_from_csv, prepare_smart_replacements_from_rows,
 };
 use crate::strategies::{TransformState, transform_value_with_state};
 use crate::types::{
@@ -102,6 +102,7 @@ impl AnonymizerService {
             &input.seed,
             provider,
         )?;
+        let smart_replacement_entries = smart_replacements.to_entries();
         let mut transform_state = if smart_replacements.is_empty() {
             TransformState::new(input.deterministic, &input.seed)
         } else {
@@ -128,7 +129,11 @@ impl AnonymizerService {
             .filter_map(preview_warning_for_column)
             .collect();
 
-        Ok(PreviewData { previews, warnings })
+        Ok(PreviewData {
+            previews,
+            warnings,
+            smart_replacements: smart_replacement_entries,
+        })
     }
 
     pub fn count_csv_rows(&self, file_path: impl AsRef<Path>) -> Result<usize> {
@@ -184,12 +189,18 @@ impl AnonymizerService {
         validate_column_indices(&metadata, &input.columns)?;
         let controlled_metadata = apply_column_controls(&metadata, &input.controls)?;
         let selected_metadata = apply_column_selection(&controlled_metadata, &input.columns);
+        let preview_smart_replacements =
+            SmartReplacementMap::from_entries(&input.preview_smart_replacements);
+        let existing_smart_replacements = (!preview_smart_replacements.is_empty()
+            && has_smart_replacement_columns(&selected_metadata))
+        .then_some(preview_smart_replacements);
         let smart_replacements = prepare_smart_replacements_from_csv(
             &input_path,
             &selected_metadata,
             input.deterministic,
             &input.seed,
             control.as_deref_mut(),
+            existing_smart_replacements.as_ref(),
             provider,
         )?;
         let smart_replacements = (!smart_replacements.is_empty()).then_some(smart_replacements);

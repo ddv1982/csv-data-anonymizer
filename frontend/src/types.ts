@@ -94,9 +94,16 @@ export interface PreviewWarning {
   severity: WarningSeverity
 }
 
+export interface SmartReplacementEntry {
+  columnIndex: number
+  original: string
+  replacement: string
+}
+
 export interface PreviewData {
   previews: ColumnPreview[]
   warnings: PreviewWarning[]
+  smartReplacements: SmartReplacementEntry[]
 }
 
 export interface AnonymizeData {

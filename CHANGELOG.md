@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.24 - 2026-06-22
+
+- Reuse Smart replacement values generated during preview when writing the final anonymized CSV so reviewed preview values do not require a second Local AI generation pass.
+- Keep final output aligned with previewed Smart replacement samples while still generating replacements for values that were not covered by the preview sample.
+- Add regression coverage for preview replacement reuse and missing-value generation in the Rust anonymization core.
+
 ## v1.0.23 - 2026-06-22
 
 - Show locally installed Ollama models in the Local AI panel so users can select models already available on their machine.

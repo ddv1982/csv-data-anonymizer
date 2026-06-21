@@ -367,6 +367,7 @@ function App() {
         settings.overwriteOutput,
         settings.sampleRowCount,
         headers?.rowCountIsComplete ? headers.rowCount : null,
+        preview?.smartReplacements ?? [],
         localAi.request,
       )
       setActiveJobId(status.jobId)

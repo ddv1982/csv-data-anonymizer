@@ -194,6 +194,7 @@ pub(crate) fn run_cli(action: CliAction) -> Result<(), String> {
                     deterministic: true,
                     seed: "csv-anonymizer-smoke".to_string(),
                     force: true,
+                    preview_smart_replacements: preview.smart_replacements,
                 })
                 .map_err(|error| error.to_string())?;
             println!(
@@ -221,6 +222,7 @@ pub(crate) fn run_cli(action: CliAction) -> Result<(), String> {
                     deterministic,
                     seed,
                     force,
+                    preview_smart_replacements: vec![],
                 })
                 .map_err(|error| error.to_string())?;
             println!(
