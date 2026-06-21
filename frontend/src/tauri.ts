@@ -9,6 +9,7 @@ import type {
   LocalAiRequest,
   LocalAiStatus,
   PreviewData,
+  SmartReplacementEntry,
 } from './types'
 
 export function loadSettings(): Promise<AppSettings> {
@@ -70,6 +71,7 @@ export function anonymizeCsv(
   seed: string,
   force: boolean,
   sampleRowCount: number,
+  previewSmartReplacements: SmartReplacementEntry[],
   localAi: LocalAiRequest,
 ): Promise<AnonymizeData> {
   return invoke('anonymize_csv', {
@@ -82,6 +84,7 @@ export function anonymizeCsv(
       seed,
       force,
       sampleRowCount,
+      previewSmartReplacements,
       localAi,
     },
   })
@@ -97,6 +100,7 @@ export function startAnonymizeJob(
   force: boolean,
   sampleRowCount: number,
   totalRowCount: number | null,
+  previewSmartReplacements: SmartReplacementEntry[],
   localAi: LocalAiRequest,
 ): Promise<AnonymizeJobStatus> {
   return invoke('start_anonymize_job', {
@@ -110,6 +114,7 @@ export function startAnonymizeJob(
       force,
       sampleRowCount,
       totalRowCount,
+      previewSmartReplacements,
       localAi,
     },
   })

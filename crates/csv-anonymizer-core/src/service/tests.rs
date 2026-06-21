@@ -72,6 +72,7 @@ fn anonymizes_selected_columns_without_web_runtime() {
             deterministic: true,
             seed: "service-seed".to_string(),
             force: false,
+            preview_smart_replacements: vec![],
         })
         .unwrap();
 
@@ -105,6 +106,7 @@ fn anonymize_csv_with_control_reports_progress() {
                     deterministic: true,
                     seed: "service-seed".to_string(),
                     force: false,
+                    preview_smart_replacements: vec![],
                 },
                 &mut control,
             )
@@ -133,6 +135,7 @@ fn selected_sample_empty_columns_transform_later_values() {
                 deterministic: true,
                 seed: "sparse-seed".to_string(),
                 force: false,
+                preview_smart_replacements: vec![],
             },
             2,
         )
@@ -226,6 +229,7 @@ fn anonymize_preserves_numeric_shapes_in_output_file() {
             deterministic: true,
             seed: "numeric-output-seed".to_string(),
             force: false,
+            preview_smart_replacements: vec![],
         })
         .unwrap();
 
@@ -423,6 +427,7 @@ fn anonymize_reuses_repeated_name_sources_in_random_mode() {
             deterministic: false,
             seed: "random-repeat-seed".to_string(),
             force: false,
+            preview_smart_replacements: vec![],
         })
         .unwrap();
 
@@ -456,6 +461,7 @@ fn anonymize_random_mode_avoids_duplicate_names_for_distinct_sources() {
             deterministic: false,
             seed: "random-unique-seed".to_string(),
             force: false,
+            preview_smart_replacements: vec![],
         })
         .unwrap();
 
@@ -507,6 +513,7 @@ fn anonymize_deterministic_output_is_reproducible() {
         deterministic: true,
         seed: "deterministic-output-seed".to_string(),
         force: false,
+        preview_smart_replacements: vec![],
     };
 
     service
@@ -570,6 +577,7 @@ fn preview_name_mappings_match_full_output_for_previewed_rows() {
             deterministic: true,
             seed: "preview-full-seed".to_string(),
             force: false,
+            preview_smart_replacements: vec![],
         })
         .unwrap();
 
@@ -637,6 +645,7 @@ fn anonymize_applies_pass_through_control() {
             deterministic: true,
             seed: "pass-through-seed".to_string(),
             force: false,
+            preview_smart_replacements: vec![],
         })
         .unwrap();
 
@@ -665,6 +674,7 @@ fn anonymize_returns_privacy_report() {
             deterministic: true,
             seed: "privacy-report-seed".to_string(),
             force: false,
+            preview_smart_replacements: vec![],
         })
         .unwrap();
 
@@ -724,6 +734,7 @@ fn tokenize_strategy_updates_privacy_report() {
             deterministic: true,
             seed: "token-report-seed".to_string(),
             force: false,
+            preview_smart_replacements: vec![],
         })
         .unwrap();
 
@@ -799,6 +810,38 @@ impl SmartReplacementProvider for MockSmartProvider {
     }
 }
 
+struct RecordingSmartProvider {
+    prefix: &'static str,
+    requests: Vec<Vec<String>>,
+}
+
+impl RecordingSmartProvider {
+    fn new(prefix: &'static str) -> Self {
+        Self {
+            prefix,
+            requests: Vec::new(),
+        }
+    }
+}
+
+impl SmartReplacementProvider for RecordingSmartProvider {
+    fn generate_replacements(
+        &mut self,
+        request: SmartReplacementRequest<'_>,
+    ) -> Result<Vec<SmartReplacement>> {
+        self.requests.push(request.values.to_vec());
+        Ok(request
+            .values
+            .iter()
+            .enumerate()
+            .map(|(index, value)| SmartReplacement {
+                original: value.clone(),
+                replacement: format!("{} {} {}", self.prefix, request.column.index, index + 1),
+            })
+            .collect())
+    }
+}
+
 #[test]
 fn preview_uses_local_ai_provider_for_smart_replacement_columns() {
     let service = AnonymizerService::new("test-version");
@@ -858,6 +901,7 @@ fn anonymize_uses_local_ai_provider_and_reports_smart_replacements() {
                 deterministic: true,
                 seed: "smart-run-seed".to_string(),
                 force: false,
+                preview_smart_replacements: vec![],
             },
             10,
             None,
@@ -871,6 +915,64 @@ fn anonymize_uses_local_ai_provider_and_reports_smart_replacements() {
     assert_eq!(result.privacy_report.smart_replacement_columns, 1);
     assert_eq!(result.privacy_report.smart_replacement_values, 2);
     assert_eq!(result.privacy_report.smart_replacement_fallbacks, 0);
+}
+
+#[test]
+fn anonymize_reuses_preview_smart_replacements_and_generates_missing_values() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("smart-preview-reuse.csv");
+    let output_path = temp_dir.path().join("smart-preview-reuse-output.csv");
+    fs::write(&input_path, "name\nAlice Smith\nBob Stone\nCharlie Ray\n").unwrap();
+    let controls = vec![ColumnControl {
+        column_index: 0,
+        type_override: Some(DataType::FullName),
+        strategy: AnonymizationStrategy::LocalAi,
+    }];
+    let mut preview_provider = RecordingSmartProvider::new("Preview");
+
+    let preview = service
+        .preview_anonymization_with_smart_provider(
+            PreviewParams {
+                file_path: input_path.clone(),
+                columns: vec![0],
+                controls: controls.clone(),
+                deterministic: false,
+                seed: "smart-preview-reuse-seed".to_string(),
+                sample_count: 1,
+            },
+            Some(&mut preview_provider),
+        )
+        .unwrap();
+    let mut final_provider = RecordingSmartProvider::new("Final");
+
+    service
+        .anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+            AnonymizeParams {
+                file_path: input_path,
+                output_path: output_path.clone(),
+                columns: vec![0],
+                controls,
+                deterministic: false,
+                seed: "smart-preview-reuse-seed".to_string(),
+                force: false,
+                preview_smart_replacements: preview.smart_replacements.clone(),
+            },
+            10,
+            None,
+            Some(&mut final_provider),
+        )
+        .unwrap();
+
+    let output = read_sample(&output_path, 10).unwrap();
+    assert_eq!(preview.smart_replacements.len(), 2);
+    assert_eq!(preview.previews[0].samples[0].anonymized, output.rows[0][0]);
+    assert_eq!(output.rows[1][0], "Preview 0 2");
+    assert_eq!(output.rows[2][0], "Final 0 1");
+    assert_eq!(
+        final_provider.requests,
+        vec![vec!["Charlie Ray".to_string()]]
+    );
 }
 
 #[test]
