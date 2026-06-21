@@ -147,6 +147,7 @@ export interface LocalAiStatus {
   enabled: boolean
   provider: string
   model: string
+  availableModels: string[]
   endpoint: string
   runtimeAvailable: boolean
   modelInstalled: boolean

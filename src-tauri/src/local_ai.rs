@@ -34,6 +34,7 @@ pub struct LocalAiStatus {
     pub enabled: bool,
     pub provider: String,
     pub model: String,
+    pub available_models: Vec<String>,
     pub endpoint: String,
     pub runtime_available: bool,
     pub model_installed: bool,
@@ -191,7 +192,7 @@ impl LocalAiDownloadJob {
     fn finish_success(&self) {
         if let Ok(mut status) = self.status.lock() {
             status.state = LocalAiDownloadState::Succeeded;
-            status.status_message = "Gemma 3 4B is ready for Local AI.".to_string();
+            status.status_message = format!("{} is ready for Local AI.", status.model);
             status.cancel_requested = false;
             status.error = None;
         }
@@ -303,6 +304,7 @@ pub fn local_ai_status(request: LocalAiRequest) -> Result<LocalAiStatus, String>
             enabled: request.enabled,
             provider: "ollama".to_string(),
             model,
+            available_models: Vec::new(),
             endpoint: DEFAULT_OLLAMA_ENDPOINT.to_string(),
             runtime_available: false,
             model_installed: false,
@@ -318,10 +320,8 @@ pub fn local_ai_status(request: LocalAiRequest) -> Result<LocalAiStatus, String>
         .and_then(|response| response.error_for_status())
         .and_then(|response| response.json::<OllamaTags>())
         .map_err(|error| format!("Could not inspect Ollama models: {error}"))?;
-    let model_installed = tags.models.iter().any(|installed| {
-        installed.name.as_deref() == Some(model.as_str())
-            || installed.model.as_deref() == Some(model.as_str())
-    });
+    let available_models = installed_model_names(&tags.models);
+    let model_installed = is_model_installed(&tags.models, &model);
     let ready = request.enabled && model_installed;
     let message = if !request.enabled {
         "Local AI is off. Enable it before choosing Smart replacement.".to_string()
@@ -329,13 +329,14 @@ pub fn local_ai_status(request: LocalAiRequest) -> Result<LocalAiStatus, String>
         "Local AI is ready. CSV values stay on this device and are sent only to Ollama on localhost."
             .to_string()
     } else {
-        "Gemma 3 4B is not downloaded in Ollama yet.".to_string()
+        format!("{model} is not downloaded in Ollama yet.")
     };
 
     Ok(LocalAiStatus {
         enabled: request.enabled,
         provider: "ollama".to_string(),
         model,
+        available_models,
         endpoint: DEFAULT_OLLAMA_ENDPOINT.to_string(),
         runtime_available: true,
         model_installed,
@@ -439,6 +440,28 @@ fn normalized_model(model: &str) -> String {
     }
 }
 
+fn installed_model_names(models: &[OllamaModel]) -> Vec<String> {
+    let mut names = models
+        .iter()
+        .filter_map(|installed| {
+            [installed.name.as_deref(), installed.model.as_deref()]
+                .into_iter()
+                .flatten()
+                .find(|name| !name.trim().is_empty())
+                .map(str::to_string)
+        })
+        .collect::<Vec<_>>();
+    names.sort();
+    names.dedup();
+    names
+}
+
+fn is_model_installed(models: &[OllamaModel], model: &str) -> bool {
+    models.iter().any(|installed| {
+        installed.name.as_deref() == Some(model) || installed.model.as_deref() == Some(model)
+    })
+}
+
 fn smart_replacement_prompt(request: SmartReplacementRequest<'_>) -> String {
     let values = serde_json::to_string(request.values).unwrap_or_else(|_| "[]".to_string());
     format!(
@@ -475,4 +498,41 @@ fn stable_seed(seed: &str, column_index: usize) -> u64 {
         hash = hash.wrapping_mul(1_099_511_628_211);
     }
     hash & 0x7fff_ffff
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn installed_model_names_are_sorted_deduped_and_fallback_to_model() {
+        let names = installed_model_names(&[
+            OllamaModel {
+                name: Some("llama3.2:latest".to_string()),
+                model: Some("llama3.2:latest".to_string()),
+            },
+            OllamaModel {
+                name: Some("".to_string()),
+                model: Some("gemma3:4b".to_string()),
+            },
+            OllamaModel {
+                name: Some("llama3.2:latest".to_string()),
+                model: None,
+            },
+        ]);
+
+        assert_eq!(names, vec!["gemma3:4b", "llama3.2:latest"]);
+    }
+
+    #[test]
+    fn is_model_installed_checks_name_and_model_fields() {
+        let models = [OllamaModel {
+            name: Some("llama3.2".to_string()),
+            model: Some("llama3.2:latest".to_string()),
+        }];
+
+        assert!(is_model_installed(&models, "llama3.2"));
+        assert!(is_model_installed(&models, "llama3.2:latest"));
+        assert!(!is_model_installed(&models, "gemma3:4b"));
+    }
 }
