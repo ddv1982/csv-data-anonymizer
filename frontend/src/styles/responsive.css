@@ -42,6 +42,24 @@
     width: 100%;
   }
 
+  .toast-region {
+    top: 4.5rem;
+    right: 0.5rem;
+    left: 0.5rem;
+    width: auto;
+  }
+
+  .toast-region .alert-line {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .toast-region .button {
+    width: auto;
+    align-self: flex-end;
+  }
+
   .column-name {
     max-width: 44vw;
   }

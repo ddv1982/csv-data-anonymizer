@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.26 - 2026-06-22
+
+- Show app errors as a fixed dismissible toast so output-file conflicts and other failures remain visible without scrolling back to the top of the workflow.
+- Keep existing error handling and overwrite behavior unchanged while improving long-message wrapping and mobile toast layout.
+
 ## v1.0.25 - 2026-06-22
 
 - Fix the background Anonymize File workflow so successful jobs write the output CSV and reach the result page again.
