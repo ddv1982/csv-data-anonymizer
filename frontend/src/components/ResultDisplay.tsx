@@ -78,7 +78,7 @@ export function ResultDisplay({
       <div className="preview-group">
         <div className="section-heading-row">
           <h3>Privacy Report</h3>
-          <SectionHelp topic="privacyReport" />
+          <SectionHelp topic="privacyReport" label="How to read this report" />
         </div>
         <div className="preview-frame">
           <div className="privacy-metrics">

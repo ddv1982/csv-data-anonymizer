@@ -39,9 +39,9 @@ export function PrivacySettingsPanel({
         <div className="panel-title-row">
           <span className="privacy-config-title">
             <ShieldCheck aria-hidden="true" />
-            <GlossaryLabel term="releaseMode">Privacy Release</GlossaryLabel>
+            <span>Privacy Release</span>
           </span>
-          <SectionHelp topic="privacyRelease" />
+          <SectionHelp topic="privacyRelease" label="How privacy release works" />
         </div>
         <select
           value={config.releaseMode}
@@ -68,7 +68,6 @@ export function PrivacySettingsPanel({
           <NumberField
             id="privacy-k"
             label="k"
-            glossaryTerm="kAnonymity"
             min={1}
             max={1000000}
             integer
@@ -79,7 +78,6 @@ export function PrivacySettingsPanel({
           <NullableNumberField
             id="privacy-l"
             label="l-diversity"
-            glossaryTerm="lDiversity"
             min={1}
             max={1000000}
             integer
@@ -90,7 +88,6 @@ export function PrivacySettingsPanel({
           <NullableNumberField
             id="privacy-t"
             label="t-closeness"
-            glossaryTerm="tCloseness"
             min={0}
             max={1}
             step={0.01}
@@ -124,7 +121,7 @@ export function PrivacySettingsPanel({
             onChange={(value) => updateDp({ epsilon: value })}
           />
           <div className="field">
-            <FieldLabel id="privacy-aggregate" label="Aggregate" glossaryTerm="aggregate" />
+            <FieldLabel id="privacy-aggregate" label="Aggregate" />
             <select
               id="privacy-aggregate"
               value={config.differentialPrivacy.aggregate}
@@ -141,7 +138,6 @@ export function PrivacySettingsPanel({
           <ColumnSelect
             id="privacy-group-column"
             label="Group column"
-            glossaryTerm="groupColumn"
             columns={columns}
             value={config.differentialPrivacy.groupByColumn}
             disabled={disabled}
@@ -151,7 +147,6 @@ export function PrivacySettingsPanel({
           <ColumnSelect
             id="privacy-value-column"
             label="Value column"
-            glossaryTerm="valueColumn"
             columns={columns}
             value={config.differentialPrivacy.valueColumn}
             disabled={disabled || config.differentialPrivacy.aggregate === 'count'}

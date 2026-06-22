@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.30 - 2026-06-22
+
+- Replace busy per-section help pills with scoped help-article modals for column settings, Local AI, Privacy Release, and Privacy Report explanations.
+- Turn glossary labels into subtle highlighted terms while keeping direct help icons only for high-consequence or ambiguous controls such as model, suppression, epsilon, and DP bounds.
+- Reduce column-table help clutter on desktop and mobile with a single table-level "How does this work?" entry, plain mobile row labels, modal focus handling, Escape close, and responsive verification.
+
 ## v1.0.29 - 2026-06-22
 
 - Add section-level "How does this work?" help popovers across the workflow, Local AI, Privacy Release, App Settings, Preview, and Privacy Report areas.

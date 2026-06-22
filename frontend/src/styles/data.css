@@ -5,6 +5,12 @@
   border-radius: var(--radius);
 }
 
+.table-help-row {
+  display: flex;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
 .column-table {
   min-width: 58rem;
 }
