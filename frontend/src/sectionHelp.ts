@@ -1,3 +1,17 @@
+import type { GlossaryKey } from './glossary'
+
+type HelpTextSegment = string | { text: string; term: GlossaryKey }
+type HelpText = string | readonly HelpTextSegment[]
+type SectionHelpPoint = {
+  label: string
+  text: HelpText
+}
+type SectionHelpEntry = {
+  title: string
+  summary: readonly HelpText[]
+  points: readonly SectionHelpPoint[]
+}
+
 export const sectionHelp = {
   selectFile: {
     title: 'Select File',
@@ -18,16 +32,40 @@ export const sectionHelp = {
   selectColumns: {
     title: 'Select Data to Transform',
     summary: [
-      'Choose which columns need protection, then adjust the detected type, Strategy, and Role where the automatic guess is not enough.',
+      [
+        'Choose which columns need protection, then adjust the detected type, ',
+        { text: 'Strategy', term: 'strategy' },
+        ', and ',
+        { text: 'Role', term: 'role' },
+        ' where the automatic guess is not enough.',
+      ],
     ],
     points: [
       {
         label: 'Strategy',
-        text: 'Used by standard row-level transformation. Auto and Pseudonymize run type-based replacements; some types such as booleans, country codes, percentages, currency, and enums can stay unchanged. Mask replaces every non-space character with *, Tokenize writes stable tok_ values, Smart replacement uses Local AI, and Pass through keeps the original value.',
+        text: [
+          'Used by standard row-level transformation. Auto and Pseudonymize run type-based replacements; some types such as booleans, country codes, percentages, currency, and enums can stay unchanged. Mask replaces every non-space character with *, Tokenize writes stable tok_ values, ',
+          { text: 'Smart replacement', term: 'smartReplacement' },
+          ' uses ',
+          { text: 'Local AI', term: 'localAi' },
+          ', and Pass through keeps the original value.',
+        ],
       },
       {
         label: 'Role',
-        text: 'Used by privacy release modes. Auto treats emails, names, phone numbers, tax IDs, and addresses as Direct ID; timestamps, postal codes, IDs, IPs, URLs, MACs, and country codes as Quasi-ID; and other columns as Attribute. Auto does not infer Sensitive, so mark sensitive columns yourself when l-diversity or t-closeness should check them.',
+        text: [
+          'Used by privacy release modes. Auto treats emails, names, phone numbers, tax IDs, and addresses as ',
+          { text: 'Direct ID', term: 'directIdentifier' },
+          '; timestamps, postal codes, IDs, IPs, URLs, MACs, and country codes as ',
+          { text: 'Quasi-ID', term: 'quasiIdentifier' },
+          '; and other columns as Attribute. Auto does not infer ',
+          { text: 'Sensitive', term: 'sensitive' },
+          ', so mark private value columns yourself when ',
+          { text: 'l-diversity', term: 'lDiversity' },
+          ' or ',
+          { text: 't-closeness', term: 'tCloseness' },
+          ' should check them.',
+        ],
       },
       {
         label: 'Type override',
@@ -38,7 +76,13 @@ export const sectionHelp = {
   configuration: {
     title: 'Configuration',
     summary: [
-      'This section decides where the output goes and which release workflow is used. Standard row-level transformation uses the per-column Strategy values; formal, DP aggregate, and synthetic releases use the Role and privacy settings.',
+      [
+        'This section decides where the output goes and which release workflow is used. Standard row-level transformation uses the per-column ',
+        { text: 'Strategy', term: 'strategy' },
+        ' values; formal, DP aggregate, and synthetic releases use the ',
+        { text: 'Role', term: 'role' },
+        ' and privacy settings.',
+      ],
     ],
     points: [
       {
@@ -47,38 +91,82 @@ export const sectionHelp = {
       },
       {
         label: 'Local AI',
-        text: 'Only needed for columns whose Strategy is Smart replacement. The model runs through Ollama on this device.',
+        text: [
+          'Only needed for columns whose ',
+          { text: 'Strategy', term: 'strategy' },
+          ' is ',
+          { text: 'Smart replacement', term: 'smartReplacement' },
+          '. The ',
+          { text: 'model', term: 'model' },
+          ' runs through ',
+          { text: 'Ollama', term: 'ollama' },
+          ' on this device.',
+        ],
       },
       {
         label: 'Privacy release',
-        text: 'Choose Standard CSV transform for row-level transformed files, k/l/t tabular for formal row-level checks, DP aggregate for noisy summary statistics, or Synthetic data for sampled test rows.',
+        text: [
+          'Choose Standard CSV transform for row-level transformed files, k/l/t tabular for formal row-level checks such as ',
+          { text: 'k-anonymity', term: 'kAnonymity' },
+          ', DP aggregate for noisy summary statistics, or Synthetic data for sampled test rows.',
+        ],
       },
     ],
   },
   localAi: {
     title: 'Local AI',
     summary: [
-      'Local AI is optional. It supports Smart replacement by asking a model running through Ollama on this computer for realistic replacement values.',
+      [
+        { text: 'Local AI', term: 'localAi' },
+        ' is optional. It supports ',
+        { text: 'Smart replacement', term: 'smartReplacement' },
+        ' by asking a downloaded ',
+        { text: 'model', term: 'model' },
+        ' running through ',
+        { text: 'Ollama', term: 'ollama' },
+        ' on this computer for realistic replacement values.',
+      ],
     ],
     points: [
       {
         label: 'Data path',
-        text: 'Rows for Smart replacement are sent to localhost, not a cloud API. Other strategies do not need Local AI.',
+        text: [
+          'Rows for ',
+          { text: 'Smart replacement', term: 'smartReplacement' },
+          ' are sent to ',
+          { text: 'localhost', term: 'localhost' },
+          ', not a cloud API. Other strategies do not need ',
+          { text: 'Local AI', term: 'localAi' },
+          '.',
+        ],
       },
       {
         label: 'Fallback',
-        text: 'If the model is unavailable or returns an invalid value, the app records a fallback and uses rule-based pseudonymization for that value.',
+        text: [
+          'If the ',
+          { text: 'model', term: 'model' },
+          ' is unavailable, times out, or returns an invalid value, the app records a ',
+          { text: 'fallback', term: 'fallback' },
+          ' and uses rule-based pseudonymization for that value.',
+        ],
       },
       {
         label: 'Review',
-        text: 'Smart replacements can be useful for readability, but they are not a formal anonymization guarantee. Use Preview and the Privacy Report to review the result.',
+        text: [
+          { text: 'Smart replacement', term: 'smartReplacement' },
+          ' can improve readability, but it is not a formal anonymization guarantee. Use Preview and the Privacy Report to review model output and any fallbacks before relying on the file.',
+        ],
       },
     ],
   },
   privacyRelease: {
     title: 'Privacy Release',
     summary: [
-      'Release mode controls the shape of the output. It is separate from the Strategy dropdown used by standard row-level transformation.',
+      [
+        'Release mode controls the shape of the output. It is separate from the ',
+        { text: 'Strategy', term: 'strategy' },
+        ' dropdown used by standard row-level transformation.',
+      ],
     ],
     points: [
       {
@@ -87,7 +175,21 @@ export const sectionHelp = {
       },
       {
         label: 'k/l/t tabular',
-        text: 'Writes row-level output, redacts Direct ID values, generalizes Quasi-ID values, and checks k-anonymity plus optional l-diversity and t-closeness. Sensitive and Attribute values are kept unless you assign a different role. Suppress small classes drops rows only when that switch is enabled.',
+        text: [
+          'Writes row-level output, redacts ',
+          { text: 'Direct ID', term: 'directIdentifier' },
+          ' values, generalizes ',
+          { text: 'Quasi-ID', term: 'quasiIdentifier' },
+          ' values, and checks ',
+          { text: 'k-anonymity', term: 'kAnonymity' },
+          ' plus optional ',
+          { text: 'l-diversity', term: 'lDiversity' },
+          ' and ',
+          { text: 't-closeness', term: 'tCloseness' },
+          '. ',
+          { text: 'Sensitive', term: 'sensitive' },
+          ' and Attribute values are kept unless you assign a different role. Suppress small classes drops rows only when that switch is enabled.',
+        ],
       },
       {
         label: 'DP aggregate',
@@ -127,11 +229,21 @@ export const sectionHelp = {
     points: [
       {
         label: 'What it proves',
-        text: 'Use it to catch obvious wrong types, wrong strategies, or Local AI setup problems before running the full file.',
+        text: [
+          'Use it to catch obvious wrong types, wrong strategies, or ',
+          { text: 'Local AI', term: 'localAi' },
+          ' setup problems before running the full file.',
+        ],
       },
       {
         label: 'What it does not prove',
-        text: 'Preview is a sample, not a complete privacy review. The final run can still report model failures, fallbacks, or suppressed rows.',
+        text: [
+          'Preview is a sample, not a complete privacy review. The final run can still report ',
+          { text: 'model', term: 'model' },
+          ' failures, ',
+          { text: 'fallbacks', term: 'fallback' },
+          ', or suppressed rows.',
+        ],
       },
     ],
   },
@@ -151,10 +263,17 @@ export const sectionHelp = {
       },
       {
         label: 'Notes',
-        text: 'Read notes for important caveats such as Local AI fallbacks, DP release history, contribution bounds, or synthetic data limitations.',
+        text: [
+          'Read notes for important caveats such as ',
+          { text: 'Local AI', term: 'localAi' },
+          ' ',
+          { text: 'fallbacks', term: 'fallback' },
+          ', DP release history, contribution bounds, or synthetic data limitations.',
+        ],
       },
     ],
   },
-} as const
+} as const satisfies Record<string, SectionHelpEntry>
 
 export type SectionHelpKey = keyof typeof sectionHelp
+export type { HelpText, HelpTextSegment }

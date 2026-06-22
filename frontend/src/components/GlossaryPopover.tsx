@@ -18,6 +18,21 @@ type HelpPopoverProps = {
   variant?: HelpPopoverVariant
 }
 
+type OpenPopoverEntry = {
+  id: string
+}
+
+const openPopoverStack: OpenPopoverEntry[] = []
+
+function removeOpenPopover(entry: OpenPopoverEntry) {
+  const index = openPopoverStack.indexOf(entry)
+  if (index >= 0) openPopoverStack.splice(index, 1)
+}
+
+function getTopOpenPopover() {
+  return openPopoverStack.at(-1)
+}
+
 export function GlossaryPopover({ term }: { term: GlossaryKey }) {
   const entry = glossaryTerms[term]
   return (
@@ -106,31 +121,48 @@ export function HelpPopover({
       const target = event.target
       if (!(target instanceof Node)) return
       if (triggerRef.current?.contains(target) || panelRef.current?.contains(target)) return
-      setOpen(false)
+      closePopover()
     }
 
     function closeOnFocusMove(event: FocusEvent) {
       const target = event.target
       if (!(target instanceof Node)) return
       if (triggerRef.current?.contains(target) || panelRef.current?.contains(target)) return
+      closePopover()
+    }
+
+    const openPopoverEntry = { id: panelId }
+    openPopoverStack.push(openPopoverEntry)
+
+    function closePopover(restoreFocus = false) {
+      removeOpenPopover(openPopoverEntry)
       setOpen(false)
+      if (restoreFocus) window.requestAnimationFrame(() => triggerRef.current?.focus())
     }
 
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key !== 'Escape') return
-      setOpen(false)
-      triggerRef.current?.focus()
+      if (getTopOpenPopover() !== openPopoverEntry) return
+
+      if (triggerRef.current?.closest('.help-modal, [role="dialog"][aria-modal="true"]')) {
+        event.preventDefault()
+        event.stopPropagation()
+        event.stopImmediatePropagation()
+      }
+
+      closePopover(true)
     }
 
     document.addEventListener('pointerdown', closeIfOutside, true)
     document.addEventListener('focusin', closeOnFocusMove)
-    document.addEventListener('keydown', closeOnEscape)
+    document.addEventListener('keydown', closeOnEscape, true)
     return () => {
+      removeOpenPopover(openPopoverEntry)
       document.removeEventListener('pointerdown', closeIfOutside, true)
       document.removeEventListener('focusin', closeOnFocusMove)
-      document.removeEventListener('keydown', closeOnEscape)
+      document.removeEventListener('keydown', closeOnEscape, true)
     }
-  }, [open])
+  }, [open, panelId])
 
   return (
     <span className={isTerm ? 'help-anchor glossary-term-anchor' : 'help-anchor glossary-anchor'}>

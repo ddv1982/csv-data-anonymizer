@@ -1,7 +1,8 @@
 import { HelpCircle, X } from 'lucide-react'
-import { useEffect, useId, useRef, useState } from 'react'
+import { Fragment, type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { type SectionHelpKey, sectionHelp } from '../sectionHelp'
+import { type HelpText, type HelpTextSegment, type SectionHelpKey, sectionHelp } from '../sectionHelp'
+import { GlossaryTerm } from './GlossaryPopover'
 
 export function SectionHelp({
   topic,
@@ -120,15 +121,15 @@ export function SectionHelp({
                 </header>
                 <article className="help-modal-body">
                   <div className="help-article-summary">
-                    {entry.summary.map((paragraph) => (
-                      <p key={paragraph}>{paragraph}</p>
+                    {entry.summary.map((paragraph, index) => (
+                      <p key={`summary-${index}`}>{renderHelpText(paragraph)}</p>
                     ))}
                   </div>
                   <dl className="help-detail-list help-article-list">
                     {entry.points.map((point) => (
                       <div key={point.label}>
                         <dt>{point.label}</dt>
-                        <dd>{point.text}</dd>
+                        <dd>{renderHelpText(point.text)}</dd>
                       </div>
                     ))}
                   </dl>
@@ -139,6 +140,23 @@ export function SectionHelp({
           )
         : null}
     </>
+  )
+}
+
+function renderHelpText(text: HelpText): ReactNode {
+  if (typeof text === 'string') return text
+  return text.map((segment, index) => renderHelpTextSegment(segment, index))
+}
+
+function renderHelpTextSegment(segment: HelpTextSegment, index: number): ReactNode {
+  if (typeof segment === 'string') {
+    return <Fragment key={`text-${index}`}>{segment}</Fragment>
+  }
+
+  return (
+    <GlossaryTerm key={`${segment.term}-${index}`} term={segment.term}>
+      {segment.text}
+    </GlossaryTerm>
   )
 }
 

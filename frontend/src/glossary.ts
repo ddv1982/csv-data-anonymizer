@@ -159,6 +159,10 @@ export const glossaryTerms = {
     title: 'Smart replacement',
     body: 'Use the local AI model to generate context-aware replacements. If no valid AI value is available, the app falls back to rule-based pseudonymization.',
   },
+  fallback: {
+    title: 'Fallback',
+    body: 'Rule-based replacement used when a Smart replacement request cannot produce a valid local AI value.',
+  },
   mask: {
     title: 'Mask',
     body: 'Replace every non-space character with an asterisk, preserving spaces and length cues.',

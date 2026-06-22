@@ -136,7 +136,7 @@
 
 .help-popover {
   position: fixed;
-  z-index: 1000;
+  z-index: 1200;
   display: grid;
   gap: 0.35rem;
   max-height: min(32rem, calc(100dvh - 1rem));
@@ -152,6 +152,12 @@
 
 .glossary-popover {
   width: min(18rem, calc(100vw - 1rem));
+}
+
+.glossary-term-anchor {
+  display: inline;
+  line-height: inherit;
+  vertical-align: baseline;
 }
 
 .help-popover-title {
