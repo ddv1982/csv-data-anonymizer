@@ -3,16 +3,27 @@ use csv_anonymizer_core::{DpAggregate, DpBudgetAction, DpBudgetStatus};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-pub(super) const SETTINGS_SCHEMA_VERSION: u32 = 5;
+pub(super) const SETTINGS_SCHEMA_VERSION: u32 = 6;
 pub(super) const DEFAULT_OUTPUT_SUFFIX: &str = "_private_output";
 pub(super) const LEGACY_OUTPUT_SUFFIX: &str = "_anonymized";
 const DEFAULT_DP_BUDGET_LIMIT_EPSILON: f64 = 10.0;
 const MAX_DP_RELEASE_HISTORY: usize = 200;
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ThemeMode {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     pub schema_version: u32,
+    #[serde(default)]
+    pub theme_mode: ThemeMode,
     pub deterministic_default: bool,
     pub seed: String,
     pub overwrite_output: bool,
@@ -42,6 +53,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             schema_version: SETTINGS_SCHEMA_VERSION,
+            theme_mode: ThemeMode::System,
             deterministic_default: false,
             seed: String::new(),
             overwrite_output: false,

@@ -95,21 +95,21 @@
 }
 
 .risk-high {
-  border-color: hsl(0 72% 51% / 0.35);
-  background: hsl(0 72% 51% / 0.15);
-  color: hsl(0 91% 71%);
+  border-color: hsl(var(--risk-high) / 0.35);
+  background: hsl(var(--risk-high) / 0.15);
+  color: hsl(var(--risk-high-foreground));
 }
 
 .risk-medium {
-  border-color: hsl(38 92% 50% / 0.35);
-  background: hsl(38 92% 50% / 0.14);
-  color: hsl(43 96% 64%);
+  border-color: hsl(var(--risk-medium) / 0.35);
+  background: hsl(var(--risk-medium) / 0.14);
+  color: hsl(var(--risk-medium-foreground));
 }
 
 .risk-low {
-  border-color: hsl(142 70% 45% / 0.35);
-  background: hsl(142 70% 45% / 0.12);
-  color: hsl(142 76% 72%);
+  border-color: hsl(var(--risk-low) / 0.35);
+  background: hsl(var(--risk-low) / 0.12);
+  color: hsl(var(--risk-low-foreground));
 }
 
 .risk-none,
@@ -190,7 +190,7 @@
 }
 
 .preview-output {
-  color: hsl(142 76% 72%);
+  color: hsl(var(--preview-output));
 }
 
 .empty-preview {

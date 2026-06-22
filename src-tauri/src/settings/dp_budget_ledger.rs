@@ -3,8 +3,8 @@ use super::store::{
     SettingsStore, default_settings_path, load_settings_from_path, save_settings_to_path,
 };
 use csv_anonymizer_core::{
-    AnonymizeData, AnonymizeParams, AnonymizerError, DpAggregate, DpBudgetAction, DpBudgetConfig,
-    DpBudgetReport, DpBudgetStatus, PrivacyConfig, ReleaseMode,
+    AnonymizeData, AnonymizeParams, AnonymizerError, DpAggregate, DpBudgetConfig, DpBudgetReport,
+    PrivacyConfig, ReleaseMode,
 };
 use std::collections::BTreeSet;
 use std::io;
@@ -204,7 +204,9 @@ fn release_id() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use csv_anonymizer_core::{AnonymizationStrategy, ColumnControl, PrivacyReport};
+    use csv_anonymizer_core::{
+        AnonymizationStrategy, ColumnControl, DpBudgetAction, DpBudgetStatus, PrivacyReport,
+    };
     use std::sync::{Arc, Barrier};
     use std::thread;
 

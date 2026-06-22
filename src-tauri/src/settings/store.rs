@@ -69,3 +69,45 @@ pub(super) fn default_settings_path() -> PathBuf {
         .map(|dirs| dirs.config_dir().join("settings.json"))
         .unwrap_or_else(|| PathBuf::from(".csv-anonymizer-settings.json"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::settings::model::ThemeMode;
+
+    #[test]
+    fn load_settings_defaults_theme_mode_for_existing_settings() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let settings_path = temp_dir.path().join("settings.json");
+        fs::write(
+            &settings_path,
+            r#"{
+              "schemaVersion": 5,
+              "deterministicDefault": true,
+              "seed": "existing-seed",
+              "overwriteOutput": false,
+              "sampleRowCount": 250,
+              "previewSampleCount": 10,
+              "defaultOutputSuffix": "_private_output",
+              "dpBudgetEnabled": true,
+              "dpBudgetLimitEpsilon": 10.0,
+              "dpBudgetSpentEpsilon": 0.0,
+              "dpBudgetAction": "block",
+              "dpReleaseHistory": [],
+              "rememberLastPaths": true,
+              "lastInputDirectory": null,
+              "lastOutputDirectory": null,
+              "localAiEnabled": false,
+              "localAiModel": "gemma3:4b"
+            }"#,
+        )
+        .unwrap();
+
+        let settings = load_settings_from_path(&settings_path).unwrap();
+
+        assert_eq!(settings.schema_version, SETTINGS_SCHEMA_VERSION);
+        assert_eq!(settings.theme_mode, ThemeMode::System);
+        assert!(settings.deterministic_default);
+        assert_eq!(settings.seed, "existing-seed");
+    }
+}
