@@ -372,16 +372,9 @@ pub fn smart_provider_for_request(
         return Ok(None);
     }
 
-    let Some(request) = request else {
-        return Err("Smart replacement needs Local AI settings.".to_string());
+    let Some(request) = request.filter(|request| request.enabled) else {
+        return Ok(None);
     };
-    if !request.enabled {
-        return Err("Enable Local AI before using Smart replacement.".to_string());
-    }
-    let status = local_ai_status(request.clone())?;
-    if !status.ready {
-        return Err(status.message);
-    }
     OllamaSmartReplacementProvider::new(request.model_name())
         .map(Some)
         .map_err(|error| error.to_string())

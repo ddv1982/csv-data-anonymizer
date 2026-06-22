@@ -182,6 +182,10 @@ fn service() -> AnonymizerService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use csv_anonymizer_core::{
+        AnonymizationStrategy, ColumnControl, DataType, SmartReplacementEntry,
+    };
+    use std::fs;
 
     #[test]
     fn creates_running_job_snapshots() {
@@ -205,5 +209,176 @@ mod tests {
         assert!(job.should_cancel());
         assert_eq!(status.state, AnonymizeJobState::Running);
         assert!(status.cancel_requested);
+    }
+
+    #[test]
+    fn job_writes_output_when_preview_replacements_cover_smart_values() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let input_path = temp_dir.path().join("smart-covered.csv");
+        let output_path = temp_dir.path().join("smart-covered-output.csv");
+        fs::write(&input_path, "name\nAlice Smith\nBob Stone\n").unwrap();
+        let store = AnonymizeJobStore::default();
+        let job = store.create_job(Some(2)).unwrap();
+
+        run_anonymize_job(
+            job.clone(),
+            AnonymizeParams {
+                file_path: input_path,
+                output_path: output_path.clone(),
+                columns: vec![0],
+                controls: vec![ColumnControl {
+                    column_index: 0,
+                    type_override: Some(DataType::FullName),
+                    strategy: AnonymizationStrategy::LocalAi,
+                }],
+                deterministic: true,
+                seed: "smart-covered-seed".to_string(),
+                force: false,
+                preview_smart_replacements: vec![
+                    SmartReplacementEntry {
+                        column_index: 0,
+                        original: "Alice Smith".to_string(),
+                        replacement: "Preview Alice".to_string(),
+                    },
+                    SmartReplacementEntry {
+                        column_index: 0,
+                        original: "Bob Stone".to_string(),
+                        replacement: "Preview Bob".to_string(),
+                    },
+                ],
+            },
+            10,
+            None,
+        );
+
+        let status = job.snapshot().unwrap();
+        let output = fs::read_to_string(&output_path).unwrap();
+
+        assert_eq!(status.state, AnonymizeJobState::Succeeded);
+        assert!(status.result.is_some());
+        assert!(output.contains("Preview Alice"));
+        assert!(output.contains("Preview Bob"));
+    }
+
+    #[test]
+    fn job_writes_output_for_standard_columns_without_preview() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let input_path = temp_dir.path().join("standard.csv");
+        let output_path = temp_dir.path().join("standard-output.csv");
+        fs::write(
+            &input_path,
+            "email,name\nalice@example.com,Alice\nbob@example.com,Bob\n",
+        )
+        .unwrap();
+        let store = AnonymizeJobStore::default();
+        let job = store.create_job(Some(2)).unwrap();
+
+        run_anonymize_job(
+            job.clone(),
+            AnonymizeParams {
+                file_path: input_path,
+                output_path: output_path.clone(),
+                columns: vec![0],
+                controls: vec![],
+                deterministic: true,
+                seed: "standard-seed".to_string(),
+                force: false,
+                preview_smart_replacements: vec![],
+            },
+            10,
+            None,
+        );
+
+        let status = job.snapshot().unwrap();
+        let output = fs::read_to_string(&output_path).unwrap();
+
+        assert_eq!(status.state, AnonymizeJobState::Succeeded);
+        assert!(status.result.is_some());
+        assert!(output.contains("example.com"));
+        assert!(!output.contains("alice@example.com"));
+    }
+
+    #[test]
+    fn job_writes_output_for_standard_columns_with_preview_replacements_present() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let input_path = temp_dir.path().join("standard-preview.csv");
+        let output_path = temp_dir.path().join("standard-preview-output.csv");
+        fs::write(
+            &input_path,
+            "email,name\nalice@example.com,Alice\nbob@example.com,Bob\n",
+        )
+        .unwrap();
+        let store = AnonymizeJobStore::default();
+        let job = store.create_job(Some(2)).unwrap();
+
+        run_anonymize_job(
+            job.clone(),
+            AnonymizeParams {
+                file_path: input_path,
+                output_path: output_path.clone(),
+                columns: vec![0],
+                controls: vec![],
+                deterministic: true,
+                seed: "standard-preview-seed".to_string(),
+                force: false,
+                preview_smart_replacements: vec![SmartReplacementEntry {
+                    column_index: 0,
+                    original: "Alice Smith".to_string(),
+                    replacement: "Preview Alice".to_string(),
+                }],
+            },
+            10,
+            None,
+        );
+
+        let status = job.snapshot().unwrap();
+        let output = fs::read_to_string(&output_path).unwrap();
+
+        assert_eq!(status.state, AnonymizeJobState::Succeeded);
+        assert!(status.result.is_some());
+        assert!(output.contains("example.com"));
+        assert!(!output.contains("alice@example.com"));
+    }
+
+    #[test]
+    fn job_fails_clearly_when_smart_generation_needs_unavailable_local_ai() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let input_path = temp_dir.path().join("smart-missing-provider.csv");
+        let output_path = temp_dir.path().join("smart-missing-provider-output.csv");
+        fs::write(&input_path, "name\nAlice Smith\n").unwrap();
+        let store = AnonymizeJobStore::default();
+        let job = store.create_job(Some(1)).unwrap();
+
+        run_anonymize_job(
+            job.clone(),
+            AnonymizeParams {
+                file_path: input_path,
+                output_path: output_path.clone(),
+                columns: vec![0],
+                controls: vec![ColumnControl {
+                    column_index: 0,
+                    type_override: Some(DataType::FullName),
+                    strategy: AnonymizationStrategy::LocalAi,
+                }],
+                deterministic: true,
+                seed: "smart-missing-provider-seed".to_string(),
+                force: false,
+                preview_smart_replacements: vec![],
+            },
+            10,
+            None,
+        );
+
+        let status = job.snapshot().unwrap();
+
+        assert_eq!(status.state, AnonymizeJobState::Failed);
+        assert!(status.result.is_none());
+        assert!(
+            status
+                .error
+                .as_deref()
+                .is_some_and(|error| error.contains("Smart replacement needs Local AI"))
+        );
+        assert!(!output_path.exists());
     }
 }
