@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.27 - 2026-06-22
+
+- Add opt-in formal tabular privacy releases that redact direct identifiers, generalize quasi-identifiers, report k-anonymity, and optionally evaluate l-diversity and t-closeness with small-class suppression.
+- Add differentially private aggregate and synthetic data release modes with UI configuration, Tauri job support, backend validation, and enriched privacy report fields.
+- Split the larger privacy, strategy, service-test, and frontend workflow modules into focused files so the new privacy release surface is easier to maintain.
+
 ## v1.0.26 - 2026-06-22
 
 - Show app errors as a fixed dismissible toast so output-file conflicts and other failures remain visible without scrolling back to the top of the workflow.

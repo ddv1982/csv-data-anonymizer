@@ -26,11 +26,50 @@ export type Confidence = 'high' | 'medium' | 'low'
 export type PiiRisk = 'high' | 'medium' | 'low'
 export type EmptyFormat = 'emptyString' | 'null' | 'mixed'
 export type AnonymizationStrategy = 'auto' | 'pseudonymize' | 'tokenize' | 'localAi' | 'mask' | 'passThrough'
+export type ReleaseMode = 'standard' | 'formalTabular' | 'differentialPrivacyAggregate' | 'syntheticData'
+export type ColumnRole = 'auto' | 'directIdentifier' | 'quasiIdentifier' | 'sensitive' | 'attribute' | 'exclude'
+export type DpAggregate = 'count' | 'sum' | 'mean'
+export type PrivacyModel = 'kAnonymity' | 'lDiversity' | 'tCloseness' | 'differentialPrivacy' | 'syntheticData'
 
 export interface ColumnControl {
   columnIndex: number
   typeOverride: DataType | null
   strategy: AnonymizationStrategy
+}
+
+export interface PrivacyColumnRole {
+  columnIndex: number
+  role: ColumnRole
+  generalizationLevel: number
+}
+
+export interface FormalPrivacyConfig {
+  k: number
+  lDiversity: number | null
+  tCloseness: number | null
+  suppressSmallClasses: boolean
+}
+
+export interface DifferentialPrivacyConfig {
+  epsilon: number
+  aggregate: DpAggregate
+  groupByColumn: number | null
+  valueColumn: number | null
+  lowerBound: number | null
+  upperBound: number | null
+}
+
+export interface SyntheticDataConfig {
+  rowCount: number | null
+  epsilon: number | null
+}
+
+export interface PrivacyConfig {
+  releaseMode: ReleaseMode
+  columnRoles: PrivacyColumnRole[]
+  formal: FormalPrivacyConfig
+  differentialPrivacy: DifferentialPrivacyConfig
+  synthetic: SyntheticDataConfig
 }
 
 export interface AppSettings {
@@ -115,14 +154,19 @@ export interface AnonymizeData {
 }
 
 export interface PrivacyReport {
+  releaseMode: ReleaseMode
   directIdentifiers: number
   quasiIdentifiers: number
+  sensitiveColumns: number
   pseudonymizedColumns: number
   smartReplacementColumns: number
   opaqueTokenColumns: number
   maskedColumns: number
   generalizedColumns: number
   passThroughColumns: number
+  suppressedRows: number
+  syntheticRows: number
+  dpEpsilon: string | null
   uniquePseudonymValues: number
   reusedPseudonymValues: number
   collisionsAvoided: number
@@ -130,7 +174,16 @@ export interface PrivacyReport {
   opaqueTokenValues: number
   smartReplacementValues: number
   smartReplacementFallbacks: number
+  formalModels: PrivacyModelReport[]
   notes: string[]
+}
+
+export interface PrivacyModelReport {
+  model: PrivacyModel
+  satisfied: boolean
+  actual: string
+  threshold: string
+  message: string
 }
 
 export type AnonymizeJobState = 'running' | 'succeeded' | 'failed' | 'canceled'

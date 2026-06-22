@@ -144,6 +144,35 @@
   padding: 1rem;
 }
 
+.privacy-config-panel {
+  display: grid;
+  gap: 1rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--muted) / 0.16);
+  padding: 1rem;
+}
+
+.privacy-config-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(12rem, 16rem);
+  align-items: center;
+  gap: 1rem;
+}
+
+.privacy-config-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+}
+
+.privacy-config-title svg {
+  width: 1rem;
+  height: 1rem;
+  color: hsl(var(--primary));
+}
+
 .local-ai-header {
   display: flex;
   align-items: flex-start;

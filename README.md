@@ -9,11 +9,12 @@ All normal CSV processing runs locally in Rust. Optional local LLM replacement a
 - Detects common sensitive columns: emails, names, phone numbers, UUIDs, timestamps, numeric IDs, addresses, postal codes, IPs, URLs, MAC addresses, tax IDs, and more.
 - Auto-selects high and medium risk columns while still letting you choose exactly which columns to transform.
 - Shows a preview before writing output.
-- Streams large CSV files instead of loading the whole file into memory.
+- Streams standard masking/pseudonymization runs instead of loading the whole file into memory.
 - Keeps repeated source values consistent within a run.
 - Supports repeatable replacements with a private seed, useful when multiple files need matching pseudonyms.
 - Offers optional Smart replacement with a local LLM for selected columns.
 - Produces a privacy report with transformed column counts, reused values, token counts, Local AI replacement counts, and fallbacks.
+- Includes opt-in release modes for k-anonymity/l-diversity/t-closeness checks, differentially private aggregate CSVs, and simple synthetic CSV generation.
 
 ## Local LLM Smart Replacement
 
@@ -39,9 +40,17 @@ Model weights and local runtime binaries are not bundled in the repository or de
 
 ## Privacy Boundary
 
-The app reduces exposure by masking, pseudonymizing, tokenizing, or locally replacing selected values. It does not currently claim formal anonymization guarantees such as k-anonymity, l-diversity, t-closeness, differential privacy, or synthetic data generation.
+The standard workflow reduces exposure by masking, pseudonymizing, tokenizing, or locally replacing selected values. It is still transformed source data, not guaranteed anonymous data.
 
-Treat output as lower-risk transformed data, not guaranteed anonymous data. Review previews and privacy reports before sharing generated files.
+Opt-in privacy release modes are available for:
+
+- Formal tabular releases: redact direct identifiers, generalize quasi-identifiers, evaluate k-anonymity, optionally evaluate l-diversity and t-closeness, and suppress below-threshold classes when enabled.
+- Differential privacy aggregate releases: write noisy count, sum, or mean aggregate CSVs with a configured epsilon and public bounds for numeric sum/mean releases.
+- Synthetic data releases: generate simple column-distribution-based rows and replace direct identifiers with placeholders.
+
+These modes are local MVP implementations, not substitutes for a privacy review. Synthetic data mode does not make the source data anonymous by itself, and repeated DP aggregate releases require external privacy-budget tracking.
+
+Review previews and privacy reports before sharing generated files.
 
 ## Strategies
 
