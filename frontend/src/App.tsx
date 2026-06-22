@@ -488,19 +488,26 @@ function App() {
         </div>
       </header>
 
+      {error ? (
+        <div className="toast-region" aria-live="assertive" aria-atomic="true">
+          <Alert variant="destructive" icon={<AlertCircle aria-hidden="true" />}>
+            <div className="alert-line">
+              <span>{error}</span>
+              <button
+                type="button"
+                className="button button-ghost button-sm"
+                aria-label="Dismiss error message"
+                onClick={() => setError(null)}
+              >
+                Dismiss
+              </button>
+            </div>
+          </Alert>
+        </div>
+      ) : null}
+
       <main className="container app-main">
         <div className="workflow-stack">
-          {error ? (
-            <Alert variant="destructive" icon={<AlertCircle aria-hidden="true" />}>
-              <div className="alert-line">
-                <span>{error}</span>
-                <button type="button" className="button button-ghost button-sm" onClick={() => setError(null)}>
-                  Dismiss
-                </button>
-              </div>
-            </Alert>
-          ) : null}
-
           {result ? (
             <ResultDisplay result={result} onReset={clearFile} onError={setError} />
           ) : (

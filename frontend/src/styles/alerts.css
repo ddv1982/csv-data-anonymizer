@@ -43,3 +43,23 @@
   justify-content: space-between;
   gap: 1rem;
 }
+
+.alert-line span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.toast-region {
+  position: fixed;
+  z-index: 20;
+  top: 5rem;
+  right: max(1rem, calc((100vw - 56rem) / 2));
+  width: min(calc(100vw - 2rem), 34rem);
+}
+
+.toast-region .alert {
+  background: hsl(var(--card));
+  box-shadow:
+    0 10px 30px hsl(0 0% 0% / 0.32),
+    0 0 0 1px hsl(var(--destructive) / 0.2);
+}
