@@ -2,6 +2,7 @@ use crate::csv_io::{count_csv_data_rows, process_file_with_control, read_sample}
 use crate::detection::is_empty_value;
 use crate::error::{AnonymizerError, Result};
 use crate::metadata::{apply_column_selection, build_column_metadata};
+use crate::privacy::process_privacy_release;
 use crate::smart::{
     SmartReplacementMap, SmartReplacementProvider, has_smart_replacement_columns,
     prepare_smart_replacements_from_csv, prepare_smart_replacements_from_rows,
@@ -10,7 +11,7 @@ use crate::strategies::{TransformState, transform_value_with_state};
 use crate::types::{
     AnonymizationStrategy, AnonymizeData, AnonymizeParams, ColumnControl, ColumnMetadata,
     ColumnPreview, DataType, HeadersData, PreviewData, PreviewParams, PreviewWarning,
-    PrivacyReport, ProcessControl, ProcessOptions, SampleTransform, TransformContext,
+    PrivacyReport, ProcessControl, ProcessOptions, ReleaseMode, SampleTransform, TransformContext,
     WarningSeverity,
 };
 use std::fs;
@@ -189,6 +190,27 @@ impl AnonymizerService {
         validate_column_indices(&metadata, &input.columns)?;
         let controlled_metadata = apply_column_controls(&metadata, &input.controls)?;
         let selected_metadata = apply_column_selection(&controlled_metadata, &input.columns);
+        if let Some(privacy_config) = input.privacy_config.as_ref()
+            && privacy_config.release_mode != ReleaseMode::Standard
+        {
+            let result = process_privacy_release(
+                &input_path,
+                &output_path,
+                &controlled_metadata,
+                privacy_config,
+                input.deterministic,
+                &input.seed,
+                control,
+            )?;
+
+            return Ok(AnonymizeData {
+                output_path: result.output_path,
+                row_count: result.row_count,
+                columns_anonymized: result.columns_anonymized,
+                duration_ms: result.duration_ms,
+                privacy_report: result.privacy_report,
+            });
+        }
         let preview_smart_replacements =
             SmartReplacementMap::from_entries(&input.preview_smart_replacements);
         let existing_smart_replacements = (!preview_smart_replacements.is_empty()
@@ -355,14 +377,19 @@ fn build_privacy_report(
     deterministic: bool,
 ) -> PrivacyReport {
     let mut report = PrivacyReport {
+        release_mode: ReleaseMode::Standard,
         direct_identifiers: 0,
         quasi_identifiers: 0,
+        sensitive_columns: 0,
         pseudonymized_columns: 0,
         smart_replacement_columns: 0,
         opaque_token_columns: 0,
         masked_columns: 0,
         generalized_columns: 0,
         pass_through_columns: 0,
+        suppressed_rows: 0,
+        synthetic_rows: 0,
+        dp_epsilon: None,
         unique_pseudonym_values: transform_report.unique_pseudonym_values,
         reused_pseudonym_values: transform_report.reused_pseudonym_values,
         collisions_avoided: transform_report.collisions_avoided,
@@ -370,10 +397,11 @@ fn build_privacy_report(
         opaque_token_values: transform_report.opaque_token_values,
         smart_replacement_values: transform_report.smart_replacement_values,
         smart_replacement_fallbacks: transform_report.smart_replacement_fallbacks,
+        formal_models: Vec::new(),
         notes: vec![
             "This app performs local masking and pseudonymization, not formal anonymization."
                 .to_string(),
-            "k-anonymity, l-diversity, t-closeness, differential privacy, and synthetic data generation are not implemented."
+            "Use an opt-in privacy release mode for k-anonymity, l-diversity, t-closeness, differential privacy aggregate releases, or synthetic data generation."
                 .to_string(),
         ],
     };

@@ -6,7 +6,7 @@ use crate::local_ai::{LocalAiRequest, smart_provider_for_request};
 use crate::path_access::PathAccess;
 use csv_anonymizer_core::{
     AnonymizeData, AnonymizeParams, ColumnControl, HeadersData, PreviewData, PreviewParams,
-    SmartReplacementEntry, SmartReplacementProvider,
+    PrivacyConfig, SmartReplacementEntry, SmartReplacementProvider,
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -34,6 +34,8 @@ pub struct AnonymizeRequest {
     pub sample_row_count: usize,
     #[serde(default)]
     pub preview_smart_replacements: Vec<SmartReplacementEntry>,
+    #[serde(default)]
+    pub privacy_config: Option<PrivacyConfig>,
     pub local_ai: Option<LocalAiRequest>,
 }
 
@@ -151,6 +153,7 @@ pub async fn anonymize_csv(
                     seed: request.seed,
                     force: request.force,
                     preview_smart_replacements: request.preview_smart_replacements,
+                    privacy_config: request.privacy_config,
                 },
                 request.sample_row_count,
                 None,

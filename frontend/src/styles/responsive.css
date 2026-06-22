@@ -28,6 +28,10 @@
     grid-template-columns: 1fr;
   }
 
+  .privacy-config-header {
+    grid-template-columns: 1fr;
+  }
+
   .preview-row {
     grid-template-columns: 1fr;
   }

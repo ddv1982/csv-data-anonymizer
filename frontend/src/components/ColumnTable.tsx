@@ -1,5 +1,12 @@
 import { ChevronDown, ChevronUp } from 'lucide-react'
-import type { AnonymizationStrategy, ColumnControl, ColumnMetadata, DataType } from '../types'
+import type {
+  AnonymizationStrategy,
+  ColumnControl,
+  ColumnMetadata,
+  ColumnRole,
+  DataType,
+  PrivacyColumnRole,
+} from '../types'
 import { formatToken } from '../utils/format'
 import { hasSampleData, isSelectableColumn, maxVisibleColumns } from '../utils/columns'
 import { RiskBadge } from './RiskBadge'
@@ -13,8 +20,10 @@ export function ColumnTable({
   hiddenColumnCount,
   onToggleColumn,
   controls,
+  roles,
   onTypeChange,
   onStrategyChange,
+  onRoleChange,
   onToggleShowAll,
 }: {
   columns: ColumnMetadata[]
@@ -25,8 +34,10 @@ export function ColumnTable({
   hiddenColumnCount: number
   onToggleColumn: (column: ColumnMetadata) => void
   controls: Record<number, ColumnControl>
+  roles: Record<number, PrivacyColumnRole>
   onTypeChange: (column: ColumnMetadata, value: DataType | 'auto') => void
   onStrategyChange: (column: ColumnMetadata, value: AnonymizationStrategy) => void
+  onRoleChange: (column: ColumnMetadata, value: ColumnRole) => void
   onToggleShowAll: () => void
 }) {
   return (
@@ -40,6 +51,7 @@ export function ColumnTable({
             <th>Type</th>
             <th>Type Override</th>
             <th>Strategy</th>
+            <th>Role</th>
             <th>Risk</th>
           </tr>
         </thead>
@@ -47,7 +59,7 @@ export function ColumnTable({
           {loading ? <ColumnSkeletonRows /> : null}
           {!loading && allColumnCount === 0 ? (
             <tr>
-              <td colSpan={7} className="empty-table-cell">
+              <td colSpan={8} className="empty-table-cell">
                 No columns to display
               </td>
             </tr>
@@ -57,6 +69,7 @@ export function ColumnTable({
                 const selectable = isSelectableColumn(column)
                 const sampleDataAvailable = hasSampleData(column)
                 const control = controls[column.index]
+                const role = roles[column.index]
                 return (
                   <tr
                     key={`${column.index}-${column.name}`}
@@ -121,6 +134,21 @@ export function ColumnTable({
                       </select>
                     </td>
                     <td>
+                      <select
+                        value={role?.role ?? 'auto'}
+                        disabled={!selectable || loading}
+                        aria-label={`Privacy role for ${column.name}`}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={(event) => onRoleChange(column, event.target.value as ColumnRole)}
+                      >
+                        {rolesList.map((roleValue) => (
+                          <option key={roleValue} value={roleValue}>
+                            {roleLabel(roleValue)}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
                       <RiskBadge risk={column.piiRisk} />
                     </td>
                   </tr>
@@ -129,7 +157,7 @@ export function ColumnTable({
             : null}
           {!loading && allColumnCount > maxVisibleColumns ? (
             <tr>
-              <td colSpan={7} className="show-more-cell">
+              <td colSpan={8} className="show-more-cell">
                 <button type="button" className="button button-ghost button-sm" onClick={onToggleShowAll}>
                   {showAllColumns ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
                   {showAllColumns ? 'Show Less' : `Show ${hiddenColumnCount} More Columns`}
@@ -169,12 +197,27 @@ const dataTypes: DataType[] = [
 ]
 
 const strategies: AnonymizationStrategy[] = ['auto', 'pseudonymize', 'tokenize', 'localAi', 'mask', 'passThrough']
+const rolesList: ColumnRole[] = [
+  'auto',
+  'directIdentifier',
+  'quasiIdentifier',
+  'sensitive',
+  'attribute',
+  'exclude',
+]
 
 function strategyLabel(strategy: AnonymizationStrategy) {
   if (strategy === 'localAi') {
     return 'Smart replacement (Local AI)'
   }
   return formatToken(strategy)
+}
+
+function roleLabel(role: ColumnRole) {
+  if (role === 'auto') return 'Auto'
+  if (role === 'directIdentifier') return 'Direct ID'
+  if (role === 'quasiIdentifier') return 'Quasi-ID'
+  return formatToken(role)
 }
 
 function ColumnSkeletonRows() {
@@ -193,6 +236,15 @@ function ColumnSkeletonRows() {
           </td>
           <td>
             <span className="skeleton skeleton-medium" />
+          </td>
+          <td>
+            <span className="skeleton skeleton-badge" />
+          </td>
+          <td>
+            <span className="skeleton skeleton-badge" />
+          </td>
+          <td>
+            <span className="skeleton skeleton-badge" />
           </td>
           <td>
             <span className="skeleton skeleton-badge" />

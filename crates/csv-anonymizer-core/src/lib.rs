@@ -3,6 +3,7 @@ pub mod detection;
 pub mod error;
 pub mod hash;
 pub mod metadata;
+pub mod privacy;
 pub mod service;
 pub mod smart;
 pub mod strategies;
@@ -15,8 +16,10 @@ pub use smart::{
 };
 pub use types::{
     AnonymizationStrategy, AnonymizeData, AnonymizeParams, ColumnControl, ColumnMetadata,
-    ColumnPreview, Confidence, DataType, DetectionResult, EmptyFormat, HeadersData, ParsedSample,
-    PiiRisk, PreviewData, PreviewParams, PreviewWarning, PrivacyReport, ProcessControl,
-    ProcessOptions, ProcessProgress, ProcessResult, SampleTransform, SmartReplacementEntry,
+    ColumnPreview, ColumnRole, Confidence, DataType, DetectionResult, DifferentialPrivacyConfig,
+    DpAggregate, EmptyFormat, FormalPrivacyConfig, HeadersData, ParsedSample, PiiRisk, PreviewData,
+    PreviewParams, PreviewWarning, PrivacyColumnRole, PrivacyConfig, PrivacyModel,
+    PrivacyModelReport, PrivacyReport, ProcessControl, ProcessOptions, ProcessProgress,
+    ProcessResult, ReleaseMode, SampleTransform, SmartReplacementEntry, SyntheticDataConfig,
     TransformReport, WarningSeverity,
 };

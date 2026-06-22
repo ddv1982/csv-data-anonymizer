@@ -2,7 +2,7 @@ use super::shared::authorize_or_confirm_output_file;
 use crate::jobs::{AnonymizeJobState, AnonymizeJobStatus, AnonymizeJobStore, run_anonymize_job};
 use crate::local_ai::LocalAiRequest;
 use crate::path_access::PathAccess;
-use csv_anonymizer_core::{AnonymizeParams, ColumnControl, SmartReplacementEntry};
+use csv_anonymizer_core::{AnonymizeParams, ColumnControl, PrivacyConfig, SmartReplacementEntry};
 use serde::Deserialize;
 use std::path::PathBuf;
 use tauri::State;
@@ -22,6 +22,8 @@ pub struct StartAnonymizeJobRequest {
     pub total_row_count: Option<usize>,
     #[serde(default)]
     pub preview_smart_replacements: Vec<SmartReplacementEntry>,
+    #[serde(default)]
+    pub privacy_config: Option<PrivacyConfig>,
     pub local_ai: Option<LocalAiRequest>,
 }
 
@@ -50,6 +52,7 @@ pub async fn start_anonymize_job(
                 seed: request.seed,
                 force: request.force,
                 preview_smart_replacements: request.preview_smart_replacements,
+                privacy_config: request.privacy_config,
             },
             request.sample_row_count,
             request.local_ai,
