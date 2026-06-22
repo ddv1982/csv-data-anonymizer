@@ -131,6 +131,14 @@
   overflow-wrap: anywhere;
 }
 
+.section-heading-row {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem 0.75rem;
+}
+
 .preview-frame {
   display: grid;
   width: 100%;

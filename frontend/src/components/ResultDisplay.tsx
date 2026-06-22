@@ -6,6 +6,7 @@ import { messageFrom } from '../utils/errors'
 import { formatResultStats, formatToken } from '../utils/format'
 import { Alert } from './Alert'
 import { GlossaryLabel } from './GlossaryPopover'
+import { SectionHelp } from './SectionHelp'
 
 export function ResultDisplay({
   result,
@@ -75,7 +76,10 @@ export function ResultDisplay({
       </Alert>
 
       <div className="preview-group">
-        <h3>Privacy Report</h3>
+        <div className="section-heading-row">
+          <h3>Privacy Report</h3>
+          <SectionHelp topic="privacyReport" />
+        </div>
         <div className="preview-frame">
           <div className="privacy-metrics">
             {privacyMetrics.map(({ label, value, glossaryTerm }) => (
