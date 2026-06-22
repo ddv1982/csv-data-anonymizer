@@ -1,5 +1,6 @@
 import { Cpu, Download, ExternalLink, RefreshCw, X } from 'lucide-react'
 import type { LocalAiDownloadStatus, LocalAiStatus } from '../types'
+import { GlossaryLabel, GlossaryPopover } from './GlossaryPopover'
 import { SwitchRow } from './SwitchRow'
 
 export function LocalAiPanel({
@@ -45,11 +46,13 @@ export function LocalAiPanel({
         <div>
           <div className="local-ai-title">
             <Cpu aria-hidden="true" />
-            <span>Local AI</span>
+            <GlossaryLabel term="localAi">Local AI</GlossaryLabel>
             <span className={ready ? 'status-pill success' : 'status-pill'}>{ready ? 'Ready' : 'Setup needed'}</span>
           </div>
           <p className="muted-text text-sm">
-            Optional smart replacements using Gemma 3 4B through Ollama on this device.
+            Optional <GlossaryLabel term="smartReplacement">smart replacements</GlossaryLabel> using{' '}
+            <GlossaryLabel term="gemma">Gemma 3 4B</GlossaryLabel> through{' '}
+            <GlossaryLabel term="ollama">Ollama</GlossaryLabel> on this device.
           </p>
         </div>
         <button type="button" className="button button-ghost button-icon" disabled={disabled} onClick={onRefresh} aria-label="Refresh Local AI status">
@@ -60,7 +63,13 @@ export function LocalAiPanel({
       <SwitchRow
         id="local-ai-enabled"
         label="Use Local AI"
-        description="Enable Smart replacement for selected columns. CSV rows are sent only to localhost."
+        labelHelp={<GlossaryPopover term="localAi" />}
+        description={
+          <>
+            Enable <GlossaryLabel term="smartReplacement">Smart replacement</GlossaryLabel> for selected columns. CSV
+            rows are sent only to <GlossaryLabel term="localhost">localhost</GlossaryLabel>.
+          </>
+        }
         checked={enabled}
         disabled={disabled}
         compact
@@ -69,7 +78,10 @@ export function LocalAiPanel({
 
       <div className={enabled ? 'settings-grid local-ai-grid' : 'settings-grid local-ai-grid disabled-soft'}>
         <div className="field">
-          <label htmlFor="local-ai-model">Model</label>
+          <span className="field-label-row">
+            <label htmlFor="local-ai-model">Model</label>
+            <GlossaryPopover term="model" />
+          </span>
           <input
             id="local-ai-model"
             list="local-ai-model-options"

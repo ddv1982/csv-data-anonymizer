@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.28 - 2026-06-22
+
+- Add glossary popovers for specialist privacy, anonymization, Local AI, and privacy-report terms so users can understand release modes, roles, strategies, metrics, and DP caveats in context.
+- Add privacy-release helper copy and validate glossary definitions against the Rust release/report semantics, including the current synthetic-data DP limitation.
+- Improve responsive usability with stacked mobile column controls, contained desktop table sizing, wrapped preview warnings and values, and mobile-safe privacy report cards.
+
 ## v1.0.27 - 2026-06-22
 
 - Add opt-in formal tabular privacy releases that redact direct identifiers, generalize quasi-identifiers, report k-anonymity, and optionally evaluate l-diversity and t-closeness with small-class suppression.

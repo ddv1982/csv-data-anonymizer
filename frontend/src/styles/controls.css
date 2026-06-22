@@ -173,6 +173,13 @@
   color: hsl(var(--primary));
 }
 
+.privacy-mode-help {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.5rem;
+}
+
 .local-ai-header {
   display: flex;
   align-items: flex-start;

@@ -1,9 +1,11 @@
 import { CheckCircle2, FolderOpen, RefreshCcw } from 'lucide-react'
+import type { GlossaryKey } from '../glossary'
 import { openOutputLocation } from '../tauri'
-import type { AnonymizeData } from '../types'
+import type { AnonymizeData, PrivacyModel } from '../types'
 import { messageFrom } from '../utils/errors'
 import { formatResultStats, formatToken } from '../utils/format'
 import { Alert } from './Alert'
+import { GlossaryLabel } from './GlossaryPopover'
 
 export function ResultDisplay({
   result,
@@ -14,28 +16,44 @@ export function ResultDisplay({
   onReset: () => void
   onError: (message: string) => void
 }) {
-  const privacyMetrics = [
-    ['Release mode', releaseModeLabel(result.privacyReport.releaseMode)],
-    ['Direct identifiers', result.privacyReport.directIdentifiers],
-    ['Quasi-identifiers', result.privacyReport.quasiIdentifiers],
-    ['Sensitive columns', result.privacyReport.sensitiveColumns],
-    ['Pseudonymized columns', result.privacyReport.pseudonymizedColumns],
-    ['Smart replacement columns', result.privacyReport.smartReplacementColumns],
-    ['Opaque token columns', result.privacyReport.opaqueTokenColumns],
-    ['Masked columns', result.privacyReport.maskedColumns],
-    ['Generalized columns', result.privacyReport.generalizedColumns],
-    ['Pass-through/no-op', result.privacyReport.passThroughColumns],
-    ['Suppressed rows', result.privacyReport.suppressedRows],
-    ['Synthetic rows', result.privacyReport.syntheticRows],
-    ['DP epsilon', result.privacyReport.dpEpsilon ?? 'n/a'],
-    ['Unique pseudonyms', result.privacyReport.uniquePseudonymValues],
-    ['Opaque token values', result.privacyReport.opaqueTokenValues],
-    ['Repeated source reuses', result.privacyReport.reusedPseudonymValues],
-    ['Collisions avoided', result.privacyReport.collisionsAvoided],
-    ['Pool exhaustions', result.privacyReport.exhaustedPseudonymPools],
-    ['Smart replacement values', result.privacyReport.smartReplacementValues],
-    ['Smart fallbacks', result.privacyReport.smartReplacementFallbacks],
-  ] as const
+  const privacyMetrics: Array<{ label: string; value: string | number; glossaryTerm: GlossaryKey }> = [
+    {
+      label: 'Release mode',
+      value: releaseModeLabel(result.privacyReport.releaseMode),
+      glossaryTerm: releaseModeGlossaryTerm(result.privacyReport.releaseMode),
+    },
+    { label: 'Direct identifiers', value: result.privacyReport.directIdentifiers, glossaryTerm: 'directIdentifier' },
+    { label: 'Quasi-identifiers', value: result.privacyReport.quasiIdentifiers, glossaryTerm: 'quasiIdentifier' },
+    { label: 'Sensitive columns', value: result.privacyReport.sensitiveColumns, glossaryTerm: 'sensitive' },
+    { label: 'Pseudonymized columns', value: result.privacyReport.pseudonymizedColumns, glossaryTerm: 'pseudonymizedColumns' },
+    {
+      label: 'Smart replacement columns',
+      value: result.privacyReport.smartReplacementColumns,
+      glossaryTerm: 'smartReplacementColumns',
+    },
+    { label: 'Opaque token columns', value: result.privacyReport.opaqueTokenColumns, glossaryTerm: 'opaqueTokenColumns' },
+    { label: 'Masked columns', value: result.privacyReport.maskedColumns, glossaryTerm: 'maskedColumns' },
+    { label: 'Generalized columns', value: result.privacyReport.generalizedColumns, glossaryTerm: 'generalizedColumns' },
+    { label: 'Pass-through/no-op', value: result.privacyReport.passThroughColumns, glossaryTerm: 'passThroughNoOp' },
+    { label: 'Suppressed rows', value: result.privacyReport.suppressedRows, glossaryTerm: 'suppressedRows' },
+    { label: 'Synthetic rows', value: result.privacyReport.syntheticRows, glossaryTerm: 'syntheticRows' },
+    { label: 'DP epsilon', value: result.privacyReport.dpEpsilon ?? 'n/a', glossaryTerm: 'epsilon' },
+    { label: 'Unique pseudonyms', value: result.privacyReport.uniquePseudonymValues, glossaryTerm: 'uniquePseudonyms' },
+    { label: 'Opaque token values', value: result.privacyReport.opaqueTokenValues, glossaryTerm: 'opaqueTokenValues' },
+    {
+      label: 'Repeated source reuses',
+      value: result.privacyReport.reusedPseudonymValues,
+      glossaryTerm: 'repeatedSourceReuses',
+    },
+    { label: 'Collisions avoided', value: result.privacyReport.collisionsAvoided, glossaryTerm: 'collisionsAvoided' },
+    { label: 'Pool exhaustions', value: result.privacyReport.exhaustedPseudonymPools, glossaryTerm: 'poolExhaustions' },
+    {
+      label: 'Smart replacement values',
+      value: result.privacyReport.smartReplacementValues,
+      glossaryTerm: 'smartReplacementValues',
+    },
+    { label: 'Smart fallbacks', value: result.privacyReport.smartReplacementFallbacks, glossaryTerm: 'smartFallbacks' },
+  ]
 
   async function handleOpenFolder() {
     try {
@@ -60,9 +78,11 @@ export function ResultDisplay({
         <h3>Privacy Report</h3>
         <div className="preview-frame">
           <div className="privacy-metrics">
-            {privacyMetrics.map(([label, value]) => (
+            {privacyMetrics.map(({ label, value, glossaryTerm }) => (
               <div className="privacy-metric" key={label}>
-                <span className="muted-text text-sm">{label}</span>
+                <span className="muted-text text-sm">
+                  <GlossaryLabel term={glossaryTerm}>{label}</GlossaryLabel>
+                </span>
                 <strong>{typeof value === 'number' ? value.toLocaleString() : value}</strong>
               </div>
             ))}
@@ -72,7 +92,9 @@ export function ResultDisplay({
               {result.privacyReport.formalModels.map((model) => (
                 <div className="privacy-model-row" key={model.model}>
                   <span>
-                    <strong>{formatToken(model.model)}</strong>
+                    <strong>
+                      <GlossaryLabel term={privacyModelGlossaryTerm(model.model)}>{formatToken(model.model)}</GlossaryLabel>
+                    </strong>
                     <span className="muted-text text-sm">
                       {model.actual} / {model.threshold}
                     </span>
@@ -112,4 +134,20 @@ function releaseModeLabel(mode: string) {
   if (mode === 'differentialPrivacyAggregate') return 'DP aggregate'
   if (mode === 'syntheticData') return 'Synthetic data'
   return 'Standard masking'
+}
+
+function releaseModeGlossaryTerm(mode: string): GlossaryKey {
+  if (mode === 'formalTabular') return 'formalTabular'
+  if (mode === 'differentialPrivacyAggregate') return 'dpAggregate'
+  if (mode === 'syntheticData') return 'syntheticData'
+  return 'standardMasking'
+}
+
+function privacyModelGlossaryTerm(model: PrivacyModel): GlossaryKey {
+  if (model === 'kAnonymity') return 'kAnonymity'
+  if (model === 'lDiversity') return 'lDiversity'
+  if (model === 'tCloseness') return 'tCloseness'
+  if (model === 'differentialPrivacy') return 'epsilon'
+  if (model === 'syntheticData') return 'syntheticData'
+  return 'formalModel'
 }

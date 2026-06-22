@@ -9,6 +9,7 @@ import type {
 } from '../types'
 import { formatToken } from '../utils/format'
 import { hasSampleData, isSelectableColumn, maxVisibleColumns } from '../utils/columns'
+import { GlossaryLabel } from './GlossaryPopover'
 import { RiskBadge } from './RiskBadge'
 
 export function ColumnTable({
@@ -42,17 +43,25 @@ export function ColumnTable({
 }) {
   return (
     <div className="table-frame">
-      <table>
+      <table className="column-table">
         <thead>
           <tr>
             <th className="checkbox-column" aria-label="Selected"></th>
             <th className="index-column">#</th>
-            <th>Column Name</th>
+            <th className="column-title-column">Column Name</th>
             <th>Type</th>
-            <th>Type Override</th>
-            <th>Strategy</th>
-            <th>Role</th>
-            <th>Risk</th>
+            <th>
+              <GlossaryLabel term="typeOverride">Type Override</GlossaryLabel>
+            </th>
+            <th>
+              <GlossaryLabel term="strategy">Strategy</GlossaryLabel>
+            </th>
+            <th>
+              <GlossaryLabel term="role">Role</GlossaryLabel>
+            </th>
+            <th>
+              <GlossaryLabel term="risk">Risk</GlossaryLabel>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -91,18 +100,26 @@ export function ColumnTable({
                       )}
                     </td>
                     <td className="index-column mono muted-text">{column.index}</td>
-                    <td>
+                    <td className="column-title-cell">
                       <span className={sampleDataAvailable ? 'column-name' : 'column-name no-data'}>
                         {column.name}
                       </span>
                       {!sampleDataAvailable ? (
                         <span className="column-note">(no sample data)</span>
                       ) : column.piiRisk === 'low' ? (
-                        <span className="column-note">(low risk - no PII)</span>
+                        <span className="column-note">
+                          (low risk - no <GlossaryLabel term="pii">PII</GlossaryLabel>)
+                        </span>
                       ) : null}
                     </td>
-                    <td className="muted-text">{formatToken(column.detectedType)}</td>
-                    <td>
+                    <td className="detected-type-cell">
+                      <span className="mobile-cell-label">Detected type</span>
+                      <span className="muted-text">{formatToken(column.detectedType)}</span>
+                    </td>
+                    <td className="control-cell">
+                      <span className="mobile-cell-label">
+                        <GlossaryLabel term="typeOverride">Type Override</GlossaryLabel>
+                      </span>
                       <select
                         value={control?.typeOverride ?? 'auto'}
                         disabled={!selectable || loading}
@@ -118,7 +135,10 @@ export function ColumnTable({
                         ))}
                       </select>
                     </td>
-                    <td>
+                    <td className="control-cell">
+                      <span className="mobile-cell-label">
+                        <GlossaryLabel term="strategy">Strategy</GlossaryLabel>
+                      </span>
                       <select
                         value={control?.strategy ?? column.strategy ?? 'auto'}
                         disabled={!selectable || loading}
@@ -133,7 +153,10 @@ export function ColumnTable({
                         ))}
                       </select>
                     </td>
-                    <td>
+                    <td className="control-cell">
+                      <span className="mobile-cell-label">
+                        <GlossaryLabel term="role">Role</GlossaryLabel>
+                      </span>
                       <select
                         value={role?.role ?? 'auto'}
                         disabled={!selectable || loading}
@@ -148,7 +171,10 @@ export function ColumnTable({
                         ))}
                       </select>
                     </td>
-                    <td>
+                    <td className="risk-cell">
+                      <span className="mobile-cell-label">
+                        <GlossaryLabel term="risk">Risk</GlossaryLabel>
+                      </span>
                       <RiskBadge risk={column.piiRisk} />
                     </td>
                   </tr>
@@ -156,7 +182,7 @@ export function ColumnTable({
               })
             : null}
           {!loading && allColumnCount > maxVisibleColumns ? (
-            <tr>
+            <tr className="show-more-row">
               <td colSpan={8} className="show-more-cell">
                 <button type="button" className="button button-ghost button-sm" onClick={onToggleShowAll}>
                   {showAllColumns ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
