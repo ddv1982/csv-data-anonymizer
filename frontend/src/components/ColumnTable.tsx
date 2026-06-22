@@ -50,18 +50,14 @@ export function ColumnTable({
             <th className="index-column">#</th>
             <th className="column-title-column">Column Name</th>
             <th>Type</th>
-            <th>
-              <GlossaryLabel term="typeOverride">Type Override</GlossaryLabel>
-            </th>
+            <th>Type Override</th>
             <th>
               <GlossaryLabel term="strategy">Strategy</GlossaryLabel>
             </th>
             <th>
               <GlossaryLabel term="role">Role</GlossaryLabel>
             </th>
-            <th>
-              <GlossaryLabel term="risk">Risk</GlossaryLabel>
-            </th>
+            <th>Risk</th>
           </tr>
         </thead>
         <tbody>
@@ -117,9 +113,7 @@ export function ColumnTable({
                       <span className="muted-text">{formatToken(column.detectedType)}</span>
                     </td>
                     <td className="control-cell">
-                      <span className="mobile-cell-label">
-                        <GlossaryLabel term="typeOverride">Type Override</GlossaryLabel>
-                      </span>
+                      <span className="mobile-cell-label">Type Override</span>
                       <select
                         value={control?.typeOverride ?? 'auto'}
                         disabled={!selectable || loading}
@@ -136,9 +130,7 @@ export function ColumnTable({
                       </select>
                     </td>
                     <td className="control-cell">
-                      <span className="mobile-cell-label">
-                        <GlossaryLabel term="strategy">Strategy</GlossaryLabel>
-                      </span>
+                      <span className="mobile-cell-label">Strategy</span>
                       <select
                         value={control?.strategy ?? column.strategy ?? 'auto'}
                         disabled={!selectable || loading}
@@ -154,9 +146,7 @@ export function ColumnTable({
                       </select>
                     </td>
                     <td className="control-cell">
-                      <span className="mobile-cell-label">
-                        <GlossaryLabel term="role">Role</GlossaryLabel>
-                      </span>
+                      <span className="mobile-cell-label">Role</span>
                       <select
                         value={role?.role ?? 'auto'}
                         disabled={!selectable || loading}
@@ -172,9 +162,7 @@ export function ColumnTable({
                       </select>
                     </td>
                     <td className="risk-cell">
-                      <span className="mobile-cell-label">
-                        <GlossaryLabel term="risk">Risk</GlossaryLabel>
-                      </span>
+                      <span className="mobile-cell-label">Risk</span>
                       <RiskBadge risk={column.piiRisk} />
                     </td>
                   </tr>

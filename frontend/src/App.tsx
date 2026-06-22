@@ -105,7 +105,7 @@ function App() {
             <ResultDisplay result={result} onReset={clearFile} onError={setError} />
           ) : (
             <>
-              <Card title="1. Select File" titleHelp={<SectionHelp topic="selectFile" />}>
+              <Card title="1. Select File">
                 <div className="file-row">
                   <button
                     type="button"
@@ -142,7 +142,7 @@ function App() {
                 </div>
               </Card>
 
-              <Card title="2. Select Columns" titleHelp={<SectionHelp topic="selectColumns" />} disabled={!hasFile}>
+              <Card title="2. Select Columns" disabled={!hasFile}>
                 <div className="columns-stack">
                   <div className="bulk-actions">
                     <button
@@ -185,6 +185,10 @@ function App() {
                     </button>
                   </div>
 
+                  <div className="table-help-row">
+                    <SectionHelp topic="selectColumns" />
+                  </div>
+
                   <ColumnTable
                     columns={visibleColumns}
                     allColumnCount={columns.length}
@@ -208,7 +212,7 @@ function App() {
                 </div>
               </Card>
 
-              <Card title="3. Configuration" titleHelp={<SectionHelp topic="configuration" />} disabled={!hasColumns}>
+              <Card title="3. Configuration" disabled={!hasColumns}>
                 <div className="config-stack">
                   <div className="field">
                     <label htmlFor="output-path">Output Path</label>
@@ -271,7 +275,6 @@ function App() {
                         <span>App Settings</span>
                         <ChevronDown className={settingsOpen ? 'chevron open' : 'chevron'} aria-hidden="true" />
                       </button>
-                      <SectionHelp topic="appSettings" />
                     </div>
                     {settingsOpen ? (
                       <div className="settings-panel">
@@ -361,7 +364,6 @@ function App() {
 
               <Card
                 title="4. Preview (Optional)"
-                titleHelp={<SectionHelp topic="preview" />}
                 disabled={!hasSelectedColumns}
                 action={
                   <button

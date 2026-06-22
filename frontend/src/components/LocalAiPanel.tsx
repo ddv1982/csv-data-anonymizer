@@ -48,10 +48,10 @@ export function LocalAiPanel({
           <div className="panel-title-row">
             <div className="local-ai-title">
               <Cpu aria-hidden="true" />
-              <GlossaryLabel term="localAi">Local AI</GlossaryLabel>
+              <span>Local AI</span>
               <span className={ready ? 'status-pill success' : 'status-pill'}>{ready ? 'Ready' : 'Setup needed'}</span>
             </div>
-            <SectionHelp topic="localAi" />
+            <SectionHelp topic="localAi" label="How Local AI works" />
           </div>
           <p className="muted-text text-sm">
             Optional <GlossaryLabel term="smartReplacement">smart replacements</GlossaryLabel> using{' '}
@@ -67,7 +67,6 @@ export function LocalAiPanel({
       <SwitchRow
         id="local-ai-enabled"
         label="Use Local AI"
-        labelHelp={<GlossaryPopover term="localAi" />}
         description={
           <>
             Enable <GlossaryLabel term="smartReplacement">Smart replacement</GlossaryLabel> for selected columns. CSV

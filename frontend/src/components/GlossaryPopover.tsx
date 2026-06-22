@@ -8,13 +8,13 @@ type PopoverPosition = {
   left: number
 }
 
-type HelpPopoverVariant = 'glossary' | 'section'
+type HelpPopoverVariant = 'icon' | 'term'
 
 type HelpPopoverProps = {
   title: string
   children: ReactNode
   triggerLabel: string
-  triggerText?: string
+  triggerText?: ReactNode
   variant?: HelpPopoverVariant
 }
 
@@ -27,12 +27,28 @@ export function GlossaryPopover({ term }: { term: GlossaryKey }) {
   )
 }
 
+export function GlossaryTerm({
+  term,
+  children,
+}: {
+  term: GlossaryKey
+  children: ReactNode
+}) {
+  const entry = glossaryTerms[term]
+
+  return (
+    <HelpPopover title={entry.title} triggerLabel={`Explain ${entry.title}`} triggerText={children} variant="term">
+      <p>{entry.body}</p>
+    </HelpPopover>
+  )
+}
+
 export function HelpPopover({
   title,
   children,
   triggerLabel,
   triggerText,
-  variant = 'glossary',
+  variant = 'icon',
 }: HelpPopoverProps) {
   const triggerRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -41,7 +57,7 @@ export function HelpPopover({
   const generatedId = useId()
   const panelId = `help-${generatedId}`
   const titleId = `${panelId}-title`
-  const isSectionHelp = variant === 'section'
+  const isTerm = variant === 'term'
 
   useEffect(() => {
     if (!open) return
@@ -51,10 +67,10 @@ export function HelpPopover({
       if (!trigger) return
       const rect = trigger.getBoundingClientRect()
       const viewportMargin = 8
-      const preferredWidth = isSectionHelp ? 416 : 288
+      const preferredWidth = 288
       const panelWidth = Math.min(preferredWidth, window.innerWidth - viewportMargin * 2)
       const topBelow = rect.bottom + 8
-      const estimatedHeight = isSectionHelp ? 360 : 148
+      const estimatedHeight = 148
       const panelHeight = Math.min(
         panelRef.current?.offsetHeight ?? estimatedHeight,
         window.innerHeight - viewportMargin * 2,
@@ -81,7 +97,7 @@ export function HelpPopover({
       window.removeEventListener('resize', updatePosition)
       window.removeEventListener('scroll', updatePosition, true)
     }
-  }, [isSectionHelp, open])
+  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -117,23 +133,23 @@ export function HelpPopover({
   }, [open])
 
   return (
-    <span className={isSectionHelp ? 'help-anchor section-help-anchor' : 'help-anchor glossary-anchor'}>
+    <span className={isTerm ? 'help-anchor glossary-term-anchor' : 'help-anchor glossary-anchor'}>
       <button
         ref={triggerRef}
         type="button"
-        className={isSectionHelp ? 'help-trigger section-help-trigger' : 'help-trigger glossary-trigger'}
-        aria-label={triggerLabel}
+        className={isTerm ? 'help-trigger glossary-term-trigger' : 'help-trigger glossary-trigger'}
+        aria-label={isTerm ? undefined : triggerLabel}
         aria-expanded={open}
-        aria-haspopup={isSectionHelp ? 'dialog' : undefined}
         aria-controls={open ? panelId : undefined}
-        aria-describedby={!isSectionHelp && open ? panelId : undefined}
+        aria-describedby={open ? panelId : undefined}
+        title={isTerm ? triggerLabel : undefined}
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => {
           event.stopPropagation()
           setOpen((current) => !current)
         }}
       >
-        <HelpCircle aria-hidden="true" />
+        {isTerm ? null : <HelpCircle aria-hidden="true" />}
         {triggerText ? <span>{triggerText}</span> : null}
       </button>
       {open && position
@@ -141,9 +157,8 @@ export function HelpPopover({
             <div
               ref={panelRef}
               id={panelId}
-              role={isSectionHelp ? 'dialog' : 'tooltip'}
-              aria-labelledby={isSectionHelp ? titleId : undefined}
-              className={isSectionHelp ? 'help-popover section-help-popover' : 'help-popover glossary-popover'}
+              role="tooltip"
+              className="help-popover glossary-popover"
               style={{ top: position.top, left: position.left }}
             >
               <strong id={titleId} className="help-popover-title">
@@ -169,8 +184,7 @@ export function GlossaryLabel({
 }) {
   return (
     <span className={className ? `glossary-label ${className}` : 'glossary-label'}>
-      <span>{children}</span>
-      <GlossaryPopover term={term} />
+      <GlossaryTerm term={term}>{children}</GlossaryTerm>
     </span>
   )
 }
