@@ -85,14 +85,17 @@ export function LocalAiPanel({
             <label htmlFor="local-ai-model">Model</label>
             <GlossaryPopover term="model" />
           </span>
-          <input
-            id="local-ai-model"
-            list="local-ai-model-options"
-            value={model}
-            disabled={disabled || !enabled}
-            placeholder="gemma3:4b"
-            onChange={(event) => onModelChange(event.target.value)}
-          />
+          <div className="local-ai-model-control">
+            <input
+              id="local-ai-model"
+              list="local-ai-model-options"
+              value={model}
+              disabled={disabled || !enabled}
+              placeholder="gemma3:4b"
+              onChange={(event) => onModelChange(event.target.value)}
+            />
+            {modelInstalled ? <span className="local-ai-installed">Installed locally</span> : null}
+          </div>
           <datalist id="local-ai-model-options">
             {modelOptions.map((option) => (
               <option key={option} value={option} />
@@ -107,7 +110,6 @@ export function LocalAiPanel({
               Install Ollama
             </button>
           ) : null}
-          {modelInstalled ? <span className="local-ai-installed">Installed locally</span> : null}
           {status?.runtimeAvailable && !modelInstalled ? (
             <button
               type="button"

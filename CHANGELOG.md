@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.33 - 2026-06-23
+
+- Tighten the Local AI panel layout so the installed-model badge stays attached to the model field and action controls wrap without horizontal overflow.
+- Add glossary-linked help article text for Local AI and privacy concepts such as Quasi-ID, Direct ID, Sensitive, k-anonymity, l-diversity, t-closeness, model, localhost, and fallback.
+- Keep glossary popovers usable inside help modals by layering them above the modal and making Escape close the innermost popover before closing the article.
+
 ## v1.0.32 - 2026-06-22
 
 - Add a persistent Theme mode selector with System, Light, and Dark choices in the top bar.
