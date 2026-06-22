@@ -1,23 +1,23 @@
 export const glossaryTerms = {
   releaseMode: {
     title: 'Privacy release mode',
-    body: 'The output style the app will write: row-level masking, formal tabular release, DP aggregate, or synthetic rows.',
+    body: 'The output workflow: Standard uses column strategies, while k/l/t tabular, DP aggregate, and Synthetic data use privacy roles and release settings.',
   },
   standardMasking: {
     title: 'Standard masking',
-    body: 'Transforms selected cells in the original row-level file. It is local masking and pseudonymization, not a formal anonymity guarantee.',
+    body: 'Transforms selected cells in the original row-level file and leaves unselected columns unchanged. It is not a formal anonymity guarantee.',
   },
   formalTabular: {
     title: 'k/l/t tabular',
-    body: 'A row-level release that redacts direct identifiers, generalizes quasi-identifiers, and checks k-anonymity plus optional l-diversity and t-closeness.',
+    body: 'A row-level release that redacts Direct IDs, generalizes Quasi-IDs, and checks k-anonymity plus optional l-diversity and t-closeness. Sensitive values are checked, not masked.',
   },
   dpAggregate: {
     title: 'DP aggregate',
-    body: 'Writes noisy count, sum, or mean results instead of row-level source rows.',
+    body: 'Writes noisy count, sum, or mean results instead of row-level source rows. Repeated releases spend more privacy budget.',
   },
   syntheticData: {
     title: 'Synthetic data',
-    body: 'Generates new rows from simple per-column distributions. Direct identifiers are replaced; this MVP does not make a DP synthetic guarantee.',
+    body: 'Generates new rows from simple per-column distributions. It does not preserve row relationships or make a DP synthetic guarantee.',
   },
   kAnonymity: {
     title: 'k-anonymity',
@@ -33,7 +33,7 @@ export const glossaryTerms = {
   },
   suppressSmallClasses: {
     title: 'Suppress small classes',
-    body: 'Drops rows whose equivalence class is smaller than k when formal tabular mode runs.',
+    body: 'When enabled, drops rows whose equivalence class is smaller than k in formal tabular mode.',
   },
   epsilon: {
     title: 'Epsilon',
@@ -69,11 +69,11 @@ export const glossaryTerms = {
   },
   strategy: {
     title: 'Strategy',
-    body: 'How selected cell values are transformed in standard masking mode.',
+    body: 'How selected cell values are transformed in Standard masking mode. Auto and Pseudonymize use type-based rules; Mask, Tokenize, Smart replacement, and Pass through are explicit choices.',
   },
   role: {
     title: 'Role',
-    body: 'How formal privacy release modes treat this column.',
+    body: 'How privacy release modes treat this column. Auto infers Direct ID, Quasi-ID, or Attribute, but not Sensitive.',
   },
   risk: {
     title: 'Risk',
@@ -93,7 +93,7 @@ export const glossaryTerms = {
   },
   sensitive: {
     title: 'Sensitive',
-    body: 'Private information to protect, such as income, health, status, or other confidential attributes.',
+    body: 'Private information to protect, such as income, health, status, or other confidential attributes. Needed for l-diversity and t-closeness checks.',
   },
   attribute: {
     title: 'Attribute',
@@ -101,11 +101,11 @@ export const glossaryTerms = {
   },
   exclude: {
     title: 'Exclude',
-    body: 'Marks the column for excluded release behavior. Formal mode blanks it; synthetic mode writes generated identifier-like placeholders.',
+    body: 'Formal mode blanks this column. Synthetic mode writes generated identifier-like placeholders for it.',
   },
   pseudonymize: {
     title: 'Pseudonymize',
-    body: 'Replace each source value with a consistent fake or shape-preserving value when possible.',
+    body: 'Use type-based replacement rules to produce consistent fake or shape-preserving values when possible. Some low-risk types may stay unchanged.',
   },
   tokenize: {
     title: 'Tokenize',
@@ -117,7 +117,7 @@ export const glossaryTerms = {
   },
   mask: {
     title: 'Mask',
-    body: 'Replace every non-space character with an asterisk.',
+    body: 'Replace every non-space character with an asterisk, preserving spaces and length cues.',
   },
   passThrough: {
     title: 'Pass through',
@@ -125,7 +125,7 @@ export const glossaryTerms = {
   },
   localAi: {
     title: 'Local AI',
-    body: 'AI running on this device through the local runtime, not a cloud API.',
+    body: 'AI running through Ollama on this device over localhost, not a cloud API.',
   },
   ollama: {
     title: 'Ollama',
@@ -145,7 +145,7 @@ export const glossaryTerms = {
   },
   pseudonymizedColumns: {
     title: 'Pseudonymized columns',
-    body: 'Selected columns transformed by Auto or Pseudonymize using rule-based replacements.',
+    body: 'Columns counted by the run report as using Auto or Pseudonymize rule-based replacement behavior.',
   },
   smartReplacementColumns: {
     title: 'Smart replacement columns',

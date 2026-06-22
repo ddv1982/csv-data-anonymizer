@@ -1,6 +1,7 @@
 import { Cpu, Download, ExternalLink, RefreshCw, X } from 'lucide-react'
 import type { LocalAiDownloadStatus, LocalAiStatus } from '../types'
 import { GlossaryLabel, GlossaryPopover } from './GlossaryPopover'
+import { SectionHelp } from './SectionHelp'
 import { SwitchRow } from './SwitchRow'
 
 export function LocalAiPanel({
@@ -44,10 +45,13 @@ export function LocalAiPanel({
     <div className="local-ai-panel">
       <div className="local-ai-header">
         <div>
-          <div className="local-ai-title">
-            <Cpu aria-hidden="true" />
-            <GlossaryLabel term="localAi">Local AI</GlossaryLabel>
-            <span className={ready ? 'status-pill success' : 'status-pill'}>{ready ? 'Ready' : 'Setup needed'}</span>
+          <div className="panel-title-row">
+            <div className="local-ai-title">
+              <Cpu aria-hidden="true" />
+              <GlossaryLabel term="localAi">Local AI</GlossaryLabel>
+              <span className={ready ? 'status-pill success' : 'status-pill'}>{ready ? 'Ready' : 'Setup needed'}</span>
+            </div>
+            <SectionHelp topic="localAi" />
           </div>
           <p className="muted-text text-sm">
             Optional <GlossaryLabel term="smartReplacement">smart replacements</GlossaryLabel> using{' '}

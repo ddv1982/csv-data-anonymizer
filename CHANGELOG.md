@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.29 - 2026-06-22
+
+- Add section-level "How does this work?" help popovers across the workflow, Local AI, Privacy Release, App Settings, Preview, and Privacy Report areas.
+- Expand end-user explanations for Strategy, Role, release modes, masking, DP aggregate budget tracking, synthetic-data limitations, and sensitive-role privacy checks.
+- Improve help-popover accessibility and responsive behavior with reusable dialog-style section help, viewport-bounded scrolling, keyboard close/focus return, and usable help inside disabled workflow sections.
+
 ## v1.0.28 - 2026-06-22
 
 - Add glossary popovers for specialist privacy, anonymization, Local AI, and privacy-report terms so users can understand release modes, roles, strategies, metrics, and DP caveats in context.

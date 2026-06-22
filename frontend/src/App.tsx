@@ -14,6 +14,7 @@ import { PreviewTable } from './components/PreviewTable'
 import { PrivacySettingsPanel } from './components/PrivacySettingsPanel'
 import { ProcessingStatus } from './components/ProcessingStatus'
 import { ResultDisplay } from './components/ResultDisplay'
+import { SectionHelp } from './components/SectionHelp'
 import { SwitchRow } from './components/SwitchRow'
 import { useAnonymizerWorkflow } from './hooks/useAnonymizerWorkflow'
 import { formatRowCount } from './utils/format'
@@ -104,7 +105,7 @@ function App() {
             <ResultDisplay result={result} onReset={clearFile} onError={setError} />
           ) : (
             <>
-              <Card title="1. Select File">
+              <Card title="1. Select File" titleHelp={<SectionHelp topic="selectFile" />}>
                 <div className="file-row">
                   <button
                     type="button"
@@ -141,7 +142,7 @@ function App() {
                 </div>
               </Card>
 
-              <Card title="2. Select Columns" disabled={!hasFile}>
+              <Card title="2. Select Columns" titleHelp={<SectionHelp topic="selectColumns" />} disabled={!hasFile}>
                 <div className="columns-stack">
                   <div className="bulk-actions">
                     <button
@@ -207,7 +208,7 @@ function App() {
                 </div>
               </Card>
 
-              <Card title="3. Configuration" disabled={!hasColumns}>
+              <Card title="3. Configuration" titleHelp={<SectionHelp topic="configuration" />} disabled={!hasColumns}>
                 <div className="config-stack">
                   <div className="field">
                     <label htmlFor="output-path">Output Path</label>
@@ -259,16 +260,19 @@ function App() {
                   />
 
                   <div className="collapsible">
-                    <button
-                      type="button"
-                      className="button button-ghost settings-trigger"
-                      disabled={!hasColumns || isLoading}
-                      onClick={() => setSettingsOpen((current) => !current)}
-                      aria-expanded={settingsOpen}
-                    >
-                      <span>App Settings</span>
-                      <ChevronDown className={settingsOpen ? 'chevron open' : 'chevron'} aria-hidden="true" />
-                    </button>
+                    <div className="collapsible-header">
+                      <button
+                        type="button"
+                        className="button button-ghost settings-trigger"
+                        disabled={!hasColumns || isLoading}
+                        onClick={() => setSettingsOpen((current) => !current)}
+                        aria-expanded={settingsOpen}
+                      >
+                        <span>App Settings</span>
+                        <ChevronDown className={settingsOpen ? 'chevron open' : 'chevron'} aria-hidden="true" />
+                      </button>
+                      <SectionHelp topic="appSettings" />
+                    </div>
                     {settingsOpen ? (
                       <div className="settings-panel">
                         <SwitchRow
@@ -357,6 +361,7 @@ function App() {
 
               <Card
                 title="4. Preview (Optional)"
+                titleHelp={<SectionHelp topic="preview" />}
                 disabled={!hasSelectedColumns}
                 action={
                   <button

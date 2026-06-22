@@ -24,6 +24,20 @@
     flex-direction: column;
   }
 
+  .card-header-row {
+    align-items: flex-start;
+  }
+
+  .collapsible-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .panel-title-row,
+  .section-heading-row {
+    align-items: flex-start;
+  }
+
   .settings-grid {
     grid-template-columns: 1fr;
   }

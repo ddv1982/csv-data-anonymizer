@@ -3,6 +3,7 @@ import type { GlossaryKey } from '../glossary'
 import type { ColumnMetadata, DpAggregate, PrivacyConfig, ReleaseMode } from '../types'
 import { formatToken } from '../utils/format'
 import { GlossaryLabel, GlossaryPopover } from './GlossaryPopover'
+import { SectionHelp } from './SectionHelp'
 import { SwitchRow } from './SwitchRow'
 
 export function PrivacySettingsPanel({
@@ -35,10 +36,13 @@ export function PrivacySettingsPanel({
   return (
     <div className="privacy-config-panel">
       <div className="privacy-config-header">
-        <span className="privacy-config-title">
-          <ShieldCheck aria-hidden="true" />
-          <GlossaryLabel term="releaseMode">Privacy Release</GlossaryLabel>
-        </span>
+        <div className="panel-title-row">
+          <span className="privacy-config-title">
+            <ShieldCheck aria-hidden="true" />
+            <GlossaryLabel term="releaseMode">Privacy Release</GlossaryLabel>
+          </span>
+          <SectionHelp topic="privacyRelease" />
+        </div>
         <select
           value={config.releaseMode}
           disabled={disabled}
@@ -225,15 +229,15 @@ function releaseModeGlossaryTerm(mode: ReleaseMode): GlossaryKey {
 
 function releaseModeHelp(mode: ReleaseMode) {
   if (mode === 'formalTabular') {
-    return 'Best when you need row-level output plus checks for re-identification risk.'
+    return 'Row-level output with Direct IDs redacted, Quasi-IDs generalized, and k/l/t checks reported.'
   }
   if (mode === 'differentialPrivacyAggregate') {
-    return 'Best when you only need summary statistics with a formal privacy budget.'
+    return 'No row-level output: writes noisy summary statistics with one-query budget accounting.'
   }
   if (mode === 'syntheticData') {
-    return 'Best when consumers need example-like rows instead of original records.'
+    return 'Generated example-like rows from simple distributions, without a DP synthetic guarantee.'
   }
-  return 'Best for row-level files where selected columns should be transformed in place.'
+  return 'Row-level output where selected columns are transformed in place using Strategy settings.'
 }
 
 function NumberField({

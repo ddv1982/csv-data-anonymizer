@@ -71,6 +71,19 @@
   gap: 1rem;
 }
 
+.card-title-row {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 0.75rem;
+}
+
+.card-title-row h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .card-content {
   min-width: 0;
   padding: 0 1.5rem 1.5rem;
@@ -82,8 +95,4 @@
 
 .section-disabled {
   opacity: 0.5;
-}
-
-.section-disabled .card-content {
-  pointer-events: none;
 }
