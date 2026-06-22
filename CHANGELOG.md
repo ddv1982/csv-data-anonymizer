@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.25 - 2026-06-22
+
+- Fix the background Anonymize File workflow so successful jobs write the output CSV and reach the result page again.
+- Defer Local AI provider setup until Smart replacement generation is actually needed, allowing fully preview-covered Smart replacement jobs to complete without a second Local AI readiness check.
+- Add background-job regression coverage for standard anonymization with and without preview data, Smart preview-covered output writes, and clear failure when Local AI generation is required but unavailable.
+
 ## v1.0.24 - 2026-06-22
 
 - Reuse Smart replacement values generated during preview when writing the final anonymized CSV so reviewed preview values do not require a second Local AI generation pass.
