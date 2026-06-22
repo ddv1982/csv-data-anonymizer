@@ -1,7 +1,8 @@
 import type { AppSettings, PrivacyConfig } from './types'
 
 export const defaultSettings: AppSettings = {
-  schemaVersion: 5,
+  schemaVersion: 6,
+  themeMode: 'system',
   deterministicDefault: false,
   seed: '',
   overwriteOutput: false,

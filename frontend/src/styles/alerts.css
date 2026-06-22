@@ -59,7 +59,5 @@
 
 .toast-region .alert {
   background: hsl(var(--card));
-  box-shadow:
-    0 10px 30px hsl(0 0% 0% / 0.32),
-    0 0 0 1px hsl(var(--destructive) / 0.2);
+  box-shadow: var(--shadow-toast);
 }

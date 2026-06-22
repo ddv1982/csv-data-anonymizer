@@ -32,6 +32,7 @@ export type DpAggregate = 'count' | 'sum' | 'mean'
 export type DpBudgetAction = 'warn' | 'block'
 export type DpBudgetStatus = 'withinBudget' | 'atBudget' | 'overBudget'
 export type PrivacyModel = 'kAnonymity' | 'lDiversity' | 'tCloseness' | 'differentialPrivacy' | 'syntheticData'
+export type ThemeMode = 'system' | 'light' | 'dark'
 
 export interface ColumnControl {
   columnIndex: number
@@ -88,6 +89,7 @@ export interface PrivacyConfig {
 
 export interface AppSettings {
   schemaVersion: number
+  themeMode: ThemeMode
   deterministicDefault: boolean
   seed: string
   overwriteOutput: boolean

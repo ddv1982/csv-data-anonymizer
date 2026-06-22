@@ -1,3 +1,4 @@
+import { setTheme as setTauriTheme } from '@tauri-apps/api/app'
 import { invoke } from '@tauri-apps/api/core'
 import type {
   AnalyzeResponse,
@@ -12,6 +13,8 @@ import type {
   PrivacyConfig,
   SmartReplacementEntry,
 } from './types'
+
+type TauriTheme = 'light' | 'dark'
 
 export function loadSettings(): Promise<AppSettings> {
   return invoke('load_settings')
@@ -159,4 +162,12 @@ export function cancelLocalAiModelDownload(jobId: string): Promise<LocalAiDownlo
 
 export function openLocalAiSetupUrl(): Promise<void> {
   return invoke('open_local_ai_setup_url')
+}
+
+export async function setAppTheme(theme: TauriTheme | null): Promise<void> {
+  try {
+    await setTauriTheme(theme)
+  } catch {
+    // Browser/Vite contexts do not provide the Tauri app plugin.
+  }
 }

@@ -17,7 +17,9 @@ import { ProcessingStatus } from './components/ProcessingStatus'
 import { ResultDisplay } from './components/ResultDisplay'
 import { SectionHelp } from './components/SectionHelp'
 import { SwitchRow } from './components/SwitchRow'
+import { ThemeModeToggle } from './components/ThemeModeToggle'
 import { useAnonymizerWorkflow } from './hooks/useAnonymizerWorkflow'
+import { normalizeThemeMode, useTheme } from './hooks/useTheme'
 import { formatRowCount } from './utils/format'
 import { clampNumber } from './utils/numbers'
 
@@ -74,6 +76,9 @@ function App() {
     handleInputChange,
     maybeLoadManualPath,
   } = useAnonymizerWorkflow()
+  const themeMode = normalizeThemeMode(settings.themeMode)
+  useTheme(themeMode)
+
   const unselectedRiskColumns = selectableColumns.filter(
     (column) => (column.piiRisk === 'high' || column.piiRisk === 'medium') && !selectedSet.has(column.index),
   )
@@ -91,6 +96,7 @@ function App() {
         <div className="container app-topbar-inner">
           <Shield className="brand-icon" aria-hidden="true" />
           <h1>CSV Anonymizer</h1>
+          <ThemeModeToggle themeMode={themeMode} onChange={(mode) => updateSetting('themeMode', mode)} />
         </div>
       </header>
 

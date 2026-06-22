@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.32 - 2026-06-22
+
+- Add a persistent Theme mode selector with System, Light, and Dark choices in the top bar.
+- Follow the operating system appearance in System mode while syncing the Tauri native app theme and browser color scheme.
+- Add light-mode semantic tokens for cards, controls, risk badges, alerts, popovers, and shadows while preserving the existing dark theme.
+
 ## v1.0.31 - 2026-06-22
 
 - Tighten the privacy-release workflow around practical local use with clearer DP aggregate validation, local epsilon budget history, grouped-output rules, synthetic-data limits, and report notes.
