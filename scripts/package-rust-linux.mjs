@@ -215,8 +215,8 @@ Section: utils
 Priority: optional
 Homepage: ${homepage}
 Description: ${description}
- CSV Anonymizer detects sensitive CSV columns, previews deterministic transformations,
- and writes anonymized output without sending data off the device.
+	 CSV Anonymizer detects sensitive CSV columns, previews deterministic transformations,
+	 and writes transformed output without sending data off the device.
 `
     )
     writeText(join(controlRoot, 'md5sums'), md5Sums(layoutRoot))
@@ -251,7 +251,7 @@ function buildRpm(layoutRoot) {
     `Name: ${packageName}
 Version: ${version}
 Release: 1
-Summary: Local-first CSV anonymization desktop app
+	Summary: Local-first CSV anonymizer
 License: MIT
 URL: ${homepage}
 Packager: ${maintainer}

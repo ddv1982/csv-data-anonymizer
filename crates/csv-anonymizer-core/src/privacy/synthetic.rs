@@ -1,6 +1,5 @@
 use super::PrivacyProcessResult;
 use super::dataset::{CsvDataset, check_canceled, read_dataset, report_progress, write_atomically};
-use super::differential_privacy::{format_epsilon, validate_epsilon};
 use super::generalization::generalize_value;
 use super::roles::{RolePlan, build_role_plan, validate_common_config};
 use crate::detection::is_empty_value;
@@ -48,7 +47,7 @@ pub(super) fn process_synthetic_data(
         seed,
     };
     let output_path = write_synthetic_release(output_path, &dataset, write_plan, control)?;
-    let mut formal_models = vec![PrivacyModelReport {
+    let formal_models = vec![PrivacyModelReport {
         model: PrivacyModel::SyntheticData,
         satisfied: true,
         actual: format!("{} generated row(s)", requested_rows),
@@ -56,38 +55,28 @@ pub(super) fn process_synthetic_data(
         message: "Generated rows are sampled independently from column distributions and direct identifiers are replaced."
             .to_string(),
     }];
-    if let Some(epsilon) = config.synthetic.epsilon {
-        formal_models.push(PrivacyModelReport {
-            model: PrivacyModel::DifferentialPrivacy,
-            satisfied: false,
-            actual: format!("epsilon={} requested", format_epsilon(epsilon)),
-            threshold: "not implemented for synthetic mode".to_string(),
-            message: "Differentially private synthetic data requires a DP synthesizer; this local MVP does not claim that guarantee."
-                .to_string(),
-        });
-    }
 
     Ok(PrivacyProcessResult {
         row_count: requested_rows,
         output_path,
         duration_ms: start_time.elapsed().as_millis(),
-        columns_anonymized: columns.len(),
+        columns_anonymized: columns.iter().filter(|column| column.is_selected).count(),
         privacy_report: PrivacyReport {
             release_mode: ReleaseMode::SyntheticData,
             direct_identifiers: role_plan.role_count(ColumnRole::DirectIdentifier),
             quasi_identifiers: role_plan.role_count(ColumnRole::QuasiIdentifier),
             sensitive_columns: role_plan.role_count(ColumnRole::Sensitive),
-            pseudonymized_columns: role_plan.role_count(ColumnRole::DirectIdentifier),
+            pseudonymized_columns: role_plan.role_count(ColumnRole::DirectIdentifier)
+                + role_plan.role_count(ColumnRole::Sensitive),
             smart_replacement_columns: 0,
             opaque_token_columns: 0,
             masked_columns: 0,
-            generalized_columns: 0,
-            pass_through_columns: role_plan.role_count(ColumnRole::Attribute)
-                + role_plan.role_count(ColumnRole::Sensitive)
-                + role_plan.role_count(ColumnRole::QuasiIdentifier),
+            generalized_columns: role_plan.role_count(ColumnRole::QuasiIdentifier),
+            pass_through_columns: role_plan.role_count(ColumnRole::Attribute),
             suppressed_rows: 0,
             synthetic_rows: requested_rows,
-            dp_epsilon: config.synthetic.epsilon.map(format_epsilon),
+            dp_epsilon: None,
+            dp_budget: None,
             unique_pseudonym_values: 0,
             reused_pseudonym_values: 0,
             collisions_avoided: 0,
@@ -96,7 +85,7 @@ pub(super) fn process_synthetic_data(
             smart_replacement_values: 0,
             smart_replacement_fallbacks: 0,
             formal_models,
-            notes: synthetic_notes(&config.synthetic),
+            notes: synthetic_notes(),
         },
     })
 }
@@ -109,8 +98,11 @@ fn validate_synthetic_config(config: &SyntheticDataConfig) -> Result<()> {
             "synthetic data row count is limited to 1,000,000 rows".to_string(),
         ));
     }
-    if let Some(epsilon) = config.epsilon {
-        validate_epsilon(epsilon)?;
+    if config.epsilon.is_some() {
+        return Err(AnonymizerError::Privacy(
+            "synthetic DP epsilon is not supported by this generator; clear epsilon until a DP synthetic-data generator is implemented"
+                .to_string(),
+        ));
     }
     Ok(())
 }
@@ -179,6 +171,9 @@ fn synthetic_value(
     if matches!(role, ColumnRole::DirectIdentifier | ColumnRole::Exclude) {
         return synthetic_identifier(column.detected_type, row_index, seed);
     }
+    if role == ColumnRole::Sensitive {
+        return synthetic_sensitive_value(column.detected_type, row_index, seed);
+    }
     if observed_values.is_empty() {
         return String::new();
     }
@@ -216,18 +211,35 @@ fn synthetic_identifier(data_type: DataType, row_index: usize, seed: &str) -> St
     }
 }
 
-fn synthetic_notes(config: &SyntheticDataConfig) -> Vec<String> {
-    let mut notes = vec![
+fn synthetic_sensitive_value(data_type: DataType, row_index: usize, seed: &str) -> String {
+    let ordinal = row_index + 1;
+    match data_type {
+        DataType::NumericId
+        | DataType::NumericValue
+        | DataType::Currency
+        | DataType::Percentage => {
+            deterministic_number(&format!("synthetic-sensitive:{ordinal}"), seed, 1, 100)
+                .to_string()
+        }
+        DataType::Boolean => {
+            if deterministic_number(&format!("synthetic-sensitive:{ordinal}"), seed, 0, 1) == 0 {
+                "false".to_string()
+            } else {
+                "true".to_string()
+            }
+        }
+        DataType::Timestamp => "2000-01-01T00:00:00Z".to_string(),
+        _ => format!("synthetic-sensitive-{ordinal}"),
+    }
+}
+
+fn synthetic_notes() -> Vec<String> {
+    vec![
         "Synthetic data mode generates new rows from simple per-column distributions and does not make the source data anonymous by itself."
             .to_string(),
         "Direct identifier columns are replaced with generated placeholders instead of sampled source values."
             .to_string(),
-    ];
-    if config.epsilon.is_some() {
-        notes.push(
-            "A synthetic epsilon value was requested, but this MVP does not implement a DP synthesizer."
-                .to_string(),
-        );
-    }
-    notes
+        "Sensitive columns are replaced with generated placeholders; Attribute columns may still sample observed source values."
+            .to_string(),
+    ]
 }

@@ -17,8 +17,12 @@ export function loadSettings(): Promise<AppSettings> {
   return invoke('load_settings')
 }
 
-export function saveSettings(settings: AppSettings): Promise<void> {
+export function saveSettings(settings: AppSettings): Promise<AppSettings> {
   return invoke('save_settings', { settings })
+}
+
+export function resetDpBudgetLedger(): Promise<AppSettings> {
+  return invoke('reset_dp_budget_ledger')
 }
 
 export function pickInputCsv(initialDirectory: string | null): Promise<string | null> {

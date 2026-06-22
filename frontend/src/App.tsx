@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  AlertTriangle,
   ChevronDown,
   FolderOpen,
   Loader2,
@@ -51,6 +52,7 @@ function App() {
     isLoading,
     canPreview,
     canAnonymize,
+    privacyValidation,
     setError,
     setSettingsOpen,
     setShowAllColumns,
@@ -65,12 +67,23 @@ function App() {
     updateColumnType,
     updateColumnStrategy,
     updatePrivacyConfig,
+    resetDpBudget,
     updateColumnRole,
     toggleColumn,
     clearFile,
     handleInputChange,
     maybeLoadManualPath,
   } = useAnonymizerWorkflow()
+  const unselectedRiskColumns = selectableColumns.filter(
+    (column) => (column.piiRisk === 'high' || column.piiRisk === 'medium') && !selectedSet.has(column.index),
+  )
+  const unselectedRiskMessage =
+    unselectedRiskColumns.length > 0
+      ? formatUnselectedRiskMessage(
+          unselectedRiskColumns.map((column) => column.name),
+          privacyConfig.releaseMode,
+        )
+      : null
 
   return (
     <div className="app-root">
@@ -142,7 +155,7 @@ function App() {
                 </div>
               </Card>
 
-              <Card title="2. Select Columns" disabled={!hasFile}>
+              <Card title="2. Select Data to Transform" disabled={!hasFile}>
                 <div className="columns-stack">
                   <div className="bulk-actions">
                     <button
@@ -167,7 +180,7 @@ function App() {
                       disabled={busy === 'loading' || highRiskColumns.length === 0}
                       onClick={() => setColumnSelection(highRiskColumns)}
                     >
-                      Select High Risk
+                      Select High Detector Risk
                     </button>
                     <button
                       type="button"
@@ -181,13 +194,18 @@ function App() {
                         )
                       }
                     >
-                      Select PII Risk
+                      Select Detected Risk
                     </button>
                   </div>
 
                   <div className="table-help-row">
                     <SectionHelp topic="selectColumns" />
                   </div>
+                  {unselectedRiskMessage ? (
+                    <Alert icon={<AlertTriangle aria-hidden="true" />}>
+                      <strong>Detector-flagged columns are unselected.</strong> {unselectedRiskMessage}
+                    </Alert>
+                  ) : null}
 
                   <ColumnTable
                     columns={visibleColumns}
@@ -222,7 +240,7 @@ function App() {
                         type="text"
                         value={outputPath}
                         disabled={!hasColumns || isLoading}
-                        placeholder="e.g., data_anonymized.csv"
+                        placeholder="e.g., data_private_output.csv"
                         aria-describedby="output-path-description"
                         onChange={(event) => updateOutputPath(event.target.value)}
                       />
@@ -238,7 +256,7 @@ function App() {
                       </button>
                     </div>
                     <p id="output-path-description" className="muted-text text-sm">
-                      The path where the anonymized file will be saved
+                      The path where the transformed or released file will be saved
                     </p>
                   </div>
 
@@ -260,8 +278,14 @@ function App() {
                     config={privacyConfig}
                     columns={columns}
                     disabled={!hasColumns || isLoading}
+                    onResetBudget={() => void resetDpBudget()}
                     onChange={updatePrivacyConfig}
                   />
+                  {hasColumns && !privacyValidation.valid ? (
+                    <Alert variant="destructive" icon={<AlertCircle aria-hidden="true" />}>
+                      {privacyValidation.reason ?? 'Complete the privacy release settings before creating output.'}
+                    </Alert>
+                  ) : null}
 
                   <div className="collapsible">
                     <div className="collapsible-header">
@@ -384,7 +408,13 @@ function App() {
                 {busy === 'running' ? (
                   <ProcessingStatus
                     status={jobStatus}
-                    fallbackRowCount={headers?.rowCountIsComplete ? headers.rowCount : 0}
+                    fallbackRowCount={
+                      privacyConfig.releaseMode === 'differentialPrivacyAggregate'
+                        ? 0
+                        : headers?.rowCountIsComplete
+                          ? headers.rowCount
+                          : 0
+                    }
                     onCancel={() => void cancelCurrentJob()}
                   />
                 ) : (
@@ -395,7 +425,7 @@ function App() {
                     onClick={runAnonymization}
                   >
                     <Shield aria-hidden="true" />
-                    Anonymize File
+                    Create anonymized CSV
                   </button>
                 )}
               </Card>
@@ -406,11 +436,27 @@ function App() {
 
       <footer className="app-footer">
         <div className="container">
-          <p>CSV Anonymizer - Protect sensitive data in your CSV files</p>
+          <p>CSV Anonymizer - Transform sensitive fields in CSV files</p>
         </div>
       </footer>
     </div>
   )
+}
+
+function formatUnselectedRiskMessage(columnNames: string[], releaseMode: string) {
+  const count = columnNames.length
+  const shownNames = columnNames.slice(0, 3).join(', ')
+  const extraCount = Math.max(count - 3, 0)
+  const suffix = extraCount > 0 ? `, and ${extraCount} more` : ''
+  const columnText = count === 1 ? 'column is' : 'columns are'
+  const prefix = `${count} ${columnText} flagged high or medium risk by detection (${shownNames}${suffix}).`
+  if (releaseMode === 'differentialPrivacyAggregate') {
+    return `${prefix} DP aggregate output does not include row-level source rows, but configured group/value columns must still be selected.`
+  }
+  if (releaseMode === 'syntheticData') {
+    return `${prefix} Synthetic data requires every CSV column to be selected so source columns are not copied through.`
+  }
+  return `${prefix} Unselected row-level columns are written unchanged.`
 }
 
 export default App

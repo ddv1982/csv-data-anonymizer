@@ -104,7 +104,7 @@ export function ColumnTable({
                         <span className="column-note">(no sample data)</span>
                       ) : column.piiRisk === 'low' ? (
                         <span className="column-note">
-                          (low risk - no <GlossaryLabel term="pii">PII</GlossaryLabel>)
+                          (no obvious sensitive fields detected)
                         </span>
                       ) : null}
                     </td>

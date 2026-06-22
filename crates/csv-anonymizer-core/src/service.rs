@@ -10,7 +10,7 @@ use crate::smart::{
 use crate::strategies::{TransformState, transform_value_with_state};
 use crate::types::{
     AnonymizationStrategy, AnonymizeData, AnonymizeParams, ColumnControl, ColumnMetadata,
-    ColumnPreview, DataType, HeadersData, PreviewData, PreviewParams, PreviewWarning,
+    ColumnPreview, DataType, HeadersData, PiiRisk, PreviewData, PreviewParams, PreviewWarning,
     PrivacyReport, ProcessControl, ProcessOptions, ReleaseMode, SampleTransform, TransformContext,
     WarningSeverity,
 };
@@ -196,7 +196,7 @@ impl AnonymizerService {
             let result = process_privacy_release(
                 &input_path,
                 &output_path,
-                &controlled_metadata,
+                &selected_metadata,
                 privacy_config,
                 input.deterministic,
                 &input.seed,
@@ -241,7 +241,7 @@ impl AnonymizerService {
         Ok(AnonymizeData {
             output_path,
             row_count: result.row_count,
-            columns_anonymized: input.columns.len(),
+            columns_anonymized: count_transforming_selected_columns(&selected_metadata),
             duration_ms: result.duration_ms,
             privacy_report: build_privacy_report(
                 &selected_metadata,
@@ -261,7 +261,7 @@ pub fn generate_default_output_path(input_path: &Path) -> PathBuf {
         .file_stem()
         .and_then(|value| value.to_str())
         .unwrap_or("output");
-    let file_name = format!("{stem}_anonymized.{extension}");
+    let file_name = format!("{stem}_private_output.{extension}");
     input_path.with_file_name(file_name)
 }
 
@@ -390,6 +390,7 @@ fn build_privacy_report(
         suppressed_rows: 0,
         synthetic_rows: 0,
         dp_epsilon: None,
+        dp_budget: None,
         unique_pseudonym_values: transform_report.unique_pseudonym_values,
         reused_pseudonym_values: transform_report.reused_pseudonym_values,
         collisions_avoided: transform_report.collisions_avoided,
@@ -441,6 +442,8 @@ fn build_privacy_report(
         }
     }
 
+    push_unselected_column_note(&mut report.notes, columns);
+
     if deterministic {
         report.notes.push(
             "Deterministic pseudonyms use keyed HMAC-SHA256 with the configured seed; treat that seed as sensitive."
@@ -478,6 +481,65 @@ fn build_privacy_report(
     }
 
     report
+}
+
+fn push_unselected_column_note(notes: &mut Vec<String>, columns: &[ColumnMetadata]) {
+    let unselected_columns = columns.iter().filter(|column| !column.is_selected).count();
+    if unselected_columns == 0 {
+        return;
+    }
+
+    let unselected_detector_risk_columns = columns
+        .iter()
+        .filter(|column| {
+            !column.is_selected && matches!(column.pii_risk, PiiRisk::High | PiiRisk::Medium)
+        })
+        .count();
+    if unselected_detector_risk_columns > 0 {
+        notes.push(format!(
+            "{} unselected high/medium detector-risk {} written unchanged.",
+            unselected_detector_risk_columns,
+            plural(
+                unselected_detector_risk_columns,
+                "column was",
+                "columns were"
+            )
+        ));
+    } else {
+        notes.push(format!(
+            "{} unselected {} written unchanged.",
+            unselected_columns,
+            plural(unselected_columns, "column was", "columns were")
+        ));
+    }
+}
+
+fn plural<'a>(count: usize, singular: &'a str, plural: &'a str) -> &'a str {
+    if count == 1 { singular } else { plural }
+}
+
+fn count_transforming_selected_columns(columns: &[ColumnMetadata]) -> usize {
+    columns
+        .iter()
+        .filter(|column| column.is_selected && strategy_changes_output(column))
+        .count()
+}
+
+fn strategy_changes_output(column: &ColumnMetadata) -> bool {
+    match column.strategy {
+        AnonymizationStrategy::Mask
+        | AnonymizationStrategy::Tokenize
+        | AnonymizationStrategy::LocalAi => true,
+        AnonymizationStrategy::PassThrough => false,
+        AnonymizationStrategy::Auto | AnonymizationStrategy::Pseudonymize => !matches!(
+            column.detected_type,
+            DataType::CountryCode
+                | DataType::Enum
+                | DataType::Boolean
+                | DataType::Currency
+                | DataType::Percentage
+        ),
+    }
 }
 
 fn generate_column_preview(

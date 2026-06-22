@@ -86,7 +86,7 @@ pub(super) fn should_auto_select(column: &ColumnMetadata) -> bool {
 
 pub(super) fn default_output_path_with_suffix(input_path: &Path, suffix: &str) -> PathBuf {
     let suffix = if suffix.trim().is_empty() {
-        "_anonymized"
+        "_private_output"
     } else {
         suffix.trim()
     };

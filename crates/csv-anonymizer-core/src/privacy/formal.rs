@@ -1,12 +1,12 @@
-use super::PrivacyProcessResult;
 use super::dataset::{CsvDataset, check_canceled, read_dataset, report_progress, write_atomically};
 use super::generalization::{MAX_GENERALIZATION_LEVEL, generalize_value};
 use super::roles::{RolePlan, build_role_plan, validate_common_config};
+use super::{PrivacyProcessResult, constrain_unselected_roles_to_attributes};
 use crate::detection::is_empty_value;
 use crate::error::{AnonymizerError, Result, csv_error};
 use crate::types::{
-    ColumnMetadata, ColumnRole, DataType, FormalPrivacyConfig, PrivacyConfig, PrivacyModel,
-    PrivacyModelReport, PrivacyReport, ProcessControl, ReleaseMode,
+    ColumnMetadata, ColumnRole, DataType, FormalPrivacyConfig, PiiRisk, PrivacyConfig,
+    PrivacyModel, PrivacyModelReport, PrivacyReport, ProcessControl, ReleaseMode,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -33,7 +33,8 @@ pub(super) fn process_formal_tabular(
     validate_formal_config(&config.formal)?;
     let start_time = Instant::now();
     let dataset = read_dataset(input_path, control.as_deref_mut())?;
-    let role_plan = build_role_plan(columns, config)?;
+    let mut role_plan = build_role_plan(columns, config)?;
+    constrain_unselected_roles_to_attributes(columns, &mut role_plan.roles);
     let quasi_indices = role_plan.quasi_indices();
     let sensitive_indices = role_plan.sensitive_indices();
     let levels = choose_generalization_levels(&dataset, columns, &role_plan, &config.formal);
@@ -91,6 +92,7 @@ pub(super) fn process_formal_tabular(
             suppressed_rows: suppressed_rows.len(),
             synthetic_rows: 0,
             dp_epsilon: None,
+            dp_budget: None,
             unique_pseudonym_values: 0,
             reused_pseudonym_values: 0,
             collisions_avoided: 0,
@@ -99,7 +101,7 @@ pub(super) fn process_formal_tabular(
             smart_replacement_values: 0,
             smart_replacement_fallbacks: 0,
             formal_models,
-            notes: formal_notes(config, released_count),
+            notes: formal_notes(columns, config, released_count),
         },
     })
 }
@@ -467,12 +469,42 @@ fn total_variation_distance(
         / 2.0
 }
 
-fn formal_notes(config: &PrivacyConfig, released_count: usize) -> Vec<String> {
+fn formal_notes(
+    columns: &[ColumnMetadata],
+    config: &PrivacyConfig,
+    released_count: usize,
+) -> Vec<String> {
     let mut notes = vec![
         "Formal tabular release mode generalizes quasi-identifiers, redacts direct identifiers, and can suppress rows below the k threshold."
             .to_string(),
         format!("{released_count} row(s) were released after formal privacy checks."),
     ];
+    let unselected_columns = columns.iter().filter(|column| !column.is_selected).count();
+    if unselected_columns > 0 {
+        let unselected_detector_risk_columns = columns
+            .iter()
+            .filter(|column| {
+                !column.is_selected && matches!(column.pii_risk, PiiRisk::High | PiiRisk::Medium)
+            })
+            .count();
+        if unselected_detector_risk_columns > 0 {
+            notes.push(format!(
+                "{} unselected high/medium detector-risk {} written unchanged.",
+                unselected_detector_risk_columns,
+                plural(
+                    unselected_detector_risk_columns,
+                    "column was",
+                    "columns were"
+                )
+            ));
+        } else {
+            notes.push(format!(
+                "{} unselected {} written unchanged.",
+                unselected_columns,
+                plural(unselected_columns, "column was", "columns were")
+            ));
+        }
+    }
     if config.formal.l_diversity.is_some() {
         notes.push(
             "l-diversity is evaluated with distinct sensitive values per equivalence class."
@@ -485,4 +517,8 @@ fn formal_notes(config: &PrivacyConfig, released_count: usize) -> Vec<String> {
         );
     }
     notes
+}
+
+fn plural<'a>(count: usize, singular: &'a str, plural: &'a str) -> &'a str {
+    if count == 1 { singular } else { plural }
 }

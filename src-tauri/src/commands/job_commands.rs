@@ -2,9 +2,11 @@ use super::shared::authorize_or_confirm_output_file;
 use crate::jobs::{AnonymizeJobState, AnonymizeJobStatus, AnonymizeJobStore, run_anonymize_job};
 use crate::local_ai::LocalAiRequest;
 use crate::path_access::PathAccess;
+use crate::settings::DpBudgetLedger;
 use csv_anonymizer_core::{AnonymizeParams, ColumnControl, PrivacyConfig, SmartReplacementEntry};
 use serde::Deserialize;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tauri::State;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -32,6 +34,7 @@ pub async fn start_anonymize_job(
     app: tauri::AppHandle,
     path_access: State<'_, PathAccess>,
     jobs: State<'_, AnonymizeJobStore>,
+    ledger: State<'_, Arc<DpBudgetLedger>>,
     request: StartAnonymizeJobRequest,
 ) -> Result<AnonymizeJobStatus, String> {
     let file_path = path_access.authorize_input_file(request.file_path)?;
@@ -39,10 +42,12 @@ pub async fn start_anonymize_job(
     let job = jobs.create_job(request.total_row_count)?;
     let initial_status = job.snapshot()?;
     let worker_job = job.clone();
+    let worker_ledger = ledger.inner().clone();
 
     let _job_handle = tauri::async_runtime::spawn_blocking(move || {
         run_anonymize_job(
             worker_job,
+            worker_ledger,
             AnonymizeParams {
                 file_path,
                 output_path,

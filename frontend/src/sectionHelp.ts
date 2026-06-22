@@ -2,7 +2,7 @@ export const sectionHelp = {
   selectFile: {
     title: 'Select File',
     summary: [
-      'Start by choosing the CSV you want to anonymize. The app reads the header row and a sample of rows so it can detect column types, risk, and suggested masking settings before you write any output.',
+      'Start by choosing the CSV you want to transform. The app reads the header row and a sample of rows so it can detect column types, risk, and suggested settings before you write any output.',
     ],
     points: [
       {
@@ -16,14 +16,14 @@ export const sectionHelp = {
     ],
   },
   selectColumns: {
-    title: 'Select Columns',
+    title: 'Select Data to Transform',
     summary: [
       'Choose which columns need protection, then adjust the detected type, Strategy, and Role where the automatic guess is not enough.',
     ],
     points: [
       {
         label: 'Strategy',
-        text: 'Used by Standard masking. Auto and Pseudonymize run type-based replacements; some types such as booleans, country codes, percentages, currency, and enums can stay unchanged. Mask replaces every non-space character with *, Tokenize writes stable tok_ values, Smart replacement uses Local AI, and Pass through keeps the original value.',
+        text: 'Used by standard row-level transformation. Auto and Pseudonymize run type-based replacements; some types such as booleans, country codes, percentages, currency, and enums can stay unchanged. Mask replaces every non-space character with *, Tokenize writes stable tok_ values, Smart replacement uses Local AI, and Pass through keeps the original value.',
       },
       {
         label: 'Role',
@@ -38,12 +38,12 @@ export const sectionHelp = {
   configuration: {
     title: 'Configuration',
     summary: [
-      'This section decides where the output goes and which release workflow is used. Standard masking uses the per-column Strategy values; formal, DP aggregate, and synthetic releases use the Role and privacy settings.',
+      'This section decides where the output goes and which release workflow is used. Standard row-level transformation uses the per-column Strategy values; formal, DP aggregate, and synthetic releases use the Role and privacy settings.',
     ],
     points: [
       {
         label: 'Output path',
-        text: 'The anonymized or released CSV is written here. Use a new path unless you intentionally want to overwrite an existing file.',
+        text: 'The transformed or released CSV is written here. Use a new path unless you intentionally want to overwrite an existing file.',
       },
       {
         label: 'Local AI',
@@ -51,7 +51,7 @@ export const sectionHelp = {
       },
       {
         label: 'Privacy release',
-        text: 'Choose Standard masking for row-level transformed files, k/l/t tabular for formal row-level checks, DP aggregate for noisy summary statistics, or Synthetic data for generated example-like rows.',
+        text: 'Choose Standard CSV transform for row-level transformed files, k/l/t tabular for formal row-level checks, DP aggregate for noisy summary statistics, or Synthetic data for sampled test rows.',
       },
     ],
   },
@@ -78,11 +78,11 @@ export const sectionHelp = {
   privacyRelease: {
     title: 'Privacy Release',
     summary: [
-      'Release mode controls the shape of the output. It is separate from the Strategy dropdown used by Standard masking.',
+      'Release mode controls the shape of the output. It is separate from the Strategy dropdown used by standard row-level transformation.',
     ],
     points: [
       {
-        label: 'Standard masking',
+        label: 'Standard CSV transform',
         text: 'Writes row-level CSV data and transforms selected columns in place. It is local masking and pseudonymization, not a formal anonymity guarantee.',
       },
       {
@@ -91,18 +91,18 @@ export const sectionHelp = {
       },
       {
         label: 'DP aggregate',
-        text: 'Writes noisy count, sum, or mean results instead of source rows. Sum and mean need a numeric value column plus public lower and upper bounds. Repeated releases spend additional privacy budget and must be tracked outside the file.',
+        text: 'Writes noisy count, sum, or mean results instead of source rows. Sum and mean need a numeric value column plus public lower and upper bounds. Grouped output requires public allowed group values and an Attribute-role group column. Local release history can block or warn when cumulative epsilon exceeds the configured limit. Repeatable deterministic output is not available for DP aggregate releases.',
       },
       {
         label: 'Synthetic data',
-        text: 'Writes generated rows from simple per-column distributions. It does not preserve relationships between columns, and a synthetic DP epsilon records intent only because this MVP does not implement a DP synthesizer.',
+        text: 'Writes sampled test data from a simple per-column generator. It does not preserve relationships between columns and does not provide a DP synthetic guarantee.',
       },
     ],
   },
   appSettings: {
     title: 'App Settings',
     summary: [
-      'These settings control repeatability, output naming, preview size, and whether paths are remembered between runs.',
+      'These settings control repeatability, output naming, DP release history, preview size, and whether paths are remembered between runs.',
     ],
     points: [
       {
@@ -151,7 +151,7 @@ export const sectionHelp = {
       },
       {
         label: 'Notes',
-        text: 'Read notes for important caveats such as Local AI fallbacks, deterministic seed sensitivity, DP budget accounting, or synthetic data limitations.',
+        text: 'Read notes for important caveats such as Local AI fallbacks, DP release history, contribution bounds, or synthetic data limitations.',
       },
     ],
   },

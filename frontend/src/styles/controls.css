@@ -197,6 +197,28 @@
   gap: 0.35rem 0.5rem;
 }
 
+.privacy-advanced-settings {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 0.75rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--background) / 0.28);
+  padding: 0.75rem;
+}
+
+.privacy-advanced-settings summary {
+  width: fit-content;
+  color: hsl(var(--foreground));
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.privacy-advanced-settings .settings-grid {
+  padding-top: 0.25rem;
+}
+
 .local-ai-header {
   display: flex;
   align-items: flex-start;

@@ -4,6 +4,7 @@ import { openOutputLocation } from '../tauri'
 import type { AnonymizeData, PrivacyModel } from '../types'
 import { messageFrom } from '../utils/errors'
 import { formatResultStats, formatToken } from '../utils/format'
+import { releaseModeGlossaryTerm, releaseModeLabel } from '../utils/privacyDisplay'
 import { Alert } from './Alert'
 import { GlossaryLabel } from './GlossaryPopover'
 import { SectionHelp } from './SectionHelp'
@@ -55,6 +56,32 @@ export function ResultDisplay({
     },
     { label: 'Smart fallbacks', value: result.privacyReport.smartReplacementFallbacks, glossaryTerm: 'smartFallbacks' },
   ]
+  if (result.privacyReport.dpBudget) {
+    privacyMetrics.splice(
+      13,
+      0,
+      {
+        label: 'DP budget status',
+        value: budgetStatusLabel(result.privacyReport.dpBudget.status),
+        glossaryTerm: 'dpBudgetStatus',
+      },
+      {
+        label: 'DP spent after',
+        value: result.privacyReport.dpBudget.spentEpsilonAfter,
+        glossaryTerm: 'dpBudgetSpent',
+      },
+      {
+        label: 'DP budget limit',
+        value: result.privacyReport.dpBudget.limitEpsilon,
+        glossaryTerm: 'dpBudgetLimit',
+      },
+      {
+        label: 'DP remaining',
+        value: result.privacyReport.dpBudget.remainingEpsilon,
+        glossaryTerm: 'dpBudgetRemaining',
+      },
+    )
+  }
 
   async function handleOpenFolder() {
     try {
@@ -67,9 +94,9 @@ export function ResultDisplay({
   return (
     <div className="result-stack">
       <Alert variant="success" icon={<CheckCircle2 aria-hidden="true" />}>
-        <h2>Success!</h2>
+        <h2>Output created</h2>
         <div className="result-description">
-          <p>Your file has been successfully anonymized.</p>
+          <p>Selected data was transformed or released according to the configured workflow.</p>
           <p className="mono muted-text result-path">{result.outputPath}</p>
           <p className="muted-text text-sm">{formatResultStats(result)}</p>
         </div>
@@ -126,25 +153,11 @@ export function ResultDisplay({
         </button>
         <button type="button" className="button button-primary" onClick={onReset}>
           <RefreshCcw aria-hidden="true" />
-          Anonymize Another File
+          Transform Another File
         </button>
       </div>
     </div>
   )
-}
-
-function releaseModeLabel(mode: string) {
-  if (mode === 'formalTabular') return 'k/l/t tabular'
-  if (mode === 'differentialPrivacyAggregate') return 'DP aggregate'
-  if (mode === 'syntheticData') return 'Synthetic data'
-  return 'Standard masking'
-}
-
-function releaseModeGlossaryTerm(mode: string): GlossaryKey {
-  if (mode === 'formalTabular') return 'formalTabular'
-  if (mode === 'differentialPrivacyAggregate') return 'dpAggregate'
-  if (mode === 'syntheticData') return 'syntheticData'
-  return 'standardMasking'
 }
 
 function privacyModelGlossaryTerm(model: PrivacyModel): GlossaryKey {
@@ -154,4 +167,11 @@ function privacyModelGlossaryTerm(model: PrivacyModel): GlossaryKey {
   if (model === 'differentialPrivacy') return 'epsilon'
   if (model === 'syntheticData') return 'syntheticData'
   return 'formalModel'
+}
+
+function budgetStatusLabel(status: string) {
+  if (status === 'withinBudget') return 'Within budget'
+  if (status === 'atBudget') return 'At budget'
+  if (status === 'overBudget') return 'Over budget'
+  return formatToken(status)
 }
