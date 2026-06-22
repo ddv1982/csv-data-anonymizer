@@ -10,7 +10,7 @@ fn analyzes_csv_headers_and_default_output_path() {
     assert!(
         result
             .default_output_path
-            .ends_with("sample_anonymized.csv")
+            .ends_with("sample_private_output.csv")
     );
     assert_eq!(result.columns[1].name, "email");
 }

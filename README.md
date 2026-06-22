@@ -1,6 +1,6 @@
-# CSV Data Anonymizer
+# CSV Anonymizer
 
-CSV Data Anonymizer is a local-first desktop app for transforming sensitive CSV data before sharing, testing, demos, or support work. It detects likely personal data, previews replacements, and writes a new CSV while preserving the original structure.
+CSV Anonymizer is a local-first desktop app for reducing sensitive CSV exposure before sharing, testing, demos, or support work. It detects likely personal data, previews transformations, and writes a new CSV while preserving the original structure.
 
 All normal CSV processing runs locally in Rust. Optional local LLM replacement also runs on your machine through Ollama.
 
@@ -14,7 +14,7 @@ All normal CSV processing runs locally in Rust. Optional local LLM replacement a
 - Supports repeatable replacements with a private seed, useful when multiple files need matching pseudonyms.
 - Offers optional Smart replacement with a local LLM for selected columns.
 - Produces a privacy report with transformed column counts, reused values, token counts, Local AI replacement counts, and fallbacks.
-- Includes opt-in release modes for k-anonymity/l-diversity/t-closeness checks, differentially private aggregate CSVs, and simple synthetic CSV generation.
+- Includes opt-in release modes for formal tabular MVP checks, DP aggregate CSVs, and sampled synthetic/test CSV generation.
 
 ## Local LLM Smart Replacement
 
@@ -32,7 +32,7 @@ Usage:
 2. In CSV Anonymizer, enable Local AI in the configuration panel.
 3. Download `gemma3:4b` from the app if it is not already available.
 4. Select `Smart replacement (Local AI)` for the columns that should use the model.
-5. Review the preview, then run the anonymization.
+5. Review the preview, then run the transformation.
 
 The app batches unique values per selected column, asks the local model for realistic fake replacements, validates the response, reuses accepted replacements for repeated source values, and falls back to rule-based pseudonymization when the model output is missing or unsafe.
 
@@ -40,15 +40,15 @@ Model weights and local runtime binaries are not bundled in the repository or de
 
 ## Privacy Boundary
 
-The standard workflow reduces exposure by masking, pseudonymizing, tokenizing, or locally replacing selected values. It is still transformed source data, not guaranteed anonymous data.
+The standard workflow is row-level transformation: it masks, pseudonymizes, tokenizes, or locally replaces selected values in the source rows. It reduces exposure, but the output is still transformed source data, not guaranteed anonymous data.
 
 Opt-in privacy release modes are available for:
 
-- Formal tabular releases: redact direct identifiers, generalize quasi-identifiers, evaluate k-anonymity, optionally evaluate l-diversity and t-closeness, and suppress below-threshold classes when enabled.
-- Differential privacy aggregate releases: write noisy count, sum, or mean aggregate CSVs with a configured epsilon and public bounds for numeric sum/mean releases.
-- Synthetic data releases: generate simple column-distribution-based rows and replace direct identifiers with placeholders.
+- Formal tabular MVP releases: redact direct identifiers, generalize quasi-identifiers, evaluate k-anonymity, optionally evaluate l-diversity and t-closeness, and suppress below-threshold classes when enabled.
+- DP aggregate releases: write noisy count, sum, or mean aggregate CSVs with a configured epsilon and public bounds for numeric sum/mean releases. Lower epsilon means more noise and stronger privacy for that aggregate release; higher epsilon means less noise and weaker privacy. The desktop app owns a local DP release history, can block or warn when a configured epsilon budget would be exceeded, rejects deterministic DP output, supports privacy-unit contribution bounds, and requires allowed group values for grouped output.
+- Synthetic/test data releases: sample simple column distributions and replace direct identifiers with placeholders. This mode is for test data generation and does not provide a differential privacy guarantee.
 
-These modes are local MVP implementations, not substitutes for a privacy review. Synthetic data mode does not make the source data anonymous by itself, and repeated DP aggregate releases require external privacy-budget tracking.
+These modes are local MVP implementations, not substitutes for a privacy review.
 
 Review previews and privacy reports before sharing generated files.
 
@@ -72,7 +72,7 @@ macOS:
 
 - Download the `.dmg` for your Mac.
 - Use `aarch64` for Apple Silicon and `x64` for Intel.
-- Drag CSV Anonymizer into Applications.
+- Drag the app into Applications.
 
 Linux:
 

@@ -1,11 +1,11 @@
 export const glossaryTerms = {
   releaseMode: {
     title: 'Privacy release mode',
-    body: 'The output workflow: Standard uses column strategies, while k/l/t tabular, DP aggregate, and Synthetic data use privacy roles and release settings.',
+    body: 'The output workflow: standard row-level transformation uses column strategies, while k/l/t tabular, DP aggregate, and Synthetic data use privacy roles and release settings.',
   },
   standardMasking: {
-    title: 'Standard masking',
-    body: 'Transforms selected cells in the original row-level file and leaves unselected columns unchanged. It is not a formal anonymity guarantee.',
+    title: 'Standard CSV transform',
+    body: 'Transforms selected cells in the original row-level CSV and leaves unselected columns unchanged. It is useful local masking and pseudonymization, not a formal anonymity guarantee.',
   },
   formalTabular: {
     title: 'k/l/t tabular',
@@ -13,11 +13,11 @@ export const glossaryTerms = {
   },
   dpAggregate: {
     title: 'DP aggregate',
-    body: 'Writes noisy count, sum, or mean results instead of row-level source rows. Repeated releases spend more privacy budget.',
+    body: 'Writes noisy count, sum, or mean results instead of row-level source rows. Repeated releases spend more privacy budget; repeatable deterministic output is not available for this mode.',
   },
   syntheticData: {
     title: 'Synthetic data',
-    body: 'Generates new rows from simple per-column distributions. It does not preserve row relationships or make a DP synthetic guarantee.',
+    body: 'Generates sampled test data from simple per-column distributions. It does not preserve row relationships or make a DP synthetic guarantee.',
   },
   kAnonymity: {
     title: 'k-anonymity',
@@ -25,11 +25,11 @@ export const glossaryTerms = {
   },
   lDiversity: {
     title: 'l-diversity',
-    body: 'Optional check requiring enough distinct sensitive values in each released equivalence class.',
+    body: 'Optional check requiring enough distinct sensitive values in each released equivalence class. It needs at least one Sensitive column role.',
   },
   tCloseness: {
     title: 't-closeness',
-    body: "Optional categorical distance check that limits how different each class's sensitive-value distribution can be from the dataset.",
+    body: "Optional categorical distance check that limits how different each class's sensitive-value distribution can be from the dataset. It needs at least one Sensitive column role.",
   },
   suppressSmallClasses: {
     title: 'Suppress small classes',
@@ -40,8 +40,12 @@ export const glossaryTerms = {
     body: 'Differential privacy budget. Smaller values add more noise and protect privacy more; larger values keep aggregates closer to source data.',
   },
   syntheticEpsilon: {
-    title: 'Synthetic DP epsilon',
-    body: 'Records a requested synthetic-data privacy budget. The current MVP reports that a DP synthesizer is not implemented.',
+    title: 'Unsupported synthetic epsilon',
+    body: 'A stale setting from older configs. This simple generator does not support DP synthetic data, so synthetic output must be created without epsilon.',
+  },
+  syntheticRowCount: {
+    title: 'Synthetic row count',
+    body: 'Number of generated rows to write. Leave empty to match the source data row count. The app caps this at 1,000,000 rows.',
   },
   aggregate: {
     title: 'Aggregate',
@@ -49,7 +53,15 @@ export const glossaryTerms = {
   },
   groupColumn: {
     title: 'Group column',
-    body: 'Optional column used to split aggregate results into groups before noise is added.',
+    body: 'Optional Attribute-role column used to split aggregate results into public allowed group values before noise is added.',
+  },
+  publicGroupLabels: {
+    title: 'Public group labels',
+    body: 'Confirms that grouped DP output may publish the configured group labels. The group column must be safe to release as an Attribute.',
+  },
+  publicGroupDomain: {
+    title: 'Allowed group values',
+    body: 'The complete public set of group labels to release. The app writes every configured group and rejects source rows outside these values.',
   },
   valueColumn: {
     title: 'Value column',
@@ -63,13 +75,45 @@ export const glossaryTerms = {
     title: 'Upper bound',
     body: 'Public maximum used to clamp numeric values before a noisy sum or mean release.',
   },
+  privacyUnitColumn: {
+    title: 'Privacy unit',
+    body: 'Optional column identifying the person, device, account, or other unit protected by contribution bounding.',
+  },
+  maxContributionsPerUnit: {
+    title: 'Max contributions',
+    body: 'Maximum source rows one privacy unit may contribute to a DP aggregate release. Extra rows are skipped before aggregation.',
+  },
+  dpBudget: {
+    title: 'DP budget tracking',
+    body: 'Local release history for DP aggregate releases. It uses basic linear composition and is only as complete as releases recorded in this app.',
+  },
+  dpBudgetLimit: {
+    title: 'DP budget limit',
+    body: 'The local cumulative epsilon cap for DP aggregate releases.',
+  },
+  dpBudgetSpent: {
+    title: 'Spent epsilon',
+    body: 'Backend-recorded cumulative epsilon for this app. Settings show current spent epsilon; reports show before and after values for a release.',
+  },
+  dpBudgetRemaining: {
+    title: 'Remaining epsilon',
+    body: 'Budget limit minus cumulative spent epsilon after the release. Negative values mean the release is over budget.',
+  },
+  dpBudgetStatus: {
+    title: 'DP budget status',
+    body: 'Whether the DP aggregate release is within, exactly at, or over the configured local budget limit.',
+  },
+  dpBudgetAction: {
+    title: 'Over-budget behavior',
+    body: 'Block prevents a DP aggregate release that would exceed the budget. Warn only records the over-budget release and allows it.',
+  },
   typeOverride: {
     title: 'Type override',
     body: 'Manual correction when automatic detection picked the wrong data type.',
   },
   strategy: {
     title: 'Strategy',
-    body: 'How selected cell values are transformed in Standard masking mode. Auto and Pseudonymize use type-based rules; Mask, Tokenize, Smart replacement, and Pass through are explicit choices.',
+    body: 'How selected cell values are transformed in standard row-level mode. Auto and Pseudonymize use type-based rules; Mask, Tokenize, Smart replacement, and Pass through are explicit choices.',
   },
   role: {
     title: 'Role',

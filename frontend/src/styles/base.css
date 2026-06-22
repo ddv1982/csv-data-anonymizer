@@ -48,7 +48,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -58,16 +59,17 @@ button {
 
 button:disabled,
 input:disabled,
-select:disabled {
+select:disabled,
+textarea:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   min-width: 0;
-  height: 2.5rem;
   border: 1px solid hsl(var(--input));
   border-radius: calc(var(--radius) - 2px);
   background: hsl(var(--background));
@@ -76,12 +78,22 @@ select {
   outline: none;
 }
 
+input,
+select {
+  height: 2.5rem;
+}
+
+textarea {
+  resize: vertical;
+}
+
 input::placeholder {
   color: hsl(var(--muted-foreground));
 }
 
 input:focus-visible,
 select:focus-visible,
+textarea:focus-visible,
 button:focus-visible {
   border-color: hsl(var(--ring));
   box-shadow: 0 0 0 2px hsl(var(--ring) / 0.35);

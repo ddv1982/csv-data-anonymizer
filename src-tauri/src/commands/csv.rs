@@ -4,12 +4,14 @@ use super::shared::{
 };
 use crate::local_ai::{LocalAiRequest, smart_provider_for_request};
 use crate::path_access::PathAccess;
+use crate::settings::DpBudgetLedger;
 use csv_anonymizer_core::{
     AnonymizeData, AnonymizeParams, ColumnControl, HeadersData, PreviewData, PreviewParams,
     PrivacyConfig, SmartReplacementEntry, SmartReplacementProvider,
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::Arc;
 use tauri::State;
 
 #[derive(Debug, Clone, Serialize)]
@@ -133,17 +135,20 @@ pub async fn count_csv_rows(
 pub async fn anonymize_csv(
     app: tauri::AppHandle,
     path_access: State<'_, PathAccess>,
+    ledger: State<'_, Arc<DpBudgetLedger>>,
     request: AnonymizeRequest,
 ) -> Result<AnonymizeData, String> {
     let file_path = path_access.authorize_input_file(request.file_path)?;
     let output_path = authorize_or_confirm_output_file(&app, &path_access, request.output_path)?;
+    let ledger = ledger.inner().clone();
+    let sample_row_count = request.sample_row_count;
     run_blocking(move || {
         let mut provider = smart_provider_for_request(request.local_ai, &request.controls)?;
         let provider = provider
             .as_mut()
             .map(|provider| provider as &mut dyn SmartReplacementProvider);
-        service()
-            .anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+        ledger
+            .run_with_budget(
                 AnonymizeParams {
                     file_path,
                     output_path,
@@ -155,9 +160,14 @@ pub async fn anonymize_csv(
                     preview_smart_replacements: request.preview_smart_replacements,
                     privacy_config: request.privacy_config,
                 },
-                request.sample_row_count,
-                None,
-                provider,
+                |input| {
+                    service().anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+                        input,
+                        sample_row_count,
+                        None,
+                        provider,
+                    )
+                },
             )
             .map_err(|error| error.to_string())
     })

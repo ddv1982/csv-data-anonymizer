@@ -17,9 +17,9 @@ pub use smart::{
 pub use types::{
     AnonymizationStrategy, AnonymizeData, AnonymizeParams, ColumnControl, ColumnMetadata,
     ColumnPreview, ColumnRole, Confidence, DataType, DetectionResult, DifferentialPrivacyConfig,
-    DpAggregate, EmptyFormat, FormalPrivacyConfig, HeadersData, ParsedSample, PiiRisk, PreviewData,
-    PreviewParams, PreviewWarning, PrivacyColumnRole, PrivacyConfig, PrivacyModel,
-    PrivacyModelReport, PrivacyReport, ProcessControl, ProcessOptions, ProcessProgress,
-    ProcessResult, ReleaseMode, SampleTransform, SmartReplacementEntry, SyntheticDataConfig,
-    TransformReport, WarningSeverity,
+    DpAggregate, DpBudgetAction, DpBudgetConfig, DpBudgetReport, DpBudgetStatus, EmptyFormat,
+    FormalPrivacyConfig, HeadersData, ParsedSample, PiiRisk, PreviewData, PreviewParams,
+    PreviewWarning, PrivacyColumnRole, PrivacyConfig, PrivacyModel, PrivacyModelReport,
+    PrivacyReport, ProcessControl, ProcessOptions, ProcessProgress, ProcessResult, ReleaseMode,
+    SampleTransform, SmartReplacementEntry, SyntheticDataConfig, TransformReport, WarningSeverity,
 };

@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { defaultPrivacyConfig, defaultSettings } from '../defaults'
+import {
+  applyBudgetSettingsToPrivacyConfig,
+  defaultSettings,
+  privacyConfigFromSettings,
+  settingsWithPrivacyBudget,
+} from '../defaults'
 import { useLocalAi } from './useLocalAi'
 import {
   cancelAnonymizeJob,
@@ -10,6 +15,7 @@ import {
   pickInputCsv,
   pickOutputCsv,
   previewAnonymization,
+  resetDpBudgetLedger,
   saveSettings,
   startAnonymizeJob,
 } from '../tauri'
@@ -29,7 +35,7 @@ import type {
 import { isSelectableColumn, maxVisibleColumns } from '../utils/columns'
 import { messageFrom } from '../utils/errors'
 import { directoryOf } from '../utils/paths'
-import { validatePrivacyConfig } from '../utils/privacy'
+import { getPrivacyConfigValidation } from '../utils/privacy'
 
 type BusyState = 'idle' | 'picking' | 'loading' | 'preview' | 'running'
 
@@ -40,7 +46,7 @@ export function useAnonymizerWorkflow() {
   const [headers, setHeaders] = useState<AnalyzeResponse['headers'] | null>(null)
   const [selectedColumns, setSelectedColumns] = useState<number[]>([])
   const [columnControls, setColumnControls] = useState<Record<number, ColumnControl>>({})
-  const [privacyConfig, setPrivacyConfig] = useState<PrivacyConfig>(defaultPrivacyConfig)
+  const [privacyConfig, setPrivacyConfig] = useState<PrivacyConfig>(() => privacyConfigFromSettings(defaultSettings))
   const [preview, setPreview] = useState<PreviewData | null>(null)
   const [result, setResult] = useState<AnonymizeData | null>(null)
   const [activeJobId, setActiveJobId] = useState<string | null>(null)
@@ -55,7 +61,10 @@ export function useAnonymizerWorkflow() {
     let isMounted = true
     loadSettings()
       .then((loaded) => {
-        if (isMounted) setSettings(loaded)
+        if (isMounted) {
+          setSettings(loaded)
+          setPrivacyConfig((current) => applyBudgetSettingsToPrivacyConfig(current, loaded))
+        }
       })
       .catch((caught: unknown) => {
         if (isMounted) setError(messageFrom(caught))
@@ -142,7 +151,15 @@ export function useAnonymizerWorkflow() {
   const hasSelectedColumns = selectedColumns.length > 0
   const isLoading = busy !== 'idle'
   const localAiBlocked = localAiSelected && (!localAiReady || localAiDownloadRunning)
-  const privacyConfigValid = validatePrivacyConfig(privacyConfig)
+  const basePrivacyValidation = getPrivacyConfigValidation(privacyConfig, selectedSet, columns.length)
+  const privacyValidation =
+    privacyConfig.releaseMode === 'differentialPrivacyAggregate' && settings.deterministicDefault
+      ? {
+          valid: false,
+          reason: 'Turn off Repeatable replacements before creating DP aggregate output.',
+        }
+      : basePrivacyValidation
+  const privacyConfigValid = privacyValidation.valid
   const canPreview = Boolean(hasColumns && hasSelectedColumns && inputPath && busy === 'idle' && !localAiBlocked)
   const canAnonymize = Boolean(
     hasColumns &&
@@ -157,24 +174,41 @@ export function useAnonymizerWorkflow() {
   async function persistSettings(next: AppSettings) {
     setSettings(next)
     try {
-      await saveSettings(next)
+      const saved = await saveSettings(next)
+      setSettings(saved)
+      setPrivacyConfig((current) => applyBudgetSettingsToPrivacyConfig(current, saved))
+    } catch (caught) {
+      setError(messageFrom(caught))
+    }
+  }
+
+  async function refreshSettings() {
+    try {
+      const loaded = await loadSettings()
+      setSettings(loaded)
+      setPrivacyConfig((current) => applyBudgetSettingsToPrivacyConfig(current, loaded))
     } catch (caught) {
       setError(messageFrom(caught))
     }
   }
 
   function updateSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
+    const nextSettings = { ...settings, [key]: value }
     if (
       key === 'deterministicDefault' ||
       key === 'seed' ||
       key === 'previewSampleCount' ||
       key === 'localAiEnabled' ||
-      key === 'localAiModel'
+      key === 'localAiModel' ||
+      isDpBudgetSetting(key)
     ) {
       setPreview(null)
       setResult(null)
     }
-    void persistSettings({ ...settings, [key]: value })
+    if (isDpBudgetSetting(key)) {
+      setPrivacyConfig((current) => applyBudgetSettingsToPrivacyConfig(current, nextSettings))
+    }
+    void persistSettings(nextSettings)
   }
 
   async function handlePickInput() {
@@ -206,7 +240,7 @@ export function useAnonymizerWorkflow() {
     setPreview(null)
     setResult(null)
     setColumnControls({})
-    setPrivacyConfig(defaultPrivacyConfig)
+    setPrivacyConfig(privacyConfigFromSettings(settings))
 
     try {
       const response = await analyzeCsv(normalized, settings.sampleRowCount, settings.defaultOutputSuffix)
@@ -314,17 +348,20 @@ export function useAnonymizerWorkflow() {
     if (status.state === 'succeeded' && status.result) {
       setResult(status.result)
       setJobStatus(null)
-      if (settings.rememberLastPaths) {
-        void persistSettings({ ...settings, lastOutputDirectory: directoryOf(status.result.outputPath) })
+      const nextSettings = settingsAfterSuccessfulRun(settings, status.result)
+      if (nextSettings !== settings) {
+        void persistSettings(nextSettings)
+      } else {
+        void refreshSettings()
       }
       return true
     }
 
     setJobStatus(null)
     if (status.state === 'canceled') {
-      setError('Anonymization canceled.')
+      setError('Output creation canceled.')
     } else {
-      setError(status.error ?? 'Anonymization failed.')
+      setError(status.error ?? 'Output creation failed.')
     }
     return true
   }
@@ -333,9 +370,9 @@ export function useAnonymizerWorkflow() {
     if (!canAnonymize) {
       setError(
         localAiBlocked
-          ? 'Set up Local AI before anonymizing Smart replacement columns.'
+          ? 'Set up Local AI before creating output with Smart replacement columns.'
           : !privacyConfigValid
-            ? 'Complete the privacy release settings before running.'
+            ? (privacyValidation.reason ?? 'Complete the privacy release settings before running.')
             : 'Load a CSV, select at least one column, and choose an output path.',
       )
       return
@@ -356,7 +393,11 @@ export function useAnonymizerWorkflow() {
         settings.seed,
         settings.overwriteOutput,
         settings.sampleRowCount,
-        headers?.rowCountIsComplete ? headers.rowCount : null,
+        privacyConfig.releaseMode === 'differentialPrivacyAggregate'
+          ? null
+          : headers?.rowCountIsComplete
+            ? headers.rowCount
+            : null,
         preview?.smartReplacements ?? [],
         privacyConfig,
         localAi.request,
@@ -432,6 +473,23 @@ export function useAnonymizerWorkflow() {
     setPrivacyConfig(nextConfig)
     setPreview(null)
     setResult(null)
+    const nextSettings = settingsWithPrivacyBudget(settings, nextConfig)
+    if (!sameDpBudgetSettings(settings, nextSettings)) {
+      void persistSettings(nextSettings)
+    }
+  }
+
+  async function resetDpBudget() {
+    setError(null)
+    try {
+      const reset = await resetDpBudgetLedger()
+      setSettings(reset)
+      setPrivacyConfig((current) => applyBudgetSettingsToPrivacyConfig(current, reset))
+      setPreview(null)
+      setResult(null)
+    } catch (caught) {
+      setError(messageFrom(caught))
+    }
   }
 
   function updateColumnRole(column: ColumnMetadata, role: ColumnRole) {
@@ -467,7 +525,7 @@ export function useAnonymizerWorkflow() {
     setHeaders(null)
     setSelectedColumns([])
     setColumnControls({})
-    setPrivacyConfig(defaultPrivacyConfig)
+    setPrivacyConfig(privacyConfigFromSettings(settings))
     setPreview(null)
     setResult(null)
     setActiveJobId(null)
@@ -532,6 +590,7 @@ export function useAnonymizerWorkflow() {
     isLoading,
     canPreview,
     canAnonymize,
+    privacyValidation,
     setError,
     setSettingsOpen,
     setShowAllColumns,
@@ -546,10 +605,36 @@ export function useAnonymizerWorkflow() {
     updateColumnType,
     updateColumnStrategy,
     updatePrivacyConfig,
+    resetDpBudget,
     updateColumnRole,
     toggleColumn,
     clearFile,
     handleInputChange,
     maybeLoadManualPath,
   }
+}
+
+function settingsAfterSuccessfulRun(settings: AppSettings, result: AnonymizeData): AppSettings {
+  let nextSettings = settings
+  if (settings.rememberLastPaths) {
+    nextSettings = { ...nextSettings, lastOutputDirectory: directoryOf(result.outputPath) }
+  }
+
+  return nextSettings
+}
+
+function isDpBudgetSetting(key: keyof AppSettings) {
+  return (
+    key === 'dpBudgetEnabled' ||
+    key === 'dpBudgetLimitEpsilon' ||
+    key === 'dpBudgetAction'
+  )
+}
+
+function sameDpBudgetSettings(left: AppSettings, right: AppSettings) {
+  return (
+    left.dpBudgetEnabled === right.dpBudgetEnabled &&
+    left.dpBudgetLimitEpsilon === right.dpBudgetLimitEpsilon &&
+    left.dpBudgetAction === right.dpBudgetAction
+  )
 }

@@ -1,4 +1,5 @@
 use crate::local_ai::{LocalAiRequest, smart_provider_for_request};
+use crate::settings::DpBudgetLedger;
 use csv_anonymizer_core::{
     AnonymizeData, AnonymizeParams, AnonymizerError, AnonymizerService, ProcessControl,
     ProcessProgress, SmartReplacementProvider,
@@ -143,6 +144,7 @@ impl AnonymizeJob {
 
 pub fn run_anonymize_job(
     job: Arc<AnonymizeJob>,
+    ledger: Arc<DpBudgetLedger>,
     input: AnonymizeParams,
     sample_row_count: usize,
     local_ai: Option<LocalAiRequest>,
@@ -163,12 +165,14 @@ pub fn run_anonymize_job(
             let provider = provider
                 .as_mut()
                 .map(|provider| provider as &mut dyn SmartReplacementProvider);
-            service().anonymize_csv_with_sample_rows_and_control_and_smart_provider(
-                input,
-                sample_row_count,
-                Some(&mut control),
-                provider,
-            )
+            ledger.run_with_budget(input, |input| {
+                service().anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+                    input,
+                    sample_row_count,
+                    Some(&mut control),
+                    provider,
+                )
+            })
         }
         Err(error) => Err(AnonymizerError::SmartReplacement(error)),
     };
@@ -186,6 +190,10 @@ mod tests {
         AnonymizationStrategy, ColumnControl, DataType, SmartReplacementEntry,
     };
     use std::fs;
+
+    fn test_ledger(temp_dir: &tempfile::TempDir) -> Arc<DpBudgetLedger> {
+        Arc::new(DpBudgetLedger::new(temp_dir.path().join("settings.json")))
+    }
 
     #[test]
     fn creates_running_job_snapshots() {
@@ -222,6 +230,7 @@ mod tests {
 
         run_anonymize_job(
             job.clone(),
+            test_ledger(&temp_dir),
             AnonymizeParams {
                 file_path: input_path,
                 output_path: output_path.clone(),
@@ -276,6 +285,7 @@ mod tests {
 
         run_anonymize_job(
             job.clone(),
+            test_ledger(&temp_dir),
             AnonymizeParams {
                 file_path: input_path,
                 output_path: output_path.clone(),
@@ -315,6 +325,7 @@ mod tests {
 
         run_anonymize_job(
             job.clone(),
+            test_ledger(&temp_dir),
             AnonymizeParams {
                 file_path: input_path,
                 output_path: output_path.clone(),
@@ -354,6 +365,7 @@ mod tests {
 
         run_anonymize_job(
             job.clone(),
+            test_ledger(&temp_dir),
             AnonymizeParams {
                 file_path: input_path,
                 output_path: output_path.clone(),

@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.31 - 2026-06-22
+
+- Tighten the privacy-release workflow around practical local use with clearer DP aggregate validation, local epsilon budget history, grouped-output rules, synthetic-data limits, and report notes.
+- Split the privacy release backend, Tauri settings ledger, frontend privacy settings panel, and privacy release tests into smaller focused modules for easier maintenance.
+- Refresh in-app explanations and glossary popovers for DP aggregate caveats, formal k/l/t settings, synthetic row-count limits, and privacy report terminology.
+
 ## v1.0.30 - 2026-06-22
 
 - Replace busy per-section help pills with scoped help-article modals for column settings, Local AI, Privacy Release, and Privacy Report explanations.

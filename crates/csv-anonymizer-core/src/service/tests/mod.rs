@@ -1,10 +1,6 @@
 use super::*;
 use crate::smart::{SmartReplacement, SmartReplacementProvider, SmartReplacementRequest};
-use crate::types::{
-    AnonymizationStrategy, ColumnControl, ColumnRole, DataType, DifferentialPrivacyConfig,
-    DpAggregate, FormalPrivacyConfig, PrivacyColumnRole, PrivacyConfig, ReleaseMode,
-    SyntheticDataConfig,
-};
+use crate::types::{AnonymizationStrategy, ColumnControl, DataType};
 use std::{fs, path::PathBuf};
 
 fn fixture(name: &str) -> PathBuf {

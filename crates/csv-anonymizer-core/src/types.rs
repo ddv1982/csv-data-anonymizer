@@ -272,6 +272,8 @@ pub struct PrivacyReport {
     pub suppressed_rows: usize,
     pub synthetic_rows: usize,
     pub dp_epsilon: Option<String>,
+    #[serde(default)]
+    pub dp_budget: Option<DpBudgetReport>,
     pub unique_pseudonym_values: usize,
     pub reused_pseudonym_values: usize,
     pub collisions_avoided: usize,
@@ -390,11 +392,21 @@ pub struct DifferentialPrivacyConfig {
     #[serde(default)]
     pub group_by_column: Option<usize>,
     #[serde(default)]
+    pub group_labels_public: bool,
+    #[serde(default)]
+    pub public_group_values: Vec<String>,
+    #[serde(default)]
     pub value_column: Option<usize>,
     #[serde(default)]
     pub lower_bound: Option<f64>,
     #[serde(default)]
     pub upper_bound: Option<f64>,
+    #[serde(default)]
+    pub privacy_unit_column: Option<usize>,
+    #[serde(default)]
+    pub max_contributions_per_unit: Option<usize>,
+    #[serde(default)]
+    pub budget: DpBudgetConfig,
 }
 
 impl Default for DifferentialPrivacyConfig {
@@ -403,9 +415,14 @@ impl Default for DifferentialPrivacyConfig {
             epsilon: default_epsilon(),
             aggregate: DpAggregate::Count,
             group_by_column: None,
+            group_labels_public: false,
+            public_group_values: Vec::new(),
             value_column: None,
             lower_bound: None,
             upper_bound: None,
+            privacy_unit_column: None,
+            max_contributions_per_unit: None,
+            budget: DpBudgetConfig::default(),
         }
     }
 }
@@ -421,6 +438,58 @@ pub enum DpAggregate {
     Count,
     Sum,
     Mean,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DpBudgetConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub limit_epsilon: Option<f64>,
+    #[serde(default)]
+    pub spent_epsilon: f64,
+    #[serde(default)]
+    pub action: DpBudgetAction,
+}
+
+impl Default for DpBudgetConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            limit_epsilon: None,
+            spent_epsilon: 0.0,
+            action: DpBudgetAction::Block,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DpBudgetAction {
+    Warn,
+    #[default]
+    Block,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DpBudgetReport {
+    pub limit_epsilon: String,
+    pub spent_epsilon_before: String,
+    pub release_epsilon: String,
+    pub spent_epsilon_after: String,
+    pub remaining_epsilon: String,
+    pub status: DpBudgetStatus,
+    pub action: DpBudgetAction,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DpBudgetStatus {
+    WithinBudget,
+    AtBudget,
+    OverBudget,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

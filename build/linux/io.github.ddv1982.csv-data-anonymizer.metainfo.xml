@@ -4,9 +4,9 @@
   <metadata_license>MIT</metadata_license>
   <project_license>MIT</project_license>
   <name>CSV Anonymizer</name>
-  <summary>Local-first CSV anonymization desktop app</summary>
+  <summary>Local-first CSV anonymizer</summary>
   <description>
-    <p>CSV Anonymizer detects sensitive CSV columns, previews repeatable or smart local transformations, and writes anonymized output without sending data off the device.</p>
+    <p>CSV Anonymizer detects sensitive CSV columns, previews repeatable or smart local transformations, and writes transformed output without sending data off the device.</p>
   </description>
   <launchable type="desktop-id">csv-anonymizer.desktop</launchable>
   <provides>
@@ -17,6 +17,7 @@
     <category>Utility</category>
   </categories>
   <releases>
+    <release version="1.0.31" date="2026-06-22" />
     <release version="1.0.30" date="2026-06-22" />
     <release version="1.0.29" date="2026-06-22" />
     <release version="1.0.28" date="2026-06-22" />

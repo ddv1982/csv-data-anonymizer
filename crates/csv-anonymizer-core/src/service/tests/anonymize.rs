@@ -284,7 +284,7 @@ fn anonymize_applies_pass_through_control() {
     let output_path = temp_dir.path().join("pass-through-output.csv");
     fs::write(&input_path, "email\nuser@example.com\n").unwrap();
 
-    service
+    let result = service
         .anonymize_csv(AnonymizeParams {
             file_path: input_path,
             output_path: output_path.clone(),
@@ -302,6 +302,57 @@ fn anonymize_applies_pass_through_control() {
         })
         .unwrap();
 
+    assert_eq!(result.columns_anonymized, 0);
     let output = read_sample(&output_path, 10).unwrap();
     assert_eq!(output.rows[0][0], "user@example.com");
+}
+
+#[test]
+fn anonymize_does_not_count_auto_noop_selected_columns() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("noop-count.csv");
+    let output_path = temp_dir.path().join("noop-count-output.csv");
+    fs::write(
+        &input_path,
+        "email,country,status\nuser@example.com,US,active\n",
+    )
+    .unwrap();
+
+    let result = service
+        .anonymize_csv(AnonymizeParams {
+            file_path: input_path,
+            output_path: output_path.clone(),
+            columns: vec![0, 1, 2],
+            controls: vec![
+                ColumnControl {
+                    column_index: 0,
+                    type_override: Some(DataType::Email),
+                    strategy: AnonymizationStrategy::PassThrough,
+                },
+                ColumnControl {
+                    column_index: 1,
+                    type_override: Some(DataType::CountryCode),
+                    strategy: AnonymizationStrategy::Auto,
+                },
+                ColumnControl {
+                    column_index: 2,
+                    type_override: Some(DataType::String),
+                    strategy: AnonymizationStrategy::Mask,
+                },
+            ],
+            deterministic: true,
+            seed: "noop-count-seed".to_string(),
+            force: false,
+            preview_smart_replacements: vec![],
+            privacy_config: None,
+        })
+        .unwrap();
+
+    let output = read_sample(&output_path, 10).unwrap();
+
+    assert_eq!(result.columns_anonymized, 1);
+    assert_eq!(output.rows[0][0], "user@example.com");
+    assert_eq!(output.rows[0][1], "US");
+    assert_ne!(output.rows[0][2], "active");
 }

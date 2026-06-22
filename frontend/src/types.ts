@@ -29,6 +29,8 @@ export type AnonymizationStrategy = 'auto' | 'pseudonymize' | 'tokenize' | 'loca
 export type ReleaseMode = 'standard' | 'formalTabular' | 'differentialPrivacyAggregate' | 'syntheticData'
 export type ColumnRole = 'auto' | 'directIdentifier' | 'quasiIdentifier' | 'sensitive' | 'attribute' | 'exclude'
 export type DpAggregate = 'count' | 'sum' | 'mean'
+export type DpBudgetAction = 'warn' | 'block'
+export type DpBudgetStatus = 'withinBudget' | 'atBudget' | 'overBudget'
 export type PrivacyModel = 'kAnonymity' | 'lDiversity' | 'tCloseness' | 'differentialPrivacy' | 'syntheticData'
 
 export interface ColumnControl {
@@ -54,9 +56,21 @@ export interface DifferentialPrivacyConfig {
   epsilon: number
   aggregate: DpAggregate
   groupByColumn: number | null
+  groupLabelsPublic: boolean
+  publicGroupValues: string[]
   valueColumn: number | null
   lowerBound: number | null
   upperBound: number | null
+  privacyUnitColumn: number | null
+  maxContributionsPerUnit: number | null
+  budget: DpBudgetConfig
+}
+
+export interface DpBudgetConfig {
+  enabled: boolean
+  limitEpsilon: number | null
+  spentEpsilon: number
+  action: DpBudgetAction
 }
 
 export interface SyntheticDataConfig {
@@ -80,11 +94,34 @@ export interface AppSettings {
   sampleRowCount: number
   previewSampleCount: number
   defaultOutputSuffix: string
+  dpBudgetEnabled: boolean
+  dpBudgetLimitEpsilon: number | null
+  dpBudgetSpentEpsilon: number
+  dpBudgetAction: DpBudgetAction
+  dpReleaseHistory: DpReleaseRecord[]
   rememberLastPaths: boolean
   lastInputDirectory: string | null
   lastOutputDirectory: string | null
   localAiEnabled: boolean
   localAiModel: string
+}
+
+export interface DpReleaseRecord {
+  id: string
+  timestampUnixSeconds: number
+  outputPath: string | null
+  aggregate: DpAggregate
+  grouped: boolean
+  publicGroupCount: number
+  valueColumn: number | null
+  privacyUnitColumn: number | null
+  maxContributionsPerUnit: number | null
+  epsilon: string
+  spentEpsilonBefore: string
+  spentEpsilonAfter: string
+  remainingEpsilon: string
+  status: DpBudgetStatus
+  action: DpBudgetAction
 }
 
 export interface ColumnMetadata {
@@ -167,6 +204,7 @@ export interface PrivacyReport {
   suppressedRows: number
   syntheticRows: number
   dpEpsilon: string | null
+  dpBudget: DpBudgetReport | null
   uniquePseudonymValues: number
   reusedPseudonymValues: number
   collisionsAvoided: number
@@ -176,6 +214,16 @@ export interface PrivacyReport {
   smartReplacementFallbacks: number
   formalModels: PrivacyModelReport[]
   notes: string[]
+}
+
+export interface DpBudgetReport {
+  limitEpsilon: string
+  spentEpsilonBefore: string
+  releaseEpsilon: string
+  spentEpsilonAfter: string
+  remainingEpsilon: string
+  status: DpBudgetStatus
+  action: DpBudgetAction
 }
 
 export interface PrivacyModelReport {

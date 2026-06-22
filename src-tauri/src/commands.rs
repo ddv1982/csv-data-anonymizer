@@ -12,4 +12,4 @@ pub use local_ai_commands::{
     cancel_local_ai_model_download, get_local_ai_model_download_status, get_local_ai_status,
     open_local_ai_setup_url, start_local_ai_model_download,
 };
-pub use settings_commands::{load_settings, save_settings};
+pub use settings_commands::{load_settings, reset_dp_budget_ledger, save_settings};
