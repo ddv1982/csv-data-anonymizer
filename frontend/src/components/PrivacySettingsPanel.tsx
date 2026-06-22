@@ -1,6 +1,8 @@
 import { ShieldCheck } from 'lucide-react'
+import type { GlossaryKey } from '../glossary'
 import type { ColumnMetadata, DpAggregate, PrivacyConfig, ReleaseMode } from '../types'
 import { formatToken } from '../utils/format'
+import { GlossaryLabel, GlossaryPopover } from './GlossaryPopover'
 import { SwitchRow } from './SwitchRow'
 
 export function PrivacySettingsPanel({
@@ -35,7 +37,7 @@ export function PrivacySettingsPanel({
       <div className="privacy-config-header">
         <span className="privacy-config-title">
           <ShieldCheck aria-hidden="true" />
-          Privacy Release
+          <GlossaryLabel term="releaseMode">Privacy Release</GlossaryLabel>
         </span>
         <select
           value={config.releaseMode}
@@ -50,12 +52,19 @@ export function PrivacySettingsPanel({
           ))}
         </select>
       </div>
+      <p className="privacy-mode-help muted-text text-sm">
+        <GlossaryLabel term={releaseModeGlossaryTerm(config.releaseMode)}>
+          {releaseModeLabel(config.releaseMode)}
+        </GlossaryLabel>
+        <span>{releaseModeHelp(config.releaseMode)}</span>
+      </p>
 
       {config.releaseMode === 'formalTabular' ? (
         <div className="settings-grid">
           <NumberField
             id="privacy-k"
             label="k"
+            glossaryTerm="kAnonymity"
             min={1}
             max={1000000}
             integer
@@ -66,6 +75,7 @@ export function PrivacySettingsPanel({
           <NullableNumberField
             id="privacy-l"
             label="l-diversity"
+            glossaryTerm="lDiversity"
             min={1}
             max={1000000}
             integer
@@ -76,6 +86,7 @@ export function PrivacySettingsPanel({
           <NullableNumberField
             id="privacy-t"
             label="t-closeness"
+            glossaryTerm="tCloseness"
             min={0}
             max={1}
             step={0.01}
@@ -86,6 +97,7 @@ export function PrivacySettingsPanel({
           <SwitchRow
             id="privacy-suppress"
             label="Suppress small classes"
+            labelHelp={<GlossaryPopover term="suppressSmallClasses" />}
             checked={config.formal.suppressSmallClasses}
             disabled={disabled}
             compact
@@ -99,6 +111,7 @@ export function PrivacySettingsPanel({
           <NumberField
             id="privacy-epsilon"
             label="Epsilon"
+            glossaryTerm="epsilon"
             min={0.01}
             max={1000}
             step={0.01}
@@ -107,7 +120,7 @@ export function PrivacySettingsPanel({
             onChange={(value) => updateDp({ epsilon: value })}
           />
           <div className="field">
-            <label htmlFor="privacy-aggregate">Aggregate</label>
+            <FieldLabel id="privacy-aggregate" label="Aggregate" glossaryTerm="aggregate" />
             <select
               id="privacy-aggregate"
               value={config.differentialPrivacy.aggregate}
@@ -124,6 +137,7 @@ export function PrivacySettingsPanel({
           <ColumnSelect
             id="privacy-group-column"
             label="Group column"
+            glossaryTerm="groupColumn"
             columns={columns}
             value={config.differentialPrivacy.groupByColumn}
             disabled={disabled}
@@ -133,6 +147,7 @@ export function PrivacySettingsPanel({
           <ColumnSelect
             id="privacy-value-column"
             label="Value column"
+            glossaryTerm="valueColumn"
             columns={columns}
             value={config.differentialPrivacy.valueColumn}
             disabled={disabled || config.differentialPrivacy.aggregate === 'count'}
@@ -144,6 +159,7 @@ export function PrivacySettingsPanel({
               <NullableNumberField
                 id="privacy-lower-bound"
                 label="Lower bound"
+                glossaryTerm="lowerBound"
                 value={config.differentialPrivacy.lowerBound}
                 disabled={disabled}
                 onChange={(value) => updateDp({ lowerBound: value })}
@@ -151,6 +167,7 @@ export function PrivacySettingsPanel({
               <NullableNumberField
                 id="privacy-upper-bound"
                 label="Upper bound"
+                glossaryTerm="upperBound"
                 value={config.differentialPrivacy.upperBound}
                 disabled={disabled}
                 onChange={(value) => updateDp({ upperBound: value })}
@@ -175,6 +192,7 @@ export function PrivacySettingsPanel({
           <NullableNumberField
             id="privacy-synthetic-epsilon"
             label="DP epsilon"
+            glossaryTerm="syntheticEpsilon"
             min={0.01}
             max={1000}
             step={0.01}
@@ -198,6 +216,26 @@ function releaseModeLabel(mode: ReleaseMode) {
   return 'Standard masking'
 }
 
+function releaseModeGlossaryTerm(mode: ReleaseMode): GlossaryKey {
+  if (mode === 'formalTabular') return 'formalTabular'
+  if (mode === 'differentialPrivacyAggregate') return 'dpAggregate'
+  if (mode === 'syntheticData') return 'syntheticData'
+  return 'standardMasking'
+}
+
+function releaseModeHelp(mode: ReleaseMode) {
+  if (mode === 'formalTabular') {
+    return 'Best when you need row-level output plus checks for re-identification risk.'
+  }
+  if (mode === 'differentialPrivacyAggregate') {
+    return 'Best when you only need summary statistics with a formal privacy budget.'
+  }
+  if (mode === 'syntheticData') {
+    return 'Best when consumers need example-like rows instead of original records.'
+  }
+  return 'Best for row-level files where selected columns should be transformed in place.'
+}
+
 function NumberField({
   id,
   label,
@@ -208,9 +246,11 @@ function NumberField({
   value,
   disabled,
   onChange,
+  glossaryTerm,
 }: {
   id: string
   label: string
+  glossaryTerm?: GlossaryKey
   min: number
   max: number
   step?: number
@@ -221,7 +261,7 @@ function NumberField({
 }) {
   return (
     <div className="field">
-      <label htmlFor={id}>{label}</label>
+      <FieldLabel id={id} label={label} glossaryTerm={glossaryTerm} />
       <input
         id={id}
         type="number"
@@ -246,9 +286,11 @@ function NullableNumberField({
   value,
   disabled,
   onChange,
+  glossaryTerm,
 }: {
   id: string
   label: string
+  glossaryTerm?: GlossaryKey
   min?: number
   max?: number
   step?: number
@@ -259,7 +301,7 @@ function NullableNumberField({
 }) {
   return (
     <div className="field">
-      <label htmlFor={id}>{label}</label>
+      <FieldLabel id={id} label={label} glossaryTerm={glossaryTerm} />
       <input
         id={id}
         type="number"
@@ -299,9 +341,11 @@ function ColumnSelect({
   disabled,
   allowNone,
   onChange,
+  glossaryTerm,
 }: {
   id: string
   label: string
+  glossaryTerm?: GlossaryKey
   columns: ColumnMetadata[]
   value: number | null
   disabled: boolean
@@ -310,7 +354,7 @@ function ColumnSelect({
 }) {
   return (
     <div className="field">
-      <label htmlFor={id}>{label}</label>
+      <FieldLabel id={id} label={label} glossaryTerm={glossaryTerm} />
       <select
         id={id}
         value={value ?? ''}
@@ -325,5 +369,14 @@ function ColumnSelect({
         ))}
       </select>
     </div>
+  )
+}
+
+function FieldLabel({ id, label, glossaryTerm }: { id: string; label: string; glossaryTerm?: GlossaryKey }) {
+  return (
+    <span className="field-label-row">
+      <label htmlFor={id}>{label}</label>
+      {glossaryTerm ? <GlossaryPopover term={glossaryTerm} /> : null}
+    </span>
   )
 }

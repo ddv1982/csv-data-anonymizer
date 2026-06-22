@@ -1,6 +1,9 @@
+import type { ReactNode } from 'react'
+
 export function SwitchRow({
   id,
   label,
+  labelHelp,
   description,
   checked,
   disabled,
@@ -8,8 +11,9 @@ export function SwitchRow({
   onChange,
 }: {
   id: string
-  label: string
-  description?: string
+  label: ReactNode
+  labelHelp?: ReactNode
+  description?: ReactNode
   checked: boolean
   disabled?: boolean
   compact?: boolean
@@ -29,7 +33,10 @@ export function SwitchRow({
         <span />
       </button>
       <div className="switch-copy">
-        <label htmlFor={id}>{label}</label>
+        <span className="field-label-row">
+          <label htmlFor={id}>{label}</label>
+          {labelHelp}
+        </span>
         {description ? <p className="muted-text text-sm">{description}</p> : null}
       </div>
     </div>

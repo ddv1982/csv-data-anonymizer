@@ -1,4 +1,4 @@
-@media (max-width: 760px) {
+@media (max-width: 820px) {
   .container {
     width: min(100% - 1rem, 56rem);
   }
@@ -41,9 +41,12 @@
     transform: rotate(90deg);
   }
 
-  .button,
-  .button-icon {
+  .button:not(.button-icon) {
     width: 100%;
+  }
+
+  .button-icon {
+    width: 2.5rem;
   }
 
   .toast-region {
@@ -64,12 +67,125 @@
     align-self: flex-end;
   }
 
+  .table-frame {
+    overflow: visible;
+    border: 0;
+  }
+
+  .column-table {
+    display: grid;
+    min-width: 0;
+  }
+
+  .column-table thead {
+    display: none;
+  }
+
+  .column-table tbody {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .column-table tr {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 0.55rem 0.75rem;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+    background: hsl(var(--muted) / 0.16);
+    padding: 0.75rem;
+  }
+
+  .column-table td {
+    border-bottom: 0;
+    padding: 0;
+  }
+
+  .column-table .checkbox-column {
+    grid-column: 1;
+    grid-row: 1;
+    width: auto;
+    padding-top: 0.15rem;
+  }
+
+  .column-table .index-column {
+    grid-column: 3;
+    grid-row: 1;
+    width: auto;
+    justify-self: end;
+  }
+
+  .column-title-cell {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  .detected-type-cell,
+  .control-cell,
+  .risk-cell {
+    display: grid;
+    grid-column: 1 / -1;
+    min-width: 0;
+    gap: 0.35rem;
+  }
+
+  .risk-cell {
+    justify-items: start;
+  }
+
+  .mobile-cell-label {
+    display: inline-flex;
+  }
+
   .column-name {
-    max-width: 44vw;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .column-note {
+    display: block;
+    margin-top: 0.25rem;
+    margin-left: 0;
+  }
+
+  .show-more-row {
+    display: block;
+    border: 0;
+    background: transparent;
+    padding: 0;
+  }
+
+  .show-more-cell {
+    display: block;
+  }
+
+  .preview-row code {
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: pre-wrap;
+  }
+
+  .privacy-model-row {
+    grid-template-columns: 1fr;
+  }
+
+  .privacy-model-row .status-pill {
+    justify-self: start;
   }
 
   th,
   td {
     padding: 0.75rem;
+  }
+
+  .column-table td {
+    padding: 0;
+  }
+
+  .column-table .checkbox-column {
+    padding-top: 0.15rem;
   }
 }
