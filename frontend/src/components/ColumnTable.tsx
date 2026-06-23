@@ -75,10 +75,14 @@ export function ColumnTable({
                 const sampleDataAvailable = hasSampleData(column)
                 const control = controls[column.index]
                 const role = roles[column.index]
+                const selected = selectedSet.has(column.index)
+                const rowClassName = [selectable ? 'clickable-row' : 'muted-row', selected ? 'selected-row' : '']
+                  .filter(Boolean)
+                  .join(' ')
                 return (
                   <tr
                     key={`${column.index}-${column.name}`}
-                    className={selectable ? 'clickable-row' : 'muted-row'}
+                    className={rowClassName}
                     onClick={() => onToggleColumn(column)}
                   >
                     <td className="checkbox-column">
@@ -86,7 +90,7 @@ export function ColumnTable({
                         <input
                           type="checkbox"
                           className="table-checkbox"
-                          checked={selectedSet.has(column.index)}
+                          checked={selected}
                           onChange={() => onToggleColumn(column)}
                           onClick={(event) => event.stopPropagation()}
                           aria-label={`Select column ${column.name}`}

@@ -54,48 +54,48 @@
 
 :root[data-resolved-theme='light'],
 :root.theme-resolved-light {
-  --background: 210 20% 98%;
-  --foreground: 224 28% 12%;
+  --background: 214 34% 96%;
+  --foreground: 222 42% 10%;
   --card: 0 0% 100%;
-  --card-foreground: 224 28% 12%;
-  --primary: 216 82% 45%;
+  --card-foreground: 222 42% 10%;
+  --primary: 212 88% 42%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 214 24% 92%;
-  --secondary-foreground: 222 36% 16%;
-  --muted: 214 24% 92%;
-  --muted-foreground: 218 13% 39%;
-  --accent: 204 43% 90%;
-  --accent-foreground: 222 36% 16%;
-  --destructive: 0 72% 48%;
-  --destructive-foreground: 0 74% 35%;
-  --border: 214 18% 84%;
-  --input: 214 18% 78%;
-  --ring: 216 82% 45%;
-  --success: 150 65% 36%;
-  --success-foreground: 150 74% 25%;
-  --success-subtle: 150 65% 36%;
-  --success-subtle-foreground: 150 74% 25%;
-  --risk-high: 0 72% 48%;
-  --risk-high-foreground: 0 74% 35%;
-  --risk-medium: 35 88% 45%;
-  --risk-medium-foreground: 31 82% 30%;
-  --risk-low: 150 65% 36%;
-  --risk-low-foreground: 150 74% 25%;
-  --preview-output: 150 74% 25%;
+  --secondary: 214 28% 90%;
+  --secondary-foreground: 222 38% 15%;
+  --muted: 214 30% 91%;
+  --muted-foreground: 218 18% 34%;
+  --accent: 203 78% 89%;
+  --accent-foreground: 210 76% 24%;
+  --destructive: 358 72% 47%;
+  --destructive-foreground: 358 72% 32%;
+  --border: 214 20% 80%;
+  --input: 214 16% 59%;
+  --ring: 212 88% 42%;
+  --success: 151 68% 33%;
+  --success-foreground: 151 66% 24%;
+  --success-subtle: 151 68% 33%;
+  --success-subtle-foreground: 151 66% 24%;
+  --risk-high: 358 72% 47%;
+  --risk-high-foreground: 358 72% 32%;
+  --risk-medium: 31 94% 44%;
+  --risk-medium-foreground: 28 86% 28%;
+  --risk-low: 151 68% 33%;
+  --risk-low-foreground: 151 66% 24%;
+  --preview-output: 151 66% 24%;
   --overlay: 224 18% 14% / 0.38;
   --shadow-card:
-    0 1px 2px hsl(220 24% 20% / 0.08),
-    0 10px 28px hsl(220 24% 20% / 0.08);
+    0 1px 2px hsl(220 35% 16% / 0.08),
+    0 14px 34px hsl(220 35% 16% / 0.1);
   --shadow-popover:
-    0 12px 32px hsl(220 24% 20% / 0.14),
-    0 1px 2px hsl(220 24% 20% / 0.08);
+    0 14px 36px hsl(220 35% 16% / 0.16),
+    0 1px 2px hsl(220 35% 16% / 0.1);
   --shadow-modal:
-    0 24px 60px hsl(220 24% 20% / 0.2),
-    0 2px 8px hsl(220 24% 20% / 0.1);
+    0 26px 68px hsl(220 35% 16% / 0.22),
+    0 2px 8px hsl(220 35% 16% / 0.12);
   --shadow-toast:
-    0 12px 32px hsl(220 24% 20% / 0.14),
+    0 14px 36px hsl(220 35% 16% / 0.16),
     0 0 0 1px hsl(var(--destructive) / 0.16);
-  --shadow-control-thumb: 0 1px 2px hsl(220 24% 20% / 0.18);
+  --shadow-control-thumb: 0 1px 2px hsl(220 35% 16% / 0.2);
   color-scheme: light;
 }
 
@@ -153,6 +153,16 @@ textarea {
   outline: none;
 }
 
+:root[data-resolved-theme='light'] input,
+:root[data-resolved-theme='light'] select,
+:root[data-resolved-theme='light'] textarea,
+:root.theme-resolved-light input,
+:root.theme-resolved-light select,
+:root.theme-resolved-light textarea {
+  background: hsl(var(--card));
+  box-shadow: inset 0 1px 1px hsl(220 35% 16% / 0.04);
+}
+
 input,
 select {
   height: 2.5rem;
@@ -171,7 +181,7 @@ select:focus-visible,
 textarea:focus-visible,
 button:focus-visible {
   border-color: hsl(var(--ring));
-  box-shadow: 0 0 0 2px hsl(var(--ring) / 0.35);
+  box-shadow: 0 0 0 3px hsl(var(--ring) / 0.28);
   outline: none;
 }
 
