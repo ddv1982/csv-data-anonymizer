@@ -223,6 +223,27 @@
   padding: 0.65rem;
 }
 
+.privacy-metric-label {
+  display: inline-flex;
+  width: 100%;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 0.25rem;
+  justify-content: space-between;
+  line-height: 1.3;
+}
+
+.privacy-metric-label > span:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.privacy-metric-label .glossary-anchor {
+  margin-left: 0.25rem;
+  margin-top: 0.05rem;
+}
+
 .privacy-metric strong {
   color: hsl(var(--foreground));
   font-size: 1.1rem;

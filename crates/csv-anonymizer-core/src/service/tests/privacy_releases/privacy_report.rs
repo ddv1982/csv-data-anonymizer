@@ -38,6 +38,13 @@ fn anonymize_returns_privacy_report() {
     assert_eq!(result.privacy_report.exhausted_pseudonym_pools, 0);
     assert_eq!(result.privacy_report.opaque_token_values, 0);
     assert!(!result.privacy_report.notes.is_empty());
+    assert!(
+        !result
+            .privacy_report
+            .notes
+            .iter()
+            .any(|note| note.contains("Random-mode pseudonyms"))
+    );
 
     let json = serde_json::to_value(&result).unwrap();
     assert!(json.get("privacyReport").is_some());
@@ -94,6 +101,13 @@ fn tokenize_strategy_updates_privacy_report() {
     assert_eq!(result.privacy_report.opaque_token_values, 1);
     assert_eq!(result.privacy_report.unique_pseudonym_values, 1);
     assert_eq!(result.privacy_report.reused_pseudonym_values, 1);
+    assert!(
+        result
+            .privacy_report
+            .notes
+            .iter()
+            .any(|note| note.contains("Random-mode pseudonyms and tokens"))
+    );
 
     let json = serde_json::to_value(&result).unwrap();
     assert_eq!(json["privacyReport"]["opaqueTokenColumns"], 1);

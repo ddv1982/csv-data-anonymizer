@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.34 - 2026-06-23
+
+- Replace privacy-report metric glossary highlights with compact help icons so result cards stay readable while keeping term popovers available.
+- Add glossary popovers for Pseudonymize, Mask, Tokenize, and Pass through in the Select Data help article.
+- Rewrite Standard CSV transform result notes so formal privacy release guidance is mode-specific and pseudonym/token mapping notes appear only when relevant.
+
 ## v1.0.33 - 2026-06-23
 
 - Tighten the Local AI panel layout so the installed-model badge stays attached to the model field and action controls wrap without horizontal overflow.

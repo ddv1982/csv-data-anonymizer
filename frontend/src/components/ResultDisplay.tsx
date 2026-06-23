@@ -6,7 +6,7 @@ import { messageFrom } from '../utils/errors'
 import { formatResultStats, formatToken } from '../utils/format'
 import { releaseModeGlossaryTerm, releaseModeLabel } from '../utils/privacyDisplay'
 import { Alert } from './Alert'
-import { GlossaryLabel } from './GlossaryPopover'
+import { GlossaryLabel, GlossaryPopover } from './GlossaryPopover'
 import { SectionHelp } from './SectionHelp'
 
 export function ResultDisplay({
@@ -111,8 +111,9 @@ export function ResultDisplay({
           <div className="privacy-metrics">
             {privacyMetrics.map(({ label, value, glossaryTerm }) => (
               <div className="privacy-metric" key={label}>
-                <span className="muted-text text-sm">
-                  <GlossaryLabel term={glossaryTerm}>{label}</GlossaryLabel>
+                <span className="privacy-metric-label muted-text text-sm">
+                  <span>{label}</span>
+                  <GlossaryPopover term={glossaryTerm} />
                 </span>
                 <strong>{typeof value === 'number' ? value.toLocaleString() : value}</strong>
               </div>
