@@ -13,9 +13,19 @@
   color: hsl(var(--destructive-foreground));
 }
 
+:root[data-resolved-theme='light'] .alert-destructive,
+:root.theme-resolved-light .alert-destructive {
+  background: hsl(var(--destructive) / 0.07);
+}
+
 .alert-success {
   border-color: hsl(var(--success) / 0.55);
   background: hsl(var(--success) / 0.12);
+}
+
+:root[data-resolved-theme='light'] .alert-success,
+:root.theme-resolved-light .alert-success {
+  background: hsl(var(--success) / 0.09);
 }
 
 .alert-icon {

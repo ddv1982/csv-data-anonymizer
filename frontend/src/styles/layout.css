@@ -5,6 +5,13 @@
   background: hsl(var(--background));
 }
 
+:root[data-resolved-theme='light'] .app-root,
+:root.theme-resolved-light .app-root {
+  background:
+    linear-gradient(180deg, hsl(213 44% 97%) 0, hsl(var(--background)) 18rem),
+    hsl(var(--background));
+}
+
 .container {
   width: min(100% - 2rem, 70rem);
   margin-inline: auto;
@@ -18,6 +25,12 @@
 
 .app-topbar {
   border-bottom: 1px solid hsl(var(--border));
+}
+
+:root[data-resolved-theme='light'] .app-topbar,
+:root.theme-resolved-light .app-topbar {
+  background: hsl(var(--card) / 0.96);
+  box-shadow: 0 1px 0 hsl(220 35% 16% / 0.04);
 }
 
 .app-topbar-inner {
@@ -65,6 +78,14 @@
   box-shadow: var(--shadow-card);
 }
 
+:root[data-resolved-theme='light'] .card,
+:root.theme-resolved-light .card {
+  border-color: hsl(var(--border));
+  background:
+    linear-gradient(180deg, hsl(210 40% 99%) 0, hsl(var(--card)) 7rem),
+    hsl(var(--card));
+}
+
 .card-header {
   padding: 1.5rem;
 }
@@ -100,4 +121,9 @@
 
 .section-disabled {
   opacity: 0.5;
+}
+
+:root[data-resolved-theme='light'] .section-disabled,
+:root.theme-resolved-light .section-disabled {
+  opacity: 0.78;
 }

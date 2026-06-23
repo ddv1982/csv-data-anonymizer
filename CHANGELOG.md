@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.35 - 2026-06-23
+
+- Refresh light mode with a cooler neutral surface stack, stronger text and border contrast, and more defined card, input, button, and focus affordances.
+- Add clearer table hierarchy with stronger header, hover, and selected-row states for checked columns.
+- Tune light-mode panel, alert, status, and disabled-section treatments while keeping the existing dark theme scoped to its original token stack.
+
 ## v1.0.34 - 2026-06-23
 
 - Replace privacy-report metric glossary highlights with compact help icons so result cards stay readable while keeping term popovers available.
