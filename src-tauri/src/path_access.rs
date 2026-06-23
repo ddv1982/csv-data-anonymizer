@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -106,7 +107,51 @@ fn normalize_output_file(path: &Path) -> Result<PathBuf, String> {
         ));
     }
 
-    Ok(canonical_parent.join(file_name))
+    let normalized = canonical_parent.join(file_name);
+    if let Some(metadata) = existing_output_leaf_metadata(&normalized)? {
+        validate_existing_output_leaf(&normalized, &canonical_parent, &metadata)?;
+    }
+
+    Ok(normalized)
+}
+
+fn existing_output_leaf_metadata(path: &Path) -> Result<Option<fs::Metadata>, String> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => Ok(Some(metadata)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!(
+            "Could not inspect output file {}: {error}",
+            path.display()
+        )),
+    }
+}
+
+fn validate_existing_output_leaf(
+    path: &Path,
+    canonical_parent: &Path,
+    metadata: &fs::Metadata,
+) -> Result<(), String> {
+    if metadata.file_type().is_symlink() {
+        return Err(format!(
+            "{} is a symlink. Choose a regular output file path.",
+            path.display()
+        ));
+    }
+    if !metadata.is_file() {
+        return Err(format!("{} is not a regular output file.", path.display()));
+    }
+
+    let canonical_leaf = fs::canonicalize(path)
+        .map_err(|error| format!("Could not access output file {}: {error}", path.display()))?;
+    if !canonical_leaf.starts_with(canonical_parent) {
+        return Err(format!(
+            "{} resolves outside output directory {}.",
+            canonical_leaf.display(),
+            canonical_parent.display()
+        ));
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -146,5 +191,47 @@ mod tests {
         let authorized = access.authorize_output_file(&output).unwrap();
 
         assert_eq!(authorized, granted);
+    }
+
+    #[test]
+    fn grants_existing_regular_output_files() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let output = temp_dir.path().join("out.csv");
+        fs::write(&output, "existing").unwrap();
+        let access = PathAccess::default();
+
+        let granted = access.grant_output_file(&output).unwrap();
+
+        assert_eq!(granted, output.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn rejects_existing_output_directories() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let output = temp_dir.path().join("out.csv");
+        fs::create_dir(&output).unwrap();
+        let access = PathAccess::default();
+
+        let error = access.grant_output_file(&output).unwrap_err();
+
+        assert!(error.contains("not a regular output file"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_existing_output_leaf_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let outside_dir = tempfile::tempdir().unwrap();
+        let outside_target = outside_dir.path().join("outside.csv");
+        fs::write(&outside_target, "outside").unwrap();
+        let output = temp_dir.path().join("out.csv");
+        symlink(&outside_target, &output).unwrap();
+        let access = PathAccess::default();
+
+        let error = access.grant_output_file(&output).unwrap_err();
+
+        assert!(error.contains("is a symlink"));
     }
 }

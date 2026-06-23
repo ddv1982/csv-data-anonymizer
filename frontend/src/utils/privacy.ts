@@ -30,41 +30,43 @@ export function getPrivacyConfigValidation(
     ) {
       return { valid: false, reason: 'Set t-closeness between 0 and 1, or leave it empty.' }
     }
+    if ((config.formal.lDiversity !== null || config.formal.tCloseness !== null) && !hasSensitiveColumn(config, selectedColumns)) {
+      return { valid: false, reason: 'Mark a selected column as Sensitive for l-diversity/t-closeness.' }
+    }
     return { valid: true, reason: null }
   }
   if (config.releaseMode === 'differentialPrivacyAggregate') {
     if (!Number.isFinite(config.differentialPrivacy.epsilon) || config.differentialPrivacy.epsilon <= 0) {
       return { valid: false, reason: 'Set DP epsilon above 0 for aggregate output.' }
     }
-    if (
-      selectedColumns &&
-      config.differentialPrivacy.groupByColumn !== null &&
-      !selectedColumns.has(config.differentialPrivacy.groupByColumn)
-    ) {
-      return { valid: false, reason: 'Select the DP group column or clear it before creating output.' }
-    }
-    if (config.differentialPrivacy.groupByColumn !== null && !config.differentialPrivacy.groupLabelsPublic) {
-      return {
-        valid: false,
-        reason: 'Mark DP group labels as public before creating grouped aggregate output.',
+    if (config.differentialPrivacy.groupByColumn === null) {
+      if (config.differentialPrivacy.publicGroupValues.length > 0) {
+        return { valid: false, reason: 'Clear allowed group values or choose a DP group column.' }
       }
-    }
-    if (
-      config.differentialPrivacy.groupByColumn !== null &&
-      config.differentialPrivacy.publicGroupValues.filter((value) => value.trim()).length === 0
-    ) {
-      return {
-        valid: false,
-        reason: 'Add allowed group values before creating grouped DP output.',
+    } else {
+      if (selectedColumns && !selectedColumns.has(config.differentialPrivacy.groupByColumn)) {
+        return { valid: false, reason: 'Select the DP group column or clear it before creating output.' }
       }
-    }
-    if (
-      config.differentialPrivacy.groupByColumn !== null &&
-      config.differentialPrivacy.publicGroupValues.some((value) => !value.trim())
-    ) {
-      return {
-        valid: false,
-        reason: 'Remove blank entries from allowed group values before creating grouped DP output.',
+      if (!isAttributeRole(config, config.differentialPrivacy.groupByColumn)) {
+        return { valid: false, reason: 'Mark the DP group column as Attribute before creating output.' }
+      }
+      if (!config.differentialPrivacy.groupLabelsPublic) {
+        return {
+          valid: false,
+          reason: 'Mark DP group labels as public before creating grouped aggregate output.',
+        }
+      }
+      if (config.differentialPrivacy.publicGroupValues.filter((value) => value.trim()).length === 0) {
+        return {
+          valid: false,
+          reason: 'Add allowed group values before creating grouped DP output.',
+        }
+      }
+      if (config.differentialPrivacy.publicGroupValues.some((value) => !value.trim())) {
+        return {
+          valid: false,
+          reason: 'Remove blank entries from allowed group values before creating grouped DP output.',
+        }
       }
     }
     if (
@@ -143,4 +145,14 @@ export function getPrivacyConfigValidation(
     return { valid: true, reason: null }
   }
   return { valid: false, reason: 'Choose a supported privacy release mode.' }
+}
+
+function hasSensitiveColumn(config: PrivacyConfig, selectedColumns?: Set<number>) {
+  return config.columnRoles.some(
+    (role) => role.role === 'sensitive' && (!selectedColumns || selectedColumns.has(role.columnIndex)),
+  )
+}
+
+function isAttributeRole(config: PrivacyConfig, columnIndex: number) {
+  return config.columnRoles.some((role) => role.columnIndex === columnIndex && role.role === 'attribute')
 }

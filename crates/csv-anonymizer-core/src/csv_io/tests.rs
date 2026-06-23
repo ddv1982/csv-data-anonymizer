@@ -44,6 +44,127 @@ fn processes_selected_columns() {
 }
 
 #[test]
+fn rejects_non_empty_fields_beyond_headers_without_committing_output() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("ragged.csv");
+    let output_path = temp_dir.path().join("ragged-output.csv");
+    fs::write(
+        &input_path,
+        "id,email\n1,a@example.com,unmodeled-secret\n2,b@example.com\n",
+    )
+    .unwrap();
+    let sample = read_sample(&input_path, 100).unwrap_err();
+
+    assert!(sample.to_string().contains("CSV privacy error"));
+
+    let columns = vec![
+        ColumnMetadata {
+            name: "id".to_string(),
+            index: 0,
+            detected_type: crate::types::DataType::NumericId,
+            confidence: crate::types::Confidence::High,
+            pii_risk: crate::types::PiiRisk::High,
+            sample_values: vec![],
+            empty_format: crate::types::EmptyFormat::EmptyString,
+            is_selected: false,
+            strategy: crate::types::AnonymizationStrategy::Auto,
+        },
+        ColumnMetadata {
+            name: "email".to_string(),
+            index: 1,
+            detected_type: crate::types::DataType::Email,
+            confidence: crate::types::Confidence::High,
+            pii_risk: crate::types::PiiRisk::High,
+            sample_values: vec![],
+            empty_format: crate::types::EmptyFormat::EmptyString,
+            is_selected: true,
+            strategy: crate::types::AnonymizationStrategy::Auto,
+        },
+    ];
+
+    let error = process_file(
+        &input_path,
+        &output_path,
+        &columns,
+        ProcessOptions {
+            deterministic: true,
+            seed: "ragged-seed",
+            smart_replacements: None,
+        },
+    )
+    .unwrap_err();
+
+    assert!(error.to_string().contains("non-header field"));
+    assert!(!output_path.exists());
+}
+
+#[test]
+fn pads_short_rows_and_truncates_empty_extra_cells() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("short-rows.csv");
+    let output_path = temp_dir.path().join("short-rows-output.csv");
+    fs::write(
+        &input_path,
+        "id,email,city\n1,a@example.com\n2,b@example.com,NL,,\n",
+    )
+    .unwrap();
+    let sample = read_sample(&input_path, 100).unwrap();
+    let columns =
+        apply_column_selection(&build_column_metadata(&sample.headers, &sample.rows), &[1]);
+
+    process_file(
+        &input_path,
+        &output_path,
+        &columns,
+        ProcessOptions {
+            deterministic: true,
+            seed: "short-row-seed",
+            smart_replacements: None,
+        },
+    )
+    .unwrap();
+
+    let output = read_sample(&output_path, 100).unwrap();
+    assert_eq!(output.rows[0].len(), 3);
+    assert_eq!(output.rows[0][2], "");
+    assert_eq!(output.rows[1].len(), 3);
+    assert_eq!(output.rows[1][2], "NL");
+}
+
+#[test]
+fn neutralizes_formula_like_headers_and_cells_in_standard_output() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("formula.csv");
+    let output_path = temp_dir.path().join("formula-output.csv");
+    fs::write(
+        &input_path,
+        "=name,email\n=cmd,a@example.com\n  +SUM(1 1),b@example.com\n\tTabbed,c@example.com\n",
+    )
+    .unwrap();
+    let sample = read_sample(&input_path, 100).unwrap();
+    let columns =
+        apply_column_selection(&build_column_metadata(&sample.headers, &sample.rows), &[1]);
+
+    process_file(
+        &input_path,
+        &output_path,
+        &columns,
+        ProcessOptions {
+            deterministic: true,
+            seed: "formula-seed",
+            smart_replacements: None,
+        },
+    )
+    .unwrap();
+
+    let output = read_sample(&output_path, 100).unwrap();
+    assert_eq!(output.headers[0], "'=name");
+    assert_eq!(output.rows[0][0], "'=cmd");
+    assert_eq!(output.rows[1][0], "'  +SUM(1 1)");
+    assert_eq!(output.rows[2][0], "'\tTabbed");
+}
+
+#[test]
 fn process_row_count_skips_blank_data_rows_but_preserves_them() {
     let temp_dir = tempfile::tempdir().unwrap();
     let input_path = temp_dir.path().join("blank-rows.csv");

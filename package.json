@@ -1,6 +1,6 @@
 {
   "name": "csv-anonymizer",
-  "version": "1.0.35",
+  "version": "1.0.36",
   "description": "Desktop CSV anonymizer for local-first data transformation workflows.",
   "desktopName": "csv-anonymizer.desktop",
   "homepage": "https://github.com/ddv1982/csv-data-anonymizer",
@@ -26,6 +26,7 @@
     "apt:installer:check": "node scripts/check-apt-installer.mjs",
     "release:check": "node scripts/check-release-metadata.mjs && npm run linux:metadata:test",
     "artifacts:rust:check": "node scripts/check-rust-artifacts.mjs",
+    "cargo:audit": "node scripts/cargo-audit.mjs",
     "smoke:packaged": "node scripts/rust-smoke.mjs",
     "smoke:rust": "node scripts/rust-smoke.mjs",
     "fmt": "cargo fmt --all --check",

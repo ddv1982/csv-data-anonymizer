@@ -24,8 +24,10 @@ export function saveSettings(settings: AppSettings): Promise<AppSettings> {
   return invoke('save_settings', { settings })
 }
 
-export function resetDpBudgetLedger(): Promise<AppSettings> {
-  return invoke('reset_dp_budget_ledger')
+export const DP_BUDGET_RESET_CONFIRMATION_PHRASE = 'RESET DP BUDGET'
+
+export function resetDpBudgetLedger(confirmationPhrase: string): Promise<AppSettings> {
+  return invoke('reset_dp_budget_ledger', { confirmationPhrase })
 }
 
 export function pickInputCsv(initialDirectory: string | null): Promise<string | null> {

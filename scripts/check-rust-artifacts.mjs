@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { readdir, stat } from 'node:fs/promises'
-import { join, relative } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { basename, join, relative } from 'node:path'
 
 const args = new Set(process.argv.slice(2))
 const platform = readOption('--platform') ?? process.platform
@@ -10,12 +10,24 @@ const requireDmg = args.has('--require-dmg')
 const requireTarGz = args.has('--require-tar-gz')
 const artifactsDir = join(process.cwd(), 'dist', 'rust', 'artifacts')
 const buildDir = join(process.cwd(), 'dist', 'rust', 'build')
+const packageJson = JSON.parse(await readFile(join(process.cwd(), 'package.json'), 'utf8'))
+const version = packageJson.version
 
-const artifacts = await collectFiles(artifactsDir)
+const artifacts = await collectDesktopArtifacts(artifactsDir)
 const builds = await collectFiles(buildDir)
 
 if (artifacts.length === 0) {
   throw new Error(`No desktop artifacts found under ${relative(process.cwd(), artifactsDir)}.`)
+}
+
+const invalidArtifacts = artifacts.filter((file) => !isCurrentVersionArtifact(file))
+if (invalidArtifacts.length > 0) {
+  throw new Error(
+    [
+      `Desktop artifacts must match current package version ${version}.`,
+      ...invalidArtifacts.map((file) => `- ${relative(process.cwd(), file)}`)
+    ].join('\n')
+  )
 }
 
 const hasTarGz = artifacts.some((file) => file.endsWith('.tar.gz'))
@@ -63,7 +75,16 @@ function requireArtifact(predicate, message) {
   }
 }
 
+async function collectDesktopArtifacts(directory) {
+  const files = await collectFiles(directory)
+  return files.filter((file) => {
+    const name = basename(file)
+    return isDesktopArtifactName(name) && !isAuxiliaryArtifactName(name)
+  })
+}
+
 async function collectFiles(directory) {
+  const { readdir, stat } = await import('node:fs/promises')
   const entries = await readdir(directory, { withFileTypes: true }).catch((error) => {
     if (error?.code === 'ENOENT') return []
     throw error
@@ -83,4 +104,36 @@ async function collectFiles(directory) {
   }
 
   return files.sort()
+}
+
+function isDesktopArtifactName(name) {
+  return /\.(?:deb|rpm|AppImage|dmg)$/i.test(name) || name.endsWith('.tar.gz')
+}
+
+function isAuxiliaryArtifactName(name) {
+  return name.startsWith('csv-anonymizer-repository-setup_')
+}
+
+function isCurrentVersionArtifact(file) {
+  const name = basename(file)
+  if (name.endsWith('.deb')) {
+    return new RegExp(`^csv-anonymizer_${escapeRegExp(version)}_[A-Za-z0-9_]+\\.deb$`).test(name)
+  }
+  if (name.endsWith('.rpm')) {
+    return new RegExp(`^csv-anonymizer-${escapeRegExp(version)}-[A-Za-z0-9_.+-]+\\.rpm$`).test(name)
+  }
+  if (name.endsWith('.AppImage')) {
+    return new RegExp(`(^|[_ .-])${escapeRegExp(version)}([_ .-]|$)`).test(name)
+  }
+  if (name.endsWith('.dmg')) {
+    return new RegExp(`^CSV\\.Anonymizer_${escapeRegExp(version)}_[A-Za-z0-9_]+\\.dmg$`).test(name)
+  }
+  if (name.endsWith('.tar.gz')) {
+    return new RegExp(`^csv-anonymizer-${escapeRegExp(version)}-(?:linux|macos)-[A-Za-z0-9_+-]+(?:\\.app)?\\.tar\\.gz$`).test(name)
+  }
+  return false
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

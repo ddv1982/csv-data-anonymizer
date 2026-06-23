@@ -81,6 +81,61 @@ fn differential_privacy_aggregate_release_writes_noisy_group_counts() {
 }
 
 #[test]
+fn differential_privacy_aggregate_release_neutralizes_formula_group_labels() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("dp-formula.csv");
+    let output_path = temp_dir.path().join("dp-formula-output.csv");
+    fs::write(&input_path, "region,amount\n=cmd,10\n+SUM,12\n").unwrap();
+
+    service
+        .anonymize_csv(AnonymizeParams {
+            file_path: input_path,
+            output_path: output_path.clone(),
+            columns: vec![0, 1],
+            controls: vec![],
+            deterministic: false,
+            seed: "dp-formula-seed".to_string(),
+            force: false,
+            preview_smart_replacements: vec![],
+            privacy_config: Some(PrivacyConfig {
+                release_mode: ReleaseMode::DifferentialPrivacyAggregate,
+                column_roles: vec![PrivacyColumnRole {
+                    column_index: 0,
+                    role: ColumnRole::Attribute,
+                    generalization_level: 0,
+                }],
+                formal: FormalPrivacyConfig::default(),
+                differential_privacy: DifferentialPrivacyConfig {
+                    epsilon: 1.0,
+                    aggregate: DpAggregate::Count,
+                    group_by_column: Some(0),
+                    group_labels_public: true,
+                    public_group_values: vec!["=cmd".to_string(), "+SUM".to_string()],
+                    value_column: None,
+                    lower_bound: None,
+                    upper_bound: None,
+                    privacy_unit_column: None,
+                    max_contributions_per_unit: None,
+                    budget: DpBudgetConfig::default(),
+                },
+                synthetic: SyntheticDataConfig::default(),
+            }),
+        })
+        .unwrap();
+
+    let output = read_sample(&output_path, 10).unwrap();
+    let group_labels = output
+        .rows
+        .iter()
+        .map(|row| row[0].as_str())
+        .collect::<Vec<_>>();
+
+    assert!(group_labels.contains(&"'=cmd"));
+    assert!(group_labels.contains(&"'+SUM"));
+}
+
+#[test]
 fn differential_privacy_release_rejects_unselected_group_by_column() {
     let service = AnonymizerService::new("test-version");
     let temp_dir = tempfile::tempdir().unwrap();

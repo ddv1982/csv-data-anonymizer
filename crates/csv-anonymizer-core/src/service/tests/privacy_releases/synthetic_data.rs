@@ -84,6 +84,72 @@ fn synthetic_data_release_generates_new_rows_and_placeholders_for_direct_ids() {
 }
 
 #[test]
+fn synthetic_data_release_does_not_copy_attribute_source_values() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("synthetic-attribute.csv");
+    let output_path = temp_dir.path().join("synthetic-attribute-output.csv");
+    fs::write(
+        &input_path,
+        "email,status\nalice@example.com,raw-active\nbob@example.com,raw-inactive\n",
+    )
+    .unwrap();
+
+    service
+        .anonymize_csv(AnonymizeParams {
+            file_path: input_path,
+            output_path: output_path.clone(),
+            columns: vec![0, 1],
+            controls: vec![ColumnControl {
+                column_index: 1,
+                type_override: Some(DataType::String),
+                strategy: AnonymizationStrategy::Auto,
+            }],
+            deterministic: true,
+            seed: "synthetic-attribute-seed".to_string(),
+            force: false,
+            preview_smart_replacements: vec![],
+            privacy_config: Some(PrivacyConfig {
+                release_mode: ReleaseMode::SyntheticData,
+                column_roles: vec![
+                    PrivacyColumnRole {
+                        column_index: 0,
+                        role: ColumnRole::DirectIdentifier,
+                        generalization_level: 0,
+                    },
+                    PrivacyColumnRole {
+                        column_index: 1,
+                        role: ColumnRole::Attribute,
+                        generalization_level: 0,
+                    },
+                ],
+                formal: FormalPrivacyConfig::default(),
+                differential_privacy: DifferentialPrivacyConfig::default(),
+                synthetic: SyntheticDataConfig {
+                    row_count: Some(4),
+                    epsilon: None,
+                },
+            }),
+        })
+        .unwrap();
+
+    let output = read_sample(&output_path, 10).unwrap();
+    let statuses = output
+        .rows
+        .iter()
+        .map(|row| row[1].as_str())
+        .collect::<Vec<_>>();
+
+    assert!(
+        statuses
+            .iter()
+            .all(|value| value.starts_with("synthetic-attribute-"))
+    );
+    assert!(!statuses.contains(&"raw-active"));
+    assert!(!statuses.contains(&"raw-inactive"));
+}
+
+#[test]
 fn synthetic_data_release_rejects_unselected_columns() {
     let service = AnonymizerService::new("test-version");
     let temp_dir = tempfile::tempdir().unwrap();
