@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.37 - 2026-06-23
+
+- Fail Local AI model downloads before creating a job when Ollama is not running, matching the setup panel's friendly install/start guidance.
+- Reuse the Ollama runtime availability check between status refresh and download preflight so stale UI state does not surface low-level connection errors.
+- Add regression coverage for unavailable-Ollama status and download preflight handling.
+
 ## v1.0.36 - 2026-06-23
 
 - Harden CSV output safety by rejecting non-empty ragged rows, padding short rows consistently, and neutralizing spreadsheet formula payloads in headers and released data.

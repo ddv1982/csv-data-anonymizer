@@ -14,6 +14,8 @@ use std::time::Duration;
 pub const DEFAULT_OLLAMA_ENDPOINT: &str = "http://127.0.0.1:11434";
 pub const DEFAULT_OLLAMA_MODEL: &str = "gemma3:4b";
 const OLLAMA_DOWNLOAD_URL: &str = "https://ollama.com/download";
+const OLLAMA_UNAVAILABLE_MESSAGE: &str =
+    "Ollama is not running. Install or start Ollama to use Local AI.";
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -292,30 +294,37 @@ impl SmartReplacementProvider for OllamaSmartReplacementProvider {
 }
 
 pub fn local_ai_status(request: LocalAiRequest) -> Result<LocalAiStatus, String> {
+    local_ai_status_with_endpoint(request, DEFAULT_OLLAMA_ENDPOINT)
+}
+
+pub fn ensure_ollama_runtime_available() -> Result<(), String> {
+    ensure_runtime_available(DEFAULT_OLLAMA_ENDPOINT)
+}
+
+fn local_ai_status_with_endpoint(
+    request: LocalAiRequest,
+    endpoint: &str,
+) -> Result<LocalAiStatus, String> {
     let model = request.model_name();
     let client = client()?;
-    let version = client
-        .get(format!("{DEFAULT_OLLAMA_ENDPOINT}/api/version"))
-        .send()
-        .and_then(|response| response.error_for_status())
-        .and_then(|response| response.json::<OllamaVersion>());
+    let version = ollama_version(&client, endpoint);
     let Ok(version) = version else {
         return Ok(LocalAiStatus {
             enabled: request.enabled,
             provider: "ollama".to_string(),
             model,
             available_models: Vec::new(),
-            endpoint: DEFAULT_OLLAMA_ENDPOINT.to_string(),
+            endpoint: endpoint.to_string(),
             runtime_available: false,
             model_installed: false,
             ready: false,
             runtime_version: None,
-            message: "Ollama is not running. Install or start Ollama to use Local AI.".to_string(),
+            message: OLLAMA_UNAVAILABLE_MESSAGE.to_string(),
         });
     };
 
     let tags = client
-        .get(format!("{DEFAULT_OLLAMA_ENDPOINT}/api/tags"))
+        .get(format!("{endpoint}/api/tags"))
         .send()
         .and_then(|response| response.error_for_status())
         .and_then(|response| response.json::<OllamaTags>())
@@ -337,13 +346,28 @@ pub fn local_ai_status(request: LocalAiRequest) -> Result<LocalAiStatus, String>
         provider: "ollama".to_string(),
         model,
         available_models,
-        endpoint: DEFAULT_OLLAMA_ENDPOINT.to_string(),
+        endpoint: endpoint.to_string(),
         runtime_available: true,
         model_installed,
         ready,
         runtime_version: version.version,
         message,
     })
+}
+
+fn ensure_runtime_available(endpoint: &str) -> Result<(), String> {
+    let client = client()?;
+    ollama_version(&client, endpoint)
+        .map(|_| ())
+        .map_err(|_| OLLAMA_UNAVAILABLE_MESSAGE.to_string())
+}
+
+fn ollama_version(client: &Client, endpoint: &str) -> Result<OllamaVersion, reqwest::Error> {
+    client
+        .get(format!("{endpoint}/api/version"))
+        .send()
+        .and_then(|response| response.error_for_status())
+        .and_then(|response| response.json::<OllamaVersion>())
 }
 
 pub fn start_download_job(job: Arc<LocalAiDownloadJob>, request: LocalAiRequest) {
@@ -386,7 +410,13 @@ fn download_model(job: Arc<LocalAiDownloadJob>, model: String) -> Result<(), Str
         .post(format!("{DEFAULT_OLLAMA_ENDPOINT}/api/pull"))
         .json(&json!({ "model": model, "stream": true }))
         .send()
-        .map_err(|error| format!("Could not start Ollama model download: {error}"))?
+        .map_err(|error| {
+            if error.is_connect() {
+                OLLAMA_UNAVAILABLE_MESSAGE.to_string()
+            } else {
+                format!("Could not start Ollama model download: {error}")
+            }
+        })?
         .error_for_status()
         .map_err(|error| format!("Ollama model download failed: {error}"))?;
     let reader = BufReader::new(response);
@@ -496,6 +526,7 @@ fn stable_seed(seed: &str, column_index: usize) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::TcpListener;
 
     #[test]
     fn installed_model_names_are_sorted_deduped_and_fallback_to_model() {
@@ -527,5 +558,39 @@ mod tests {
         assert!(is_model_installed(&models, "llama3.2"));
         assert!(is_model_installed(&models, "llama3.2:latest"));
         assert!(!is_model_installed(&models, "gemma3:4b"));
+    }
+
+    #[test]
+    fn local_ai_status_reports_friendly_message_when_ollama_is_unavailable() {
+        let status = local_ai_status_with_endpoint(
+            LocalAiRequest {
+                enabled: true,
+                model: "gemma3:4b".to_string(),
+            },
+            &unused_loopback_endpoint(),
+        )
+        .expect("local ai status should be returned even when ollama is unavailable");
+
+        assert!(!status.runtime_available);
+        assert!(!status.model_installed);
+        assert!(!status.ready);
+        assert_eq!(status.message, OLLAMA_UNAVAILABLE_MESSAGE);
+    }
+
+    #[test]
+    fn runtime_preflight_returns_friendly_message_when_ollama_is_unavailable() {
+        let error = ensure_runtime_available(&unused_loopback_endpoint())
+            .expect_err("runtime preflight should fail without ollama");
+
+        assert_eq!(error, OLLAMA_UNAVAILABLE_MESSAGE);
+    }
+
+    fn unused_loopback_endpoint() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("loopback port should bind");
+        let address = listener
+            .local_addr()
+            .expect("loopback address should be available");
+        drop(listener);
+        format!("http://{address}")
     }
 }
