@@ -44,11 +44,19 @@ export const sectionHelp = {
       {
         label: 'Strategy',
         text: [
-          'Used by standard row-level transformation. Auto and Pseudonymize run type-based replacements; some types such as booleans, country codes, percentages, currency, and enums can stay unchanged. Mask replaces every non-space character with *, Tokenize writes stable tok_ values, ',
+          'Used by standard row-level transformation. Auto and ',
+          { text: 'Pseudonymize', term: 'pseudonymize' },
+          ' run type-based replacements; some types such as booleans, country codes, percentages, currency, and enums can stay unchanged. ',
+          { text: 'Mask', term: 'mask' },
+          ' replaces every non-space character with *, ',
+          { text: 'Tokenize', term: 'tokenize' },
+          ' writes stable tok_ values, ',
           { text: 'Smart replacement', term: 'smartReplacement' },
           ' uses ',
           { text: 'Local AI', term: 'localAi' },
-          ', and Pass through keeps the original value.',
+          ', and ',
+          { text: 'Pass through', term: 'passThrough' },
+          ' keeps the original value.',
         ],
       },
       {

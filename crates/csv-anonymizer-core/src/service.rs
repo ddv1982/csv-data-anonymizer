@@ -400,9 +400,9 @@ fn build_privacy_report(
         smart_replacement_fallbacks: transform_report.smart_replacement_fallbacks,
         formal_models: Vec::new(),
         notes: vec![
-            "This app performs local masking and pseudonymization, not formal anonymization."
+            "Standard CSV transform changes selected cells in place with local strategies such as masking, tokenization, pseudonymization, pass-through, and optional Local AI replacement."
                 .to_string(),
-            "Use an opt-in privacy release mode for k-anonymity, l-diversity, t-closeness, differential privacy aggregate releases, or synthetic data generation."
+            "For k-anonymity, l-diversity, t-closeness, DP aggregate output, or synthetic/test rows, rerun with the matching Privacy Release mode selected."
                 .to_string(),
         ],
     };
@@ -444,16 +444,21 @@ fn build_privacy_report(
 
     push_unselected_column_note(&mut report.notes, columns);
 
-    if deterministic {
-        report.notes.push(
-            "Deterministic pseudonyms use keyed HMAC-SHA256 with the configured seed; treat that seed as sensitive."
-                .to_string(),
-        );
-    } else {
-        report.notes.push(
-            "Random-mode pseudonyms are tracked within each run so repeated source values stay consistent while distinct readable names avoid reuse while capacity remains."
-                .to_string(),
-        );
+    if report.unique_pseudonym_values > 0
+        || report.pseudonymized_columns > 0
+        || report.opaque_token_columns > 0
+    {
+        if deterministic {
+            report.notes.push(
+                "Deterministic pseudonyms and tokens use keyed HMAC-SHA256 with the configured seed; treat that seed as sensitive."
+                    .to_string(),
+            );
+        } else {
+            report.notes.push(
+                "Random-mode pseudonyms and tokens are tracked within each run so repeated source values stay consistent while distinct readable names avoid reuse while capacity remains."
+                    .to_string(),
+            );
+        }
     }
     if report.collisions_avoided > 0 {
         report.notes.push(format!(
