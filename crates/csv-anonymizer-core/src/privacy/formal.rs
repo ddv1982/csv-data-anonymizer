@@ -1,9 +1,11 @@
-use super::dataset::{CsvDataset, check_canceled, read_dataset, report_progress, write_atomically};
+use super::dataset::{
+    CsvDataset, check_canceled, read_dataset, report_progress, write_atomically, write_record,
+};
 use super::generalization::{MAX_GENERALIZATION_LEVEL, generalize_value};
 use super::roles::{RolePlan, build_role_plan, validate_common_config};
 use super::{PrivacyProcessResult, constrain_unselected_roles_to_attributes};
 use crate::detection::is_empty_value;
-use crate::error::{AnonymizerError, Result, csv_error};
+use crate::error::{AnonymizerError, Result};
 use crate::types::{
     ColumnMetadata, ColumnRole, DataType, FormalPrivacyConfig, PiiRisk, PrivacyConfig,
     PrivacyModel, PrivacyModelReport, PrivacyReport, ProcessControl, ReleaseMode,
@@ -230,12 +232,12 @@ fn write_formal_release(
     control: Option<&mut ProcessControl<'_>>,
 ) -> Result<PathBuf> {
     write_atomically(output_path, control, |writer, control| {
-        writer.write_record(&dataset.headers).map_err(csv_error)?;
+        write_record(writer, dataset.headers.iter().map(String::as_str))?;
         let mut rows_written = 0;
         for (row_index, row) in dataset.rows.iter().enumerate() {
             check_canceled(control)?;
             if row.is_blank {
-                writer.write_record(&row.values).map_err(csv_error)?;
+                write_record(writer, row.values.iter().map(String::as_str))?;
                 continue;
             }
             if plan.suppressed_rows.contains(&row_index) {
@@ -269,7 +271,7 @@ fn write_formal_release(
                     _ => value,
                 };
             }
-            writer.write_record(&output).map_err(csv_error)?;
+            write_record(writer, output.iter().map(String::as_str))?;
             rows_written += 1;
             report_progress(control, rows_written);
         }

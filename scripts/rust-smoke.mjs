@@ -9,6 +9,11 @@ const binary = findOrBuildBinary()
 const tempDir = mkdtempSync(join(tmpdir(), 'csv-anonymizer-smoke-'))
 const input = join(projectRoot, 'tests', 'fixtures', 'sample.csv')
 const output = join(tempDir, 'sample-smoke-output.csv')
+const sourceEmails = extractEmails(readFileSync(input, 'utf8'))
+
+if (sourceEmails.length === 0) {
+  throw new Error(`smoke fixture contains no source email values: ${relative(projectRoot, input)}`)
+}
 
 try {
   run(binary, ['--smoke-anonymize', input, output])
@@ -16,12 +21,17 @@ try {
     throw new Error('smoke command did not create output CSV')
   }
   const outputCsv = readFileSync(output, 'utf8')
-  if (outputCsv.includes('alice@example.com')) {
-    throw new Error('smoke output still contains a source email value')
+  const retainedEmails = sourceEmails.filter((email) => outputCsv.includes(email))
+  if (retainedEmails.length > 0) {
+    throw new Error(`smoke output still contains source email value(s): ${retainedEmails.join(', ')}`)
   }
-  console.log(`Rust smoke OK: ${relative(projectRoot, input)} -> ${output}`)
+  console.log(`Rust smoke OK: removed ${sourceEmails.length} fixture email value(s) from ${relative(projectRoot, input)} -> ${output}`)
 } finally {
   rmSync(tempDir, { recursive: true, force: true })
+}
+
+function extractEmails(csv) {
+  return [...new Set(csv.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) ?? [])].sort()
 }
 
 function findOrBuildBinary() {

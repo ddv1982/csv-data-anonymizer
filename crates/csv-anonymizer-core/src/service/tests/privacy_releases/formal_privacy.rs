@@ -136,6 +136,66 @@ fn formal_tabular_release_leaves_unselected_columns_unprocessed() {
 }
 
 #[test]
+fn privacy_release_rejects_late_non_empty_fields_beyond_headers_without_output() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("formal-ragged.csv");
+    let output_path = temp_dir.path().join("formal-ragged-output.csv");
+    fs::write(
+        &input_path,
+        "email,age\nalice@example.com,34\nbob@example.com,36,hidden-diagnosis\n",
+    )
+    .unwrap();
+
+    let error = service
+        .anonymize_csv_with_sample_rows(
+            AnonymizeParams {
+                file_path: input_path,
+                output_path: output_path.clone(),
+                columns: vec![0, 1],
+                controls: vec![ColumnControl {
+                    column_index: 1,
+                    type_override: Some(DataType::NumericValue),
+                    strategy: AnonymizationStrategy::PassThrough,
+                }],
+                deterministic: true,
+                seed: "formal-ragged-seed".to_string(),
+                force: false,
+                preview_smart_replacements: vec![],
+                privacy_config: Some(PrivacyConfig {
+                    release_mode: ReleaseMode::FormalTabular,
+                    column_roles: vec![
+                        PrivacyColumnRole {
+                            column_index: 0,
+                            role: ColumnRole::DirectIdentifier,
+                            generalization_level: 0,
+                        },
+                        PrivacyColumnRole {
+                            column_index: 1,
+                            role: ColumnRole::QuasiIdentifier,
+                            generalization_level: 0,
+                        },
+                    ],
+                    formal: FormalPrivacyConfig {
+                        k: 1,
+                        l_diversity: None,
+                        t_closeness: None,
+                        suppress_small_classes: false,
+                    },
+                    differential_privacy: DifferentialPrivacyConfig::default(),
+                    synthetic: SyntheticDataConfig::default(),
+                }),
+            },
+            1,
+        )
+        .unwrap_err();
+
+    assert!(error.to_string().contains("CSV privacy error"));
+    assert!(error.to_string().contains("non-header field"));
+    assert!(!output_path.exists());
+}
+
+#[test]
 fn privacy_release_rejects_unselected_role_columns() {
     let service = AnonymizerService::new("test-version");
     let temp_dir = tempfile::tempdir().unwrap();

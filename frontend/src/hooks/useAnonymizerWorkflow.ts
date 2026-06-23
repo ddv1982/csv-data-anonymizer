@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   applyBudgetSettingsToPrivacyConfig,
   defaultSettings,
@@ -10,6 +10,7 @@ import {
   cancelAnonymizeJob,
   analyzeCsv,
   countCsvRows,
+  DP_BUDGET_RESET_CONFIRMATION_PHRASE,
   getAnonymizeJobStatus,
   loadSettings,
   pickInputCsv,
@@ -55,14 +56,17 @@ export function useAnonymizerWorkflow() {
   const [error, setError] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [showAllColumns, setShowAllColumns] = useState(false)
+  const latestSettingsRef = useRef(defaultSettings)
+  const settingsSaveSequenceRef = useRef(0)
+  const inFlightSettingsSavesRef = useRef(new Set<number>())
   const localAi = useLocalAi(settings, setError)
 
   useEffect(() => {
     let isMounted = true
     loadSettings()
       .then((loaded) => {
-        if (isMounted) {
-          setSettings(loaded)
+        if (isMounted && settingsSaveSequenceRef.current === 0) {
+          applyAuthoritativeSettings(loaded)
           setPrivacyConfig((current) => applyBudgetSettingsToPrivacyConfig(current, loaded))
         }
       })
@@ -171,21 +175,53 @@ export function useAnonymizerWorkflow() {
       privacyConfigValid,
   )
 
-  async function persistSettings(next: AppSettings) {
+  function applySettings(next: AppSettings) {
+    latestSettingsRef.current = next
     setSettings(next)
+  }
+
+  function applyAuthoritativeSettings(next: AppSettings) {
+    settingsSaveSequenceRef.current += 1
+    applySettings(next)
+  }
+
+  async function persistSettings(next: AppSettings) {
+    applySettings(next)
+    const saveSequence = settingsSaveSequenceRef.current + 1
+    settingsSaveSequenceRef.current = saveSequence
+    inFlightSettingsSavesRef.current.add(saveSequence)
+    let staleResponse = false
+    let staleResponseNeedsReconcile = false
+
     try {
       const saved = await saveSettings(next)
-      setSettings(saved)
-      setPrivacyConfig((current) => applyBudgetSettingsToPrivacyConfig(current, saved))
+      staleResponse = saveSequence !== settingsSaveSequenceRef.current
+      if (!staleResponse) {
+        applySettings(saved)
+        setPrivacyConfig((current) => applyBudgetSettingsToPrivacyConfig(current, saved))
+      } else {
+        staleResponseNeedsReconcile = true
+      }
     } catch (caught) {
-      setError(messageFrom(caught))
+      staleResponse = saveSequence !== settingsSaveSequenceRef.current
+      if (!staleResponse) {
+        setError(messageFrom(caught))
+      }
+    } finally {
+      inFlightSettingsSavesRef.current.delete(saveSequence)
+      if (
+        staleResponseNeedsReconcile &&
+        !hasNewerSettingsSaveInFlight(saveSequence, inFlightSettingsSavesRef.current)
+      ) {
+        void persistSettings(latestSettingsRef.current)
+      }
     }
   }
 
   async function refreshSettings() {
     try {
       const loaded = await loadSettings()
-      setSettings(loaded)
+      applyAuthoritativeSettings(loaded)
       setPrivacyConfig((current) => applyBudgetSettingsToPrivacyConfig(current, loaded))
     } catch (caught) {
       setError(messageFrom(caught))
@@ -193,7 +229,7 @@ export function useAnonymizerWorkflow() {
   }
 
   function updateSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
-    const nextSettings = { ...settings, [key]: value }
+    const nextSettings = { ...latestSettingsRef.current, [key]: value }
     if (
       key === 'deterministicDefault' ||
       key === 'seed' ||
@@ -361,7 +397,7 @@ export function useAnonymizerWorkflow() {
     if (status.state === 'canceled') {
       setError('Output creation canceled.')
     } else {
-      setError(status.error ?? 'Output creation failed.')
+      setError(status.error ? messageFrom(status.error) : 'Output creation failed.')
     }
     return true
   }
@@ -473,8 +509,9 @@ export function useAnonymizerWorkflow() {
     setPrivacyConfig(nextConfig)
     setPreview(null)
     setResult(null)
-    const nextSettings = settingsWithPrivacyBudget(settings, nextConfig)
-    if (!sameDpBudgetSettings(settings, nextSettings)) {
+    const currentSettings = latestSettingsRef.current
+    const nextSettings = settingsWithPrivacyBudget(currentSettings, nextConfig)
+    if (!sameDpBudgetSettings(currentSettings, nextSettings)) {
       void persistSettings(nextSettings)
     }
   }
@@ -482,8 +519,8 @@ export function useAnonymizerWorkflow() {
   async function resetDpBudget() {
     setError(null)
     try {
-      const reset = await resetDpBudgetLedger()
-      setSettings(reset)
+      const reset = await resetDpBudgetLedger(DP_BUDGET_RESET_CONFIRMATION_PHRASE)
+      applyAuthoritativeSettings(reset)
       setPrivacyConfig((current) => applyBudgetSettingsToPrivacyConfig(current, reset))
       setPreview(null)
       setResult(null)
@@ -637,4 +674,11 @@ function sameDpBudgetSettings(left: AppSettings, right: AppSettings) {
     left.dpBudgetLimitEpsilon === right.dpBudgetLimitEpsilon &&
     left.dpBudgetAction === right.dpBudgetAction
   )
+}
+
+function hasNewerSettingsSaveInFlight(saveSequence: number, inFlight: Set<number>) {
+  for (const inFlightSequence of inFlight) {
+    if (inFlightSequence > saveSequence) return true
+  }
+  return false
 }

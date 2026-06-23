@@ -4,6 +4,7 @@ use crate::types::{
     ColumnMetadata, ParsedSample, ProcessControl, ProcessOptions, ProcessProgress, ProcessResult,
 };
 use csv::{ReaderBuilder, StringRecord, Trim, WriterBuilder};
+use std::borrow::Cow;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -53,6 +54,8 @@ pub fn read_sample(file_path: &Path, row_count: usize) -> Result<ParsedSample> {
         if row.iter().all(|value| value.is_empty()) {
             continue;
         }
+
+        row = normalize_data_row(row, headers.len(), record.position().map(|pos| pos.line()))?;
 
         if rows.len() >= row_count {
             is_complete = false;
@@ -163,6 +166,7 @@ fn process_file_to_temporary_output(
         .map_err(csv_error)?;
 
     let mut header_processed = false;
+    let mut header_len = 0;
     let mut row_count = 0;
     let mut transform_state = match options.smart_replacements {
         Some(smart_replacements) => TransformState::with_smart_replacements(
@@ -183,13 +187,16 @@ fn process_file_to_temporary_output(
             if let Some(first) = row.first_mut() {
                 *first = strip_bom(first).to_string();
             }
-            writer.write_record(&row).map_err(csv_error)?;
+            header_len = row.len();
+            write_csv_output_record(&mut writer, row.iter().map(String::as_str))?;
             header_processed = true;
             continue;
         }
 
+        row = normalize_data_row(row, header_len, record.position().map(|pos| pos.line()))?;
+
         if is_blank_data_row(&row) {
-            writer.write_record(&row).map_err(csv_error)?;
+            write_csv_output_record(&mut writer, row.iter().map(String::as_str))?;
             continue;
         }
 
@@ -202,7 +209,7 @@ fn process_file_to_temporary_output(
             options.deterministic,
             &mut transform_state,
         );
-        writer.write_record(&transformed_row).map_err(csv_error)?;
+        write_csv_output_record(&mut writer, transformed_row.iter().map(String::as_str))?;
         row_count += 1;
         report_progress(&mut control, row_count);
     }
@@ -220,6 +227,75 @@ fn process_file_to_temporary_output(
 
 fn record_to_vec(record: &StringRecord) -> Vec<String> {
     record.iter().map(ToString::to_string).collect()
+}
+
+pub(crate) fn normalize_data_row(
+    mut row: Vec<String>,
+    header_len: usize,
+    row_number: Option<u64>,
+) -> Result<Vec<String>> {
+    if row.len() > header_len {
+        let extra_count = row.len() - header_len;
+        if row[header_len..]
+            .iter()
+            .any(|value| !value.trim().is_empty())
+        {
+            return Err(AnonymizerError::csv_parse(
+                format!(
+                    "CSV privacy error: row contains {extra_count} non-header field(s); non-empty data beyond the header cannot be safely modeled or written"
+                ),
+                row_number,
+            ));
+        }
+        row.truncate(header_len);
+    }
+
+    if row.len() < header_len {
+        row.resize(header_len, String::new());
+    }
+
+    Ok(row)
+}
+
+pub(crate) fn write_csv_output_record<'a>(
+    writer: &mut csv::Writer<std::fs::File>,
+    record: impl IntoIterator<Item = &'a str>,
+) -> Result<()> {
+    let neutralized = record
+        .into_iter()
+        .map(neutralize_spreadsheet_formula)
+        .collect::<Vec<_>>();
+    writer
+        .write_record(neutralized.iter().map(|value| value.as_ref()))
+        .map_err(csv_error)
+}
+
+pub(crate) fn neutralize_spreadsheet_formula(value: &str) -> Cow<'_, str> {
+    if could_be_spreadsheet_formula(value) {
+        Cow::Owned(format!("'{value}"))
+    } else {
+        Cow::Borrowed(value)
+    }
+}
+
+fn could_be_spreadsheet_formula(value: &str) -> bool {
+    let Some(first) = value.chars().next() else {
+        return false;
+    };
+
+    if matches!(first, '=' | '+' | '-' | '@' | '\t' | '\r' | '\n') {
+        return true;
+    }
+
+    if first == ' ' {
+        return value
+            .trim_start_matches(' ')
+            .chars()
+            .next()
+            .is_some_and(|character| matches!(character, '=' | '+' | '-' | '@'));
+    }
+
+    false
 }
 
 fn is_blank_data_row(row: &[String]) -> bool {

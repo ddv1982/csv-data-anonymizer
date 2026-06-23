@@ -1,7 +1,9 @@
-use super::super::dataset::{CsvDataset, check_canceled, report_progress, write_atomically};
+use super::super::dataset::{
+    CsvDataset, check_canceled, report_progress, write_atomically, write_record,
+};
 use super::aggregate::{aggregate_label, build_aggregates, noisy_aggregate};
 use super::budget::format_epsilon;
-use crate::error::{Result, csv_error};
+use crate::error::Result;
 use crate::types::{ColumnMetadata, DifferentialPrivacyConfig, ProcessControl};
 use std::path::{Path, PathBuf};
 
@@ -21,36 +23,36 @@ pub(super) fn write_dp_aggregate_release(
                 .get(group_index)
                 .map(|column| column.name.as_str())
                 .unwrap_or("group");
-            writer
-                .write_record([group_name, "aggregate", "noisyValue", "epsilon"])
-                .map_err(csv_error)?;
+            write_record(writer, [group_name, "aggregate", "noisyValue", "epsilon"])?;
         } else {
-            writer
-                .write_record(["aggregate", "noisyValue", "epsilon"])
-                .map_err(csv_error)?;
+            write_record(writer, ["aggregate", "noisyValue", "epsilon"])?;
         }
 
         let mut rows_written = 0;
         for (group, aggregate) in aggregates {
             check_canceled(control)?;
             let noisy = noisy_aggregate(&group, &aggregate, config, seed);
+            let noisy_value = format!("{noisy:.6}");
+            let epsilon = format_epsilon(config.epsilon);
             if config.group_by_column.is_some() {
-                writer
-                    .write_record([
+                write_record(
+                    writer,
+                    [
                         group.as_str(),
                         aggregate_label(config.aggregate),
-                        &format!("{noisy:.6}"),
-                        &format_epsilon(config.epsilon),
-                    ])
-                    .map_err(csv_error)?;
+                        noisy_value.as_str(),
+                        epsilon.as_str(),
+                    ],
+                )?;
             } else {
-                writer
-                    .write_record([
+                write_record(
+                    writer,
+                    [
                         aggregate_label(config.aggregate),
-                        &format!("{noisy:.6}"),
-                        &format_epsilon(config.epsilon),
-                    ])
-                    .map_err(csv_error)?;
+                        noisy_value.as_str(),
+                        epsilon.as_str(),
+                    ],
+                )?;
             }
             rows_written += 1;
             report_progress(control, rows_written);

@@ -1,15 +1,15 @@
 use super::PrivacyProcessResult;
-use super::dataset::{CsvDataset, check_canceled, read_dataset, report_progress, write_atomically};
+use super::dataset::{
+    CsvDataset, check_canceled, read_dataset, report_progress, write_atomically, write_record,
+};
 use super::generalization::generalize_value;
 use super::roles::{RolePlan, build_role_plan, validate_common_config};
-use crate::detection::is_empty_value;
-use crate::error::{AnonymizerError, Result, csv_error};
+use crate::error::{AnonymizerError, Result};
 use crate::hash::{deterministic_number, deterministic_uuid};
 use crate::types::{
     ColumnMetadata, ColumnRole, DataType, PrivacyConfig, PrivacyModel, PrivacyModelReport,
     PrivacyReport, ProcessControl, ReleaseMode, SyntheticDataConfig,
 };
-use rand::seq::SliceRandom;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -17,7 +17,6 @@ struct SyntheticWritePlan<'a> {
     columns: &'a [ColumnMetadata],
     role_plan: &'a RolePlan,
     row_count: usize,
-    deterministic: bool,
     seed: &'a str,
 }
 
@@ -26,7 +25,7 @@ pub(super) fn process_synthetic_data(
     output_path: &Path,
     columns: &[ColumnMetadata],
     config: &PrivacyConfig,
-    deterministic: bool,
+    _deterministic: bool,
     seed: &str,
     mut control: Option<&mut ProcessControl<'_>>,
 ) -> Result<PrivacyProcessResult> {
@@ -43,7 +42,6 @@ pub(super) fn process_synthetic_data(
         columns,
         role_plan: &role_plan,
         row_count: requested_rows,
-        deterministic,
         seed,
     };
     let output_path = write_synthetic_release(output_path, &dataset, write_plan, control)?;
@@ -113,9 +111,8 @@ fn write_synthetic_release(
     plan: SyntheticWritePlan<'_>,
     control: Option<&mut ProcessControl<'_>>,
 ) -> Result<PathBuf> {
-    let column_values = collect_column_values(dataset, plan.columns.len());
     write_atomically(output_path, control, |writer, control| {
-        writer.write_record(&dataset.headers).map_err(csv_error)?;
+        write_record(writer, dataset.headers.iter().map(String::as_str))?;
         for row_index in 0..plan.row_count {
             check_canceled(control)?;
             let row = plan
@@ -128,44 +125,20 @@ fn write_synthetic_release(
                         .get(column.index)
                         .copied()
                         .unwrap_or(ColumnRole::Attribute);
-                    synthetic_value(
-                        column,
-                        role,
-                        row_index,
-                        &column_values[column.index],
-                        plan.deterministic,
-                        plan.seed,
-                    )
+                    synthetic_value(column, role, row_index, plan.seed)
                 })
                 .collect::<Vec<_>>();
-            writer.write_record(row).map_err(csv_error)?;
+            write_record(writer, row.iter().map(String::as_str))?;
             report_progress(control, row_index + 1);
         }
         Ok(())
     })
 }
 
-fn collect_column_values(dataset: &CsvDataset, column_count: usize) -> Vec<Vec<String>> {
-    (0..column_count)
-        .map(|column_index| {
-            dataset
-                .rows
-                .iter()
-                .filter(|row| !row.is_blank)
-                .filter_map(|row| row.values.get(column_index))
-                .filter(|value| !is_empty_value(value))
-                .cloned()
-                .collect::<Vec<_>>()
-        })
-        .collect()
-}
-
 fn synthetic_value(
     column: &ColumnMetadata,
     role: ColumnRole,
     row_index: usize,
-    observed_values: &[String],
-    deterministic: bool,
     seed: &str,
 ) -> String {
     if matches!(role, ColumnRole::DirectIdentifier | ColumnRole::Exclude) {
@@ -174,25 +147,11 @@ fn synthetic_value(
     if role == ColumnRole::Sensitive {
         return synthetic_sensitive_value(column.detected_type, row_index, seed);
     }
-    if observed_values.is_empty() {
-        return String::new();
-    }
-    let sampled = if deterministic {
-        let choice = deterministic_number(
-            &format!("{}:{row_index}", column.name),
-            seed,
-            0,
-            observed_values.len().saturating_sub(1) as i64,
-        ) as usize;
-        observed_values.get(choice)
-    } else {
-        observed_values.choose(&mut rand::thread_rng())
-    };
-    let value = sampled.cloned().unwrap_or_default();
     if role == ColumnRole::QuasiIdentifier {
+        let value = synthetic_attribute_value(column.detected_type, row_index, seed);
         generalize_value(&value, column.detected_type, 1)
     } else {
-        value
+        synthetic_attribute_value(column.detected_type, row_index, seed)
     }
 }
 
@@ -233,13 +192,50 @@ fn synthetic_sensitive_value(data_type: DataType, row_index: usize, seed: &str) 
     }
 }
 
+fn synthetic_attribute_value(data_type: DataType, row_index: usize, seed: &str) -> String {
+    let ordinal = row_index + 1;
+    match data_type {
+        DataType::Email => format!("attribute{ordinal}@example.invalid"),
+        DataType::Phone => format!("555-020-{:04}", ordinal % 10_000),
+        DataType::FirstName => format!("AttrFirst{ordinal}"),
+        DataType::LastName => format!("AttrLast{ordinal}"),
+        DataType::FullName => format!("Attribute Person {ordinal}"),
+        DataType::TaxId => format!("ATTR-{:06}", ordinal % 1_000_000),
+        DataType::Address => format!("{ordinal} Attribute Avenue"),
+        DataType::Uuid => deterministic_uuid(&format!("synthetic-attribute:{ordinal}"), seed),
+        DataType::NumericId | DataType::NumericValue | DataType::Currency => {
+            deterministic_number(&format!("synthetic-attribute:{ordinal}"), seed, 1, 10_000)
+                .to_string()
+        }
+        DataType::Percentage => {
+            deterministic_number(&format!("synthetic-attribute:{ordinal}"), seed, 0, 100)
+                .to_string()
+        }
+        DataType::Boolean => {
+            if deterministic_number(&format!("synthetic-attribute:{ordinal}"), seed, 0, 1) == 0 {
+                "false".to_string()
+            } else {
+                "true".to_string()
+            }
+        }
+        DataType::Timestamp => "2000-01-01T00:00:00Z".to_string(),
+        DataType::CountryCode => format!("ZZ{:02}", ordinal % 100),
+        DataType::Enum => format!("synthetic-enum-{ordinal}"),
+        DataType::PostalCode => format!("000{:02}", ordinal % 100),
+        DataType::IpAddress => format!("192.0.2.{}", (ordinal % 254) + 1),
+        DataType::Url => format!("https://example.invalid/item/{ordinal}"),
+        DataType::MacAddress => format!("02:00:00:00:{:02x}:{:02x}", ordinal / 256, ordinal % 256),
+        DataType::String | DataType::Unknown => format!("synthetic-attribute-{ordinal}"),
+    }
+}
+
 fn synthetic_notes() -> Vec<String> {
     vec![
         "Synthetic data mode generates new rows from simple per-column distributions and does not make the source data anonymous by itself."
             .to_string(),
         "Direct identifier columns are replaced with generated placeholders instead of sampled source values."
             .to_string(),
-        "Sensitive columns are replaced with generated placeholders; Attribute columns may still sample observed source values."
+        "Sensitive and Attribute columns are replaced with generated placeholders instead of sampled source values."
             .to_string(),
     ]
 }

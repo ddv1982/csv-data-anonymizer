@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.36 - 2026-06-23
+
+- Harden CSV output safety by rejecting non-empty ragged rows, padding short rows consistently, and neutralizing spreadsheet formula payloads in headers and released data.
+- Tighten privacy release behavior with safer synthetic attribute generation, stricter DP grouped-output validation, protected DP budget reset confirmation, and sanitized frontend error messages.
+- Strengthen release validation with current-version artifact checks, privacy-focused Rust smoke coverage, and an optional `cargo:audit` release gate.
+
 ## v1.0.35 - 2026-06-23
 
 - Refresh light mode with a cooler neutral surface stack, stronger text and border contrast, and more defined card, input, button, and focus affordances.

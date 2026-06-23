@@ -1,3 +1,4 @@
+use crate::csv_io::{normalize_data_row, write_csv_output_record};
 use crate::error::{AnonymizerError, Result, csv_error};
 use crate::types::{ProcessControl, ProcessProgress};
 use csv::{ReaderBuilder, StringRecord, Trim, WriterBuilder};
@@ -57,9 +58,7 @@ pub(super) fn read_dataset(
         }
 
         let is_blank = row.iter().all(|value| value.trim().is_empty());
-        if row.len() < headers.len() {
-            row.resize(headers.len(), String::new());
-        }
+        row = normalize_data_row(row, headers.len(), record.position().map(|pos| pos.line()))?;
         rows.push(DataRow {
             values: row,
             is_blank,
@@ -133,6 +132,13 @@ pub(super) fn report_progress(
         return;
     };
     on_progress(ProcessProgress { rows_processed });
+}
+
+pub(super) fn write_record<'a>(
+    writer: &mut csv::Writer<std::fs::File>,
+    record: impl IntoIterator<Item = &'a str>,
+) -> Result<()> {
+    write_csv_output_record(writer, record)
 }
 
 fn record_to_vec(record: &StringRecord) -> Vec<String> {

@@ -137,8 +137,8 @@ fn anonymize_preserves_numeric_shapes_in_output_file() {
     );
     assert_eq!(output.rows[0][2].len(), 4);
     assert!(output.rows[0][2].starts_with("000"));
-    assert_eq!(output.rows[0][3].len(), "-12.50".len());
-    assert!(output.rows[0][3].starts_with('-'));
+    assert_eq!(output.rows[0][3].len(), "'-12.50".len());
+    assert!(output.rows[0][3].starts_with("'-"));
     assert_eq!(output.rows[0][3].split_once('.').unwrap().1.len(), 2);
     assert_eq!(output.rows[0][4], "");
     assert_eq!(output.rows[1][4], "null");
