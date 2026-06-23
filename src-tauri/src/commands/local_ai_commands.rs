@@ -1,6 +1,7 @@
 use crate::local_ai::{
     LocalAiDownloadState, LocalAiDownloadStatus, LocalAiDownloadStore, LocalAiRequest,
-    LocalAiStatus, local_ai_status, open_setup_url, start_download_job,
+    LocalAiStatus, ensure_ollama_runtime_available, local_ai_status, open_setup_url,
+    start_download_job,
 };
 use tauri::State;
 
@@ -14,6 +15,7 @@ pub fn start_local_ai_model_download(
     downloads: State<'_, LocalAiDownloadStore>,
     request: LocalAiRequest,
 ) -> Result<LocalAiDownloadStatus, String> {
+    ensure_ollama_runtime_available()?;
     let job = downloads.create_job(request.model_name())?;
     let initial_status = job.snapshot()?;
     let worker_job = job.clone();
