@@ -1,5 +1,6 @@
 pub mod csv_io;
 pub mod detection;
+pub mod direct_input;
 pub mod error;
 pub mod hash;
 pub mod metadata;
@@ -18,8 +19,10 @@ pub use types::{
     AnonymizationStrategy, AnonymizeData, AnonymizeParams, ColumnControl, ColumnMetadata,
     ColumnPreview, ColumnRole, Confidence, DataType, DetectionResult, DifferentialPrivacyConfig,
     DpAggregate, DpBudgetAction, DpBudgetConfig, DpBudgetReport, DpBudgetStatus, EmptyFormat,
-    FormalPrivacyConfig, HeadersData, ParsedSample, PiiRisk, PreviewData, PreviewParams,
-    PreviewWarning, PrivacyColumnRole, PrivacyConfig, PrivacyModel, PrivacyModelReport,
-    PrivacyReport, ProcessControl, ProcessOptions, ProcessProgress, ProcessResult, ReleaseMode,
+    FormalPrivacyConfig, HeadersData, ParsedSample, PasteAnalyzeData, PasteAnalyzeParams,
+    PasteDataFormat, PastePreviewParams, PasteTransformData, PasteTransformParams, PiiRisk,
+    PreviewData, PreviewParams, PreviewWarning, PrivacyColumnRole, PrivacyConfig, PrivacyModel,
+    PrivacyModelReport, PrivacyReport, ProcessControl, ProcessOptions, ProcessProgress,
+    ProcessResult, QuickGenerateParams, QuickTransformData, QuickTransformParams, ReleaseMode,
     SampleTransform, SmartReplacementEntry, SyntheticDataConfig, TransformReport, WarningSeverity,
 };

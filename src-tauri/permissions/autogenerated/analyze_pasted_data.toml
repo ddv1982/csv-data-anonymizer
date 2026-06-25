@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-analyze-pasted-data"
+description = "Enables the analyze_pasted_data command without any pre-configured scope."
+commands.allow = ["analyze_pasted_data"]
+
+[[permission]]
+identifier = "deny-analyze-pasted-data"
+description = "Denies the analyze_pasted_data command without any pre-configured scope."
+commands.deny = ["analyze_pasted_data"]

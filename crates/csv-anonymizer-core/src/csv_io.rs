@@ -6,6 +6,7 @@ use crate::types::{
 use csv::{ReaderBuilder, StringRecord, Trim, WriterBuilder};
 use std::borrow::Cow;
 use std::fs;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -28,6 +29,27 @@ pub fn read_sample(file_path: &Path, row_count: usize) -> Result<ParsedSample> {
         .from_path(file_path)
         .map_err(csv_error)?;
 
+    read_sample_from_csv_reader(&mut reader, row_count)
+}
+
+pub fn read_sample_from_reader(reader: impl Read, row_count: usize) -> Result<ParsedSample> {
+    let mut reader = ReaderBuilder::new()
+        .has_headers(false)
+        .flexible(true)
+        .trim(Trim::All)
+        .from_reader(reader);
+
+    read_sample_from_csv_reader(&mut reader, row_count)
+}
+
+pub fn read_csv_sample_from_str(input: &str, row_count: usize) -> Result<ParsedSample> {
+    read_sample_from_reader(input.as_bytes(), row_count)
+}
+
+fn read_sample_from_csv_reader<R: Read>(
+    reader: &mut csv::Reader<R>,
+    row_count: usize,
+) -> Result<ParsedSample> {
     let mut headers: Vec<String> = Vec::new();
     let mut rows: Vec<Vec<String>> = Vec::new();
 
@@ -86,6 +108,21 @@ pub fn count_csv_data_rows(file_path: &Path) -> Result<usize> {
         .trim(Trim::All)
         .from_path(file_path)
         .map_err(csv_error)?;
+
+    count_csv_data_rows_from_csv_reader(&mut reader)
+}
+
+pub fn count_csv_data_rows_from_reader(reader: impl Read) -> Result<usize> {
+    let mut reader = ReaderBuilder::new()
+        .has_headers(false)
+        .flexible(true)
+        .trim(Trim::All)
+        .from_reader(reader);
+
+    count_csv_data_rows_from_csv_reader(&mut reader)
+}
+
+fn count_csv_data_rows_from_csv_reader<R: Read>(reader: &mut csv::Reader<R>) -> Result<usize> {
     let mut header_processed = false;
     let mut row_count = 0;
 
@@ -103,6 +140,45 @@ pub fn count_csv_data_rows(file_path: &Path) -> Result<usize> {
     }
 
     Ok(row_count)
+}
+
+pub fn process_csv_data(
+    input: &str,
+    columns: &[ColumnMetadata],
+    options: ProcessOptions<'_>,
+) -> Result<(String, ProcessResult)> {
+    let start_time = Instant::now();
+    let mut reader = ReaderBuilder::new()
+        .has_headers(false)
+        .flexible(true)
+        .from_reader(input.as_bytes());
+    let mut writer = WriterBuilder::new()
+        .has_headers(false)
+        .from_writer(Vec::new());
+    let result = process_csv_reader_to_writer(
+        &mut reader,
+        &mut writer,
+        columns,
+        options,
+        None,
+        PathBuf::new(),
+        start_time,
+    )?;
+    let bytes = writer
+        .into_inner()
+        .map_err(|error| AnonymizerError::csv_parse(error.to_string(), None))?;
+    let output = String::from_utf8(bytes)
+        .map_err(|error| AnonymizerError::csv_parse(error.to_string(), None))?;
+
+    Ok((output, result))
+}
+
+pub fn process_csv_text(
+    input: &str,
+    columns: &[ColumnMetadata],
+    options: ProcessOptions<'_>,
+) -> Result<(String, ProcessResult)> {
+    process_csv_data(input, columns, options)
 }
 
 pub fn process_file(
@@ -152,7 +228,7 @@ fn process_file_to_temporary_output(
     temporary_output_path: &Path,
     columns: &[ColumnMetadata],
     options: ProcessOptions<'_>,
-    mut control: Option<&mut ProcessControl<'_>>,
+    control: Option<&mut ProcessControl<'_>>,
     start_time: Instant,
 ) -> Result<ProcessResult> {
     let mut reader = ReaderBuilder::new()
@@ -165,6 +241,26 @@ fn process_file_to_temporary_output(
         .from_path(temporary_output_path)
         .map_err(csv_error)?;
 
+    process_csv_reader_to_writer(
+        &mut reader,
+        &mut writer,
+        columns,
+        options,
+        control,
+        temporary_output_path.to_path_buf(),
+        start_time,
+    )
+}
+
+fn process_csv_reader_to_writer<R: Read, W: Write>(
+    reader: &mut csv::Reader<R>,
+    writer: &mut csv::Writer<W>,
+    columns: &[ColumnMetadata],
+    options: ProcessOptions<'_>,
+    mut control: Option<&mut ProcessControl<'_>>,
+    output_path: PathBuf,
+    start_time: Instant,
+) -> Result<ProcessResult> {
     let mut header_processed = false;
     let mut header_len = 0;
     let mut row_count = 0;
@@ -188,7 +284,7 @@ fn process_file_to_temporary_output(
                 *first = strip_bom(first).to_string();
             }
             header_len = row.len();
-            write_csv_output_record(&mut writer, row.iter().map(String::as_str))?;
+            write_csv_output_record(writer, row.iter().map(String::as_str))?;
             header_processed = true;
             continue;
         }
@@ -196,7 +292,7 @@ fn process_file_to_temporary_output(
         row = normalize_data_row(row, header_len, record.position().map(|pos| pos.line()))?;
 
         if is_blank_data_row(&row) {
-            write_csv_output_record(&mut writer, row.iter().map(String::as_str))?;
+            write_csv_output_record(writer, row.iter().map(String::as_str))?;
             continue;
         }
 
@@ -209,7 +305,7 @@ fn process_file_to_temporary_output(
             options.deterministic,
             &mut transform_state,
         );
-        write_csv_output_record(&mut writer, transformed_row.iter().map(String::as_str))?;
+        write_csv_output_record(writer, transformed_row.iter().map(String::as_str))?;
         row_count += 1;
         report_progress(&mut control, row_count);
     }
@@ -219,7 +315,7 @@ fn process_file_to_temporary_output(
     Ok(ProcessResult {
         row_count,
         success: true,
-        output_path: temporary_output_path.to_path_buf(),
+        output_path,
         duration_ms: start_time.elapsed().as_millis(),
         transform_report: transform_state.report(),
     })
@@ -257,8 +353,8 @@ pub(crate) fn normalize_data_row(
     Ok(row)
 }
 
-pub(crate) fn write_csv_output_record<'a>(
-    writer: &mut csv::Writer<std::fs::File>,
+pub(crate) fn write_csv_output_record<'a, W: Write>(
+    writer: &mut csv::Writer<W>,
     record: impl IntoIterator<Item = &'a str>,
 ) -> Result<()> {
     let neutralized = record
@@ -283,19 +379,26 @@ fn could_be_spreadsheet_formula(value: &str) -> bool {
         return false;
     };
 
-    if matches!(first, '=' | '+' | '-' | '@' | '\t' | '\r' | '\n') {
+    if is_spreadsheet_formula_prefix(first) || matches!(first, '\t' | '\r' | '\n') {
         return true;
     }
 
-    if first == ' ' {
+    if first.is_whitespace() {
         return value
-            .trim_start_matches(' ')
+            .trim_start_matches(char::is_whitespace)
             .chars()
             .next()
-            .is_some_and(|character| matches!(character, '=' | '+' | '-' | '@'));
+            .is_some_and(is_spreadsheet_formula_prefix);
     }
 
     false
+}
+
+fn is_spreadsheet_formula_prefix(character: char) -> bool {
+    matches!(
+        character,
+        '=' | '+' | '-' | '@' | '\u{ff1d}' | '\u{ff0b}' | '\u{ff0d}' | '\u{ff20}'
+    )
 }
 
 fn is_blank_data_row(row: &[String]) -> bool {

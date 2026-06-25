@@ -105,6 +105,51 @@
   width: 100%;
 }
 
+.mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.mode-tab {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 3rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  padding: 0.75rem 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.mode-tab:hover,
+.mode-tab.active {
+  color: hsl(var(--foreground));
+}
+
+.mode-tab.active {
+  border-bottom-color: hsl(var(--primary));
+}
+
+.mode-tab svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.mode-tab span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .file-row {
   display: flex;
   align-items: center;
@@ -120,6 +165,32 @@
 .field {
   display: grid;
   gap: 0.5rem;
+}
+
+.direct-source-row {
+  display: grid;
+  grid-template-columns: minmax(10rem, 14rem);
+  gap: 1rem;
+}
+
+.direct-textarea,
+.direct-output {
+  min-height: 16rem;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
+  line-height: 1.45;
+}
+
+.direct-output {
+  min-height: 18rem;
+}
+
+.direct-output-meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .disabled-soft {
@@ -300,6 +371,12 @@
   border-color: hsl(var(--success-subtle) / 0.45);
   background: hsl(var(--success-subtle) / 0.12);
   color: hsl(var(--success-subtle-foreground));
+}
+
+.status-pill svg {
+  width: 0.85rem;
+  height: 0.85rem;
+  margin-right: 0.25rem;
 }
 
 .local-ai-grid {

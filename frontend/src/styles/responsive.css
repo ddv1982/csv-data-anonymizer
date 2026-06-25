@@ -7,6 +7,24 @@
     padding: 1rem 0;
   }
 
+  .mode-tabs {
+    grid-template-columns: 1fr;
+    border-bottom: 0;
+  }
+
+  .mode-tab {
+    justify-content: flex-start;
+    border: 1px solid hsl(var(--border));
+    border-radius: calc(var(--radius) - 2px);
+    background: hsl(var(--card));
+    padding-inline: 0.75rem;
+  }
+
+  .mode-tab.active {
+    border-color: hsl(var(--primary) / 0.45);
+    background: hsl(var(--accent));
+  }
+
   .card-header,
   .card-content,
   .anonymize-card-content {

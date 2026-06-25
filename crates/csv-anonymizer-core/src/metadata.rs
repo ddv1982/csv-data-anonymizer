@@ -65,6 +65,7 @@ fn build_single_column_metadata(
 
     ColumnMetadata {
         name: name.to_string(),
+        source_path: None,
         index,
         detected_type: detection.data_type,
         confidence: detection.confidence,

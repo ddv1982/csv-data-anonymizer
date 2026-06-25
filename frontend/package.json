@@ -1,14 +1,15 @@
 {
   "name": "csv-anonymizer-frontend",
   "private": true,
-  "version": "1.0.40",
+  "version": "1.0.41",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "lint": "eslint .",
     "test": "vitest run",
-    "e2e": "playwright test",
+    "e2e": "playwright test --grep-invert @a11y",
+    "a11y": "playwright test --grep @a11y",
     "typecheck": "tsc --noEmit",
     "deadcode": "knip",
     "deadcode:production": "knip --production --include exports,types,dependencies,unlisted,unresolved,binaries",
@@ -21,6 +22,7 @@
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.61.1",
     "@testing-library/jest-dom": "^6.9.1",

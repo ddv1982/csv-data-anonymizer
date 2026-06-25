@@ -5,6 +5,7 @@ use crate::types::{AnonymizationStrategy, ColumnMetadata, Confidence, EmptyForma
 fn column(detected_type: DataType) -> ColumnMetadata {
     ColumnMetadata {
         name: "value".to_string(),
+        source_path: None,
         index: 0,
         detected_type,
         confidence: Confidence::High,

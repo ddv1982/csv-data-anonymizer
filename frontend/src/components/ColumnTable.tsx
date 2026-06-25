@@ -7,6 +7,7 @@ import type {
   DataType,
   PrivacyColumnRole,
 } from '../types'
+import { csvStrategies, dataTypes, strategyLabel } from '../dataOptions'
 import { formatToken } from '../utils/format'
 import { hasSampleData, isSelectableColumn, maxVisibleColumns } from '../utils/columns'
 import { GlossaryLabel } from './GlossaryPopover'
@@ -26,6 +27,8 @@ export function ColumnTable({
   onStrategyChange,
   onRoleChange,
   onToggleShowAll,
+  showRoles = true,
+  availableStrategies = csvStrategies,
 }: {
   columns: ColumnMetadata[]
   allColumnCount: number
@@ -35,12 +38,16 @@ export function ColumnTable({
   hiddenColumnCount: number
   onToggleColumn: (column: ColumnMetadata) => void
   controls: Record<number, ColumnControl>
-  roles: Record<number, PrivacyColumnRole>
+  roles?: Record<number, PrivacyColumnRole>
   onTypeChange: (column: ColumnMetadata, value: DataType | 'auto') => void
   onStrategyChange: (column: ColumnMetadata, value: AnonymizationStrategy) => void
-  onRoleChange: (column: ColumnMetadata, value: ColumnRole) => void
+  onRoleChange?: (column: ColumnMetadata, value: ColumnRole) => void
   onToggleShowAll: () => void
+  showRoles?: boolean
+  availableStrategies?: AnonymizationStrategy[]
 }) {
+  const columnSpan = showRoles ? 8 : 7
+
   return (
     <div className="table-frame">
       <table className="column-table">
@@ -54,17 +61,19 @@ export function ColumnTable({
             <th>
               <GlossaryLabel term="strategy">Strategy</GlossaryLabel>
             </th>
-            <th>
-              <GlossaryLabel term="role">Role</GlossaryLabel>
-            </th>
+            {showRoles ? (
+              <th>
+                <GlossaryLabel term="role">Role</GlossaryLabel>
+              </th>
+            ) : null}
             <th>Risk</th>
           </tr>
         </thead>
         <tbody>
-          {loading ? <ColumnSkeletonRows /> : null}
+          {loading ? <ColumnSkeletonRows showRoles={showRoles} /> : null}
           {!loading && allColumnCount === 0 ? (
             <tr>
-              <td colSpan={8} className="empty-table-cell">
+              <td colSpan={columnSpan} className="empty-table-cell">
                 No columns to display
               </td>
             </tr>
@@ -74,7 +83,7 @@ export function ColumnTable({
                 const selectable = isSelectableColumn(column)
                 const sampleDataAvailable = hasSampleData(column)
                 const control = controls[column.index]
-                const role = roles[column.index]
+                const role = roles?.[column.index]
                 const selected = selectedSet.has(column.index)
                 const rowClassName = [selectable ? 'clickable-row' : 'muted-row', selected ? 'selected-row' : '']
                   .filter(Boolean)
@@ -142,29 +151,31 @@ export function ColumnTable({
                         onClick={(event) => event.stopPropagation()}
                         onChange={(event) => onStrategyChange(column, event.target.value as AnonymizationStrategy)}
                       >
-                        {strategies.map((strategy) => (
+                        {availableStrategies.map((strategy) => (
                           <option key={strategy} value={strategy}>
                             {strategyLabel(strategy)}
                           </option>
                         ))}
                       </select>
                     </td>
-                    <td className="control-cell">
-                      <span className="mobile-cell-label">Role</span>
-                      <select
-                        value={role?.role ?? 'auto'}
-                        disabled={!selectable || loading}
-                        aria-label={`Privacy role for ${column.name}`}
-                        onClick={(event) => event.stopPropagation()}
-                        onChange={(event) => onRoleChange(column, event.target.value as ColumnRole)}
-                      >
-                        {rolesList.map((roleValue) => (
-                          <option key={roleValue} value={roleValue}>
-                            {roleLabel(roleValue)}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
+                    {showRoles ? (
+                      <td className="control-cell">
+                        <span className="mobile-cell-label">Role</span>
+                        <select
+                          value={role?.role ?? 'auto'}
+                          disabled={!selectable || loading}
+                          aria-label={`Privacy role for ${column.name}`}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) => onRoleChange?.(column, event.target.value as ColumnRole)}
+                        >
+                          {rolesList.map((roleValue) => (
+                            <option key={roleValue} value={roleValue}>
+                              {roleLabel(roleValue)}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                    ) : null}
                     <td className="risk-cell">
                       <span className="mobile-cell-label">Risk</span>
                       <RiskBadge risk={column.piiRisk} />
@@ -175,7 +186,7 @@ export function ColumnTable({
             : null}
           {!loading && allColumnCount > maxVisibleColumns ? (
             <tr className="show-more-row">
-              <td colSpan={8} className="show-more-cell">
+              <td colSpan={columnSpan} className="show-more-cell">
                 <button type="button" className="button button-ghost button-sm" onClick={onToggleShowAll}>
                   {showAllColumns ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
                   {showAllColumns ? 'Show Less' : `Show ${hiddenColumnCount} More Columns`}
@@ -189,32 +200,6 @@ export function ColumnTable({
   )
 }
 
-const dataTypes: DataType[] = [
-  'email',
-  'uuid',
-  'timestamp',
-  'numericId',
-  'numericValue',
-  'postalCode',
-  'address',
-  'ipAddress',
-  'url',
-  'macAddress',
-  'taxId',
-  'boolean',
-  'currency',
-  'percentage',
-  'countryCode',
-  'phone',
-  'firstName',
-  'lastName',
-  'fullName',
-  'enum',
-  'string',
-  'unknown',
-]
-
-const strategies: AnonymizationStrategy[] = ['auto', 'pseudonymize', 'tokenize', 'localAi', 'mask', 'passThrough']
 const rolesList: ColumnRole[] = [
   'auto',
   'directIdentifier',
@@ -224,13 +209,6 @@ const rolesList: ColumnRole[] = [
   'exclude',
 ]
 
-function strategyLabel(strategy: AnonymizationStrategy) {
-  if (strategy === 'localAi') {
-    return 'Smart replacement (Local AI)'
-  }
-  return formatToken(strategy)
-}
-
 function roleLabel(role: ColumnRole) {
   if (role === 'auto') return 'Auto'
   if (role === 'directIdentifier') return 'Direct ID'
@@ -238,7 +216,7 @@ function roleLabel(role: ColumnRole) {
   return formatToken(role)
 }
 
-function ColumnSkeletonRows() {
+function ColumnSkeletonRows({ showRoles }: { showRoles: boolean }) {
   return (
     <>
       {Array.from({ length: 5 }, (_, index) => (
@@ -258,9 +236,11 @@ function ColumnSkeletonRows() {
           <td>
             <span className="skeleton skeleton-badge" />
           </td>
-          <td>
-            <span className="skeleton skeleton-badge" />
-          </td>
+          {showRoles ? (
+            <td>
+              <span className="skeleton skeleton-badge" />
+            </td>
+          ) : null}
           <td>
             <span className="skeleton skeleton-badge" />
           </td>

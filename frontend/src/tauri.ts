@@ -1,15 +1,21 @@
 import { setTheme as setTauriTheme } from '@tauri-apps/api/app'
 import { invoke } from '@tauri-apps/api/core'
+import { defaultSettings } from './defaults'
 import type {
   AnalyzeResponse,
   AnonymizeJobStatus,
   AppSettings,
   ColumnControl,
+  DataType,
   LocalAiDownloadStatus,
   LocalAiRequest,
   LocalAiStatus,
+  PasteAnalyzeData,
+  PasteDataFormat,
+  PasteTransformData,
   PreviewData,
   PrivacyConfig,
+  QuickTransformData,
   SmartReplacementEntry,
 } from './types'
 
@@ -19,6 +25,7 @@ type TestInvoke = (command: string, args?: Record<string, unknown>) => unknown
 declare global {
   interface Window {
     __CSV_ANONYMIZER_TEST_INVOKE__?: TestInvoke
+    __TAURI_INTERNALS__?: unknown
   }
 }
 
@@ -54,6 +61,80 @@ export function analyzeCsv(
 
 export function countCsvRows(filePath: string): Promise<number> {
   return invokeCommand('count_csv_rows', { filePath })
+}
+
+export function analyzePasteData(
+  content: string,
+  format: PasteDataFormat,
+  sampleRowCount: number,
+): Promise<PasteAnalyzeData> {
+  return invokeCommand('analyze_pasted_data', {
+    request: {
+      content,
+      format,
+      sampleRowCount,
+    },
+  })
+}
+
+export function previewPasteData(
+  content: string,
+  format: PasteDataFormat,
+  columns: number[],
+  controls: ColumnControl[],
+  deterministic: boolean,
+  seed: string,
+  sampleCount: number,
+): Promise<PreviewData> {
+  return invokeCommand('preview_pasted_data', {
+    request: {
+      content,
+      format,
+      columns,
+      controls,
+      deterministic,
+      seed,
+      sampleCount,
+    },
+  })
+}
+
+export function transformPasteData(
+  content: string,
+  format: PasteDataFormat,
+  columns: number[],
+  controls: ColumnControl[],
+  deterministic: boolean,
+  seed: string,
+): Promise<PasteTransformData> {
+  return invokeCommand('anonymize_pasted_data', {
+    request: {
+      content,
+      format,
+      columns,
+      controls,
+      deterministic,
+      seed,
+    },
+  })
+}
+
+export function generateQuickValues(
+  dataType: DataType,
+  strategy: ColumnControl['strategy'],
+  count: number,
+  deterministic: boolean,
+  seed: string,
+): Promise<QuickTransformData> {
+  return invokeCommand('generate_quick_values', {
+    request: {
+      dataType,
+      strategy,
+      count,
+      deterministic,
+      seed,
+    },
+  })
 }
 
 export function previewAnonymization(
@@ -154,5 +235,43 @@ function invokeCommand<T>(command: string, args?: Record<string, unknown>): Prom
   if (typeof window !== 'undefined' && window.__CSV_ANONYMIZER_TEST_INVOKE__) {
     return Promise.resolve(window.__CSV_ANONYMIZER_TEST_INVOKE__(command, args) as T)
   }
+  if (!isTauriRuntime()) {
+    const fallback = browserPreviewFallback(command, args)
+    if (fallback.handled) return Promise.resolve(fallback.value as T)
+    return Promise.reject(new Error('This action requires the Tauri desktop app.'))
+  }
   return invoke<T>(command, args)
+}
+
+function isTauriRuntime() {
+  return typeof window !== 'undefined' && Boolean(window.__TAURI_INTERNALS__)
+}
+
+function browserPreviewFallback(command: string, args?: Record<string, unknown>) {
+  if (command === 'load_settings') {
+    return { handled: true, value: defaultSettings }
+  }
+  if (command === 'save_settings') {
+    return { handled: true, value: args?.settings ?? defaultSettings }
+  }
+  if (command === 'get_local_ai_status') {
+    const request = args?.request as LocalAiRequest | undefined
+    return {
+      handled: true,
+      value: {
+        enabled: Boolean(request?.enabled),
+        provider: 'ollama',
+        model: request?.model ?? defaultSettings.localAiModel,
+        availableModels: [],
+        endpoint: 'http://127.0.0.1:11434',
+        runtimeAvailable: false,
+        modelInstalled: false,
+        ready: false,
+        runtimeVersion: null,
+        message: 'Local AI is available in the desktop app.',
+      } satisfies LocalAiStatus,
+    }
+  }
+
+  return { handled: false, value: null }
 }

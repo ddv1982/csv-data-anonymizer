@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.41 - 2026-06-26
+
+- Add direct pasted-data workflows for CSV text, JSON, YAML, XML, logs, documents, and quick generated sample values while keeping the existing file CSV path intact.
+- Split direct-input parsing into focused Rust modules with typed source-path IDs, escaped display labels, bounded payload analysis, and regression coverage for dotted keys, XML attributes, scalar types, and overlapping text tokens.
+- Harden paste commands with explicit Tauri permissions, frontend/backend contract checks, generated command DTO validation, and CI dead-code scanning.
+- Add paste performance benchmarks plus Playwright keyboard-focus and automated accessibility checks for the input tabs and privacy dialogs.
+- Extend spreadsheet formula-injection protection and privacy wording so CSV releases handle Unicode formula prefixes and avoid overstating anonymization guarantees.
+
 ## v1.0.40 - 2026-06-25
 
 - Complete the quality-plan rollout with required Rust audits, frontend lint/unit/e2e guardrails, dead-code scans, and CI/release workflow coverage.

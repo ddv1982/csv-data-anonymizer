@@ -58,15 +58,28 @@
   padding: 2rem 0;
 }
 
+.mode-panel {
+  min-width: 0;
+}
+
 .workflow-stack,
 .columns-stack,
 .config-stack,
 .result-stack,
 .preview-stack,
-.progress-stack {
+.progress-stack,
+.direct-input-stack,
+.direct-output-stack,
+.quick-grid {
   display: grid;
   min-width: 0;
   gap: 1.5rem;
+}
+
+.direct-input-meta {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -0.75rem;
 }
 
 .card {
