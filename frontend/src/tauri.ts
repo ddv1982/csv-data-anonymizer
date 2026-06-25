@@ -2,7 +2,6 @@ import { setTheme as setTauriTheme } from '@tauri-apps/api/app'
 import { invoke } from '@tauri-apps/api/core'
 import type {
   AnalyzeResponse,
-  AnonymizeData,
   AnonymizeJobStatus,
   AppSettings,
   ColumnControl,
@@ -15,27 +14,34 @@ import type {
 } from './types'
 
 type TauriTheme = 'light' | 'dark'
+type TestInvoke = (command: string, args?: Record<string, unknown>) => unknown
+
+declare global {
+  interface Window {
+    __CSV_ANONYMIZER_TEST_INVOKE__?: TestInvoke
+  }
+}
 
 export function loadSettings(): Promise<AppSettings> {
-  return invoke('load_settings')
+  return invokeCommand('load_settings')
 }
 
 export function saveSettings(settings: AppSettings): Promise<AppSettings> {
-  return invoke('save_settings', { settings })
+  return invokeCommand('save_settings', { settings })
 }
 
 export const DP_BUDGET_RESET_CONFIRMATION_PHRASE = 'RESET DP BUDGET'
 
 export function resetDpBudgetLedger(confirmationPhrase: string): Promise<AppSettings> {
-  return invoke('reset_dp_budget_ledger', { confirmationPhrase })
+  return invokeCommand('reset_dp_budget_ledger', { confirmationPhrase })
 }
 
 export function pickInputCsv(initialDirectory: string | null): Promise<string | null> {
-  return invoke('pick_input_csv', { initialDirectory })
+  return invokeCommand('pick_input_csv', { initialDirectory })
 }
 
 export function pickOutputCsv(suggestedOutputPath: string | null): Promise<string | null> {
-  return invoke('pick_output_csv', { suggestedOutputPath })
+  return invokeCommand('pick_output_csv', { suggestedOutputPath })
 }
 
 export function analyzeCsv(
@@ -43,11 +49,11 @@ export function analyzeCsv(
   sampleRowCount: number,
   outputSuffix: string,
 ): Promise<AnalyzeResponse> {
-  return invoke('analyze_csv', { filePath, sampleRowCount, outputSuffix })
+  return invokeCommand('analyze_csv', { filePath, sampleRowCount, outputSuffix })
 }
 
 export function countCsvRows(filePath: string): Promise<number> {
-  return invoke('count_csv_rows', { filePath })
+  return invokeCommand('count_csv_rows', { filePath })
 }
 
 export function previewAnonymization(
@@ -59,7 +65,7 @@ export function previewAnonymization(
   sampleCount: number,
   localAi: LocalAiRequest,
 ): Promise<PreviewData> {
-  return invoke('preview_anonymization', {
+  return invokeCommand('preview_anonymization', {
     request: {
       filePath,
       columns,
@@ -67,36 +73,6 @@ export function previewAnonymization(
       deterministic,
       seed,
       sampleCount,
-      localAi,
-    },
-  })
-}
-
-export function anonymizeCsv(
-  filePath: string,
-  outputPath: string,
-  columns: number[],
-  controls: ColumnControl[],
-  deterministic: boolean,
-  seed: string,
-  force: boolean,
-  sampleRowCount: number,
-  previewSmartReplacements: SmartReplacementEntry[],
-  privacyConfig: PrivacyConfig | null,
-  localAi: LocalAiRequest,
-): Promise<AnonymizeData> {
-  return invoke('anonymize_csv', {
-    request: {
-      filePath,
-      outputPath,
-      columns,
-      controls,
-      deterministic,
-      seed,
-      force,
-      sampleRowCount,
-      previewSmartReplacements,
-      privacyConfig,
       localAi,
     },
   })
@@ -116,7 +92,7 @@ export function startAnonymizeJob(
   privacyConfig: PrivacyConfig | null,
   localAi: LocalAiRequest,
 ): Promise<AnonymizeJobStatus> {
-  return invoke('start_anonymize_job', {
+  return invokeCommand('start_anonymize_job', {
     request: {
       filePath,
       outputPath,
@@ -135,35 +111,35 @@ export function startAnonymizeJob(
 }
 
 export function getAnonymizeJobStatus(jobId: string): Promise<AnonymizeJobStatus> {
-  return invoke('get_anonymize_job_status', { jobId })
+  return invokeCommand('get_anonymize_job_status', { jobId })
 }
 
 export function cancelAnonymizeJob(jobId: string): Promise<AnonymizeJobStatus> {
-  return invoke('cancel_anonymize_job', { jobId })
+  return invokeCommand('cancel_anonymize_job', { jobId })
 }
 
 export function openOutputLocation(outputPath: string): Promise<void> {
-  return invoke('open_output_location', { outputPath })
+  return invokeCommand('open_output_location', { outputPath })
 }
 
 export function getLocalAiStatus(request: LocalAiRequest): Promise<LocalAiStatus> {
-  return invoke('get_local_ai_status', { request })
+  return invokeCommand('get_local_ai_status', { request })
 }
 
 export function startLocalAiModelDownload(request: LocalAiRequest): Promise<LocalAiDownloadStatus> {
-  return invoke('start_local_ai_model_download', { request })
+  return invokeCommand('start_local_ai_model_download', { request })
 }
 
 export function getLocalAiModelDownloadStatus(jobId: string): Promise<LocalAiDownloadStatus> {
-  return invoke('get_local_ai_model_download_status', { jobId })
+  return invokeCommand('get_local_ai_model_download_status', { jobId })
 }
 
 export function cancelLocalAiModelDownload(jobId: string): Promise<LocalAiDownloadStatus> {
-  return invoke('cancel_local_ai_model_download', { jobId })
+  return invokeCommand('cancel_local_ai_model_download', { jobId })
 }
 
 export function openLocalAiSetupUrl(): Promise<void> {
-  return invoke('open_local_ai_setup_url')
+  return invokeCommand('open_local_ai_setup_url')
 }
 
 export async function setAppTheme(theme: TauriTheme | null): Promise<void> {
@@ -172,4 +148,11 @@ export async function setAppTheme(theme: TauriTheme | null): Promise<void> {
   } catch {
     // Browser/Vite contexts do not provide the Tauri app plugin.
   }
+}
+
+function invokeCommand<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  if (typeof window !== 'undefined' && window.__CSV_ANONYMIZER_TEST_INVOKE__) {
+    return Promise.resolve(window.__CSV_ANONYMIZER_TEST_INVOKE__(command, args) as T)
+  }
+  return invoke<T>(command, args)
 }

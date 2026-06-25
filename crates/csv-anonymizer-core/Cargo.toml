@@ -17,5 +17,10 @@ sha2.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+criterion = { version = "0.8", features = ["html_reports"] }
 serde_json.workspace = true
 tempfile.workspace = true
+
+[[bench]]
+name = "csv_streaming"
+harness = false

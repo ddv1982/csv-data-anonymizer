@@ -1,13 +1,12 @@
-import type { PrivacyConfig } from '../types'
+import type { HeadersData, PrivacyConfig } from '../types'
 
 export interface PrivacyConfigValidation {
   valid: boolean
   reason: string | null
 }
 
-export function validatePrivacyConfig(config: PrivacyConfig, selectedColumns?: Set<number>, columnCount?: number) {
-  return getPrivacyConfigValidation(config, selectedColumns, columnCount).valid
-}
+const FULL_DATASET_WARNING_ROWS = 100_000
+const FULL_DATASET_CAP_ROWS = 1_000_000
 
 export function getPrivacyConfigValidation(
   config: PrivacyConfig,
@@ -147,6 +146,24 @@ export function getPrivacyConfigValidation(
   return { valid: false, reason: 'Choose a supported privacy release mode.' }
 }
 
+export function getPrivacyScaleWarning(
+  config: PrivacyConfig,
+  headers: HeadersData | null,
+): string | null {
+  if (config.releaseMode === 'standard' || !headers) return null
+  const mode = privacyReleaseModeLabel(config.releaseMode)
+
+  if (!headers.rowCountIsComplete) {
+    return `${mode} materializes the privacy release dataset in memory. Exact row count is still being calculated; inputs over ${FULL_DATASET_CAP_ROWS.toLocaleString()} data rows are blocked.`
+  }
+
+  if (headers.rowCount > FULL_DATASET_WARNING_ROWS) {
+    return `${mode} will materialize ${headers.rowCount.toLocaleString()} data rows in memory. Inputs over ${FULL_DATASET_CAP_ROWS.toLocaleString()} data rows are blocked.`
+  }
+
+  return null
+}
+
 function hasSensitiveColumn(config: PrivacyConfig, selectedColumns?: Set<number>) {
   return config.columnRoles.some(
     (role) => role.role === 'sensitive' && (!selectedColumns || selectedColumns.has(role.columnIndex)),
@@ -155,4 +172,11 @@ function hasSensitiveColumn(config: PrivacyConfig, selectedColumns?: Set<number>
 
 function isAttributeRole(config: PrivacyConfig, columnIndex: number) {
   return config.columnRoles.some((role) => role.columnIndex === columnIndex && role.role === 'attribute')
+}
+
+function privacyReleaseModeLabel(mode: PrivacyConfig['releaseMode']) {
+  if (mode === 'formalTabular') return 'k/l/t tabular output'
+  if (mode === 'differentialPrivacyAggregate') return 'DP aggregate output'
+  if (mode === 'syntheticData') return 'Synthetic data output'
+  return 'This release mode'
 }

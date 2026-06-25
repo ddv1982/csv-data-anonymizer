@@ -9,7 +9,6 @@ fn main() {
             "analyze_csv",
             "count_csv_rows",
             "preview_anonymization",
-            "anonymize_csv",
             "start_anonymize_job",
             "get_anonymize_job_status",
             "cancel_anonymize_job",

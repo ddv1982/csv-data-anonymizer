@@ -68,6 +68,13 @@ jobs:
           npm run frontend:lint
           npm run frontend:test
 
+      - name: Install Playwright Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Test frontend e2e
+        run: npm run frontend:e2e
+
       - name: Build frontend
         run: npm run frontend:build
 

@@ -42,6 +42,8 @@ app and release path. The production UI is the bundled Vite frontend.
   once and require Tauri to consume that prebuilt `frontend/dist`.
 - Release and package jobs install the Tauri CLI at the pinned workflow version
   matching the Tauri crate version resolved in `Cargo.lock`.
+- `.github/workflows/dead-code.yml` runs scheduled and manual Knip/cargo-machete
+  scans for frontend dead code and Rust dependency drift.
 - Release artifacts are written under `dist/rust`.
 
 ## Active Verification
@@ -51,11 +53,16 @@ npm run frontend:build
 npm run frontend:audit
 npm run frontend:lint
 npm run frontend:test
+npm run frontend:e2e
+npm run frontend:deadcode
+npm run frontend:deadcode:production
 npm run cargo:audit
+npm run cargo:machete
 CSV_ANONYMIZER_USE_PREBUILT_FRONTEND=1 scripts/build_frontend_for_tauri.sh
 cargo fmt --all --check
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
+cargo bench -p csv-anonymizer-core --bench csv_streaming
 node scripts/rust-smoke.mjs
 node scripts/check-release-metadata.mjs
 ```

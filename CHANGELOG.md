@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.40 - 2026-06-25
+
+- Complete the quality-plan rollout with required Rust audits, frontend lint/unit/e2e guardrails, dead-code scans, and CI/release workflow coverage.
+- Split the frontend workflow and Local AI backend into focused modules while preserving the existing user workflow and Tauri command surface.
+- Harden large-file privacy releases with memory/cardinality warnings, input caps, terminal job/download pruning, and conservative privacy messaging.
+- Add browser workflow coverage for file loading, privacy validation, glossary/help behavior, preview recovery, job polling, cancellation, and settings persistence.
+- Refresh release documentation and metadata so the full validation order, required tools, and maintenance checks match the shipped build.
+
 ## v1.0.39 - 2026-06-25
 
 - Supersede v1.0.38 without moving the failed tag, replacing the RustSec GitHub Action with the repository `cargo:audit:required` gate so CI and release validation do not require Checks API write access.
