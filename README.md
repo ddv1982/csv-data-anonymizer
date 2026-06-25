@@ -94,6 +94,7 @@ Requirements:
 - Rust stable
 - Node.js 22.13 or newer
 - Frontend dependencies from `frontend/package-lock.json`
+- Playwright Chromium for browser e2e checks: `cd frontend && npx playwright install chromium`
 
 Setup:
 
@@ -113,15 +114,22 @@ Useful checks:
 npm run frontend:typecheck
 npm run frontend:lint
 npm run frontend:test
+npm run frontend:e2e
 npm run frontend:build
 npm run frontend:audit
+npm run frontend:deadcode
+npm run frontend:deadcode:production
 npm run cargo:audit
+npm run cargo:machete
 cargo fmt --all --check
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
+cargo bench -p csv-anonymizer-core --bench csv_streaming
 node scripts/rust-smoke.mjs
 node scripts/check-release-metadata.mjs
 ```
+
+The dead-code scans use Knip for the frontend and cargo-machete for Rust dependency drift. A weekly GitHub Actions maintenance workflow also runs the required variants.
 
 ## Project Layout
 

@@ -4,7 +4,7 @@ export function messageFrom(value: unknown) {
   return 'Unexpected application error.'
 }
 
-export function sanitizeErrorMessage(message: string) {
+function sanitizeErrorMessage(message: string) {
   const trimmed = message.trim()
   if (!trimmed) return 'Unexpected application error.'
 

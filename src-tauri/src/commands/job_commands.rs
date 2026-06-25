@@ -72,7 +72,7 @@ pub fn get_anonymize_job_status(
     jobs: State<'_, AnonymizeJobStore>,
     job_id: String,
 ) -> Result<AnonymizeJobStatus, String> {
-    jobs.get_job(&job_id)?.snapshot()
+    jobs.snapshot_job(&job_id)
 }
 
 #[tauri::command]

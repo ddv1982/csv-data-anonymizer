@@ -30,7 +30,7 @@ pub fn get_local_ai_model_download_status(
     downloads: State<'_, LocalAiDownloadStore>,
     job_id: String,
 ) -> Result<LocalAiDownloadStatus, String> {
-    downloads.get_job(&job_id)?.snapshot()
+    downloads.snapshot_job(&job_id)
 }
 
 #[tauri::command]

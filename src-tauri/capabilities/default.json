@@ -12,7 +12,6 @@
     "allow-analyze-csv",
     "allow-count-csv-rows",
     "allow-preview-anonymization",
-    "allow-anonymize-csv",
     "allow-start-anonymize-job",
     "allow-get-anonymize-job-status",
     "allow-cancel-anonymize-job",

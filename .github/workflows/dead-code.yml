@@ -1,0 +1,50 @@
+name: Dead Code And Dependency Scan
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 5 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dead-code-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  scan:
+    name: Scan
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Scan frontend unused files, exports, and dependencies
+        run: npm run frontend:deadcode
+
+      - name: Scan production frontend surface
+        run: npm run frontend:deadcode:production
+
+      - name: Install cargo-machete
+        run: cargo install cargo-machete --locked --version 0.9.2
+
+      - name: Scan Rust unused dependencies
+        run: npm run cargo:machete:required

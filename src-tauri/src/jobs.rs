@@ -8,8 +8,10 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime};
 
 const MAX_RETAINED_TERMINAL_JOBS: usize = 20;
+const TERMINAL_JOB_TTL: Duration = Duration::from_secs(30 * 60);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -43,6 +45,7 @@ pub struct AnonymizeJob {
     created_sequence: u64,
     cancel_requested: AtomicBool,
     status: Mutex<AnonymizeJobStatus>,
+    terminal_at: Mutex<Option<SystemTime>>,
 }
 
 impl AnonymizeJobStore {
@@ -52,6 +55,7 @@ impl AnonymizeJobStore {
         let job = Arc::new(AnonymizeJob {
             created_sequence: sequence,
             cancel_requested: AtomicBool::new(false),
+            terminal_at: Mutex::new(None),
             status: Mutex::new(AnonymizeJobStatus {
                 job_id: id.clone(),
                 state: AnonymizeJobState::Running,
@@ -67,6 +71,20 @@ impl AnonymizeJobStore {
         jobs.insert(id, job.clone());
         prune_terminal_jobs(&mut jobs, None, MAX_RETAINED_TERMINAL_JOBS);
         Ok(job)
+    }
+
+    pub fn snapshot_job(&self, job_id: &str) -> Result<AnonymizeJobStatus, String> {
+        let mut jobs = self.lock_jobs()?;
+        let job = jobs
+            .get(job_id)
+            .cloned()
+            .ok_or_else(|| format!("Unknown anonymization job: {job_id}"))?;
+        let status = job.snapshot()?;
+        prune_terminal_jobs(&mut jobs, Some(job_id), MAX_RETAINED_TERMINAL_JOBS);
+        if status.state.is_terminal() {
+            jobs.remove(job_id);
+        }
+        Ok(status)
     }
 
     pub fn get_job(&self, job_id: &str) -> Result<Arc<AnonymizeJob>, String> {
@@ -144,6 +162,9 @@ impl AnonymizeJob {
                 }
             }
         }
+        if let Ok(mut terminal_at) = self.terminal_at.lock() {
+            *terminal_at = Some(SystemTime::now());
+        }
     }
 
     fn lock_status(&self) -> Result<std::sync::MutexGuard<'_, AnonymizeJobStatus>, String> {
@@ -158,6 +179,12 @@ fn prune_terminal_jobs(
     protected_job_id: Option<&str>,
     max_retained: usize,
 ) {
+    let now = SystemTime::now();
+    jobs.retain(|job_id, job| {
+        protected_job_id == Some(job_id.as_str())
+            || !terminal_job_expired(job, now, TERMINAL_JOB_TTL)
+    });
+
     let mut terminal_jobs = jobs
         .iter()
         .filter(|(job_id, _)| protected_job_id != Some(job_id.as_str()))
@@ -176,6 +203,19 @@ fn prune_terminal_jobs(
     let remove_count = terminal_jobs.len() - max_retained;
     for (job_id, _) in terminal_jobs.into_iter().take(remove_count) {
         jobs.remove(&job_id);
+    }
+}
+
+fn terminal_job_expired(job: &AnonymizeJob, now: SystemTime, ttl: Duration) -> bool {
+    let Ok(terminal_at) = job.terminal_at.lock() else {
+        return false;
+    };
+    let Some(terminal_at) = *terminal_at else {
+        return false;
+    };
+    match now.duration_since(terminal_at) {
+        Ok(age) => age >= ttl,
+        Err(_) => false,
     }
 }
 
@@ -230,12 +270,18 @@ fn service() -> AnonymizerService {
 mod tests {
     use super::*;
     use csv_anonymizer_core::{
-        AnonymizationStrategy, ColumnControl, DataType, SmartReplacementEntry,
+        AnonymizationStrategy, ColumnControl, DataType, PrivacyReport, ReleaseMode,
+        SmartReplacementEntry,
     };
     use std::fs;
 
     fn test_ledger(temp_dir: &tempfile::TempDir) -> Arc<DpBudgetLedger> {
         Arc::new(DpBudgetLedger::new(temp_dir.path().join("settings.json")))
+    }
+
+    fn age_terminal_job(job: &AnonymizeJob) {
+        *job.terminal_at.lock().unwrap() =
+            Some(SystemTime::now() - TERMINAL_JOB_TTL - Duration::from_secs(1));
     }
 
     #[test]
@@ -259,11 +305,95 @@ mod tests {
             let job = store.create_job(None).unwrap();
             job.finish(Err(AnonymizerError::Canceled));
         }
+        let trigger_job = store.create_job(None).unwrap();
 
-        assert!(store.job_count() <= MAX_RETAINED_TERMINAL_JOBS + 2);
+        assert_eq!(store.job_count(), MAX_RETAINED_TERMINAL_JOBS + 2);
         assert!(
             store
                 .get_job(&running_job.snapshot().unwrap().job_id)
+                .is_ok()
+        );
+        assert!(
+            store
+                .get_job(&trigger_job.snapshot().unwrap().job_id)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn store_prunes_all_terminal_states_and_retains_newest_jobs() {
+        let store = AnonymizeJobStore::default();
+        let mut terminal_ids = Vec::new();
+
+        for index in 0..(MAX_RETAINED_TERMINAL_JOBS + 4) {
+            let job = store.create_job(None).unwrap();
+            match index % 3 {
+                0 => job.finish(Ok(result_fixture())),
+                1 => job.finish(Err(AnonymizerError::Canceled)),
+                _ => job.finish(Err(AnonymizerError::SmartReplacement("failed".to_string()))),
+            }
+            terminal_ids.push(job.snapshot().unwrap().job_id);
+        }
+        let trigger_job = store.create_job(None).unwrap();
+
+        assert_eq!(store.job_count(), MAX_RETAINED_TERMINAL_JOBS + 1);
+        assert!(store.get_job(&terminal_ids[0]).is_err());
+        assert!(
+            store
+                .get_job(terminal_ids.last().expect("terminal id should exist"))
+                .is_ok()
+        );
+        assert!(
+            store
+                .get_job(&trigger_job.snapshot().unwrap().job_id)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn store_protects_requested_terminal_job_during_prune() {
+        let store = AnonymizeJobStore::default();
+        for _ in 0..(MAX_RETAINED_TERMINAL_JOBS + 4) {
+            let job = store.create_job(None).unwrap();
+            job.finish(Err(AnonymizerError::Canceled));
+        }
+        let protected = store.create_job(None).unwrap();
+        protected.finish(Ok(result_fixture()));
+        let protected_id = protected.snapshot().unwrap().job_id;
+
+        assert!(store.get_job(&protected_id).is_ok());
+        assert_eq!(store.job_count(), MAX_RETAINED_TERMINAL_JOBS + 1);
+    }
+
+    #[test]
+    fn snapshot_job_removes_terminal_job_after_status_retrieval() {
+        let store = AnonymizeJobStore::default();
+        let job = store.create_job(None).unwrap();
+        let job_id = job.snapshot().unwrap().job_id;
+        job.finish(Ok(result_fixture()));
+
+        let status = store.snapshot_job(&job_id).unwrap();
+
+        assert_eq!(status.state, AnonymizeJobState::Succeeded);
+        assert!(status.result.is_some());
+        assert!(store.get_job(&job_id).is_err());
+        assert_eq!(store.job_count(), 0);
+    }
+
+    #[test]
+    fn store_prunes_terminal_jobs_after_ttl() {
+        let store = AnonymizeJobStore::default();
+        let old_job = store.create_job(None).unwrap();
+        old_job.finish(Err(AnonymizerError::Canceled));
+        age_terminal_job(&old_job);
+        let old_job_id = old_job.snapshot().unwrap().job_id;
+
+        let active_job = store.create_job(None).unwrap();
+
+        assert!(store.get_job(&old_job_id).is_err());
+        assert!(
+            store
+                .get_job(&active_job.snapshot().unwrap().job_id)
                 .is_ok()
         );
     }
@@ -457,5 +587,39 @@ mod tests {
                 .is_some_and(|error| error.contains("Smart replacement needs Local AI"))
         );
         assert!(!output_path.exists());
+    }
+
+    fn result_fixture() -> AnonymizeData {
+        AnonymizeData {
+            output_path: "output.csv".into(),
+            row_count: 1,
+            columns_anonymized: 1,
+            duration_ms: 1,
+            privacy_report: PrivacyReport {
+                release_mode: ReleaseMode::Standard,
+                direct_identifiers: 0,
+                quasi_identifiers: 0,
+                sensitive_columns: 0,
+                pseudonymized_columns: 1,
+                smart_replacement_columns: 0,
+                opaque_token_columns: 0,
+                masked_columns: 0,
+                generalized_columns: 0,
+                pass_through_columns: 0,
+                suppressed_rows: 0,
+                synthetic_rows: 0,
+                dp_epsilon: None,
+                dp_budget: None,
+                unique_pseudonym_values: 1,
+                reused_pseudonym_values: 0,
+                collisions_avoided: 0,
+                exhausted_pseudonym_pools: 0,
+                opaque_token_values: 0,
+                smart_replacement_values: 0,
+                smart_replacement_fallbacks: 0,
+                formal_models: Vec::new(),
+                notes: Vec::new(),
+            },
+        }
     }
 }

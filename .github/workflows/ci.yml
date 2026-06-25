@@ -133,6 +133,15 @@ jobs:
       - name: Test frontend
         run: npm run frontend:test
 
+      - name: Install Playwright Chromium
+        if: runner.os == 'Linux'
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Test frontend e2e
+        if: runner.os == 'Linux'
+        run: npm run frontend:e2e
+
       - name: Build frontend
         run: npm run frontend:build
 

@@ -21,7 +21,7 @@ export const defaultSettings: AppSettings = {
   localAiModel: 'gemma3:4b',
 }
 
-export const defaultPrivacyConfig: PrivacyConfig = {
+const defaultPrivacyConfig: PrivacyConfig = {
   releaseMode: 'standard',
   columnRoles: [],
   formal: {

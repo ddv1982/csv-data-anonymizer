@@ -1,17 +1,14 @@
 use super::shared::{
-    authorize_or_confirm_input_file, authorize_or_confirm_output_file,
-    default_output_path_with_suffix, run_blocking, service, should_auto_select,
+    authorize_or_confirm_input_file, default_output_path_with_suffix, run_blocking, service,
+    should_auto_select,
 };
 use crate::local_ai::{LocalAiRequest, smart_provider_for_request};
 use crate::path_access::PathAccess;
-use crate::settings::DpBudgetLedger;
 use csv_anonymizer_core::{
-    AnonymizeData, AnonymizeParams, ColumnControl, HeadersData, PreviewData, PreviewParams,
-    PrivacyConfig, SmartReplacementEntry, SmartReplacementProvider,
+    ColumnControl, HeadersData, PreviewData, PreviewParams, SmartReplacementProvider,
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::Arc;
 use tauri::State;
 
 #[derive(Debug, Clone, Serialize)]
@@ -20,25 +17,6 @@ pub struct AnalyzeResponse {
     pub headers: HeadersData,
     pub selected_columns: Vec<usize>,
     pub suggested_output_path: PathBuf,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AnonymizeRequest {
-    pub file_path: PathBuf,
-    pub output_path: PathBuf,
-    pub columns: Vec<usize>,
-    #[serde(default)]
-    pub controls: Vec<ColumnControl>,
-    pub deterministic: bool,
-    pub seed: String,
-    pub force: bool,
-    pub sample_row_count: usize,
-    #[serde(default)]
-    pub preview_smart_replacements: Vec<SmartReplacementEntry>,
-    #[serde(default)]
-    pub privacy_config: Option<PrivacyConfig>,
-    pub local_ai: Option<LocalAiRequest>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -126,49 +104,6 @@ pub async fn count_csv_rows(
     run_blocking(move || {
         service()
             .count_csv_rows(&file_path)
-            .map_err(|error| error.to_string())
-    })
-    .await
-}
-
-#[tauri::command]
-pub async fn anonymize_csv(
-    app: tauri::AppHandle,
-    path_access: State<'_, PathAccess>,
-    ledger: State<'_, Arc<DpBudgetLedger>>,
-    request: AnonymizeRequest,
-) -> Result<AnonymizeData, String> {
-    let file_path = path_access.authorize_input_file(request.file_path)?;
-    let output_path = authorize_or_confirm_output_file(&app, &path_access, request.output_path)?;
-    let ledger = ledger.inner().clone();
-    let sample_row_count = request.sample_row_count;
-    run_blocking(move || {
-        let mut provider = smart_provider_for_request(request.local_ai, &request.controls)?;
-        let provider = provider
-            .as_mut()
-            .map(|provider| provider as &mut dyn SmartReplacementProvider);
-        ledger
-            .run_with_budget(
-                AnonymizeParams {
-                    file_path,
-                    output_path,
-                    columns: request.columns,
-                    controls: request.controls,
-                    deterministic: request.deterministic,
-                    seed: request.seed,
-                    force: request.force,
-                    preview_smart_replacements: request.preview_smart_replacements,
-                    privacy_config: request.privacy_config,
-                },
-                |input| {
-                    service().anonymize_csv_with_sample_rows_and_control_and_smart_provider(
-                        input,
-                        sample_row_count,
-                        None,
-                        provider,
-                    )
-                },
-            )
             .map_err(|error| error.to_string())
     })
     .await

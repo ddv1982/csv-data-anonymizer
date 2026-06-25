@@ -86,6 +86,7 @@ The release workflow:
 - validates tag, package version, changelog, Rust workspace, and Linux metainfo metadata
 - audits frontend dependencies with `npm run frontend:audit`
 - audits Rust dependencies with RustSec `cargo-audit`
+- keeps dead-code and unused-dependency drift covered by the separate scheduled `.github/workflows/dead-code.yml` maintenance workflow
 - runs frontend lint and unit tests before building the bundled UI
 - creates or refreshes a draft GitHub Release
 - builds and verifies signed/notarized macOS arm64 and x64 artifacts
@@ -109,14 +110,27 @@ npm ci --prefix frontend
 npm run frontend:audit
 npm run frontend:lint
 npm run frontend:test
+npm run frontend:e2e
 npm run frontend:build
+npm run frontend:deadcode
+npm run frontend:deadcode:production
 npm run cargo:audit
+npm run cargo:machete
 CSV_ANONYMIZER_USE_PREBUILT_FRONTEND=1 scripts/build_frontend_for_tauri.sh
 npm run test
 npm run lint
+cargo bench -p csv-anonymizer-core --bench csv_streaming
 node scripts/rust-smoke.mjs
 node scripts/check-release-metadata.mjs --expected-tag v1.0.0
 ```
+
+Install the Playwright browser once before running `npm run frontend:e2e` locally:
+
+```bash
+cd frontend && npx playwright install chromium
+```
+
+`npm run cargo:machete` is local-optional when cargo-machete is not installed; the scheduled maintenance workflow installs cargo-machete and runs the required variant.
 
 On macOS, validate app packaging:
 

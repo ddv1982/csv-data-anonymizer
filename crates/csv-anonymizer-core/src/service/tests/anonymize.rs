@@ -26,6 +26,37 @@ fn anonymizes_selected_columns_without_web_runtime() {
 }
 
 #[test]
+fn standard_privacy_config_uses_streaming_transform_pipeline() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let output_path = temp_dir.path().join("sample-standard-config.csv");
+
+    let result = service
+        .anonymize_csv(AnonymizeParams {
+            file_path: fixture("sample.csv"),
+            output_path: output_path.clone(),
+            columns: vec![1],
+            controls: vec![],
+            deterministic: true,
+            seed: "standard-config-seed".to_string(),
+            force: false,
+            preview_smart_replacements: vec![],
+            privacy_config: Some(crate::PrivacyConfig::standard()),
+        })
+        .unwrap();
+
+    let output = read_sample(&output_path, 10).unwrap();
+
+    assert_eq!(
+        result.privacy_report.release_mode,
+        crate::ReleaseMode::Standard
+    );
+    assert_eq!(result.row_count, 5);
+    assert_eq!(output.rows.len(), 5);
+    assert!(!output.rows.iter().any(|row| row[1] == "alice@example.com"));
+}
+
+#[test]
 fn anonymize_csv_with_control_reports_progress() {
     let service = AnonymizerService::new("test-version");
     let temp_dir = tempfile::tempdir().unwrap();
