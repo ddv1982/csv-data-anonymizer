@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.39 - 2026-06-25
+
+- Supersede v1.0.38 without moving the failed tag, replacing the RustSec GitHub Action with the repository `cargo:audit:required` gate so CI and release validation do not require Checks API write access.
+- Keep the v1.0.38 quality hardening: frontend lint and unit-test guardrails, explicit Tauri app-command capabilities, bounded background job retention, privacy release input caps, Local AI batch limits, and the `quinn-proto` security update.
+- Preserve the release notes, documentation, and obsolete Linux packaging script cleanup from v1.0.38 while rerunning the full release workflow on a fresh tag.
+
 ## v1.0.38 - 2026-06-25
 
 - Add frontend linting and unit-test guardrails, wire them into local and GitHub release validation, and cover settings, glossary, and path utilities.
