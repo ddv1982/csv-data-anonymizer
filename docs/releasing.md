@@ -85,6 +85,8 @@ The release workflow:
 
 - validates tag, package version, changelog, Rust workspace, and Linux metainfo metadata
 - audits frontend dependencies with `npm run frontend:audit`
+- audits Rust dependencies with RustSec `cargo-audit`
+- runs frontend lint and unit tests before building the bundled UI
 - creates or refreshes a draft GitHub Release
 - builds and verifies signed/notarized macOS arm64 and x64 artifacts
 - builds the frontend once for Tauri packaging
@@ -105,7 +107,10 @@ Before pushing a release tag, run on the host platform:
 cargo fmt --all --check
 npm ci --prefix frontend
 npm run frontend:audit
+npm run frontend:lint
+npm run frontend:test
 npm run frontend:build
+npm run cargo:audit
 CSV_ANONYMIZER_USE_PREBUILT_FRONTEND=1 scripts/build_frontend_for_tauri.sh
 npm run test
 npm run lint

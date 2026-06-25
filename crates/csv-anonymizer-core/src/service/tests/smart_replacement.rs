@@ -1,4 +1,5 @@
 use super::*;
+use crate::smart::SMART_REPLACEMENT_VALUE_CAP_PER_COLUMN;
 
 #[derive(Default)]
 struct MockSmartProvider;
@@ -185,6 +186,51 @@ fn anonymize_reuses_preview_smart_replacements_and_generates_missing_values() {
         final_provider.requests,
         vec![vec!["Charlie Ray".to_string()]]
     );
+}
+
+#[test]
+fn anonymize_caps_local_ai_unique_values_and_falls_back_for_excess_values() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("smart-high-cardinality.csv");
+    let output_path = temp_dir.path().join("smart-high-cardinality-output.csv");
+    let mut csv = String::from("name\n");
+    for index in 0..(SMART_REPLACEMENT_VALUE_CAP_PER_COLUMN + 2) {
+        csv.push_str(&format!("Person {index}\n"));
+    }
+    fs::write(&input_path, csv).unwrap();
+    let mut provider = RecordingSmartProvider::new("Capped");
+
+    let result = service
+        .anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+            AnonymizeParams {
+                file_path: input_path,
+                output_path,
+                columns: vec![0],
+                controls: vec![ColumnControl {
+                    column_index: 0,
+                    type_override: Some(DataType::FullName),
+                    strategy: AnonymizationStrategy::LocalAi,
+                }],
+                deterministic: true,
+                seed: "smart-cap-seed".to_string(),
+                force: false,
+                preview_smart_replacements: vec![],
+                privacy_config: None,
+            },
+            10,
+            None,
+            Some(&mut provider),
+        )
+        .unwrap();
+    let requested_values = provider.requests.iter().map(Vec::len).sum::<usize>();
+
+    assert_eq!(requested_values, SMART_REPLACEMENT_VALUE_CAP_PER_COLUMN);
+    assert_eq!(
+        result.privacy_report.smart_replacement_values,
+        SMART_REPLACEMENT_VALUE_CAP_PER_COLUMN
+    );
+    assert_eq!(result.privacy_report.smart_replacement_fallbacks, 2);
 }
 
 #[test]

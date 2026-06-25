@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-start-local-ai-model-download"
+description = "Enables the start_local_ai_model_download command without any pre-configured scope."
+commands.allow = ["start_local_ai_model_download"]
+
+[[permission]]
+identifier = "deny-start-local-ai-model-download"
+description = "Denies the start_local_ai_model_download command without any pre-configured scope."
+commands.deny = ["start_local_ai_model_download"]

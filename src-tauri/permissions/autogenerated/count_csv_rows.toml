@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-count-csv-rows"
+description = "Enables the count_csv_rows command without any pre-configured scope."
+commands.allow = ["count_csv_rows"]
+
+[[permission]]
+identifier = "deny-count-csv-rows"
+description = "Denies the count_csv_rows command without any pre-configured scope."
+commands.deny = ["count_csv_rows"]

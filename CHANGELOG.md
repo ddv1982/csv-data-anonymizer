@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.38 - 2026-06-25
+
+- Add frontend linting and unit-test guardrails, wire them into local and GitHub release validation, and cover settings, glossary, and path utilities.
+- Tighten Tauri command permissions with generated app-command capabilities and add bounded retention for anonymization and Local AI download jobs.
+- Harden privacy and Smart replacement paths by capping large in-memory privacy releases, limiting Local AI unique-value batches, and updating the vulnerable `quinn-proto` dependency.
+- Simplify the frontend workflow by extracting persistent settings and app settings UI, while keeping app settings usable before a CSV is loaded.
+- Remove obsolete Linux packaging scripts and refresh release documentation around the current validation gates.
+
 ## v1.0.37 - 2026-06-23
 
 - Fail Local AI model downloads before creating a job when Ollama is not running, matching the setup panel's friendly install/start guidance.

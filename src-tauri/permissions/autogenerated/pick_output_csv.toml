@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-pick-output-csv"
+description = "Enables the pick_output_csv command without any pre-configured scope."
+commands.allow = ["pick_output_csv"]
+
+[[permission]]
+identifier = "deny-pick-output-csv"
+description = "Denies the pick_output_csv command without any pre-configured scope."
+commands.deny = ["pick_output_csv"]

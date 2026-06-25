@@ -1,13 +1,13 @@
 import {
   AlertCircle,
   AlertTriangle,
-  ChevronDown,
   FolderOpen,
   Loader2,
   Shield,
   X,
 } from 'lucide-react'
 import { Alert } from './components/Alert'
+import { AppSettingsPanel } from './components/AppSettingsPanel'
 import { Card } from './components/Card'
 import { ColumnTable } from './components/ColumnTable'
 import { LocalAiPanel } from './components/LocalAiPanel'
@@ -16,12 +16,10 @@ import { PrivacySettingsPanel } from './components/PrivacySettingsPanel'
 import { ProcessingStatus } from './components/ProcessingStatus'
 import { ResultDisplay } from './components/ResultDisplay'
 import { SectionHelp } from './components/SectionHelp'
-import { SwitchRow } from './components/SwitchRow'
 import { ThemeModeToggle } from './components/ThemeModeToggle'
 import { useAnonymizerWorkflow } from './hooks/useAnonymizerWorkflow'
 import { normalizeThemeMode, useTheme } from './hooks/useTheme'
 import { formatRowCount } from './utils/format'
-import { clampNumber } from './utils/numbers'
 
 function App() {
   const {
@@ -236,7 +234,7 @@ function App() {
                 </div>
               </Card>
 
-              <Card title="3. Configuration" disabled={!hasColumns}>
+              <Card title="3. Configuration">
                 <div className="config-stack">
                   <div className="field">
                     <label htmlFor="output-path">Output Path</label>
@@ -293,102 +291,13 @@ function App() {
                     </Alert>
                   ) : null}
 
-                  <div className="collapsible">
-                    <div className="collapsible-header">
-                      <button
-                        type="button"
-                        className="button button-ghost settings-trigger"
-                        disabled={!hasColumns || isLoading}
-                        onClick={() => setSettingsOpen((current) => !current)}
-                        aria-expanded={settingsOpen}
-                      >
-                        <span>App Settings</span>
-                        <ChevronDown className={settingsOpen ? 'chevron open' : 'chevron'} aria-hidden="true" />
-                      </button>
-                    </div>
-                    {settingsOpen ? (
-                      <div className="settings-panel">
-                        <SwitchRow
-                          id="deterministic-mode"
-                          label="Repeatable replacements"
-                          description="Use the same private seed to get the same replacements again."
-                          checked={settings.deterministicDefault}
-                          disabled={!hasColumns || isLoading}
-                          onChange={(checked) => updateSetting('deterministicDefault', checked)}
-                        />
-                        <div className={settings.deterministicDefault ? 'field' : 'field disabled-soft'}>
-                          <label htmlFor="seed-input">Seed</label>
-                          <input
-                            id="seed-input"
-                            type="text"
-                            value={settings.seed}
-                            disabled={!hasColumns || isLoading || !settings.deterministicDefault}
-                            placeholder="Enter a private seed"
-                            aria-describedby="seed-description"
-                            onChange={(event) => updateSetting('seed', event.target.value)}
-                          />
-                          <p id="seed-description" className="muted-text text-sm">
-                            Useful when multiple files need matching replacements. Keep the seed private.
-                          </p>
-                        </div>
-                        <SwitchRow
-                          id="overwrite-output"
-                          label="Overwrite Output"
-                          description="Replace the output file when it already exists."
-                          checked={settings.overwriteOutput}
-                          disabled={!hasColumns || isLoading}
-                          onChange={(checked) => updateSetting('overwriteOutput', checked)}
-                        />
-                        <div className="settings-grid">
-                          <div className="field">
-                            <label htmlFor="output-suffix">Output suffix</label>
-                            <input
-                              id="output-suffix"
-                              value={settings.defaultOutputSuffix}
-                              disabled={!hasColumns || isLoading}
-                              onChange={(event) => updateSetting('defaultOutputSuffix', event.target.value)}
-                            />
-                          </div>
-                          <div className="field">
-                            <label htmlFor="sample-rows">Sample rows</label>
-                            <input
-                              id="sample-rows"
-                              type="number"
-                              min={1}
-                              max={10000}
-                              value={settings.sampleRowCount}
-                              disabled={!hasColumns || isLoading}
-                              onChange={(event) =>
-                                updateSetting('sampleRowCount', clampNumber(event.target.valueAsNumber, 1, 10000))
-                              }
-                            />
-                          </div>
-                          <div className="field">
-                            <label htmlFor="preview-rows">Preview rows</label>
-                            <input
-                              id="preview-rows"
-                              type="number"
-                              min={1}
-                              max={100}
-                              value={settings.previewSampleCount}
-                              disabled={!hasColumns || isLoading}
-                              onChange={(event) =>
-                                updateSetting('previewSampleCount', clampNumber(event.target.valueAsNumber, 1, 100))
-                              }
-                            />
-                          </div>
-                          <SwitchRow
-                            id="remember-paths"
-                            label="Remember paths"
-                            checked={settings.rememberLastPaths}
-                            disabled={!hasColumns || isLoading}
-                            compact
-                            onChange={(checked) => updateSetting('rememberLastPaths', checked)}
-                          />
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
+                  <AppSettingsPanel
+                    settings={settings}
+                    open={settingsOpen}
+                    disabled={isLoading}
+                    onToggleOpen={() => setSettingsOpen((current) => !current)}
+                    onUpdateSetting={updateSetting}
+                  />
                 </div>
               </Card>
 

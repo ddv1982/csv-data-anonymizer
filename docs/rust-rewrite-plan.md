@@ -16,9 +16,9 @@ app and release path. The production UI is the bundled Vite frontend.
 - `frontend` provides the bundled Vite UI used by macOS, `.deb`, `.rpm`, and
   AppImage builds.
 - `crates/csv-anonymizer-app` is retained as a lightweight CLI and smoke-test
-  harness for the shared Rust core. Legacy native packaging scripts require
-  `CSV_ANONYMIZER_ALLOW_LEGACY_NATIVE_PACKAGING=1` so they cannot be mistaken for
-  production packaging.
+  harness for the shared Rust core. The macOS DMG wrapper still has a guarded
+  legacy native-build mode for explicit investigations, but production packaging
+  uses Tauri.
 - The desktop app supports input/output selection, manual paths, settings
   persistence, remembered folders, high/medium PII auto-selection, preview,
   overwrite handling, non-blocking anonymization, Cmd+Q close handling, and
@@ -49,6 +49,9 @@ app and release path. The production UI is the bundled Vite frontend.
 ```bash
 npm run frontend:build
 npm run frontend:audit
+npm run frontend:lint
+npm run frontend:test
+npm run cargo:audit
 CSV_ANONYMIZER_USE_PREBUILT_FRONTEND=1 scripts/build_frontend_for_tauri.sh
 cargo fmt --all --check
 cargo test --workspace

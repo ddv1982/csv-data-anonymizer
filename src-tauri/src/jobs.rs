@@ -9,6 +9,8 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+const MAX_RETAINED_TERMINAL_JOBS: usize = 20;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AnonymizeJobState {
@@ -38,18 +40,17 @@ pub struct AnonymizeJobStore {
 
 #[derive(Debug)]
 pub struct AnonymizeJob {
+    created_sequence: u64,
     cancel_requested: AtomicBool,
     status: Mutex<AnonymizeJobStatus>,
 }
 
 impl AnonymizeJobStore {
     pub fn create_job(&self, total_rows: Option<usize>) -> Result<Arc<AnonymizeJob>, String> {
-        let id = format!(
-            "job-{}-{}",
-            std::process::id(),
-            self.next_id.fetch_add(1, Ordering::Relaxed) + 1
-        );
+        let sequence = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
+        let id = format!("job-{}-{sequence}", std::process::id());
         let job = Arc::new(AnonymizeJob {
+            created_sequence: sequence,
             cancel_requested: AtomicBool::new(false),
             status: Mutex::new(AnonymizeJobStatus {
                 job_id: id.clone(),
@@ -62,15 +63,20 @@ impl AnonymizeJobStore {
             }),
         });
 
-        self.lock_jobs()?.insert(id, job.clone());
+        let mut jobs = self.lock_jobs()?;
+        jobs.insert(id, job.clone());
+        prune_terminal_jobs(&mut jobs, None, MAX_RETAINED_TERMINAL_JOBS);
         Ok(job)
     }
 
     pub fn get_job(&self, job_id: &str) -> Result<Arc<AnonymizeJob>, String> {
-        self.lock_jobs()?
+        let mut jobs = self.lock_jobs()?;
+        let job = jobs
             .get(job_id)
             .cloned()
-            .ok_or_else(|| format!("Unknown anonymization job: {job_id}"))
+            .ok_or_else(|| format!("Unknown anonymization job: {job_id}"))?;
+        prune_terminal_jobs(&mut jobs, Some(job_id), MAX_RETAINED_TERMINAL_JOBS);
+        Ok(job)
     }
 
     fn lock_jobs(
@@ -79,6 +85,11 @@ impl AnonymizeJobStore {
         self.jobs
             .lock()
             .map_err(|_| "Anonymization job store is unavailable.".to_string())
+    }
+
+    #[cfg(test)]
+    fn job_count(&self) -> usize {
+        self.jobs.lock().map(|jobs| jobs.len()).unwrap_or_default()
     }
 }
 
@@ -139,6 +150,38 @@ impl AnonymizeJob {
         self.status
             .lock()
             .map_err(|_| "Anonymization job status is unavailable.".to_string())
+    }
+}
+
+fn prune_terminal_jobs(
+    jobs: &mut HashMap<String, Arc<AnonymizeJob>>,
+    protected_job_id: Option<&str>,
+    max_retained: usize,
+) {
+    let mut terminal_jobs = jobs
+        .iter()
+        .filter(|(job_id, _)| protected_job_id != Some(job_id.as_str()))
+        .filter_map(|(job_id, job)| {
+            job.snapshot()
+                .ok()
+                .filter(|status| status.state.is_terminal())
+                .map(|_| (job_id.clone(), job.created_sequence))
+        })
+        .collect::<Vec<_>>();
+    if terminal_jobs.len() <= max_retained {
+        return;
+    }
+
+    terminal_jobs.sort_by_key(|(_, sequence)| *sequence);
+    let remove_count = terminal_jobs.len() - max_retained;
+    for (job_id, _) in terminal_jobs.into_iter().take(remove_count) {
+        jobs.remove(&job_id);
+    }
+}
+
+impl AnonymizeJobState {
+    fn is_terminal(self) -> bool {
+        matches!(self, Self::Succeeded | Self::Failed | Self::Canceled)
     }
 }
 
@@ -205,6 +248,24 @@ mod tests {
         assert_eq!(status.state, AnonymizeJobState::Running);
         assert_eq!(status.rows_processed, 0);
         assert_eq!(status.total_rows, Some(10));
+    }
+
+    #[test]
+    fn store_prunes_old_terminal_jobs_but_retains_running_jobs() {
+        let store = AnonymizeJobStore::default();
+        let running_job = store.create_job(None).unwrap();
+
+        for _ in 0..(MAX_RETAINED_TERMINAL_JOBS + 4) {
+            let job = store.create_job(None).unwrap();
+            job.finish(Err(AnonymizerError::Canceled));
+        }
+
+        assert!(store.job_count() <= MAX_RETAINED_TERMINAL_JOBS + 2);
+        assert!(
+            store
+                .get_job(&running_job.snapshot().unwrap().job_id)
+                .is_ok()
+        );
     }
 
     #[test]

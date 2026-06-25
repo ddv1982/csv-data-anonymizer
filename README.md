@@ -111,8 +111,11 @@ Useful checks:
 
 ```bash
 npm run frontend:typecheck
+npm run frontend:lint
+npm run frontend:test
 npm run frontend:build
 npm run frontend:audit
+npm run cargo:audit
 cargo fmt --all --check
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings

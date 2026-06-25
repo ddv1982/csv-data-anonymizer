@@ -6,18 +6,17 @@ import {
   settingsWithPrivacyBudget,
 } from '../defaults'
 import { useLocalAi } from './useLocalAi'
+import { usePersistentSettings } from './usePersistentSettings'
 import {
   cancelAnonymizeJob,
   analyzeCsv,
   countCsvRows,
   DP_BUDGET_RESET_CONFIRMATION_PHRASE,
   getAnonymizeJobStatus,
-  loadSettings,
   pickInputCsv,
   pickOutputCsv,
   previewAnonymization,
   resetDpBudgetLedger,
-  saveSettings,
   startAnonymizeJob,
 } from '../tauri'
 import type {
@@ -35,13 +34,13 @@ import type {
 } from '../types'
 import { isSelectableColumn, maxVisibleColumns } from '../utils/columns'
 import { messageFrom } from '../utils/errors'
-import { directoryOf } from '../utils/paths'
+import { defaultOutputPathWithSuffix, directoryOf } from '../utils/paths'
 import { getPrivacyConfigValidation } from '../utils/privacy'
 
 type BusyState = 'idle' | 'picking' | 'loading' | 'preview' | 'running'
+const EMPTY_COLUMNS: ColumnMetadata[] = []
 
 export function useAnonymizerWorkflow() {
-  const [settings, setSettings] = useState<AppSettings>(defaultSettings)
   const [inputPath, setInputPath] = useState('')
   const [outputPath, setOutputPath] = useState('')
   const [headers, setHeaders] = useState<AnalyzeResponse['headers'] | null>(null)
@@ -56,32 +55,17 @@ export function useAnonymizerWorkflow() {
   const [error, setError] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [showAllColumns, setShowAllColumns] = useState(false)
-  const latestSettingsRef = useRef(defaultSettings)
-  const settingsSaveSequenceRef = useRef(0)
-  const inFlightSettingsSavesRef = useRef(new Set<number>())
+  const { settings, latestSettingsRef, applyAuthoritativeSettings, persistSettings, refreshSettings } =
+    usePersistentSettings({
+      onError: setError,
+      onAcceptedSettings: applySettingsBudget,
+    })
   const localAi = useLocalAi(settings, setError)
+  const handleJobStatusRef = useRef(handleJobStatus)
 
   useEffect(() => {
-    let isMounted = true
-    loadSettings()
-      .then((loaded) => {
-        if (isMounted && settingsSaveSequenceRef.current === 0) {
-          applyAuthoritativeSettings(loaded)
-          setPrivacyConfig((current) => applyBudgetSettingsToPrivacyConfig(current, loaded))
-        }
-      })
-      .catch((caught: unknown) => {
-        if (isMounted) setError(messageFrom(caught))
-      })
-
-    return () => {
-      isMounted = false
-    }
-  }, [])
-
-  useEffect(() => {
-    setShowAllColumns(false)
-  }, [headers?.columns.length])
+    handleJobStatusRef.current = handleJobStatus
+  })
 
   useEffect(() => {
     if (busy !== 'running' || !activeJobId) return
@@ -94,7 +78,7 @@ export function useAnonymizerWorkflow() {
       try {
         const status = await getAnonymizeJobStatus(jobId)
         if (!isMounted) return
-        const finished = handleJobStatus(status)
+        const finished = handleJobStatusRef.current(status)
         if (!finished) {
           timeoutId = window.setTimeout(pollJob, 300)
         }
@@ -115,7 +99,7 @@ export function useAnonymizerWorkflow() {
     }
   }, [activeJobId, busy])
 
-  const columns = headers?.columns ?? []
+  const columns = headers?.columns ?? EMPTY_COLUMNS
   const selectedSet = useMemo(() => new Set(selectedColumns), [selectedColumns])
   const selectedControls = useMemo(
     () => selectedColumns.map((index) => columnControls[index]).filter(Boolean),
@@ -175,57 +159,8 @@ export function useAnonymizerWorkflow() {
       privacyConfigValid,
   )
 
-  function applySettings(next: AppSettings) {
-    latestSettingsRef.current = next
-    setSettings(next)
-  }
-
-  function applyAuthoritativeSettings(next: AppSettings) {
-    settingsSaveSequenceRef.current += 1
-    applySettings(next)
-  }
-
-  async function persistSettings(next: AppSettings) {
-    applySettings(next)
-    const saveSequence = settingsSaveSequenceRef.current + 1
-    settingsSaveSequenceRef.current = saveSequence
-    inFlightSettingsSavesRef.current.add(saveSequence)
-    let staleResponse = false
-    let staleResponseNeedsReconcile = false
-
-    try {
-      const saved = await saveSettings(next)
-      staleResponse = saveSequence !== settingsSaveSequenceRef.current
-      if (!staleResponse) {
-        applySettings(saved)
-        setPrivacyConfig((current) => applyBudgetSettingsToPrivacyConfig(current, saved))
-      } else {
-        staleResponseNeedsReconcile = true
-      }
-    } catch (caught) {
-      staleResponse = saveSequence !== settingsSaveSequenceRef.current
-      if (!staleResponse) {
-        setError(messageFrom(caught))
-      }
-    } finally {
-      inFlightSettingsSavesRef.current.delete(saveSequence)
-      if (
-        staleResponseNeedsReconcile &&
-        !hasNewerSettingsSaveInFlight(saveSequence, inFlightSettingsSavesRef.current)
-      ) {
-        void persistSettings(latestSettingsRef.current)
-      }
-    }
-  }
-
-  async function refreshSettings() {
-    try {
-      const loaded = await loadSettings()
-      applyAuthoritativeSettings(loaded)
-      setPrivacyConfig((current) => applyBudgetSettingsToPrivacyConfig(current, loaded))
-    } catch (caught) {
-      setError(messageFrom(caught))
-    }
+  function applySettingsBudget(next: AppSettings) {
+    setPrivacyConfig((current) => applyBudgetSettingsToPrivacyConfig(current, next))
   }
 
   function updateSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
@@ -243,6 +178,10 @@ export function useAnonymizerWorkflow() {
     }
     if (isDpBudgetSetting(key)) {
       setPrivacyConfig((current) => applyBudgetSettingsToPrivacyConfig(current, nextSettings))
+    }
+    if (key === 'defaultOutputSuffix' && headers) {
+      setOutputPath(defaultOutputPathWithSuffix(headers.filePath, String(value)))
+      setResult(null)
     }
     void persistSettings(nextSettings)
   }
@@ -282,6 +221,7 @@ export function useAnonymizerWorkflow() {
       const response = await analyzeCsv(normalized, settings.sampleRowCount, settings.defaultOutputSuffix)
       setInputPath(response.headers.filePath)
       setHeaders(response.headers)
+      setShowAllColumns(false)
       setSelectedColumns(response.selectedColumns)
       setOutputPath(response.suggestedOutputPath)
 
@@ -674,11 +614,4 @@ function sameDpBudgetSettings(left: AppSettings, right: AppSettings) {
     left.dpBudgetLimitEpsilon === right.dpBudgetLimitEpsilon &&
     left.dpBudgetAction === right.dpBudgetAction
   )
-}
-
-function hasNewerSettingsSaveInFlight(saveSequence: number, inFlight: Set<number>) {
-  for (const inFlightSequence of inFlight) {
-    if (inFlightSequence > saveSequence) return true
-  }
-  return false
 }

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-start-anonymize-job"
+description = "Enables the start_anonymize_job command without any pre-configured scope."
+commands.allow = ["start_anonymize_job"]
+
+[[permission]]
+identifier = "deny-start-anonymize-job"
+description = "Denies the start_anonymize_job command without any pre-configured scope."
+commands.deny = ["start_anonymize_job"]
