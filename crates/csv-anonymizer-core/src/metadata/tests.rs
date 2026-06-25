@@ -80,6 +80,7 @@ fn does_not_detect_names_without_header_context() {
 fn applies_column_selection_without_mutating_source() {
     let metadata = vec![ColumnMetadata {
         name: "email".to_string(),
+        source_path: None,
         index: 0,
         detected_type: DataType::Email,
         confidence: crate::types::Confidence::High,

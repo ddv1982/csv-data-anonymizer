@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-anonymize-pasted-data"
+description = "Enables the anonymize_pasted_data command without any pre-configured scope."
+commands.allow = ["anonymize_pasted_data"]
+
+[[permission]]
+identifier = "deny-anonymize-pasted-data"
+description = "Denies the anonymize_pasted_data command without any pre-configured scope."
+commands.deny = ["anonymize_pasted_data"]

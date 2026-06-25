@@ -128,6 +128,7 @@ export interface DpReleaseRecord {
 
 export interface ColumnMetadata {
   name: string
+  sourcePath?: string | null
   index: number
   detectedType: DataType
   confidence: Confidence
@@ -150,6 +151,30 @@ export interface AnalyzeResponse {
   headers: HeadersData
   selectedColumns: number[]
   suggestedOutputPath: string
+}
+
+export type PasteDataFormat = 'auto' | 'csv' | 'json' | 'xml' | 'yaml' | 'plainText' | 'logs'
+
+export interface PasteAnalyzeData {
+  format: PasteDataFormat
+  rowCount: number
+  rowCountIsComplete: boolean
+  columns: ColumnMetadata[]
+}
+
+export interface PasteTransformData {
+  output: string
+  rowCount: number
+  columnsAnonymized: number
+  durationMs: number
+  privacyReport: PrivacyReport
+}
+
+export interface QuickTransformData {
+  output: string
+  rowCount: number
+  values: SampleTransform[]
+  privacyReport: PrivacyReport
 }
 
 export interface SampleTransform {

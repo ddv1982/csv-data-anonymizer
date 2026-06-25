@@ -15,6 +15,9 @@ pub enum AnonymizerError {
         row_text: String,
     },
 
+    #[error("{format} parse error: {message}")]
+    InputParse { format: String, message: String },
+
     #[error("Column index {index} is out of range. Valid range: 0-{max_index}")]
     ColumnOutOfRange { index: usize, max_index: usize },
 
@@ -44,6 +47,13 @@ impl AnonymizerError {
             message: message.into(),
             row,
             row_text,
+        }
+    }
+
+    pub fn input_parse(format: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::InputParse {
+            format: format.into(),
+            message: message.into(),
         }
     }
 }

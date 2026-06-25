@@ -606,7 +606,7 @@ dependencies = [
 
 [[package]]
 name = "csv-anonymizer-app"
-version = "1.0.40"
+version = "1.0.41"
 dependencies = [
  "csv-anonymizer-core",
  "tempfile",
@@ -614,11 +614,12 @@ dependencies = [
 
 [[package]]
 name = "csv-anonymizer-core"
-version = "1.0.40"
+version = "1.0.41"
 dependencies = [
  "chrono",
  "criterion",
  "csv",
+ "quick-xml",
  "rand 0.8.6",
  "regex",
  "serde",
@@ -626,11 +627,12 @@ dependencies = [
  "sha2",
  "tempfile",
  "thiserror 2.0.18",
+ "yaml_serde",
 ]
 
 [[package]]
 name = "csv-anonymizer-tauri"
-version = "1.0.40"
+version = "1.0.41"
 dependencies = [
  "csv-anonymizer-core",
  "directories",
@@ -1937,6 +1939,12 @@ checksum = "f02ab6bace2054fb888a3c16f990117b579d14a3088e472d63c6011fa185c9d3"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "libyaml-rs"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e126dda6f34391ab7b444f9922055facc83c07a910da3eb16f1e4d9c45dc777"
 
 [[package]]
 name = "linux-raw-sys"
@@ -5151,6 +5159,19 @@ dependencies = [
  "libc",
  "once_cell",
  "pkg-config",
+]
+
+[[package]]
+name = "yaml_serde"
+version = "0.10.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08c7c1b1a6a7c8a6b2741a6c21a4f8918e51899b111cfa08d1288202656e3975"
+dependencies = [
+ "indexmap 2.14.0",
+ "itoa",
+ "libyaml-rs",
+ "ryu",
+ "serde",
 ]
 
 [[package]]

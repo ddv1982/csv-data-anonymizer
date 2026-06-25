@@ -305,7 +305,10 @@ fn validate_output_path(output_path: &Path, force: bool) -> Result<PathBuf> {
     Ok(normalized)
 }
 
-fn validate_column_indices(metadata: &[ColumnMetadata], columns: &[usize]) -> Result<()> {
+pub(crate) fn validate_column_indices(
+    metadata: &[ColumnMetadata],
+    columns: &[usize],
+) -> Result<()> {
     let max_index = metadata.len().saturating_sub(1);
     for index in columns {
         if *index >= metadata.len() {
@@ -318,7 +321,7 @@ fn validate_column_indices(metadata: &[ColumnMetadata], columns: &[usize]) -> Re
     Ok(())
 }
 
-fn apply_column_controls(
+pub(crate) fn apply_column_controls(
     metadata: &[ColumnMetadata],
     controls: &[ColumnControl],
 ) -> Result<Vec<ColumnMetadata>> {
@@ -371,7 +374,7 @@ fn preview_warning_for_column(column: &ColumnMetadata) -> Option<PreviewWarning>
     })
 }
 
-fn build_privacy_report(
+pub(crate) fn build_privacy_report(
     columns: &[ColumnMetadata],
     transform_report: crate::types::TransformReport,
     deterministic: bool,
@@ -401,6 +404,8 @@ fn build_privacy_report(
         formal_models: Vec::new(),
         notes: vec![
             "Standard CSV transform changes selected cells in place with local strategies such as masking, tokenization, pseudonymization, pass-through, and optional Local AI replacement."
+                .to_string(),
+            "Treat this as risk reduction, not proof of anonymity; review the output against your sharing context and re-identification risk."
                 .to_string(),
             "For k-anonymity, l-diversity, t-closeness, DP aggregate output, or synthetic/test rows, rerun with the matching Privacy Release mode selected."
                 .to_string(),
@@ -523,7 +528,7 @@ fn plural<'a>(count: usize, singular: &'a str, plural: &'a str) -> &'a str {
     if count == 1 { singular } else { plural }
 }
 
-fn count_transforming_selected_columns(columns: &[ColumnMetadata]) -> usize {
+pub(crate) fn count_transforming_selected_columns(columns: &[ColumnMetadata]) -> usize {
     columns
         .iter()
         .filter(|column| column.is_selected && strategy_changes_output(column))

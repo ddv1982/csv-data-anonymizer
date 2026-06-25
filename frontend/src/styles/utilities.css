@@ -2,6 +2,10 @@
   color: hsl(var(--muted-foreground));
 }
 
+.danger-text {
+  color: hsl(var(--destructive));
+}
+
 .text-sm {
   font-size: 0.875rem;
   line-height: 1.35;

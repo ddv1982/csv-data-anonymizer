@@ -10,6 +10,7 @@ All normal CSV processing runs locally in Rust. Optional local LLM replacement a
 - Auto-selects high and medium risk columns while still letting you choose exactly which columns to transform.
 - Shows a preview before writing output.
 - Streams standard masking/pseudonymization runs instead of loading the whole file into memory.
+- Supports direct paste workflows for CSV text, JSON, YAML, XML, plain text, and logs up to 5 MiB; larger CSV inputs should use the streaming file workflow.
 - Keeps repeated source values consistent within a run.
 - Supports repeatable replacements with a private seed, useful when multiple files need matching pseudonyms.
 - Offers optional Smart replacement with a local LLM for selected columns.

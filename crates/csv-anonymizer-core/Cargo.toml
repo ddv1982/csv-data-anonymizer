@@ -10,17 +10,23 @@ description = "Rust core engine for local CSV anonymization."
 [dependencies]
 chrono.workspace = true
 csv.workspace = true
+quick-xml.workspace = true
 rand.workspace = true
 regex.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
+yaml_serde.workspace = true
 
 [dev-dependencies]
 criterion = { version = "0.8", features = ["html_reports"] }
-serde_json.workspace = true
 tempfile.workspace = true
 
 [[bench]]
 name = "csv_streaming"
+harness = false
+
+[[bench]]
+name = "direct_input_paste"
 harness = false

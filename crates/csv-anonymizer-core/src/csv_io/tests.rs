@@ -15,6 +15,36 @@ fn reads_sample_and_strips_bom() {
 }
 
 #[test]
+fn reads_csv_sample_from_str() {
+    let sample = read_csv_sample_from_str("email\nada@example.com\n", 10).unwrap();
+
+    assert_eq!(sample.headers, vec!["email"]);
+    assert_eq!(sample.rows, vec![vec!["ada@example.com"]]);
+}
+
+#[test]
+fn processes_csv_text() {
+    let input = "email\nada@example.com\n";
+    let sample = read_csv_sample_from_str(input, 10).unwrap();
+    let columns =
+        apply_column_selection(&build_column_metadata(&sample.headers, &sample.rows), &[0]);
+    let (output, result) = process_csv_text(
+        input,
+        &columns,
+        ProcessOptions {
+            deterministic: true,
+            seed: "service-seed",
+            smart_replacements: None,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(result.row_count, 1);
+    assert!(output.starts_with("email\n"));
+    assert!(!output.contains("ada@example.com"));
+}
+
+#[test]
 fn processes_selected_columns() {
     let input_path = fixture("sample.csv");
     let temp_dir = tempfile::tempdir().unwrap();
@@ -60,6 +90,7 @@ fn rejects_non_empty_fields_beyond_headers_without_committing_output() {
     let columns = vec![
         ColumnMetadata {
             name: "id".to_string(),
+            source_path: None,
             index: 0,
             detected_type: crate::types::DataType::NumericId,
             confidence: crate::types::Confidence::High,
@@ -71,6 +102,7 @@ fn rejects_non_empty_fields_beyond_headers_without_committing_output() {
         },
         ColumnMetadata {
             name: "email".to_string(),
+            source_path: None,
             index: 1,
             detected_type: crate::types::DataType::Email,
             confidence: crate::types::Confidence::High,
@@ -162,6 +194,25 @@ fn neutralizes_formula_like_headers_and_cells_in_standard_output() {
     assert_eq!(output.rows[0][0], "'=cmd");
     assert_eq!(output.rows[1][0], "'  +SUM(1 1)");
     assert_eq!(output.rows[2][0], "'\tTabbed");
+}
+
+#[test]
+fn neutralizes_full_width_formula_prefixes() {
+    assert_eq!(neutralize_spreadsheet_formula("＝cmd").as_ref(), "'＝cmd");
+    assert_eq!(
+        neutralize_spreadsheet_formula("＋SUM(1 1)").as_ref(),
+        "'＋SUM(1 1)"
+    );
+    assert_eq!(neutralize_spreadsheet_formula("－10").as_ref(), "'－10");
+    assert_eq!(neutralize_spreadsheet_formula("＠cmd").as_ref(), "'＠cmd");
+    assert_eq!(
+        neutralize_spreadsheet_formula("\u{3000}＋SUM(1 1)").as_ref(),
+        "'\u{3000}＋SUM(1 1)"
+    );
+    assert_eq!(
+        neutralize_spreadsheet_formula("ordinary text").as_ref(),
+        "ordinary text"
+    );
 }
 
 #[test]

@@ -5,7 +5,9 @@ use super::shared::{
 use crate::local_ai::{LocalAiRequest, smart_provider_for_request};
 use crate::path_access::PathAccess;
 use csv_anonymizer_core::{
-    ColumnControl, HeadersData, PreviewData, PreviewParams, SmartReplacementProvider,
+    ColumnControl, HeadersData, PasteAnalyzeData, PasteAnalyzeParams, PastePreviewParams,
+    PasteTransformData, PasteTransformParams, PreviewData, PreviewParams, QuickGenerateParams,
+    QuickTransformData, SmartReplacementProvider,
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -104,6 +106,46 @@ pub async fn count_csv_rows(
     run_blocking(move || {
         service()
             .count_csv_rows(&file_path)
+            .map_err(|error| error.to_string())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn analyze_pasted_data(request: PasteAnalyzeParams) -> Result<PasteAnalyzeData, String> {
+    run_blocking(move || {
+        csv_anonymizer_core::direct_input::analyze_paste_data(request)
+            .map_err(|error| error.to_string())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn preview_pasted_data(request: PastePreviewParams) -> Result<PreviewData, String> {
+    run_blocking(move || {
+        csv_anonymizer_core::direct_input::preview_paste_data(request)
+            .map_err(|error| error.to_string())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn anonymize_pasted_data(
+    request: PasteTransformParams,
+) -> Result<PasteTransformData, String> {
+    run_blocking(move || {
+        csv_anonymizer_core::direct_input::transform_paste_data(request)
+            .map_err(|error| error.to_string())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn generate_quick_values(
+    request: QuickGenerateParams,
+) -> Result<QuickTransformData, String> {
+    run_blocking(move || {
+        csv_anonymizer_core::direct_input::generate_quick_values(request)
             .map_err(|error| error.to_string())
     })
     .await

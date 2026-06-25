@@ -65,6 +65,8 @@ pub struct DetectionResult {
 #[serde(rename_all = "camelCase")]
 pub struct ColumnMetadata {
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_path: Option<String>,
     pub index: usize,
     pub detected_type: DataType,
     pub confidence: Confidence,
@@ -168,6 +170,99 @@ pub struct HeadersData {
     pub row_count_is_complete: bool,
     pub default_output_path: PathBuf,
     pub columns: Vec<ColumnMetadata>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PasteDataFormat {
+    Auto,
+    Csv,
+    Json,
+    Xml,
+    Yaml,
+    PlainText,
+    Logs,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PasteAnalyzeParams {
+    pub content: String,
+    pub format: PasteDataFormat,
+    pub sample_row_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PasteAnalyzeData {
+    pub format: PasteDataFormat,
+    pub row_count: usize,
+    pub row_count_is_complete: bool,
+    pub columns: Vec<ColumnMetadata>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PasteTransformParams {
+    pub content: String,
+    pub format: PasteDataFormat,
+    pub columns: Vec<usize>,
+    #[serde(default)]
+    pub controls: Vec<ColumnControl>,
+    pub deterministic: bool,
+    pub seed: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PastePreviewParams {
+    pub content: String,
+    pub format: PasteDataFormat,
+    pub columns: Vec<usize>,
+    #[serde(default)]
+    pub controls: Vec<ColumnControl>,
+    pub deterministic: bool,
+    pub seed: String,
+    pub sample_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PasteTransformData {
+    pub output: String,
+    pub row_count: usize,
+    pub columns_anonymized: usize,
+    pub duration_ms: u128,
+    pub privacy_report: PrivacyReport,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickTransformParams {
+    pub input: String,
+    pub data_type: DataType,
+    pub strategy: AnonymizationStrategy,
+    pub deterministic: bool,
+    pub seed: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickGenerateParams {
+    pub data_type: DataType,
+    pub strategy: AnonymizationStrategy,
+    pub count: usize,
+    pub deterministic: bool,
+    pub seed: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickTransformData {
+    pub output: String,
+    pub row_count: usize,
+    pub values: Vec<SampleTransform>,
+    pub privacy_report: PrivacyReport,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
