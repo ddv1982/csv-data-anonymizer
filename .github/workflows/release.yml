@@ -54,10 +54,11 @@ jobs:
       - name: Audit frontend dependencies
         run: npm run frontend:audit
 
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked --version 0.22.2
+
       - name: Audit Rust dependencies
-        uses: rustsec/audit-check@v2.0.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run cargo:audit:required
 
       - name: Validate release metadata
         run: node scripts/check-release-metadata.mjs --expected-tag "${{ github.ref_name }}"
