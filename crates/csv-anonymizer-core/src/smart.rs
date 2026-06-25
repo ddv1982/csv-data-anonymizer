@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 
 const SMART_REPLACEMENT_BATCH_SIZE: usize = 20;
+pub(crate) const SMART_REPLACEMENT_VALUE_CAP_PER_COLUMN: usize = 200;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SmartReplacement {
@@ -167,7 +168,7 @@ fn collect_unique_values_from_rows(
                 continue;
             };
             if !is_empty_value(value) {
-                values.insert(value.trim().to_string());
+                insert_unique_smart_value(values, value);
             }
         }
     }
@@ -216,7 +217,7 @@ fn collect_unique_values_from_csv(
                 continue;
             };
             if !is_empty_value(value) {
-                values.insert(value.trim().to_string());
+                insert_unique_smart_value(values, value);
             }
         }
     }
@@ -331,6 +332,13 @@ fn selected_smart_columns(columns: &[ColumnMetadata]) -> impl Iterator<Item = &C
 
 fn find_column_by_index(index: usize, columns: &[ColumnMetadata]) -> Option<&ColumnMetadata> {
     columns.iter().find(|column| column.index == index)
+}
+
+fn insert_unique_smart_value(values: &mut BTreeSet<String>, value: &str) {
+    let trimmed = value.trim();
+    if values.len() < SMART_REPLACEMENT_VALUE_CAP_PER_COLUMN || values.contains(trimmed) {
+        values.insert(trimmed.to_string());
+    }
 }
 
 fn normalized_value_key(value: &str) -> String {

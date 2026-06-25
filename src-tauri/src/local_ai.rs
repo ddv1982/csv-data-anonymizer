@@ -16,6 +16,7 @@ pub const DEFAULT_OLLAMA_MODEL: &str = "gemma3:4b";
 const OLLAMA_DOWNLOAD_URL: &str = "https://ollama.com/download";
 const OLLAMA_UNAVAILABLE_MESSAGE: &str =
     "Ollama is not running. Install or start Ollama to use Local AI.";
+const MAX_RETAINED_DOWNLOAD_JOBS: usize = 10;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -75,6 +76,7 @@ pub struct LocalAiDownloadStore {
 
 #[derive(Debug)]
 pub struct LocalAiDownloadJob {
+    created_sequence: u64,
     cancel_requested: AtomicBool,
     status: Mutex<LocalAiDownloadStatus>,
 }
@@ -121,12 +123,10 @@ struct ReplacementItem {
 
 impl LocalAiDownloadStore {
     pub fn create_job(&self, model: String) -> Result<Arc<LocalAiDownloadJob>, String> {
-        let id = format!(
-            "ai-model-{}-{}",
-            std::process::id(),
-            self.next_id.fetch_add(1, Ordering::Relaxed) + 1
-        );
+        let sequence = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
+        let id = format!("ai-model-{}-{sequence}", std::process::id());
         let job = Arc::new(LocalAiDownloadJob {
+            created_sequence: sequence,
             cancel_requested: AtomicBool::new(false),
             status: Mutex::new(LocalAiDownloadStatus {
                 job_id: id.clone(),
@@ -139,20 +139,31 @@ impl LocalAiDownloadStore {
                 error: None,
             }),
         });
-        self.jobs
+        let mut jobs = self
+            .jobs
             .lock()
-            .map_err(|_| "Local AI download store is unavailable.".to_string())?
-            .insert(id, job.clone());
+            .map_err(|_| "Local AI download store is unavailable.".to_string())?;
+        jobs.insert(id, job.clone());
+        prune_terminal_download_jobs(&mut jobs, None, MAX_RETAINED_DOWNLOAD_JOBS);
         Ok(job)
     }
 
     pub fn get_job(&self, job_id: &str) -> Result<Arc<LocalAiDownloadJob>, String> {
-        self.jobs
+        let mut jobs = self
+            .jobs
             .lock()
-            .map_err(|_| "Local AI download store is unavailable.".to_string())?
+            .map_err(|_| "Local AI download store is unavailable.".to_string())?;
+        let job = jobs
             .get(job_id)
             .cloned()
-            .ok_or_else(|| format!("Unknown Local AI download job: {job_id}"))
+            .ok_or_else(|| format!("Unknown Local AI download job: {job_id}"))?;
+        prune_terminal_download_jobs(&mut jobs, Some(job_id), MAX_RETAINED_DOWNLOAD_JOBS);
+        Ok(job)
+    }
+
+    #[cfg(test)]
+    fn job_count(&self) -> usize {
+        self.jobs.lock().map(|jobs| jobs.len()).unwrap_or_default()
     }
 }
 
@@ -215,6 +226,38 @@ impl LocalAiDownloadJob {
             status.error = Some(error.clone());
             status.status_message = error;
         }
+    }
+}
+
+fn prune_terminal_download_jobs(
+    jobs: &mut HashMap<String, Arc<LocalAiDownloadJob>>,
+    protected_job_id: Option<&str>,
+    max_retained: usize,
+) {
+    let mut terminal_jobs = jobs
+        .iter()
+        .filter(|(job_id, _)| protected_job_id != Some(job_id.as_str()))
+        .filter_map(|(job_id, job)| {
+            job.snapshot()
+                .ok()
+                .filter(|status| status.state.is_terminal())
+                .map(|_| (job_id.clone(), job.created_sequence))
+        })
+        .collect::<Vec<_>>();
+    if terminal_jobs.len() <= max_retained {
+        return;
+    }
+
+    terminal_jobs.sort_by_key(|(_, sequence)| *sequence);
+    let remove_count = terminal_jobs.len() - max_retained;
+    for (job_id, _) in terminal_jobs.into_iter().take(remove_count) {
+        jobs.remove(&job_id);
+    }
+}
+
+impl LocalAiDownloadState {
+    fn is_terminal(self) -> bool {
+        matches!(self, Self::Succeeded | Self::Failed | Self::Canceled)
     }
 }
 
@@ -583,6 +626,24 @@ mod tests {
             .expect_err("runtime preflight should fail without ollama");
 
         assert_eq!(error, OLLAMA_UNAVAILABLE_MESSAGE);
+    }
+
+    #[test]
+    fn download_store_prunes_old_terminal_jobs_but_keeps_running_jobs() {
+        let store = LocalAiDownloadStore::default();
+        let running_job = store.create_job("gemma3:4b".to_string()).unwrap();
+
+        for index in 0..(MAX_RETAINED_DOWNLOAD_JOBS + 3) {
+            let job = store.create_job(format!("model-{index}")).unwrap();
+            job.finish_error("failed".to_string());
+        }
+
+        assert!(store.job_count() <= MAX_RETAINED_DOWNLOAD_JOBS + 2);
+        assert!(
+            store
+                .get_job(&running_job.snapshot().unwrap().job_id)
+                .is_ok()
+        );
     }
 
     fn unused_loopback_endpoint() -> String {

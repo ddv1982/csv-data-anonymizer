@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-anonymize-csv"
+description = "Enables the anonymize_csv command without any pre-configured scope."
+commands.allow = ["anonymize_csv"]
+
+[[permission]]
+identifier = "deny-anonymize-csv"
+description = "Denies the anonymize_csv command without any pre-configured scope."
+commands.deny = ["anonymize_csv"]

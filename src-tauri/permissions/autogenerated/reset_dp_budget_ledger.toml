@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-reset-dp-budget-ledger"
+description = "Enables the reset_dp_budget_ledger command without any pre-configured scope."
+commands.allow = ["reset_dp_budget_ledger"]
+
+[[permission]]
+identifier = "deny-reset-dp-budget-ledger"
+description = "Denies the reset_dp_budget_ledger command without any pre-configured scope."
+commands.deny = ["reset_dp_budget_ledger"]

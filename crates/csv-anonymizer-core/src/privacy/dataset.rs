@@ -5,6 +5,8 @@ use csv::{ReaderBuilder, StringRecord, Trim, WriterBuilder};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+pub(super) const MAX_IN_MEMORY_DATA_ROWS: usize = 1_000_000;
+
 #[derive(Debug, Clone)]
 pub(super) struct CsvDataset {
     pub(super) headers: Vec<String>,
@@ -63,6 +65,11 @@ pub(super) fn read_dataset(
             values: row,
             is_blank,
         });
+        if rows.len() > MAX_IN_MEMORY_DATA_ROWS {
+            return Err(AnonymizerError::Privacy(format!(
+                "privacy release inputs are limited to {MAX_IN_MEMORY_DATA_ROWS} data row(s) because this release mode materializes the dataset in memory"
+            )));
+        }
         check_canceled(&mut control)?;
     }
 

@@ -6,14 +6,20 @@ import {
   openLocalAiSetupUrl,
   startLocalAiModelDownload,
 } from '../tauri'
-import type { AppSettings, LocalAiDownloadStatus, LocalAiRequest, LocalAiStatus } from '../types'
+import type { AppSettings, LocalAiDownloadStatus, LocalAiStatus } from '../types'
 import { messageFrom } from '../utils/errors'
 
 export function useLocalAi(settings: AppSettings, onError: (message: string) => void) {
   const [status, setStatus] = useState<LocalAiStatus | null>(null)
   const [downloadJobId, setDownloadJobId] = useState<string | null>(null)
   const [downloadStatus, setDownloadStatus] = useState<LocalAiDownloadStatus | null>(null)
-  const request = useMemo(() => localAiRequest(settings), [settings.localAiEnabled, settings.localAiModel])
+  const request = useMemo(
+    () => ({
+      enabled: settings.localAiEnabled,
+      model: settings.localAiModel,
+    }),
+    [settings.localAiEnabled, settings.localAiModel],
+  )
 
   const refresh = useCallback(async () => {
     try {
@@ -117,12 +123,5 @@ export function useLocalAi(settings: AppSettings, onError: (message: string) => 
     startDownload,
     cancelDownload,
     openSetup,
-  }
-}
-
-function localAiRequest(settings: AppSettings): LocalAiRequest {
-  return {
-    enabled: settings.localAiEnabled,
-    model: settings.localAiModel,
   }
 }

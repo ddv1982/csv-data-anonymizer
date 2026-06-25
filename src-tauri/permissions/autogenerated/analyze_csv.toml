@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-analyze-csv"
+description = "Enables the analyze_csv command without any pre-configured scope."
+commands.allow = ["analyze_csv"]
+
+[[permission]]
+identifier = "deny-analyze-csv"
+description = "Denies the analyze_csv command without any pre-configured scope."
+commands.deny = ["analyze_csv"]

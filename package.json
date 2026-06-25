@@ -1,12 +1,14 @@
 {
   "name": "csv-anonymizer",
-  "version": "1.0.37",
+  "version": "1.0.38",
   "description": "Desktop CSV anonymizer for local-first data transformation workflows.",
   "desktopName": "csv-anonymizer.desktop",
   "homepage": "https://github.com/ddv1982/csv-data-anonymizer",
   "scripts": {
     "dev": "cd src-tauri && cargo tauri dev",
     "frontend:build": "npm --prefix frontend run build",
+    "frontend:lint": "npm --prefix frontend run lint",
+    "frontend:test": "npm --prefix frontend run test",
     "frontend:typecheck": "npm --prefix frontend run typecheck",
     "frontend:audit": "npm audit --prefix frontend --audit-level=high",
     "tauri:dev": "cd src-tauri && cargo tauri dev",
@@ -27,11 +29,12 @@
     "release:check": "node scripts/check-release-metadata.mjs && npm run linux:metadata:test",
     "artifacts:rust:check": "node scripts/check-rust-artifacts.mjs",
     "cargo:audit": "node scripts/cargo-audit.mjs",
+    "cargo:audit:required": "node scripts/cargo-audit.mjs --required",
     "smoke:packaged": "node scripts/rust-smoke.mjs",
     "smoke:rust": "node scripts/rust-smoke.mjs",
     "fmt": "cargo fmt --all --check",
-    "lint": "npm run frontend:build && cargo clippy --workspace --all-targets -- -D warnings",
-    "test": "npm run frontend:build && cargo test --workspace",
+    "lint": "npm run frontend:lint && npm run frontend:build && cargo clippy --workspace --all-targets -- -D warnings",
+    "test": "npm run frontend:test && npm run frontend:build && cargo test --workspace",
     "typecheck": "npm run frontend:build && cargo check --workspace"
   },
   "keywords": [

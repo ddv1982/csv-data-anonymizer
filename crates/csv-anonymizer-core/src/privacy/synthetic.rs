@@ -48,8 +48,8 @@ pub(super) fn process_synthetic_data(
     let formal_models = vec![PrivacyModelReport {
         model: PrivacyModel::SyntheticData,
         satisfied: true,
-        actual: format!("{} generated row(s)", requested_rows),
-        threshold: format!("{} requested row(s)", requested_rows),
+        actual: format!("{requested_rows} generated row(s)"),
+        threshold: format!("{requested_rows} requested row(s)"),
         message: "Generated rows are sampled independently from column distributions and direct identifiers are replaced."
             .to_string(),
     }];

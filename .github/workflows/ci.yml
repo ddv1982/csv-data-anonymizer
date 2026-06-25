@@ -116,8 +116,20 @@ jobs:
       - name: Audit frontend dependencies
         run: npm run frontend:audit
 
+      - name: Audit Rust dependencies
+        if: runner.os == 'Linux'
+        uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Validate release metadata
         run: node scripts/check-release-metadata.mjs
+
+      - name: Lint frontend
+        run: npm run frontend:lint
+
+      - name: Test frontend
+        run: npm run frontend:test
 
       - name: Build frontend
         run: npm run frontend:build
