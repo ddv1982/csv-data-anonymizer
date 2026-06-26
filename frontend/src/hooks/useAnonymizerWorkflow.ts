@@ -248,6 +248,8 @@ export function useAnonymizerWorkflow() {
     settingsOpen,
     showAllColumns,
     localAi,
+    localAiSelected,
+    localAiBlocked,
     columns,
     selectedSet,
     columnRoleControls,

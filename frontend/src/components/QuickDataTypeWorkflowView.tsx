@@ -9,7 +9,6 @@ import { messageFrom } from '../utils/errors'
 import { formatToken } from '../utils/format'
 import { Alert } from './Alert'
 import { Card } from './Card'
-import { LocalAiSettingsBlock } from './LocalAiSettingsBlock'
 
 type QuickBusyState = 'idle' | 'generating' | 'copying'
 const MIN_COUNT = 1
@@ -18,12 +17,12 @@ const MAX_COUNT = 1000
 export function QuickDataTypeWorkflowView({
   settings,
   localAi,
-  onUpdateSetting,
+  onOpenLocalAiSettings,
   onError,
 }: {
   settings: AppSettings
   localAi: LocalAiState
-  onUpdateSetting: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => void
+  onOpenLocalAiSettings: () => void
   onError: (message: string | null) => void
 }) {
   const [dataType, setDataType] = useState<DataType>('email')
@@ -142,19 +141,16 @@ export function QuickDataTypeWorkflowView({
             <span className="muted-text text-sm">Generate 1 to {MAX_COUNT.toLocaleString()} values.</span>
           </div>
 
-          {usesLocalAi ? (
+          {usesLocalAi && localAiBlocked ? (
             <div className="quick-local-ai">
-              <LocalAiSettingsBlock
-                settings={settings}
-                localAi={localAi}
-                disabled={isBusy}
-                onUpdateSetting={onUpdateSetting}
-              />
-              {localAiBlocked ? (
-                <Alert icon={<AlertCircle aria-hidden="true" />}>
-                  Set up Local AI before generating Smart replacement values.
-                </Alert>
-              ) : null}
+              <Alert icon={<AlertCircle aria-hidden="true" />}>
+                <div className="alert-line">
+                  <span>Set up Local AI before generating Smart replacement values.</span>
+                  <button type="button" className="button button-outline button-sm" onClick={onOpenLocalAiSettings}>
+                    Open Local AI settings
+                  </button>
+                </div>
+              </Alert>
             </div>
           ) : null}
 

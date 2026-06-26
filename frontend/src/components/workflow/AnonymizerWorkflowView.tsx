@@ -12,7 +12,6 @@ import { Alert } from '../Alert'
 import { AppSettingsPanel } from '../AppSettingsPanel'
 import { Card } from '../Card'
 import { ColumnTable } from '../ColumnTable'
-import { LocalAiSettingsBlock } from '../LocalAiSettingsBlock'
 import { PreviewTable } from '../PreviewTable'
 import { PrivacySettingsPanel } from '../PrivacySettingsPanel'
 import { ProcessingStatus } from '../ProcessingStatus'
@@ -48,7 +47,13 @@ export function WorkflowErrorToast({
   )
 }
 
-export function AnonymizerWorkflowView({ workflow }: { workflow: AnonymizerWorkflowState }) {
+export function AnonymizerWorkflowView({
+  workflow,
+  onOpenLocalAiSettings,
+}: {
+  workflow: AnonymizerWorkflowState
+  onOpenLocalAiSettings: () => void
+}) {
   if (workflow.result) {
     return (
       <div className="workflow-stack">
@@ -61,7 +66,7 @@ export function AnonymizerWorkflowView({ workflow }: { workflow: AnonymizerWorkf
     <div className="workflow-stack">
       <FileStep workflow={workflow} />
       <ColumnSelectionStep workflow={workflow} />
-      <ConfigurationStep workflow={workflow} />
+      <ConfigurationStep workflow={workflow} onOpenLocalAiSettings={onOpenLocalAiSettings} />
       <PreviewStep workflow={workflow} />
       <RunStep workflow={workflow} />
     </div>
@@ -200,7 +205,13 @@ function ColumnSelectionStep({ workflow }: { workflow: AnonymizerWorkflowState }
   )
 }
 
-function ConfigurationStep({ workflow }: { workflow: AnonymizerWorkflowState }) {
+function ConfigurationStep({
+  workflow,
+  onOpenLocalAiSettings,
+}: {
+  workflow: AnonymizerWorkflowState
+  onOpenLocalAiSettings: () => void
+}) {
   return (
     <Card title="3. Configuration">
       <div className="config-stack">
@@ -232,12 +243,16 @@ function ConfigurationStep({ workflow }: { workflow: AnonymizerWorkflowState }) 
           </p>
         </div>
 
-        <LocalAiSettingsBlock
-          settings={workflow.settings}
-          localAi={workflow.localAi}
-          disabled={!workflow.hasColumns || workflow.isLoading}
-          onUpdateSetting={workflow.updateSetting}
-        />
+        {workflow.localAiBlocked ? (
+          <Alert icon={<AlertCircle aria-hidden="true" />}>
+            <div className="alert-line">
+              <span>Set up Local AI before previewing or creating output with Smart replacement columns.</span>
+              <button type="button" className="button button-outline button-sm" onClick={onOpenLocalAiSettings}>
+                Open Local AI settings
+              </button>
+            </div>
+          </Alert>
+        ) : null}
 
         <PrivacySettingsPanel
           config={workflow.privacyConfig}

@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.44 - 2026-06-26
+
+- Move Local AI controls into the global top bar so the opt-in toggle, readiness status, and settings entry point are available from every input mode.
+- Add an accessible Local LLM settings modal that reuses the existing Local AI panel for model selection, status refresh, downloads, cancelation, and Ollama setup.
+- Remove duplicated Local AI settings panels from CSV configuration, Paste Data, and Quick by Data Type while keeping Smart replacement blocked-state alerts with a direct settings shortcut.
+- Share the modal focus-trap and Escape/backdrop behavior with help dialogs so Local AI settings restore focus cleanly after close.
+- Extend React, Playwright, and accessibility coverage for the global Local AI controls, settings modal, blocked Smart replacement flows, keyboard focus, and cross-tab availability.
+
 ## v1.0.43 - 2026-06-26
 
 - Extend optional Local AI Smart replacement into Paste Data previews, pasted-data transforms, and Quick by Data Type generation while keeping the CSV file workflow unchanged.
