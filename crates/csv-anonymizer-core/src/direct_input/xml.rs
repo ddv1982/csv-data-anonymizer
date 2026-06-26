@@ -1,5 +1,6 @@
 use crate::error::{AnonymizerError, Result};
 use crate::service::{build_privacy_report, count_transforming_selected_columns};
+use crate::smart::{SmartReplacementProvider, prepare_smart_replacements_from_rows};
 use crate::strategies::{TransformState, transform_value_with_state};
 use crate::types::{
     ColumnMetadata, PasteAnalyzeData, PasteDataFormat, PastePreviewParams, PasteTransformData,
@@ -11,9 +12,10 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use super::shared::{
-    FieldSamples, bounded_analysis_sample_count, bounded_preview_sample_count, fields_to_rows,
-    format_path, metadata_from_fields, next_row_index, prepare_selected_metadata,
-    preview_from_fields, push_identified_field_sample, selected_columns_by_source,
+    FieldSamples, PreviewSelection, bounded_analysis_sample_count, bounded_preview_sample_count,
+    fields_to_rows, format_path, metadata_from_fields, next_row_index, prepare_selected_metadata,
+    preview_from_fields_with_smart_provider, push_identified_field_sample,
+    selected_columns_by_source, transform_state_for_smart_replacements,
 };
 
 pub(super) fn analyze_xml(content: &str, sample_row_count: usize) -> Result<PasteAnalyzeData> {
@@ -30,26 +32,39 @@ pub(super) fn analyze_xml(content: &str, sample_row_count: usize) -> Result<Past
     })
 }
 
-pub(super) fn preview_xml(input: PastePreviewParams) -> Result<PreviewData> {
+pub(super) fn preview_xml_with_smart_provider(
+    input: PastePreviewParams,
+    provider: Option<&mut dyn SmartReplacementProvider>,
+) -> Result<PreviewData> {
     let sample_count = bounded_preview_sample_count(input.sample_count)?;
     let fields = collect_xml_fields(&input.content, sample_count.saturating_mul(2).max(1))?;
-    preview_from_fields(
-        PasteDataFormat::Xml,
+    preview_from_fields_with_smart_provider(
         &fields,
-        &input.columns,
-        &input.controls,
-        sample_count,
-        input.deterministic,
-        &input.seed,
+        PreviewSelection {
+            columns: &input.columns,
+            controls: &input.controls,
+            sample_count,
+            deterministic: input.deterministic,
+            seed: &input.seed,
+            provider,
+        },
     )
 }
 
-pub(super) fn transform_xml(input: PasteTransformParams) -> Result<PasteTransformData> {
+pub(super) fn transform_xml_with_smart_provider(
+    input: PasteTransformParams,
+    provider: Option<&mut dyn SmartReplacementProvider>,
+) -> Result<PasteTransformData> {
     let analysis = analyze_xml(&input.content, 100)?;
     let metadata = prepare_selected_metadata(&analysis.columns, &input.columns, &input.controls)?;
     let selected_by_path = selected_columns_by_source(&metadata);
+    let smart_replacements = prepare_xml_smart_replacements(&input, &metadata, provider)?;
     let start_time = Instant::now();
-    let mut state = TransformState::new(input.deterministic, &input.seed);
+    let mut state = transform_state_for_smart_replacements(
+        input.deterministic,
+        &input.seed,
+        smart_replacements,
+    );
     let output = transform_xml_content(
         &input.content,
         &selected_by_path,
@@ -65,6 +80,22 @@ pub(super) fn transform_xml(input: PasteTransformParams) -> Result<PasteTransfor
         duration_ms: start_time.elapsed().as_millis(),
         privacy_report: build_privacy_report(&metadata, state.report(), input.deterministic),
     })
+}
+
+fn prepare_xml_smart_replacements(
+    input: &PasteTransformParams,
+    metadata: &[ColumnMetadata],
+    provider: Option<&mut dyn SmartReplacementProvider>,
+) -> Result<crate::smart::SmartReplacementMap> {
+    let fields = collect_xml_fields(&input.content, usize::MAX)?;
+    let (_headers, rows) = fields_to_rows(&fields, usize::MAX);
+    prepare_smart_replacements_from_rows(
+        &rows,
+        metadata,
+        input.deterministic,
+        &input.seed,
+        provider,
+    )
 }
 
 pub(super) fn collect_xml_fields(content: &str, sample_count: usize) -> Result<Vec<FieldSamples>> {

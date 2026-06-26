@@ -1,5 +1,6 @@
 use super::*;
 use crate::metadata::build_column_metadata;
+use crate::smart::{SmartReplacement, SmartReplacementProvider, SmartReplacementRequest};
 use crate::types::PiiRisk;
 
 #[test]
@@ -247,7 +248,7 @@ fn quick_generation_rejects_input_only_strategies() {
     assert!(
         error
             .to_string()
-            .contains("auto, pseudonymize, or tokenize")
+            .contains("auto, pseudonymize, tokenize, or smart replacement")
     );
 }
 
@@ -543,6 +544,107 @@ fn previews_pasted_json_fields() {
 }
 
 #[test]
+fn previews_and_transforms_paste_data_with_smart_replacements() {
+    let input = r#"[{"name":"Ada Lovelace"},{"name":"Grace Hopper"}]"#;
+    let analysis = analyze_paste_data(PasteAnalyzeParams {
+        content: input.to_string(),
+        format: PasteDataFormat::Json,
+        sample_row_count: 10,
+    })
+    .unwrap();
+    let name = analysis
+        .columns
+        .iter()
+        .find(|column| column.name == "[].name")
+        .unwrap();
+    let controls = vec![ColumnControl {
+        column_index: name.index,
+        type_override: Some(DataType::FullName),
+        strategy: AnonymizationStrategy::LocalAi,
+    }];
+    let mut preview_provider = PrefixSmartProvider;
+
+    let preview = preview_paste_data_with_smart_provider(
+        PastePreviewParams {
+            content: input.to_string(),
+            format: PasteDataFormat::Json,
+            columns: vec![name.index],
+            controls: controls.clone(),
+            deterministic: true,
+            seed: "seed".to_string(),
+            sample_count: 5,
+        },
+        Some(&mut preview_provider),
+    )
+    .unwrap();
+
+    assert_eq!(preview.smart_replacements.len(), 2);
+    assert_eq!(preview.previews[0].samples[0].anonymized, "Smart Person 1");
+
+    let mut transform_provider = PrefixSmartProvider;
+    let result = transform_paste_data_with_smart_provider(
+        PasteTransformParams {
+            content: input.to_string(),
+            format: PasteDataFormat::Json,
+            columns: vec![name.index],
+            controls,
+            deterministic: true,
+            seed: "seed".to_string(),
+        },
+        Some(&mut transform_provider),
+    )
+    .unwrap();
+
+    assert!(result.output.contains("Smart Person 1"));
+    assert!(result.output.contains("Smart Person 2"));
+    assert_eq!(result.privacy_report.smart_replacement_columns, 1);
+    assert_eq!(result.privacy_report.smart_replacement_values, 2);
+    assert_eq!(result.privacy_report.smart_replacement_fallbacks, 0);
+}
+
+#[test]
+fn quick_generation_uses_smart_replacements_when_requested() {
+    let mut provider = PrefixSmartProvider;
+    let result = generate_quick_values_with_smart_provider(
+        QuickGenerateParams {
+            data_type: DataType::FullName,
+            strategy: AnonymizationStrategy::LocalAi,
+            count: 2,
+            deterministic: true,
+            seed: "seed".to_string(),
+        },
+        Some(&mut provider),
+    )
+    .unwrap();
+    let lines = result.output.lines().collect::<Vec<_>>();
+
+    assert_eq!(lines.len(), 2);
+    assert!(lines[0].starts_with("Smart Person "));
+    assert!(lines[1].starts_with("Smart Person "));
+    assert_eq!(result.privacy_report.smart_replacement_columns, 1);
+    assert_eq!(result.privacy_report.smart_replacement_values, 2);
+    assert_eq!(result.privacy_report.smart_replacement_fallbacks, 0);
+}
+
+#[test]
+fn quick_generation_requires_provider_for_smart_replacement() {
+    let error = generate_quick_values(QuickGenerateParams {
+        data_type: DataType::FullName,
+        strategy: AnonymizationStrategy::LocalAi,
+        count: 1,
+        deterministic: true,
+        seed: "seed".to_string(),
+    })
+    .unwrap_err();
+
+    assert!(
+        error
+            .to_string()
+            .contains("Smart replacement needs Local AI")
+    );
+}
+
+#[test]
 fn transforms_plain_text_and_preserves_surrounding_text() {
     let input =
         "contact ada@example.com from 192.168.0.10 request 550e8400-e29b-41d4-a716-446655440000";
@@ -640,4 +742,23 @@ fn auto_detects_logs_and_replaces_inline_values() {
     assert!(result.output.contains("ERROR user="));
     assert!(!result.output.contains("jane@example.com"));
     assert!(!result.output.contains("10.1.2.3"));
+}
+
+struct PrefixSmartProvider;
+
+impl SmartReplacementProvider for PrefixSmartProvider {
+    fn generate_replacements(
+        &mut self,
+        request: SmartReplacementRequest<'_>,
+    ) -> Result<Vec<SmartReplacement>> {
+        Ok(request
+            .values
+            .iter()
+            .enumerate()
+            .map(|(index, value)| SmartReplacement {
+                original: value.clone(),
+                replacement: format!("Smart Person {}", index + 1),
+            })
+            .collect())
+    }
 }

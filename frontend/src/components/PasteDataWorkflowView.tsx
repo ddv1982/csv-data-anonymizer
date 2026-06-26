@@ -1,6 +1,6 @@
 import { AlertCircle, Check, Clipboard, Loader2, Wand2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { standardStrategies } from '../dataOptions'
+import { directInputStrategies } from '../dataOptions'
 import { byteLength, formatByteLimit, MAX_PASTE_CONTENT_BYTES } from '../limits'
 import { analyzePasteData, previewPasteData, transformPasteData } from '../tauri'
 import type {
@@ -14,6 +14,7 @@ import type {
   PasteTransformData,
   PreviewData,
 } from '../types'
+import type { LocalAiState } from '../hooks/useLocalAi'
 import { maxVisibleColumns } from '../utils/columns'
 import { copyTextToClipboard } from '../utils/clipboard'
 import { messageFrom } from '../utils/errors'
@@ -21,6 +22,7 @@ import { formatRowCount } from '../utils/format'
 import { Alert } from './Alert'
 import { Card } from './Card'
 import { ColumnTable } from './ColumnTable'
+import { LocalAiSettingsBlock } from './LocalAiSettingsBlock'
 import { PreviewTable } from './PreviewTable'
 
 type PasteBusyState = 'idle' | 'analyzing' | 'previewing' | 'transforming' | 'copying'
@@ -34,12 +36,17 @@ const formatOptions: Array<{ value: PasteDataFormat; label: string }> = [
   { value: 'plainText', label: 'Plain text' },
   { value: 'logs', label: 'Logs' },
 ]
+const EMPTY_COLUMNS: ColumnMetadata[] = []
 
 export function PasteDataWorkflowView({
   settings,
+  localAi,
+  onUpdateSetting,
   onError,
 }: {
   settings: AppSettings
+  localAi: LocalAiState
+  onUpdateSetting: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => void
   onError: (message: string | null) => void
 }) {
   const [format, setFormat] = useState<PasteDataFormat>('auto')
@@ -55,7 +62,7 @@ export function PasteDataWorkflowView({
 
   const isBusy = busy !== 'idle'
   const selectedSet = useMemo(() => new Set(selectedColumns), [selectedColumns])
-  const columns = analysis?.columns ?? []
+  const columns = analysis?.columns ?? EMPTY_COLUMNS
   const visibleColumns = showAllColumns ? columns : columns.slice(0, maxVisibleColumns)
   const hiddenColumnCount = Math.max(0, columns.length - visibleColumns.length)
   const contentByteLength = useMemo(() => byteLength(content), [content])
@@ -65,9 +72,18 @@ export function PasteDataWorkflowView({
     () => Object.values(controls).sort((left, right) => left.columnIndex - right.columnIndex),
     [controls],
   )
+  const selectedUsesLocalAi = useMemo(
+    () =>
+      selectedColumns.some((index) => {
+        const column = columns.find((candidate) => candidate.index === index)
+        return (controls[index]?.strategy ?? column?.strategy ?? 'auto') === 'localAi'
+      }),
+    [columns, controls, selectedColumns],
+  )
+  const localAiBlocked = selectedUsesLocalAi && (!localAi.ready || localAi.downloadRunning)
   const canAnalyze = content.trim().length > 0 && !isBusy && !isContentTooLarge
-  const canPreview = Boolean(analysis) && selectedColumns.length > 0 && !isBusy
-  const canTransform = Boolean(analysis) && selectedColumns.length > 0 && !isBusy
+  const canPreview = Boolean(analysis) && selectedColumns.length > 0 && !isBusy && !localAiBlocked
+  const canTransform = Boolean(analysis) && selectedColumns.length > 0 && !isBusy && !localAiBlocked
 
   function resetDerivedState() {
     setAnalysis(null)
@@ -100,7 +116,11 @@ export function PasteDataWorkflowView({
   }
 
   async function handlePreview() {
-    if (!canPreview || !analysis) return
+    if (!analysis || selectedColumns.length === 0 || isBusy) return
+    if (localAiBlocked) {
+      onError('Set up Local AI before previewing Smart replacement fields.')
+      return
+    }
     onError(null)
     setBusy('previewing')
     setCopyStatus(null)
@@ -114,6 +134,7 @@ export function PasteDataWorkflowView({
         settings.deterministicDefault,
         settings.seed,
         settings.previewSampleCount,
+        localAi.request,
       )
       setPreview(nextPreview)
     } catch (caught) {
@@ -124,7 +145,11 @@ export function PasteDataWorkflowView({
   }
 
   async function handleTransform() {
-    if (!canTransform || !analysis) return
+    if (!analysis || selectedColumns.length === 0 || isBusy) return
+    if (localAiBlocked) {
+      onError('Set up Local AI before anonymizing Smart replacement fields.')
+      return
+    }
     onError(null)
     setBusy('transforming')
     setCopyStatus(null)
@@ -136,6 +161,7 @@ export function PasteDataWorkflowView({
         controlList,
         settings.deterministicDefault,
         settings.seed,
+        localAi.request,
       )
       setResult(transformed)
     } catch (caught) {
@@ -306,8 +332,24 @@ export function PasteDataWorkflowView({
             onStrategyChange={updateColumnStrategy}
             onToggleShowAll={() => setShowAllColumns((current) => !current)}
             showRoles={false}
-            availableStrategies={standardStrategies}
+            availableStrategies={directInputStrategies}
           />
+
+          {selectedUsesLocalAi ? (
+            <>
+              <LocalAiSettingsBlock
+                settings={settings}
+                localAi={localAi}
+                disabled={isBusy}
+                onUpdateSetting={onUpdateSetting}
+              />
+              {localAiBlocked ? (
+                <Alert icon={<AlertCircle aria-hidden="true" />}>
+                  Set up Local AI before previewing or anonymizing Smart replacement fields.
+                </Alert>
+              ) : null}
+            </>
+          ) : null}
 
           <p className="muted-text text-sm">
             {selectedColumns.length} of {columns.length} fields selected

@@ -26,24 +26,26 @@ export const dataTypes: DataType[] = [
   'unknown',
 ]
 
-export const csvStrategies: AnonymizationStrategy[] = [
+const smartReplacementStrategies: AnonymizationStrategy[] = [
   'auto',
   'pseudonymize',
   'tokenize',
   'localAi',
+]
+
+export const csvStrategies: AnonymizationStrategy[] = [
+  ...smartReplacementStrategies,
   'mask',
   'passThrough',
 ]
 
-export const standardStrategies: AnonymizationStrategy[] = [
-  'auto',
-  'pseudonymize',
-  'tokenize',
+export const directInputStrategies: AnonymizationStrategy[] = [
+  ...smartReplacementStrategies,
   'mask',
   'passThrough',
 ]
 
-export const quickGenerateStrategies: AnonymizationStrategy[] = ['auto', 'pseudonymize', 'tokenize']
+export const quickGenerateStrategies: AnonymizationStrategy[] = smartReplacementStrategies
 
 export function strategyLabel(strategy: AnonymizationStrategy) {
   if (strategy === 'localAi') {

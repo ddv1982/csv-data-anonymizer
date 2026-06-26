@@ -1,6 +1,7 @@
 use crate::error::{AnonymizerError, Result};
 use crate::service::{build_privacy_report, count_transforming_selected_columns};
-use crate::strategies::{TransformState, transform_value_with_state};
+use crate::smart::{SmartReplacementProvider, prepare_smart_replacements_from_rows};
+use crate::strategies::transform_value_with_state;
 use crate::types::{
     DataType, PasteAnalyzeData, PasteDataFormat, PastePreviewParams, PasteTransformData,
     PasteTransformParams, PreviewData, TransformContext,
@@ -11,10 +12,11 @@ use std::sync::OnceLock;
 use std::time::Instant;
 
 use super::shared::{
-    FieldSamples, PASTE_MAX_TEXT_CANDIDATES, PASTE_MAX_TEXT_MATCHES, bounded_analysis_sample_count,
-    bounded_preview_sample_count, fields_to_rows, metadata_from_fields, next_row_index,
-    prepare_selected_metadata, preview_from_fields, push_typed_field_sample,
-    selected_columns_by_source,
+    FieldSamples, PASTE_MAX_TEXT_CANDIDATES, PASTE_MAX_TEXT_MATCHES, PreviewSelection,
+    bounded_analysis_sample_count, bounded_preview_sample_count, fields_to_rows,
+    metadata_from_fields, next_row_index, prepare_selected_metadata,
+    preview_from_fields_with_smart_provider, push_typed_field_sample, selected_columns_by_source,
+    transform_state_for_smart_replacements,
 };
 
 pub(super) fn analyze_text_content(
@@ -36,27 +38,31 @@ pub(super) fn analyze_text_content(
     })
 }
 
-pub(super) fn preview_text_content(
+pub(super) fn preview_text_content_with_smart_provider(
     input: PastePreviewParams,
-    format: PasteDataFormat,
+    _format: PasteDataFormat,
+    provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<PreviewData> {
     let sample_count = bounded_preview_sample_count(input.sample_count)?;
     let matches = collect_text_matches(&input.content)?;
     let fields = text_fields_from_matches(&matches, sample_count.saturating_mul(2).max(1))?;
-    preview_from_fields(
-        format,
+    preview_from_fields_with_smart_provider(
         &fields,
-        &input.columns,
-        &input.controls,
-        sample_count,
-        input.deterministic,
-        &input.seed,
+        PreviewSelection {
+            columns: &input.columns,
+            controls: &input.controls,
+            sample_count,
+            deterministic: input.deterministic,
+            seed: &input.seed,
+            provider,
+        },
     )
 }
 
-pub(super) fn transform_text(
+pub(super) fn transform_text_with_smart_provider(
     input: PasteTransformParams,
     format: PasteDataFormat,
+    provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<PasteTransformData> {
     let matches = collect_text_matches(&input.content)?;
     let fields = text_fields_from_matches(&matches, 100)?;
@@ -69,8 +75,21 @@ pub(super) fn transform_text(
     };
     let metadata = prepare_selected_metadata(&analysis.columns, &input.columns, &input.controls)?;
     let selected_by_name = selected_columns_by_source(&metadata);
+    let smart_fields = text_fields_from_matches(&matches, matches.len().max(1))?;
+    let (_headers, smart_rows) = fields_to_rows(&smart_fields, matches.len().max(1));
+    let smart_replacements = prepare_smart_replacements_from_rows(
+        &smart_rows,
+        &metadata,
+        input.deterministic,
+        &input.seed,
+        provider,
+    )?;
     let start_time = Instant::now();
-    let mut state = TransformState::new(input.deterministic, &input.seed);
+    let mut state = transform_state_for_smart_replacements(
+        input.deterministic,
+        &input.seed,
+        smart_replacements,
+    );
     let mut row_indices = HashMap::new();
     let mut output = String::with_capacity(input.content.len());
     let mut last_end = 0;

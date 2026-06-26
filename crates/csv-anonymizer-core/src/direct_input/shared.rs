@@ -2,10 +2,13 @@ use crate::detection::{classify_pii_risk, is_empty_value};
 use crate::error::{AnonymizerError, Result};
 use crate::metadata::{apply_column_selection, build_column_metadata};
 use crate::service::{apply_column_controls, build_privacy_report, validate_column_indices};
+use crate::smart::{
+    SmartReplacementMap, SmartReplacementProvider, prepare_smart_replacements_from_rows,
+};
 use crate::strategies::{TransformState, transform_row_with_state, transform_value_with_state};
 use crate::types::{
-    ColumnControl, ColumnMetadata, ColumnPreview, DataType, PasteDataFormat, PreviewData,
-    PrivacyReport, SampleTransform, TransformContext,
+    ColumnControl, ColumnMetadata, ColumnPreview, DataType, PreviewData, PrivacyReport,
+    SampleTransform, TransformContext,
 };
 use std::collections::HashMap;
 
@@ -16,6 +19,15 @@ pub(super) const PASTE_MAX_PREVIEW_SAMPLES: usize = 100;
 pub(super) const PASTE_MAX_TEXT_MATCHES: usize = 10_000;
 pub(super) const PASTE_MAX_TEXT_CANDIDATES: usize = PASTE_MAX_TEXT_MATCHES * 4;
 
+pub(super) struct PreviewSelection<'a, 'provider> {
+    pub(super) columns: &'a [usize],
+    pub(super) controls: &'a [ColumnControl],
+    pub(super) sample_count: usize,
+    pub(super) deterministic: bool,
+    pub(super) seed: &'a str,
+    pub(super) provider: Option<&'provider mut dyn SmartReplacementProvider>,
+}
+
 pub(super) fn preview_rows(
     rows: &[Vec<String>],
     metadata: &[ColumnMetadata],
@@ -25,81 +37,63 @@ pub(super) fn preview_rows(
     seed: &str,
     sample_count: usize,
 ) -> Result<PreviewData> {
-    preview_from_rows(
-        metadata,
+    preview_rows_with_smart_provider(
         rows,
-        columns,
-        controls,
-        sample_count,
-        deterministic,
-        seed,
+        metadata,
+        PreviewSelection {
+            columns,
+            controls,
+            sample_count,
+            deterministic,
+            seed,
+            provider: None,
+        },
     )
 }
 
-pub(super) fn anonymize_rows(
+pub(super) fn preview_rows_with_smart_provider(
     rows: &[Vec<String>],
     metadata: &[ColumnMetadata],
-    columns: &[usize],
-    controls: &[ColumnControl],
-    deterministic: bool,
-    seed: &str,
-) -> Result<(Vec<Vec<String>>, PrivacyReport)> {
-    let selected_metadata = prepare_selected_metadata(metadata, columns, controls)?;
-    let mut state = TransformState::new(deterministic, seed);
-    let transformed = rows
-        .iter()
-        .enumerate()
-        .map(|(row_index, row)| {
-            transform_row_with_state(
-                row,
-                &selected_metadata,
-                row_index,
-                seed,
-                deterministic,
-                &mut state,
-            )
-        })
-        .collect();
-    let privacy_report = build_privacy_report(&selected_metadata, state.report(), deterministic);
-
-    Ok((transformed, privacy_report))
+    selection: PreviewSelection<'_, '_>,
+) -> Result<PreviewData> {
+    preview_from_rows_with_smart_provider(metadata, rows, selection)
 }
 
-pub(super) fn preview_from_fields(
-    _format: PasteDataFormat,
+pub(super) fn preview_from_fields_with_smart_provider(
     fields: &[FieldSamples],
-    columns: &[usize],
-    controls: &[ColumnControl],
-    sample_count: usize,
-    deterministic: bool,
-    seed: &str,
+    selection: PreviewSelection<'_, '_>,
 ) -> Result<PreviewData> {
-    let (headers, rows) = fields_to_rows(fields, sample_count.saturating_mul(2).max(1));
+    let (headers, rows) = fields_to_rows(fields, selection.sample_count.saturating_mul(2).max(1));
     let metadata = metadata_from_fields(fields, &headers, &rows);
-    preview_from_rows(
-        &metadata,
-        &rows,
+    preview_from_rows_with_smart_provider(&metadata, &rows, selection)
+}
+
+pub(super) fn preview_from_rows_with_smart_provider(
+    metadata: &[ColumnMetadata],
+    rows: &[Vec<String>],
+    selection: PreviewSelection<'_, '_>,
+) -> Result<PreviewData> {
+    let PreviewSelection {
         columns,
         controls,
         sample_count,
         deterministic,
         seed,
-    )
-}
+        provider,
+    } = selection;
 
-pub(super) fn preview_from_rows(
-    metadata: &[ColumnMetadata],
-    rows: &[Vec<String>],
-    columns: &[usize],
-    controls: &[ColumnControl],
-    sample_count: usize,
-    deterministic: bool,
-    seed: &str,
-) -> Result<PreviewData> {
     validate_column_indices(metadata, columns)?;
     let controlled = apply_column_controls(metadata, controls)?;
     let selected_metadata = apply_column_selection(&controlled, columns);
-    let mut state = TransformState::new(deterministic, seed);
+    let smart_replacements = prepare_smart_replacements_from_rows(
+        rows,
+        &selected_metadata,
+        deterministic,
+        seed,
+        provider,
+    )?;
+    let smart_replacement_entries = smart_replacements.to_entries();
+    let mut state = transform_state_for_smart_replacements(deterministic, seed, smart_replacements);
     let mut previews = Vec::new();
 
     for column in selected_metadata.iter().filter(|column| column.is_selected) {
@@ -137,8 +131,68 @@ pub(super) fn preview_from_rows(
     Ok(PreviewData {
         previews,
         warnings: Vec::new(),
-        smart_replacements: Vec::new(),
+        smart_replacements: smart_replacement_entries,
     })
+}
+
+pub(super) fn anonymize_rows(
+    rows: &[Vec<String>],
+    metadata: &[ColumnMetadata],
+    columns: &[usize],
+    controls: &[ColumnControl],
+    deterministic: bool,
+    seed: &str,
+) -> Result<(Vec<Vec<String>>, PrivacyReport)> {
+    anonymize_rows_with_smart_provider(rows, metadata, columns, controls, deterministic, seed, None)
+}
+
+pub(super) fn anonymize_rows_with_smart_provider(
+    rows: &[Vec<String>],
+    metadata: &[ColumnMetadata],
+    columns: &[usize],
+    controls: &[ColumnControl],
+    deterministic: bool,
+    seed: &str,
+    provider: Option<&mut dyn SmartReplacementProvider>,
+) -> Result<(Vec<Vec<String>>, PrivacyReport)> {
+    let selected_metadata = prepare_selected_metadata(metadata, columns, controls)?;
+    let smart_replacements = prepare_smart_replacements_from_rows(
+        rows,
+        &selected_metadata,
+        deterministic,
+        seed,
+        provider,
+    )?;
+    let mut state = transform_state_for_smart_replacements(deterministic, seed, smart_replacements);
+    let transformed = rows
+        .iter()
+        .enumerate()
+        .map(|(row_index, row)| {
+            transform_row_with_state(
+                row,
+                &selected_metadata,
+                row_index,
+                seed,
+                deterministic,
+                &mut state,
+            )
+        })
+        .collect();
+    let privacy_report = build_privacy_report(&selected_metadata, state.report(), deterministic);
+
+    Ok((transformed, privacy_report))
+}
+
+pub(super) fn transform_state_for_smart_replacements(
+    deterministic: bool,
+    seed: &str,
+    smart_replacements: SmartReplacementMap,
+) -> TransformState {
+    if smart_replacements.is_empty() {
+        TransformState::new(deterministic, seed)
+    } else {
+        TransformState::with_smart_replacements(deterministic, seed, smart_replacements)
+    }
 }
 
 pub(super) fn prepare_selected_metadata(

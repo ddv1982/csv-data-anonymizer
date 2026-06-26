@@ -2,12 +2,15 @@ use crate::detection::{classify_pii_risk, detect_column_type_with_name, detect_e
 use crate::error::{AnonymizerError, Result};
 use crate::hash::{deterministic_number, deterministic_string, deterministic_uuid};
 use crate::service::build_privacy_report;
+use crate::smart::{SmartReplacementProvider, prepare_smart_replacements_from_rows};
 use crate::strategies::{TransformState, transform_value_with_state};
 use crate::types::{
     AnonymizationStrategy, ColumnMetadata, DataType, QuickGenerateParams, QuickTransformData,
     QuickTransformParams, SampleTransform, TransformContext,
 };
 use rand::Rng;
+
+use super::shared::transform_state_for_smart_replacements;
 
 const QUICK_GENERATE_MAX_COUNT: usize = 1_000;
 const HEX_CHARSET: &str = "0123456789abcdef";
@@ -57,6 +60,13 @@ pub fn transform_quick_values(input: QuickTransformParams) -> Result<QuickTransf
 }
 
 pub fn generate_quick_values(input: QuickGenerateParams) -> Result<QuickTransformData> {
+    generate_quick_values_with_smart_provider(input, None)
+}
+
+pub fn generate_quick_values_with_smart_provider(
+    input: QuickGenerateParams,
+    provider: Option<&mut dyn SmartReplacementProvider>,
+) -> Result<QuickTransformData> {
     if input.count == 0 {
         return Err(AnonymizerError::input_parse(
             "quick generation",
@@ -72,7 +82,7 @@ pub fn generate_quick_values(input: QuickGenerateParams) -> Result<QuickTransfor
     if !supports_quick_generate_strategy(input.strategy) {
         return Err(AnonymizerError::input_parse(
             "quick generation",
-            "Quick generation supports auto, pseudonymize, or tokenize.",
+            "Quick generation supports auto, pseudonymize, tokenize, or smart replacement.",
         ));
     }
 
@@ -83,7 +93,22 @@ pub fn generate_quick_values(input: QuickGenerateParams) -> Result<QuickTransfor
         .collect::<Vec<_>>();
     let column = quick_column(input.data_type, input.strategy, &source_values);
     let selected_columns = vec![column.clone()];
-    let mut state = TransformState::new(input.deterministic, &input.seed);
+    let source_rows = source_values
+        .iter()
+        .map(|value| vec![value.clone()])
+        .collect::<Vec<_>>();
+    let smart_replacements = prepare_smart_replacements_from_rows(
+        &source_rows,
+        &selected_columns,
+        input.deterministic,
+        &input.seed,
+        provider,
+    )?;
+    let mut state = transform_state_for_smart_replacements(
+        input.deterministic,
+        &input.seed,
+        smart_replacements,
+    );
     let mut output_values = Vec::with_capacity(input.count);
     let mut samples = Vec::with_capacity(input.count);
 
@@ -175,11 +200,13 @@ fn supports_quick_generate_strategy(strategy: AnonymizationStrategy) -> bool {
         AnonymizationStrategy::Auto
             | AnonymizationStrategy::Pseudonymize
             | AnonymizationStrategy::Tokenize
+            | AnonymizationStrategy::LocalAi
     )
 }
 
 fn should_transform_generated_value(data_type: DataType, strategy: AnonymizationStrategy) -> bool {
     strategy == AnonymizationStrategy::Tokenize
+        || strategy == AnonymizationStrategy::LocalAi
         || matches!(
             data_type,
             DataType::Email

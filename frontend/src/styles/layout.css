@@ -82,6 +82,12 @@
   margin-top: -0.75rem;
 }
 
+.quick-local-ai {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 1rem;
+}
+
 .card {
   overflow: hidden;
   border: 1px solid hsl(var(--border-subtle));

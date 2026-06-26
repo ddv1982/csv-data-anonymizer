@@ -125,3 +125,5 @@ export function useLocalAi(settings: AppSettings, onError: (message: string) => 
     openSetup,
   }
 }
+
+export type LocalAiState = ReturnType<typeof useLocalAi>

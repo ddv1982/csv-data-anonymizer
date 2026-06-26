@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.43 - 2026-06-26
+
+- Extend optional Local AI Smart replacement into Paste Data previews, pasted-data transforms, and Quick by Data Type generation while keeping the CSV file workflow unchanged.
+- Reuse the core smart-replacement provider boundary across CSV, pasted CSV/JSON/YAML/XML/text/log inputs, and quick generated values so Ollama setup remains isolated to the Tauri layer.
+- Add contextual Local AI setup panels in Paste and Quick only when Smart replacement is selected, with shared panel wiring to avoid duplicated settings code.
+- Add regression coverage for direct-input smart replacement, quick Local AI generation, and Paste/Quick Local AI UI gating.
+- Apply document theme state before first paint so automated accessibility checks do not see mismatched light-theme metadata and dark first-paint controls.
+
 ## v1.0.42 - 2026-06-26
 
 - Rebuild light mode around expanded semantic tokens for app surfaces, raised panels, borders, focus rings, status colors, and data-selection states.
