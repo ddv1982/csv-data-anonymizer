@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { directInputStrategies } from '../dataOptions'
 import { byteLength, formatByteLimit, MAX_PASTE_CONTENT_BYTES } from '../limits'
 import { analyzePasteData, previewPasteData, transformPasteData } from '../tauri'
+import { useCopyOutput } from '../hooks/useCopyOutput'
 import type {
   AnonymizationStrategy,
   AppSettings,
@@ -16,7 +17,6 @@ import type {
 } from '../types'
 import type { LocalAiState } from '../hooks/useLocalAi'
 import { maxVisibleColumns } from '../utils/columns'
-import { copyTextToClipboard } from '../utils/clipboard'
 import { messageFrom } from '../utils/errors'
 import { formatRowCount } from '../utils/format'
 import { Alert } from './Alert'
@@ -57,9 +57,9 @@ export function PasteDataWorkflowView({
   const [preview, setPreview] = useState<PreviewData | null>(null)
   const [result, setResult] = useState<PasteTransformData | null>(null)
   const [busy, setBusy] = useState<PasteBusyState>('idle')
-  const [copyStatus, setCopyStatus] = useState<string | null>(null)
 
   const isBusy = busy !== 'idle'
+  const { copyOutput, copyStatus, setCopyStatus } = useCopyOutput({ isBusy, onError, setBusy })
   const selectedSet = useMemo(() => new Set(selectedColumns), [selectedColumns])
   const columns = analysis?.columns ?? EMPTY_COLUMNS
   const visibleColumns = showAllColumns ? columns : columns.slice(0, maxVisibleColumns)
@@ -172,17 +172,7 @@ export function PasteDataWorkflowView({
   }
 
   async function handleCopy() {
-    if (!result?.output || isBusy) return
-    onError(null)
-    setBusy('copying')
-    try {
-      await copyTextToClipboard(result.output)
-      setCopyStatus('Copied')
-    } catch (caught) {
-      onError(messageFrom(caught))
-    } finally {
-      setBusy('idle')
-    }
+    await copyOutput(result?.output)
   }
 
   function toggleColumn(column: ColumnMetadata) {

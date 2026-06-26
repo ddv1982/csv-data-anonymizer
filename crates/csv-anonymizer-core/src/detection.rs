@@ -3,6 +3,11 @@ use regex::Regex;
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
+struct HeaderTerms {
+    compact: String,
+    tokens: HashSet<String>,
+}
+
 pub fn is_empty_value(value: &str) -> bool {
     value.is_empty() || value.eq_ignore_ascii_case("null")
 }
@@ -384,19 +389,10 @@ fn detect_numeric_value_type(values: &[String], total_non_empty: usize) -> Optio
 }
 
 fn infer_numeric_id_from_header(column_name: &str) -> bool {
-    let compact: String = column_name
-        .chars()
-        .filter(|character| character.is_ascii_alphanumeric())
-        .flat_map(char::to_lowercase)
-        .collect();
-    let tokens: HashSet<String> = column_name
-        .split(|character: char| !character.is_ascii_alphanumeric())
-        .filter(|token| !token.is_empty())
-        .map(|token| token.to_ascii_lowercase())
-        .collect();
+    let terms = header_terms(column_name);
 
     matches!(
-        compact.as_str(),
+        terms.compact.as_str(),
         "id" | "userid"
             | "usernumber"
             | "customerid"
@@ -408,13 +404,13 @@ fn infer_numeric_id_from_header(column_name: &str) -> bool {
             | "orderid"
             | "ordernumber"
             | "code"
-    ) || tokens.contains("id")
-        || tokens.contains("identifier")
-        || tokens.contains("code")
-        || tokens.contains("account") && tokens.contains("number")
-        || tokens.contains("customer") && tokens.contains("number")
-        || tokens.contains("client") && tokens.contains("number")
-        || tokens.contains("order") && tokens.contains("number")
+    ) || terms.tokens.contains("id")
+        || terms.tokens.contains("identifier")
+        || terms.tokens.contains("code")
+        || terms.tokens.contains("account") && terms.tokens.contains("number")
+        || terms.tokens.contains("customer") && terms.tokens.contains("number")
+        || terms.tokens.contains("client") && terms.tokens.contains("number")
+        || terms.tokens.contains("order") && terms.tokens.contains("number")
 }
 
 fn detect_header_postal_code(
@@ -628,37 +624,32 @@ fn detect_name_type(
 }
 
 fn infer_name_type_from_header(column_name: &str) -> Option<DataType> {
-    let compact: String = column_name
-        .chars()
-        .filter(|character| character.is_ascii_alphanumeric())
-        .flat_map(char::to_lowercase)
-        .collect();
-    let tokens: HashSet<String> = column_name
-        .split(|character: char| !character.is_ascii_alphanumeric())
-        .filter(|token| !token.is_empty())
-        .map(|token| token.to_ascii_lowercase())
-        .collect();
+    let terms = header_terms(column_name);
 
-    if matches!(compact.as_str(), "firstname" | "givenname" | "forename")
-        || tokens.contains("firstname")
-        || tokens.contains("forename")
-        || tokens.contains("given")
-        || tokens.contains("first") && tokens.contains("name")
+    if matches!(
+        terms.compact.as_str(),
+        "firstname" | "givenname" | "forename"
+    ) || terms.tokens.contains("firstname")
+        || terms.tokens.contains("forename")
+        || terms.tokens.contains("given")
+        || terms.tokens.contains("first") && terms.tokens.contains("name")
     {
         return Some(DataType::FirstName);
     }
 
-    if matches!(compact.as_str(), "lastname" | "surname" | "familyname")
-        || tokens.contains("lastname")
-        || tokens.contains("surname")
-        || tokens.contains("family") && tokens.contains("name")
-        || tokens.contains("last") && tokens.contains("name")
+    if matches!(
+        terms.compact.as_str(),
+        "lastname" | "surname" | "familyname"
+    ) || terms.tokens.contains("lastname")
+        || terms.tokens.contains("surname")
+        || terms.tokens.contains("family") && terms.tokens.contains("name")
+        || terms.tokens.contains("last") && terms.tokens.contains("name")
     {
         return Some(DataType::LastName);
     }
 
     if matches!(
-        compact.as_str(),
+        terms.compact.as_str(),
         "name"
             | "fullname"
             | "displayname"
@@ -667,19 +658,34 @@ fn infer_name_type_from_header(column_name: &str) -> Option<DataType> {
             | "contactname"
             | "customername"
             | "clientname"
-    ) || tokens.contains("fullname")
-        || tokens.contains("display") && tokens.contains("name")
-        || tokens.contains("legal") && tokens.contains("name")
-        || tokens.contains("person") && tokens.contains("name")
-        || tokens.contains("contact") && tokens.contains("name")
-        || tokens.contains("customer") && tokens.contains("name")
-        || tokens.contains("client") && tokens.contains("name")
-        || tokens.contains("full") && tokens.contains("name")
+    ) || terms.tokens.contains("fullname")
+        || terms.tokens.contains("display") && terms.tokens.contains("name")
+        || terms.tokens.contains("legal") && terms.tokens.contains("name")
+        || terms.tokens.contains("person") && terms.tokens.contains("name")
+        || terms.tokens.contains("contact") && terms.tokens.contains("name")
+        || terms.tokens.contains("customer") && terms.tokens.contains("name")
+        || terms.tokens.contains("client") && terms.tokens.contains("name")
+        || terms.tokens.contains("full") && terms.tokens.contains("name")
     {
         return Some(DataType::FullName);
     }
 
     None
+}
+
+fn header_terms(column_name: &str) -> HeaderTerms {
+    HeaderTerms {
+        compact: column_name
+            .chars()
+            .filter(|character| character.is_ascii_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect(),
+        tokens: column_name
+            .split(|character: char| !character.is_ascii_alphanumeric())
+            .filter(|token| !token.is_empty())
+            .map(|token| token.to_ascii_lowercase())
+            .collect(),
+    }
 }
 
 fn infer_generic_name_header(column_name: &str) -> bool {

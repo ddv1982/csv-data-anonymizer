@@ -1,18 +1,18 @@
 use crate::csv_io::{count_csv_data_rows, process_file_with_control, read_sample};
-use crate::detection::is_empty_value;
 use crate::error::{AnonymizerError, Result};
 use crate::metadata::{apply_column_selection, build_column_metadata};
+use crate::preview::generate_column_preview;
 use crate::privacy::process_privacy_release;
+use crate::report_notes::push_unselected_column_note;
 use crate::smart::{
     SmartReplacementMap, SmartReplacementProvider, has_smart_replacement_columns,
     prepare_smart_replacements_from_csv, prepare_smart_replacements_from_rows,
 };
-use crate::strategies::{TransformState, transform_value_with_state};
+use crate::strategies::TransformState;
 use crate::types::{
-    AnonymizationStrategy, AnonymizeData, AnonymizeParams, ColumnControl, ColumnMetadata,
-    ColumnPreview, DataType, HeadersData, PiiRisk, PreviewData, PreviewParams, PreviewWarning,
-    PrivacyReport, ProcessControl, ProcessOptions, ReleaseMode, SampleTransform, TransformContext,
-    WarningSeverity,
+    AnonymizationStrategy, AnonymizeData, AnonymizeParams, ColumnControl, ColumnMetadata, DataType,
+    HeadersData, PreviewData, PreviewParams, PreviewWarning, PrivacyReport, ProcessControl,
+    ProcessOptions, ReleaseMode, WarningSeverity,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -494,41 +494,6 @@ pub(crate) fn build_privacy_report(
     report
 }
 
-fn push_unselected_column_note(notes: &mut Vec<String>, columns: &[ColumnMetadata]) {
-    let unselected_columns = columns.iter().filter(|column| !column.is_selected).count();
-    if unselected_columns == 0 {
-        return;
-    }
-
-    let unselected_detector_risk_columns = columns
-        .iter()
-        .filter(|column| {
-            !column.is_selected && matches!(column.pii_risk, PiiRisk::High | PiiRisk::Medium)
-        })
-        .count();
-    if unselected_detector_risk_columns > 0 {
-        notes.push(format!(
-            "{} unselected high/medium detector-risk {} written unchanged.",
-            unselected_detector_risk_columns,
-            plural(
-                unselected_detector_risk_columns,
-                "column was",
-                "columns were"
-            )
-        ));
-    } else {
-        notes.push(format!(
-            "{} unselected {} written unchanged.",
-            unselected_columns,
-            plural(unselected_columns, "column was", "columns were")
-        ));
-    }
-}
-
-fn plural<'a>(count: usize, singular: &'a str, plural: &'a str) -> &'a str {
-    if count == 1 { singular } else { plural }
-}
-
 pub(crate) fn count_transforming_selected_columns(columns: &[ColumnMetadata]) -> usize {
     columns
         .iter()
@@ -550,49 +515,6 @@ fn strategy_changes_output(column: &ColumnMetadata) -> bool {
                 | DataType::Currency
                 | DataType::Percentage
         ),
-    }
-}
-
-fn generate_column_preview(
-    column: &ColumnMetadata,
-    rows: &[Vec<String>],
-    sample_count: usize,
-    deterministic: bool,
-    seed: &str,
-    transform_state: &mut TransformState,
-) -> ColumnPreview {
-    let mut samples = Vec::new();
-
-    for (row_index, row) in rows.iter().enumerate() {
-        if samples.len() >= sample_count {
-            break;
-        }
-
-        let Some(value) = row.get(column.index) else {
-            continue;
-        };
-        if is_empty_value(value) {
-            continue;
-        }
-
-        let context = TransformContext {
-            column_name: &column.name,
-            column_index: column.index,
-            row_index,
-            seed,
-            deterministic,
-            empty_format: column.empty_format,
-        };
-        samples.push(SampleTransform {
-            original: value.clone(),
-            anonymized: transform_value_with_state(value, column, &context, transform_state),
-        });
-    }
-
-    ColumnPreview {
-        column_index: column.index,
-        column_name: column.name.clone(),
-        samples,
     }
 }
 

@@ -1,16 +1,14 @@
-use crate::detection::{classify_pii_risk, is_empty_value};
+use crate::detection::classify_pii_risk;
 use crate::error::{AnonymizerError, Result};
 use crate::metadata::{apply_column_selection, build_column_metadata};
+use crate::preview::generate_column_preview;
 use crate::service::{apply_column_controls, build_privacy_report, validate_column_indices};
 use crate::smart::{
     SmartReplacementMap, SmartReplacementProvider, has_smart_replacement_columns,
     prepare_smart_replacements_from_rows,
 };
-use crate::strategies::{TransformState, transform_row_with_state, transform_value_with_state};
-use crate::types::{
-    ColumnControl, ColumnMetadata, ColumnPreview, DataType, PreviewData, PrivacyReport,
-    SampleTransform, TransformContext,
-};
+use crate::strategies::{TransformState, transform_row_with_state};
+use crate::types::{ColumnControl, ColumnMetadata, DataType, PreviewData, PrivacyReport};
 use std::collections::HashMap;
 
 pub(super) const PASTE_MAX_CONTENT_BYTES: usize = 5 * 1024 * 1024;
@@ -99,35 +97,14 @@ pub(super) fn preview_from_rows_with_smart_provider(
     let mut previews = Vec::new();
 
     for column in selected_metadata.iter().filter(|column| column.is_selected) {
-        let mut samples = Vec::new();
-        for (row_index, row) in rows.iter().enumerate() {
-            if samples.len() >= sample_count {
-                break;
-            }
-            let Some(value) = row.get(column.index) else {
-                continue;
-            };
-            if is_empty_value(value) {
-                continue;
-            }
-            let context = TransformContext {
-                column_name: &column.name,
-                column_index: column.index,
-                row_index,
-                seed,
-                deterministic,
-                empty_format: column.empty_format,
-            };
-            samples.push(SampleTransform {
-                original: value.clone(),
-                anonymized: transform_value_with_state(value, column, &context, &mut state),
-            });
-        }
-        previews.push(ColumnPreview {
-            column_index: column.index,
-            column_name: column.name.clone(),
-            samples,
-        });
+        previews.push(generate_column_preview(
+            column,
+            rows,
+            sample_count,
+            deterministic,
+            seed,
+            &mut state,
+        ));
     }
 
     Ok(PreviewData {

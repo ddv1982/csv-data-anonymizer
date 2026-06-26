@@ -2,9 +2,9 @@ import { AlertCircle, Check, Clipboard, Loader2, Wand2 } from 'lucide-react'
 import { useState } from 'react'
 import { dataTypes, quickGenerateStrategies, strategyLabel } from '../dataOptions'
 import { generateQuickValues } from '../tauri'
+import { useCopyOutput } from '../hooks/useCopyOutput'
 import type { AnonymizationStrategy, AppSettings, DataType, QuickTransformData } from '../types'
 import type { LocalAiState } from '../hooks/useLocalAi'
-import { copyTextToClipboard } from '../utils/clipboard'
 import { messageFrom } from '../utils/errors'
 import { formatToken } from '../utils/format'
 import { Alert } from './Alert'
@@ -30,9 +30,9 @@ export function QuickDataTypeWorkflowView({
   const [count, setCount] = useState(1)
   const [result, setResult] = useState<QuickTransformData | null>(null)
   const [busy, setBusy] = useState<QuickBusyState>('idle')
-  const [copyStatus, setCopyStatus] = useState<string | null>(null)
 
   const isBusy = busy !== 'idle'
+  const { copyOutput, copyStatus, setCopyStatus } = useCopyOutput({ isBusy, onError, setBusy })
   const usesLocalAi = strategy === 'localAi'
   const localAiBlocked = usesLocalAi && (!localAi.ready || localAi.downloadRunning)
   const canGenerate = count >= MIN_COUNT && count <= MAX_COUNT && !isBusy && !localAiBlocked
@@ -64,17 +64,7 @@ export function QuickDataTypeWorkflowView({
   }
 
   async function handleCopy() {
-    if (!result?.output || isBusy) return
-    onError(null)
-    setBusy('copying')
-    try {
-      await copyTextToClipboard(result.output)
-      setCopyStatus('Copied')
-    } catch (caught) {
-      onError(messageFrom(caught))
-    } finally {
-      setBusy('idle')
-    }
+    await copyOutput(result?.output)
   }
 
   return (

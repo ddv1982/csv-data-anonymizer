@@ -6,9 +6,10 @@ use super::roles::{RolePlan, build_role_plan, validate_common_config};
 use super::{PrivacyProcessResult, constrain_unselected_roles_to_attributes};
 use crate::detection::is_empty_value;
 use crate::error::{AnonymizerError, Result};
+use crate::report_notes::push_unselected_column_note;
 use crate::types::{
-    ColumnMetadata, ColumnRole, DataType, FormalPrivacyConfig, PiiRisk, PrivacyConfig,
-    PrivacyModel, PrivacyModelReport, PrivacyReport, ProcessControl, ReleaseMode,
+    ColumnMetadata, ColumnRole, DataType, FormalPrivacyConfig, PrivacyConfig, PrivacyModel,
+    PrivacyModelReport, PrivacyReport, ProcessControl, ReleaseMode,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -481,32 +482,7 @@ fn formal_notes(
             .to_string(),
         format!("{released_count} row(s) were released after formal privacy checks."),
     ];
-    let unselected_columns = columns.iter().filter(|column| !column.is_selected).count();
-    if unselected_columns > 0 {
-        let unselected_detector_risk_columns = columns
-            .iter()
-            .filter(|column| {
-                !column.is_selected && matches!(column.pii_risk, PiiRisk::High | PiiRisk::Medium)
-            })
-            .count();
-        if unselected_detector_risk_columns > 0 {
-            notes.push(format!(
-                "{} unselected high/medium detector-risk {} written unchanged.",
-                unselected_detector_risk_columns,
-                plural(
-                    unselected_detector_risk_columns,
-                    "column was",
-                    "columns were"
-                )
-            ));
-        } else {
-            notes.push(format!(
-                "{} unselected {} written unchanged.",
-                unselected_columns,
-                plural(unselected_columns, "column was", "columns were")
-            ));
-        }
-    }
+    push_unselected_column_note(&mut notes, columns);
     if config.formal.l_diversity.is_some() {
         notes.push(
             "l-diversity is evaluated with distinct sensitive values per equivalence class."
@@ -519,8 +495,4 @@ fn formal_notes(
         );
     }
     notes
-}
-
-fn plural<'a>(count: usize, singular: &'a str, plural: &'a str) -> &'a str {
-    if count == 1 { singular } else { plural }
 }

@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.46 - 2026-06-26
+
+- Make dead-code gates explicit with a root strict Knip scan and intentional system-binary ignores while preserving the existing required Rust and frontend checks.
+- Extract shared core and domain helpers for cancellation/progress checks, atomic CSV writes, preview sampling, privacy-report notes, UUID generation, XML text samples, and header-term detection.
+- Share Paste and Quick copy-result handling through a frontend hook and centralize Tauri job lifecycle storage for IDs, snapshots, cancelation flags, removal, and terminal TTL pruning.
+
 ## v1.0.45 - 2026-06-26
 
 - Reuse Paste Data preview Smart replacement entries when anonymizing pasted input so preview-covered Local AI values are confirmed instead of generated again.

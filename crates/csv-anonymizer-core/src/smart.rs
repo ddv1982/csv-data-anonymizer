@@ -1,6 +1,7 @@
 use crate::csv_io::validate_file;
 use crate::detection::is_empty_value;
 use crate::error::{AnonymizerError, Result, csv_error};
+use crate::process_control::check_canceled;
 use crate::types::{ColumnMetadata, ProcessControl, SmartReplacementEntry};
 use csv::{ReaderBuilder, Trim};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -344,18 +345,4 @@ fn insert_unique_smart_value(values: &mut BTreeSet<String>, value: &str) {
 
 fn normalized_value_key(value: &str) -> String {
     value.trim().to_ascii_lowercase()
-}
-
-fn check_canceled(control: &mut Option<&mut ProcessControl<'_>>) -> Result<()> {
-    let Some(control) = control.as_deref_mut() else {
-        return Ok(());
-    };
-    let Some(should_cancel) = control.should_cancel else {
-        return Ok(());
-    };
-    if should_cancel() {
-        Err(AnonymizerError::Canceled)
-    } else {
-        Ok(())
-    }
 }

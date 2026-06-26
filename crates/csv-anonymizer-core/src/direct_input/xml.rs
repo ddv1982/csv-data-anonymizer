@@ -125,33 +125,13 @@ pub(super) fn collect_xml_fields(content: &str, sample_count: usize) -> Result<V
                 let value = event
                     .xml_content()
                     .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?;
-                if !value.trim().is_empty() {
-                    let source_path = xml_text_source_path(&path);
-                    let label = xml_text_label(&path);
-                    push_identified_field_sample(
-                        &mut fields,
-                        Some(&source_path),
-                        &label,
-                        value.trim(),
-                        sample_count,
-                    )?;
-                }
+                push_xml_text_sample(&mut fields, &path, value.trim(), sample_count)?;
             }
             Event::CData(event) => {
                 let value = event
                     .decode()
                     .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?;
-                if !value.trim().is_empty() {
-                    let source_path = xml_text_source_path(&path);
-                    let label = xml_text_label(&path);
-                    push_identified_field_sample(
-                        &mut fields,
-                        Some(&source_path),
-                        &label,
-                        value.trim(),
-                        sample_count,
-                    )?;
-                }
+                push_xml_text_sample(&mut fields, &path, value.trim(), sample_count)?;
             }
             Event::End(_) => {
                 path.pop();
@@ -162,6 +142,21 @@ pub(super) fn collect_xml_fields(content: &str, sample_count: usize) -> Result<V
     }
 
     Ok(fields)
+}
+
+fn push_xml_text_sample(
+    fields: &mut Vec<FieldSamples>,
+    path: &[String],
+    value: &str,
+    sample_count: usize,
+) -> Result<()> {
+    if value.is_empty() {
+        return Ok(());
+    }
+
+    let source_path = xml_text_source_path(path);
+    let label = xml_text_label(path);
+    push_identified_field_sample(fields, Some(&source_path), &label, value, sample_count)
 }
 
 fn collect_xml_attributes(

@@ -1,8 +1,8 @@
 use crate::error::{AnonymizerError, Result, csv_error};
+use crate::file_ops::replace_file_atomically;
+use crate::process_control::{check_canceled, report_progress};
 use crate::strategies::{TransformState, transform_row_with_state};
-use crate::types::{
-    ColumnMetadata, ParsedSample, ProcessControl, ProcessOptions, ProcessProgress, ProcessResult,
-};
+use crate::types::{ColumnMetadata, ParsedSample, ProcessControl, ProcessOptions, ProcessResult};
 use csv::{ReaderBuilder, StringRecord, Trim, WriterBuilder};
 use std::borrow::Cow;
 use std::fs;
@@ -199,28 +199,18 @@ pub fn process_file_with_control(
 ) -> Result<ProcessResult> {
     validate_file(input_path)?;
     let start_time = Instant::now();
-    let temporary_output_path = temporary_output_path(output_path);
-
-    let process_result = process_file_to_temporary_output(
-        input_path,
-        &temporary_output_path,
-        columns,
-        options,
-        control,
-        start_time,
-    );
-
-    match process_result {
-        Ok(mut result) => {
-            fs::rename(&temporary_output_path, output_path)?;
-            result.output_path = output_path.to_path_buf();
-            Ok(result)
-        }
-        Err(error) => {
-            let _ = fs::remove_file(&temporary_output_path);
-            Err(error)
-        }
-    }
+    let mut result = replace_file_atomically(output_path, |temporary_output_path| {
+        process_file_to_temporary_output(
+            input_path,
+            temporary_output_path,
+            columns,
+            options,
+            control,
+            start_time,
+        )
+    })?;
+    result.output_path = output_path.to_path_buf();
+    Ok(result)
 }
 
 fn process_file_to_temporary_output(
@@ -321,7 +311,7 @@ fn process_csv_reader_to_writer<R: Read, W: Write>(
     })
 }
 
-fn record_to_vec(record: &StringRecord) -> Vec<String> {
+pub(crate) fn record_to_vec(record: &StringRecord) -> Vec<String> {
     record.iter().map(ToString::to_string).collect()
 }
 
@@ -405,49 +395,8 @@ fn is_blank_data_row(row: &[String]) -> bool {
     row.iter().all(|value| value.trim().is_empty())
 }
 
-fn check_canceled(control: &mut Option<&mut ProcessControl<'_>>) -> Result<()> {
-    let Some(control) = control.as_deref_mut() else {
-        return Ok(());
-    };
-    let Some(should_cancel) = control.should_cancel else {
-        return Ok(());
-    };
-    if should_cancel() {
-        Err(AnonymizerError::Canceled)
-    } else {
-        Ok(())
-    }
-}
-
-fn report_progress(control: &mut Option<&mut ProcessControl<'_>>, rows_processed: usize) {
-    let Some(control) = control.as_deref_mut() else {
-        return;
-    };
-    let Some(on_progress) = control.on_progress.as_deref_mut() else {
-        return;
-    };
-    on_progress(ProcessProgress { rows_processed });
-}
-
-fn strip_bom(value: &str) -> &str {
+pub(crate) fn strip_bom(value: &str) -> &str {
     value.strip_prefix('\u{feff}').unwrap_or(value)
-}
-
-fn temporary_output_path(output_path: &Path) -> PathBuf {
-    let parent = output_path.parent().unwrap_or_else(|| Path::new("."));
-    let file_name = output_path
-        .file_name()
-        .and_then(|value| value.to_str())
-        .unwrap_or("output.csv");
-    let suffix = format!(
-        "{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|duration| duration.as_nanos())
-            .unwrap_or_default()
-    );
-    parent.join(format!(".{file_name}.{suffix}.tmp"))
 }
 
 #[cfg(test)]
