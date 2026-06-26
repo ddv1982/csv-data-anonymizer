@@ -108,6 +108,7 @@ export function transformPasteData(
   controls: ColumnControl[],
   deterministic: boolean,
   seed: string,
+  previewSmartReplacements: SmartReplacementEntry[],
   localAi: LocalAiRequest,
 ): Promise<PasteTransformData> {
   return invokeCommand('anonymize_pasted_data', {
@@ -118,6 +119,7 @@ export function transformPasteData(
       controls,
       deterministic,
       seed,
+      previewSmartReplacements,
       localAi,
     },
   })

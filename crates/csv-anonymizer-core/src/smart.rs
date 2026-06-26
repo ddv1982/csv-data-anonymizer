@@ -130,10 +130,11 @@ pub fn prepare_smart_replacements_from_rows(
     columns: &[ColumnMetadata],
     deterministic: bool,
     seed: &str,
+    existing: Option<&SmartReplacementMap>,
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<SmartReplacementMap> {
     let batches = collect_unique_values_from_rows(rows, columns);
-    build_replacement_map(columns, batches, deterministic, seed, None, provider)
+    build_replacement_map(columns, batches, deterministic, seed, existing, provider)
 }
 
 pub fn prepare_smart_replacements_from_csv(

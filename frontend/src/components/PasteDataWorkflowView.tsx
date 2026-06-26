@@ -160,6 +160,7 @@ export function PasteDataWorkflowView({
         controlList,
         settings.deterministicDefault,
         settings.seed,
+        preview?.smartReplacements ?? [],
         localAi.request,
       )
       setResult(transformed)

@@ -15,8 +15,8 @@ use super::shared::{
     FieldSamples, PASTE_MAX_TEXT_CANDIDATES, PASTE_MAX_TEXT_MATCHES, PreviewSelection,
     bounded_analysis_sample_count, bounded_preview_sample_count, fields_to_rows,
     metadata_from_fields, next_row_index, prepare_selected_metadata,
-    preview_from_fields_with_smart_provider, push_typed_field_sample, selected_columns_by_source,
-    transform_state_for_smart_replacements,
+    preview_from_fields_with_smart_provider, preview_smart_replacements_for_transform,
+    push_typed_field_sample, selected_columns_by_source, transform_state_for_smart_replacements,
 };
 
 pub(super) fn analyze_text_content(
@@ -77,11 +77,13 @@ pub(super) fn transform_text_with_smart_provider(
     let selected_by_name = selected_columns_by_source(&metadata);
     let smart_fields = text_fields_from_matches(&matches, matches.len().max(1))?;
     let (_headers, smart_rows) = fields_to_rows(&smart_fields, matches.len().max(1));
+    let existing_smart_replacements = preview_smart_replacements_for_transform(&input, &metadata);
     let smart_replacements = prepare_smart_replacements_from_rows(
         &smart_rows,
         &metadata,
         input.deterministic,
         &input.seed,
+        existing_smart_replacements.as_ref(),
         provider,
     )?;
     let start_time = Instant::now();

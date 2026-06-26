@@ -211,6 +211,8 @@ pub struct PasteTransformParams {
     pub controls: Vec<ColumnControl>,
     pub deterministic: bool,
     pub seed: String,
+    #[serde(default)]
+    pub preview_smart_replacements: Vec<SmartReplacementEntry>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

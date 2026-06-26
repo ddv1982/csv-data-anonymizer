@@ -30,6 +30,7 @@ fn analyzes_and_transforms_json_array() {
         controls: Vec::new(),
         deterministic: true,
         seed: "seed".to_string(),
+        preview_smart_replacements: Vec::new(),
     })
     .unwrap();
 
@@ -60,6 +61,7 @@ fn transforms_csv_text_with_existing_csv_rules() {
         controls: Vec::new(),
         deterministic: true,
         seed: "seed".to_string(),
+        preview_smart_replacements: Vec::new(),
     })
     .unwrap();
 
@@ -275,6 +277,7 @@ fn transforms_xml_attributes_and_text() {
         controls: Vec::new(),
         deterministic: true,
         seed: "seed".to_string(),
+        preview_smart_replacements: Vec::new(),
     })
     .unwrap();
 
@@ -328,6 +331,7 @@ fn json_paths_distinguish_literal_dotted_keys_from_nested_keys() {
         controls: Vec::new(),
         deterministic: true,
         seed: "seed".to_string(),
+        preview_smart_replacements: Vec::new(),
     })
     .unwrap();
 
@@ -386,6 +390,7 @@ fn json_transform_preserves_scalar_value_types() {
         ],
         deterministic: true,
         seed: "seed".to_string(),
+        preview_smart_replacements: Vec::new(),
     })
     .unwrap();
 
@@ -466,6 +471,7 @@ fn xml_paths_distinguish_dotted_element_names_from_nested_elements() {
         controls: Vec::new(),
         deterministic: true,
         seed: "seed".to_string(),
+        preview_smart_replacements: Vec::new(),
     })
     .unwrap();
 
@@ -504,6 +510,7 @@ fn xml_paths_distinguish_dotted_attribute_names_from_nested_paths() {
         controls: Vec::new(),
         deterministic: true,
         seed: "seed".to_string(),
+        preview_smart_replacements: Vec::new(),
     })
     .unwrap();
 
@@ -581,7 +588,63 @@ fn previews_and_transforms_paste_data_with_smart_replacements() {
     assert_eq!(preview.smart_replacements.len(), 2);
     assert_eq!(preview.previews[0].samples[0].anonymized, "Smart Person 1");
 
-    let mut transform_provider = PrefixSmartProvider;
+    let result = transform_paste_data(PasteTransformParams {
+        content: input.to_string(),
+        format: PasteDataFormat::Json,
+        columns: vec![name.index],
+        controls,
+        deterministic: true,
+        seed: "seed".to_string(),
+        preview_smart_replacements: preview.smart_replacements,
+    })
+    .unwrap();
+
+    assert!(result.output.contains("Smart Person 1"));
+    assert!(result.output.contains("Smart Person 2"));
+    assert_eq!(result.privacy_report.smart_replacement_columns, 1);
+    assert_eq!(result.privacy_report.smart_replacement_values, 2);
+    assert_eq!(result.privacy_report.smart_replacement_fallbacks, 0);
+}
+
+#[test]
+fn paste_transform_reuses_preview_smart_replacements_and_generates_missing_values() {
+    let input = r#"[
+  {"name":"Ada Lovelace"},
+  {"name":"Grace Hopper"},
+  {"name":"Katherine Johnson"}
+]"#;
+    let analysis = analyze_paste_data(PasteAnalyzeParams {
+        content: input.to_string(),
+        format: PasteDataFormat::Json,
+        sample_row_count: 10,
+    })
+    .unwrap();
+    let name = analysis
+        .columns
+        .iter()
+        .find(|column| column.name == "[].name")
+        .unwrap();
+    let controls = vec![ColumnControl {
+        column_index: name.index,
+        type_override: Some(DataType::FullName),
+        strategy: AnonymizationStrategy::LocalAi,
+    }];
+    let mut preview_provider = PrefixSmartProvider;
+    let preview = preview_paste_data_with_smart_provider(
+        PastePreviewParams {
+            content: input.to_string(),
+            format: PasteDataFormat::Json,
+            columns: vec![name.index],
+            controls: controls.clone(),
+            deterministic: true,
+            seed: "seed".to_string(),
+            sample_count: 1,
+        },
+        Some(&mut preview_provider),
+    )
+    .unwrap();
+    let mut transform_provider = RecordingSmartProvider::default();
+
     let result = transform_paste_data_with_smart_provider(
         PasteTransformParams {
             content: input.to_string(),
@@ -590,16 +653,23 @@ fn previews_and_transforms_paste_data_with_smart_replacements() {
             controls,
             deterministic: true,
             seed: "seed".to_string(),
+            preview_smart_replacements: preview.smart_replacements,
         },
         Some(&mut transform_provider),
     )
     .unwrap();
 
+    assert_eq!(
+        transform_provider.requests,
+        vec![vec!["Katherine Johnson".to_string()]]
+    );
     assert!(result.output.contains("Smart Person 1"));
     assert!(result.output.contains("Smart Person 2"));
-    assert_eq!(result.privacy_report.smart_replacement_columns, 1);
-    assert_eq!(result.privacy_report.smart_replacement_values, 2);
-    assert_eq!(result.privacy_report.smart_replacement_fallbacks, 0);
+    assert!(result.output.contains("Generated Person 1"));
+    assert!(!result.output.contains("Ada Lovelace"));
+    assert!(!result.output.contains("Grace Hopper"));
+    assert!(!result.output.contains("Katherine Johnson"));
+    assert_eq!(result.privacy_report.smart_replacement_values, 3);
 }
 
 #[test]
@@ -668,6 +738,7 @@ fn transforms_plain_text_and_preserves_surrounding_text() {
         controls: Vec::new(),
         deterministic: true,
         seed: "seed".to_string(),
+        preview_smart_replacements: Vec::new(),
     })
     .unwrap();
 
@@ -705,6 +776,7 @@ fn plain_text_detection_keeps_overlapping_tokens_single_pass() {
         controls: Vec::new(),
         deterministic: true,
         seed: "seed".to_string(),
+        preview_smart_replacements: Vec::new(),
     })
     .unwrap();
 
@@ -736,6 +808,7 @@ fn auto_detects_logs_and_replaces_inline_values() {
         controls: Vec::new(),
         deterministic: true,
         seed: "seed".to_string(),
+        preview_smart_replacements: Vec::new(),
     })
     .unwrap();
 
@@ -758,6 +831,29 @@ impl SmartReplacementProvider for PrefixSmartProvider {
             .map(|(index, value)| SmartReplacement {
                 original: value.clone(),
                 replacement: format!("Smart Person {}", index + 1),
+            })
+            .collect())
+    }
+}
+
+#[derive(Default)]
+struct RecordingSmartProvider {
+    requests: Vec<Vec<String>>,
+}
+
+impl SmartReplacementProvider for RecordingSmartProvider {
+    fn generate_replacements(
+        &mut self,
+        request: SmartReplacementRequest<'_>,
+    ) -> Result<Vec<SmartReplacement>> {
+        let values = request.values.to_vec();
+        self.requests.push(values.clone());
+        Ok(values
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| SmartReplacement {
+                original: value,
+                replacement: format!("Generated Person {}", index + 1),
             })
             .collect())
     }

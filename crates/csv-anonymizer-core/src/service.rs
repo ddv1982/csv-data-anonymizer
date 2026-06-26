@@ -101,6 +101,7 @@ impl AnonymizerService {
             &selected_metadata,
             input.deterministic,
             &input.seed,
+            None,
             provider,
         )?;
         let smart_replacement_entries = smart_replacements.to_entries();

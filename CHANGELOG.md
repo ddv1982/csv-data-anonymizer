@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.45 - 2026-06-26
+
+- Reuse Paste Data preview Smart replacement entries when anonymizing pasted input so preview-covered Local AI values are confirmed instead of generated again.
+- Share the same smart-replacement merge path used by CSV file output across pasted CSV, JSON, YAML, XML, plain-text, and log transforms, generating only values missing from the preview.
+- Extend backend and frontend regression coverage for preview reuse, missing-value generation, and Paste Data Tauri argument forwarding.
+
 ## v1.0.44 - 2026-06-26
 
 - Move Local AI controls into the global top bar so the opt-in toggle, readiness status, and settings entry point are available from every input mode.
