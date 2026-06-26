@@ -102,6 +102,7 @@ pub fn generate_quick_values_with_smart_provider(
         &selected_columns,
         input.deterministic,
         &input.seed,
+        None,
         provider,
     )?;
     let mut state = transform_state_for_smart_replacements(

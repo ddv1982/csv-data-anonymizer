@@ -155,7 +155,13 @@ describe('App input mode tabs', () => {
         },
       ],
       warnings: [],
-      smartReplacements: [],
+      smartReplacements: [
+        {
+          columnIndex: 0,
+          original: 'ada@example.com',
+          replacement: 'masked@example.com',
+        },
+      ],
     })
     tauriMocks.transformPasteData.mockResolvedValue({
       output: '[{"email":"masked@example.com"}]',
@@ -186,6 +192,7 @@ describe('App input mode tabs', () => {
       [],
       false,
       '',
+      [{ columnIndex: 0, original: 'ada@example.com', replacement: 'masked@example.com' }],
       { enabled: false, model: 'gemma3:4b' },
     )
     expect(await screen.findByDisplayValue('[{"email":"masked@example.com"}]')).toBeInTheDocument()

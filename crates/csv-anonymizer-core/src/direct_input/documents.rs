@@ -13,8 +13,9 @@ use std::time::Instant;
 use super::shared::{
     FieldSamples, PreviewSelection, bounded_analysis_sample_count, bounded_preview_sample_count,
     fields_to_rows, metadata_from_fields, next_row_index, prepare_selected_metadata,
-    preview_from_fields_with_smart_provider, push_identified_field_sample,
-    selected_columns_by_source, transform_state_for_smart_replacements,
+    preview_from_fields_with_smart_provider, preview_smart_replacements_for_transform,
+    push_identified_field_sample, selected_columns_by_source,
+    transform_state_for_smart_replacements,
 };
 
 pub(super) fn preview_value_document_with_smart_provider(
@@ -119,11 +120,13 @@ fn prepare_value_smart_replacements(
     let mut fields = Vec::new();
     collect_json_fields(value, format, &mut Vec::new(), &mut fields, usize::MAX)?;
     let (_headers, rows) = fields_to_rows(&fields, usize::MAX);
+    let existing_smart_replacements = preview_smart_replacements_for_transform(input, metadata);
     prepare_smart_replacements_from_rows(
         &rows,
         metadata,
         input.deterministic,
         &input.seed,
+        existing_smart_replacements.as_ref(),
         provider,
     )
 }

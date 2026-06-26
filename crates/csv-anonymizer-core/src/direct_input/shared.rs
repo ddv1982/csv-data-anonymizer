@@ -3,7 +3,8 @@ use crate::error::{AnonymizerError, Result};
 use crate::metadata::{apply_column_selection, build_column_metadata};
 use crate::service::{apply_column_controls, build_privacy_report, validate_column_indices};
 use crate::smart::{
-    SmartReplacementMap, SmartReplacementProvider, prepare_smart_replacements_from_rows,
+    SmartReplacementMap, SmartReplacementProvider, has_smart_replacement_columns,
+    prepare_smart_replacements_from_rows,
 };
 use crate::strategies::{TransformState, transform_row_with_state, transform_value_with_state};
 use crate::types::{
@@ -90,6 +91,7 @@ pub(super) fn preview_from_rows_with_smart_provider(
         &selected_metadata,
         deterministic,
         seed,
+        None,
         provider,
     )?;
     let smart_replacement_entries = smart_replacements.to_entries();
@@ -161,6 +163,7 @@ pub(super) fn anonymize_rows_with_smart_provider(
         &selected_metadata,
         deterministic,
         seed,
+        None,
         provider,
     )?;
     let mut state = transform_state_for_smart_replacements(deterministic, seed, smart_replacements);
@@ -193,6 +196,16 @@ pub(super) fn transform_state_for_smart_replacements(
     } else {
         TransformState::with_smart_replacements(deterministic, seed, smart_replacements)
     }
+}
+
+pub(super) fn preview_smart_replacements_for_transform(
+    input: &crate::types::PasteTransformParams,
+    metadata: &[ColumnMetadata],
+) -> Option<SmartReplacementMap> {
+    let preview_smart_replacements =
+        SmartReplacementMap::from_entries(&input.preview_smart_replacements);
+    (!preview_smart_replacements.is_empty() && has_smart_replacement_columns(metadata))
+        .then_some(preview_smart_replacements)
 }
 
 pub(super) fn prepare_selected_metadata(

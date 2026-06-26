@@ -12,6 +12,7 @@ use std::time::Instant;
 use super::shared::{
     PreviewSelection, bounded_analysis_sample_count, bounded_preview_sample_count,
     prepare_selected_metadata, preview_rows_with_smart_provider,
+    preview_smart_replacements_for_transform,
 };
 
 pub(super) fn analyze_csv_text(content: &str, sample_row_count: usize) -> Result<PasteAnalyzeData> {
@@ -56,11 +57,13 @@ pub(super) fn transform_csv_text_with_smart_provider(
     let analysis = analyze_csv_text(&input.content, 100)?;
     let metadata = prepare_selected_metadata(&analysis.columns, &input.columns, &input.controls)?;
     let rows = read_csv_sample_from_str(&input.content, usize::MAX)?.rows;
+    let existing_smart_replacements = preview_smart_replacements_for_transform(&input, &metadata);
     let smart_replacements = prepare_smart_replacements_from_rows(
         &rows,
         &metadata,
         input.deterministic,
         &input.seed,
+        existing_smart_replacements.as_ref(),
         provider,
     )?;
     let smart_replacements = (!smart_replacements.is_empty()).then_some(smart_replacements);
