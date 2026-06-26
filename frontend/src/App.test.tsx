@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
@@ -104,6 +104,40 @@ describe('App input mode tabs', () => {
     expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'input-mode-tab-csv')
   })
 
+  it('keeps Local AI settings in the global topbar modal', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    expect(screen.getByRole('switch', { name: /use local ai/i })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Model')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /open local ai settings/i }))
+
+    const dialog = await screen.findByRole('dialog', { name: /local ai settings/i })
+    expect(within(dialog).getByText('Local AI')).toBeInTheDocument()
+    expect(within(dialog).getByLabelText('Model')).toHaveValue('gemma3:4b')
+
+    await user.click(within(dialog).getByRole('button', { name: /close local ai settings/i }))
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: /local ai settings/i })).not.toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('tab', { name: /quick by data type/i }))
+    await user.click(screen.getByRole('button', { name: /open local ai settings/i }))
+    expect(await screen.findByRole('dialog', { name: /local ai settings/i })).toBeInTheDocument()
+  })
+
+  it('saves Local AI toggle changes from the topbar', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('switch', { name: /use local ai/i }))
+
+    await waitFor(() => {
+      expect(tauriMocks.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ localAiEnabled: true }))
+    })
+  })
+
   it('analyzes pasted JSON, transforms selected fields, and copies output', async () => {
     const user = userEvent.setup()
     tauriMocks.analyzePasteData.mockResolvedValue({
@@ -192,7 +226,10 @@ describe('App input mode tabs', () => {
     await user.selectOptions(await screen.findByLabelText('Strategy for [].email'), 'localAi')
 
     expect(screen.getByText('Local AI')).toBeInTheDocument()
-    expect(screen.getByText(/Set up Local AI before previewing or anonymizing/)).toBeInTheDocument()
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent(/Set up Local AI before previewing or anonymizing/)
+    await user.click(within(alert).getByRole('button', { name: /open local ai settings/i }))
+    expect(await screen.findByRole('dialog', { name: /local ai settings/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /show preview/i })).toBeDisabled()
   })
 
@@ -226,7 +263,10 @@ describe('App input mode tabs', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: 'Strategy' }), 'localAi')
 
     expect(screen.getByText('Local AI')).toBeInTheDocument()
-    expect(screen.getByText(/Set up Local AI before generating Smart replacement values/)).toBeInTheDocument()
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent(/Set up Local AI before generating Smart replacement values/)
+    await user.click(within(alert).getByRole('button', { name: /open local ai settings/i }))
+    expect(await screen.findByRole('dialog', { name: /local ai settings/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /generate values/i })).toBeDisabled()
   })
 })

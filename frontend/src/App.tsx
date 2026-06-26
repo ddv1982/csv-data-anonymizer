@@ -5,6 +5,7 @@ import {
   WorkflowErrorToast,
 } from './components/workflow/AnonymizerWorkflowView'
 import { InputModeTabs, type InputMode } from './components/InputModeTabs'
+import { LocalAiTopbarControl } from './components/LocalAiTopbarControl'
 import { PasteDataWorkflowView } from './components/PasteDataWorkflowView'
 import { QuickDataTypeWorkflowView } from './components/QuickDataTypeWorkflowView'
 import { ThemeModeToggle } from './components/ThemeModeToggle'
@@ -14,6 +15,7 @@ import { normalizeThemeMode, useTheme } from './hooks/useTheme'
 function App() {
   const workflow = useAnonymizerWorkflow()
   const [activeMode, setActiveMode] = useState<InputMode>('csv')
+  const [localAiSettingsOpen, setLocalAiSettingsOpen] = useState(false)
   const themeMode = normalizeThemeMode(workflow.settings.themeMode)
   useTheme(themeMode)
 
@@ -23,7 +25,17 @@ function App() {
         <div className="container app-topbar-inner">
           <Shield className="brand-icon" aria-hidden="true" />
           <h1>CSV Anonymizer</h1>
-          <ThemeModeToggle themeMode={themeMode} onChange={(mode) => workflow.updateSetting('themeMode', mode)} />
+          <div className="app-topbar-actions">
+            <LocalAiTopbarControl
+              settings={workflow.settings}
+              localAi={workflow.localAi}
+              disabled={workflow.isLoading}
+              settingsOpen={localAiSettingsOpen}
+              onToggleSettings={setLocalAiSettingsOpen}
+              onUpdateSetting={workflow.updateSetting}
+            />
+            <ThemeModeToggle themeMode={themeMode} onChange={(mode) => workflow.updateSetting('themeMode', mode)} />
+          </div>
         </div>
       </header>
 
@@ -39,7 +51,9 @@ function App() {
           hidden={activeMode !== 'csv'}
           className="mode-panel"
         >
-          {activeMode === 'csv' ? <AnonymizerWorkflowView workflow={workflow} /> : null}
+          {activeMode === 'csv' ? (
+            <AnonymizerWorkflowView workflow={workflow} onOpenLocalAiSettings={() => setLocalAiSettingsOpen(true)} />
+          ) : null}
         </section>
 
         <section
@@ -53,7 +67,7 @@ function App() {
             <PasteDataWorkflowView
               settings={workflow.settings}
               localAi={workflow.localAi}
-              onUpdateSetting={workflow.updateSetting}
+              onOpenLocalAiSettings={() => setLocalAiSettingsOpen(true)}
               onError={workflow.setError}
             />
           ) : null}
@@ -70,7 +84,7 @@ function App() {
             <QuickDataTypeWorkflowView
               settings={workflow.settings}
               localAi={workflow.localAi}
-              onUpdateSetting={workflow.updateSetting}
+              onOpenLocalAiSettings={() => setLocalAiSettingsOpen(true)}
               onError={workflow.setError}
             />
           ) : null}

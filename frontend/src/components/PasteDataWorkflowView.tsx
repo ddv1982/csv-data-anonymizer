@@ -22,7 +22,6 @@ import { formatRowCount } from '../utils/format'
 import { Alert } from './Alert'
 import { Card } from './Card'
 import { ColumnTable } from './ColumnTable'
-import { LocalAiSettingsBlock } from './LocalAiSettingsBlock'
 import { PreviewTable } from './PreviewTable'
 
 type PasteBusyState = 'idle' | 'analyzing' | 'previewing' | 'transforming' | 'copying'
@@ -41,12 +40,12 @@ const EMPTY_COLUMNS: ColumnMetadata[] = []
 export function PasteDataWorkflowView({
   settings,
   localAi,
-  onUpdateSetting,
+  onOpenLocalAiSettings,
   onError,
 }: {
   settings: AppSettings
   localAi: LocalAiState
-  onUpdateSetting: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => void
+  onOpenLocalAiSettings: () => void
   onError: (message: string | null) => void
 }) {
   const [format, setFormat] = useState<PasteDataFormat>('auto')
@@ -335,20 +334,15 @@ export function PasteDataWorkflowView({
             availableStrategies={directInputStrategies}
           />
 
-          {selectedUsesLocalAi ? (
-            <>
-              <LocalAiSettingsBlock
-                settings={settings}
-                localAi={localAi}
-                disabled={isBusy}
-                onUpdateSetting={onUpdateSetting}
-              />
-              {localAiBlocked ? (
-                <Alert icon={<AlertCircle aria-hidden="true" />}>
-                  Set up Local AI before previewing or anonymizing Smart replacement fields.
-                </Alert>
-              ) : null}
-            </>
+          {selectedUsesLocalAi && localAiBlocked ? (
+            <Alert icon={<AlertCircle aria-hidden="true" />}>
+              <div className="alert-line">
+                <span>Set up Local AI before previewing or anonymizing Smart replacement fields.</span>
+                <button type="button" className="button button-outline button-sm" onClick={onOpenLocalAiSettings}>
+                  Open Local AI settings
+                </button>
+              </div>
+            </Alert>
           ) : null}
 
           <p className="muted-text text-sm">

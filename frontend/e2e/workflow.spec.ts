@@ -127,6 +127,16 @@ test('supports keyboard focus for input tabs and help dialogs', async ({ page })
   await expect(csvTab).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'input-mode-tab-csv')
 
+  const localAiSettingsButton = page.getByRole('button', { name: 'Open Local AI settings' })
+  await localAiSettingsButton.click()
+  const localAiDialog = page.getByRole('dialog', { name: 'Local AI Settings' })
+  await expect(localAiDialog).toBeVisible()
+  await expect(localAiDialog.getByRole('button', { name: 'Close Local AI settings' })).toBeFocused()
+
+  await page.keyboard.press('Escape')
+  await expect(localAiDialog).toBeHidden()
+  await expect(localAiSettingsButton).toBeFocused()
+
   const helpButton = page.getByRole('button', { name: 'How privacy release works' })
   await helpButton.click()
   const dialog = page.getByRole('dialog', { name: 'Privacy Release' })

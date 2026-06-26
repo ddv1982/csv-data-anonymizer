@@ -47,6 +47,21 @@
   flex: 1 1 auto;
 }
 
+.app-topbar-actions {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.app-topbar-actions .theme-mode-control {
+  margin-left: 0;
+}
+
 .brand-icon {
   width: 1.75rem;
   height: 1.75rem;
