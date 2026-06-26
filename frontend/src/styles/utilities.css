@@ -24,11 +24,17 @@
 }
 
 .app-footer {
-  border-top: 1px solid hsl(var(--border));
+  border-top: 1px solid hsl(var(--border-subtle));
   padding: 1rem 0;
   color: hsl(var(--muted-foreground));
   font-size: 0.875rem;
   text-align: center;
+}
+
+:root[data-resolved-theme='light'] .app-footer,
+:root.theme-resolved-light .app-footer {
+  background: hsl(var(--surface-card) / 0.82);
+  color: hsl(var(--text-tertiary));
 }
 
 @keyframes spin {

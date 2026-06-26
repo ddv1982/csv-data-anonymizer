@@ -8,8 +8,8 @@
 :root[data-resolved-theme='light'] .app-root,
 :root.theme-resolved-light .app-root {
   background:
-    linear-gradient(180deg, hsl(213 44% 97%) 0, hsl(var(--background)) 18rem),
-    hsl(var(--background));
+    linear-gradient(180deg, hsl(var(--surface-app-top)) 0, hsl(var(--surface-app)) 18rem),
+    hsl(var(--surface-app));
 }
 
 .container {
@@ -19,18 +19,18 @@
 
 .app-topbar,
 .app-footer {
-  border-color: hsl(var(--border));
+  border-color: hsl(var(--border-subtle));
   background: hsl(var(--card));
 }
 
 .app-topbar {
-  border-bottom: 1px solid hsl(var(--border));
+  border-bottom: 1px solid hsl(var(--border-subtle));
 }
 
 :root[data-resolved-theme='light'] .app-topbar,
 :root.theme-resolved-light .app-topbar {
-  background: hsl(var(--card) / 0.96);
-  box-shadow: 0 1px 0 hsl(220 35% 16% / 0.04);
+  background: hsl(var(--surface-card) / 0.94);
+  box-shadow: 0 1px 0 hsl(220 35% 16% / 0.05);
 }
 
 .app-topbar-inner {
@@ -50,7 +50,7 @@
 .brand-icon {
   width: 1.75rem;
   height: 1.75rem;
-  color: hsl(var(--primary));
+  color: hsl(var(--brand));
 }
 
 .app-main {
@@ -84,7 +84,7 @@
 
 .card {
   overflow: hidden;
-  border: 1px solid hsl(var(--border));
+  border: 1px solid hsl(var(--border-subtle));
   border-radius: var(--radius);
   background: hsl(var(--card));
   color: hsl(var(--card-foreground));
@@ -93,10 +93,20 @@
 
 :root[data-resolved-theme='light'] .card,
 :root.theme-resolved-light .card {
-  border-color: hsl(var(--border));
+  border-color: hsl(var(--border-subtle));
   background:
-    linear-gradient(180deg, hsl(210 40% 99%) 0, hsl(var(--card)) 7rem),
-    hsl(var(--card));
+    linear-gradient(180deg, hsl(var(--surface-raised)) 0, hsl(var(--surface-card)) 7rem),
+    hsl(var(--surface-card));
+}
+
+:root[data-resolved-theme='light'] .card-header,
+:root.theme-resolved-light .card-header {
+  color: hsl(var(--foreground));
+}
+
+:root[data-resolved-theme='light'] .card-title-row h2,
+:root.theme-resolved-light .card-title-row h2 {
+  color: hsl(var(--foreground));
 }
 
 .card-header {
@@ -138,5 +148,8 @@
 
 :root[data-resolved-theme='light'] .section-disabled,
 :root.theme-resolved-light .section-disabled {
-  opacity: 0.78;
+  opacity: 1;
+  background:
+    linear-gradient(180deg, hsl(var(--surface-raised)) 0, hsl(var(--surface-card)) 7rem),
+    hsl(var(--surface-card));
 }

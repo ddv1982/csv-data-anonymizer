@@ -18,6 +18,12 @@
   background: hsl(var(--secondary));
 }
 
+:root[data-resolved-theme='light'] .progress-track,
+:root.theme-resolved-light .progress-track {
+  background: hsl(var(--surface-panel-strong));
+  box-shadow: inset 0 1px 2px hsl(220 35% 16% / 0.1);
+}
+
 .progress-bar-determinate {
   display: block;
   width: 0;
@@ -25,6 +31,11 @@
   border-radius: inherit;
   background: hsl(var(--primary));
   transition: width 180ms ease;
+}
+
+:root[data-resolved-theme='light'] .progress-bar-determinate,
+:root.theme-resolved-light .progress-bar-determinate {
+  background: linear-gradient(90deg, hsl(var(--primary)), hsl(var(--info)));
 }
 
 .progress-bar-indeterminate {
@@ -38,6 +49,11 @@
   animation: progress-slide 1.2s ease-in-out infinite;
 }
 
+:root[data-resolved-theme='light'] .progress-bar-indeterminate,
+:root.theme-resolved-light .progress-bar-indeterminate {
+  background: linear-gradient(90deg, hsl(var(--primary)), hsl(var(--info)));
+}
+
 .progress-actions {
   display: flex;
   justify-content: flex-end;
@@ -49,6 +65,11 @@
   border-radius: calc(var(--radius) - 2px);
   background: hsl(var(--muted));
   animation: pulse 1.4s ease-in-out infinite;
+}
+
+:root[data-resolved-theme='light'] .skeleton,
+:root.theme-resolved-light .skeleton {
+  background: hsl(var(--surface-panel-strong));
 }
 
 .skeleton-checkbox {

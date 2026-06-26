@@ -378,6 +378,8 @@ async function installTauriMock(page: Page) {
 }
 
 async function expectNoAccessibilityViolations(page: Page) {
+  await expect(page.locator('html')).toHaveAttribute('data-resolved-theme', /^(light|dark)$/)
+
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze()
