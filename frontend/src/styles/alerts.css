@@ -1,11 +1,23 @@
 .alert {
   display: flex;
   gap: 0.75rem;
-  border: 1px solid hsl(var(--border));
+  border: 1px solid hsl(var(--border-subtle));
   border-radius: var(--radius);
   background: hsl(var(--card));
   color: hsl(var(--card-foreground));
   padding: 1rem;
+}
+
+.alert h2 {
+  color: inherit;
+}
+
+:root[data-resolved-theme='light'] .alert,
+:root.theme-resolved-light .alert {
+  border-color: hsl(var(--warning) / 0.32);
+  background: hsl(var(--warning-container));
+  color: hsl(var(--warning-foreground));
+  box-shadow: inset 3px 0 0 hsl(var(--warning));
 }
 
 .alert-destructive {
@@ -15,7 +27,10 @@
 
 :root[data-resolved-theme='light'] .alert-destructive,
 :root.theme-resolved-light .alert-destructive {
-  background: hsl(var(--destructive) / 0.07);
+  border-color: hsl(var(--destructive) / 0.32);
+  background: hsl(var(--danger-container));
+  color: hsl(var(--destructive-foreground));
+  box-shadow: inset 3px 0 0 hsl(var(--destructive));
 }
 
 .alert-success {
@@ -25,7 +40,10 @@
 
 :root[data-resolved-theme='light'] .alert-success,
 :root.theme-resolved-light .alert-success {
-  background: hsl(var(--success) / 0.09);
+  border-color: hsl(var(--success) / 0.28);
+  background: hsl(var(--success-container));
+  color: hsl(var(--success-foreground));
+  box-shadow: inset 3px 0 0 hsl(var(--success));
 }
 
 .alert-icon {
@@ -33,6 +51,11 @@
   width: 1rem;
   height: 1rem;
   margin-top: 0.125rem;
+}
+
+:root[data-resolved-theme='light'] .alert-icon,
+:root.theme-resolved-light .alert-icon {
+  color: currentColor;
 }
 
 .alert-icon svg {
@@ -69,5 +92,11 @@
 
 .toast-region .alert {
   background: hsl(var(--card));
+  box-shadow: var(--shadow-toast);
+}
+
+:root[data-resolved-theme='light'] .toast-region .alert,
+:root.theme-resolved-light .toast-region .alert {
+  background: hsl(var(--danger-container));
   box-shadow: var(--shadow-toast);
 }

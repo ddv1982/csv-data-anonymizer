@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.42 - 2026-06-26
+
+- Rebuild light mode around expanded semantic tokens for app surfaces, raised panels, borders, focus rings, status colors, and data-selection states.
+- Separate visual roles so primary navigation stays blue, selected data rows use a privacy-oriented teal treatment, and risk/status feedback uses distinct red, amber, and green containers.
+- Refine cards, tables, inputs, preview frames, popovers, progress bars, alerts, disabled sections, and mobile column cards for clearer hierarchy and less washed-out gray-blue repetition.
+- Preserve accessibility with stronger input borders, visible selected-row accent stripes, full-opacity light disabled sections, and passing automated accessibility checks.
+
 ## v1.0.41 - 2026-06-26
 
 - Add direct pasted-data workflows for CSV text, JSON, YAML, XML, logs, documents, and quick generated sample values while keeping the existing file CSV path intact.

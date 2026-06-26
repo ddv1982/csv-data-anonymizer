@@ -27,6 +27,35 @@
   --risk-low: 142 70% 45%;
   --risk-low-foreground: 142 76% 72%;
   --preview-output: 142 76% 72%;
+  --surface-app: var(--background);
+  --surface-app-top: var(--background);
+  --surface-card: var(--card);
+  --surface-raised: var(--card);
+  --surface-panel: var(--muted);
+  --surface-panel-strong: var(--secondary);
+  --surface-inset: var(--background);
+  --surface-hover: var(--accent);
+  --row-hover: var(--accent);
+  --row-selected: var(--primary);
+  --row-selected-hover: var(--primary);
+  --selection-border: var(--primary);
+  --border-subtle: var(--border);
+  --border-strong: var(--input);
+  --border-focus: var(--ring);
+  --text-secondary: var(--muted-foreground);
+  --text-tertiary: var(--muted-foreground);
+  --brand: var(--primary);
+  --brand-container: var(--accent);
+  --privacy: var(--success);
+  --privacy-container: var(--success);
+  --info: var(--primary);
+  --info-container: var(--accent);
+  --warning: var(--risk-medium);
+  --warning-foreground: var(--risk-medium-foreground);
+  --warning-container: var(--risk-medium);
+  --danger-container: var(--destructive);
+  --success-container: var(--success);
+  --focus-ring: var(--ring);
   --overlay: 0 0% 0% / 0.58;
   --shadow-card:
     0 1px 2px hsl(0 0% 0% / 0.24),
@@ -54,40 +83,69 @@
 
 :root[data-resolved-theme='light'],
 :root.theme-resolved-light {
-  --background: 214 34% 96%;
-  --foreground: 222 42% 10%;
+  --background: 216 33% 97%;
+  --foreground: 221 39% 11%;
   --card: 0 0% 100%;
-  --card-foreground: 222 42% 10%;
-  --primary: 212 88% 42%;
+  --card-foreground: 221 39% 11%;
+  --primary: 211 89% 39%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 214 28% 90%;
-  --secondary-foreground: 222 38% 15%;
-  --muted: 214 30% 91%;
-  --muted-foreground: 218 18% 34%;
-  --accent: 203 78% 89%;
-  --accent-foreground: 210 76% 24%;
-  --destructive: 358 72% 47%;
-  --destructive-foreground: 358 72% 32%;
-  --border: 214 20% 80%;
-  --input: 214 16% 59%;
-  --ring: 212 88% 42%;
-  --success: 151 68% 33%;
-  --success-foreground: 151 66% 24%;
-  --success-subtle: 151 68% 33%;
-  --success-subtle-foreground: 151 66% 24%;
-  --risk-high: 358 72% 47%;
-  --risk-high-foreground: 358 72% 32%;
-  --risk-medium: 31 94% 44%;
-  --risk-medium-foreground: 28 86% 28%;
-  --risk-low: 151 68% 33%;
-  --risk-low-foreground: 151 66% 24%;
-  --preview-output: 151 66% 24%;
-  --overlay: 224 18% 14% / 0.38;
+  --secondary: 214 30% 94%;
+  --secondary-foreground: 221 34% 18%;
+  --muted: 214 30% 92%;
+  --muted-foreground: 217 18% 34%;
+  --accent: 204 86% 94%;
+  --accent-foreground: 210 78% 24%;
+  --destructive: 358 73% 45%;
+  --destructive-foreground: 358 72% 27%;
+  --border: 214 26% 84%;
+  --input: 215 17% 55%;
+  --ring: 211 89% 39%;
+  --success: 151 66% 31%;
+  --success-foreground: 151 66% 22%;
+  --success-subtle: 151 66% 31%;
+  --success-subtle-foreground: 151 66% 22%;
+  --risk-high: 358 73% 45%;
+  --risk-high-foreground: 358 72% 27%;
+  --risk-medium: 33 94% 42%;
+  --risk-medium-foreground: 28 86% 25%;
+  --risk-low: 151 66% 31%;
+  --risk-low-foreground: 151 66% 22%;
+  --preview-output: 151 66% 22%;
+  --surface-app: 216 33% 97%;
+  --surface-app-top: 210 45% 99%;
+  --surface-card: 0 0% 100%;
+  --surface-raised: 210 40% 99%;
+  --surface-panel: 214 38% 95%;
+  --surface-panel-strong: 214 31% 92%;
+  --surface-inset: 216 35% 96%;
+  --surface-hover: 210 64% 96%;
+  --row-hover: 210 58% 96%;
+  --row-selected: 171 52% 93%;
+  --row-selected-hover: 171 48% 90%;
+  --selection-border: 174 72% 31%;
+  --border-subtle: 214 28% 87%;
+  --border-strong: 215 17% 55%;
+  --border-focus: 211 89% 39%;
+  --text-secondary: 217 18% 34%;
+  --text-tertiary: 217 14% 46%;
+  --brand: 211 89% 39%;
+  --brand-container: 210 86% 94%;
+  --privacy: 174 72% 31%;
+  --privacy-container: 171 52% 93%;
+  --info: 199 89% 32%;
+  --info-container: 199 86% 93%;
+  --warning: 36 93% 43%;
+  --warning-foreground: 31 86% 24%;
+  --warning-container: 42 96% 91%;
+  --danger-container: 0 86% 96%;
+  --success-container: 151 58% 91%;
+  --focus-ring: 211 89% 39%;
+  --overlay: 224 18% 14% / 0.42;
   --shadow-card:
-    0 1px 2px hsl(220 35% 16% / 0.08),
-    0 14px 34px hsl(220 35% 16% / 0.1);
+    0 1px 2px hsl(220 35% 16% / 0.06),
+    0 10px 26px hsl(220 35% 16% / 0.08);
   --shadow-popover:
-    0 14px 36px hsl(220 35% 16% / 0.16),
+    0 16px 42px hsl(220 35% 16% / 0.18),
     0 1px 2px hsl(220 35% 16% / 0.1);
   --shadow-modal:
     0 26px 68px hsl(220 35% 16% / 0.22),
@@ -145,7 +203,7 @@ select,
 textarea {
   width: 100%;
   min-width: 0;
-  border: 1px solid hsl(var(--input));
+  border: 1px solid hsl(var(--border-strong));
   border-radius: calc(var(--radius) - 2px);
   background: hsl(var(--background));
   color: hsl(var(--foreground));
@@ -159,8 +217,10 @@ textarea {
 :root.theme-resolved-light input,
 :root.theme-resolved-light select,
 :root.theme-resolved-light textarea {
-  background: hsl(var(--card));
-  box-shadow: inset 0 1px 1px hsl(220 35% 16% / 0.04);
+  background: hsl(var(--surface-card));
+  box-shadow:
+    inset 0 1px 1px hsl(220 35% 16% / 0.04),
+    0 1px 0 hsl(220 35% 16% / 0.03);
 }
 
 input,
@@ -180,8 +240,8 @@ input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 button:focus-visible {
-  border-color: hsl(var(--ring));
-  box-shadow: 0 0 0 3px hsl(var(--ring) / 0.28);
+  border-color: hsl(var(--border-focus));
+  box-shadow: 0 0 0 3px hsl(var(--focus-ring) / 0.28);
   outline: none;
 }
 
@@ -204,7 +264,7 @@ h1 {
 
 h2 {
   color: hsl(var(--card-foreground));
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   font-weight: 600;
   line-height: 1.2;
 }
@@ -229,7 +289,7 @@ table {
 
 th,
 td {
-  border-bottom: 1px solid hsl(var(--border));
+  border-bottom: 1px solid hsl(var(--border-subtle));
   padding: 0.75rem 1rem;
   text-align: left;
   vertical-align: middle;
@@ -240,6 +300,11 @@ th {
   color: hsl(var(--foreground));
   font-size: 0.875rem;
   font-weight: 600;
+}
+
+:root[data-resolved-theme='light'] th,
+:root.theme-resolved-light th {
+  color: hsl(var(--text-secondary));
 }
 
 td {

@@ -23,12 +23,14 @@
 
 :root[data-resolved-theme='light'] .button,
 :root.theme-resolved-light .button {
-  border-color: hsl(var(--border));
+  border-color: hsl(var(--border-subtle));
+  background: hsl(var(--surface-panel));
+  color: hsl(var(--foreground));
   box-shadow: 0 1px 1px hsl(220 35% 16% / 0.05);
 }
 
 .button:hover:not(:disabled) {
-  background: hsl(var(--accent));
+  background: hsl(var(--surface-hover));
 }
 
 .button svg {
@@ -44,6 +46,9 @@
 
 :root[data-resolved-theme='light'] .button-primary,
 :root.theme-resolved-light .button-primary {
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
   box-shadow:
     0 1px 1px hsl(var(--primary) / 0.18),
     0 8px 18px hsl(var(--primary) / 0.14);
@@ -54,19 +59,20 @@
 }
 
 .button-outline {
-  border-color: hsl(var(--input));
+  border-color: hsl(var(--border-strong));
   background: hsl(var(--background));
   color: hsl(var(--foreground));
 }
 
 :root[data-resolved-theme='light'] .button-outline,
 :root.theme-resolved-light .button-outline {
-  background: hsl(var(--card));
+  border-color: hsl(var(--border-strong));
+  background: hsl(var(--surface-card));
 }
 
 .button-outline:hover:not(:disabled) {
-  border-color: hsl(var(--primary) / 0.35);
-  background: hsl(var(--accent));
+  border-color: hsl(var(--brand) / 0.42);
+  background: hsl(var(--brand-container));
   color: hsl(var(--accent-foreground));
 }
 
@@ -82,7 +88,7 @@
 }
 
 .button-ghost:hover:not(:disabled) {
-  background: hsl(var(--accent));
+  background: hsl(var(--surface-hover));
 }
 
 .button-sm {
@@ -110,7 +116,7 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.5rem;
   margin-bottom: 1.5rem;
-  border-bottom: 1px solid hsl(var(--border));
+  border-bottom: 1px solid hsl(var(--border-subtle));
 }
 
 .mode-tab {
@@ -136,6 +142,46 @@
 
 .mode-tab.active {
   border-bottom-color: hsl(var(--primary));
+}
+
+:root[data-resolved-theme='light'] .mode-tabs,
+:root.theme-resolved-light .mode-tabs {
+  gap: 0.25rem;
+  border: 1px solid hsl(var(--border-subtle));
+  border-radius: var(--radius);
+  background: hsl(var(--surface-panel));
+  padding: 0.25rem;
+  box-shadow: inset 0 1px 1px hsl(220 35% 16% / 0.04);
+}
+
+:root[data-resolved-theme='light'] .mode-tab,
+:root.theme-resolved-light .mode-tab {
+  min-height: 2.75rem;
+  border: 1px solid transparent;
+  border-radius: calc(var(--radius) - 3px);
+  border-bottom-color: transparent;
+  color: hsl(var(--text-secondary));
+}
+
+:root[data-resolved-theme='light'] .mode-tab:hover,
+:root.theme-resolved-light .mode-tab:hover {
+  background: hsl(var(--surface-hover));
+  color: hsl(var(--foreground));
+}
+
+:root[data-resolved-theme='light'] .mode-tab.active,
+:root.theme-resolved-light .mode-tab.active {
+  border-color: hsl(var(--border-subtle));
+  background: hsl(var(--surface-card));
+  color: hsl(var(--brand));
+  box-shadow:
+    0 1px 2px hsl(220 35% 16% / 0.08),
+    0 0 0 1px hsl(0 0% 100% / 0.7) inset;
+}
+
+:root[data-resolved-theme='light'] .mode-tab.active svg,
+:root.theme-resolved-light .mode-tab.active svg {
+  color: hsl(var(--brand));
 }
 
 .mode-tab svg {
@@ -228,7 +274,7 @@
 .settings-panel {
   display: grid;
   gap: 1rem;
-  border: 1px solid hsl(var(--border));
+  border: 1px solid hsl(var(--border-subtle));
   border-radius: var(--radius);
   background: hsl(var(--muted) / 0.22);
   padding: 1rem;
@@ -240,7 +286,30 @@
 :root.theme-resolved-light .settings-panel,
 :root.theme-resolved-light .local-ai-panel,
 :root.theme-resolved-light .privacy-config-panel {
-  background: hsl(var(--muted) / 0.44);
+  border-color: hsl(var(--border-subtle));
+  background: hsl(var(--surface-panel));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.72);
+}
+
+:root[data-resolved-theme='light'] .local-ai-panel,
+:root[data-resolved-theme='light'] .privacy-config-panel,
+:root.theme-resolved-light .local-ai-panel,
+:root.theme-resolved-light .privacy-config-panel {
+  background:
+    linear-gradient(180deg, hsl(var(--surface-raised)) 0, hsl(var(--surface-panel)) 8rem),
+    hsl(var(--surface-panel));
+}
+
+:root[data-resolved-theme='light'] .settings-trigger,
+:root.theme-resolved-light .settings-trigger {
+  border-color: hsl(var(--border-subtle));
+  background: hsl(var(--surface-card));
+}
+
+:root[data-resolved-theme='light'] .settings-trigger:hover:not(:disabled),
+:root.theme-resolved-light .settings-trigger:hover:not(:disabled) {
+  border-color: hsl(var(--brand) / 0.36);
+  background: hsl(var(--brand-container));
 }
 
 .settings-grid {
@@ -252,7 +321,7 @@
 .local-ai-panel {
   display: grid;
   gap: 0.875rem;
-  border: 1px solid hsl(var(--border));
+  border: 1px solid hsl(var(--border-subtle));
   border-radius: var(--radius);
   background: hsl(var(--muted) / 0.16);
   padding: 1rem;
@@ -261,7 +330,7 @@
 .privacy-config-panel {
   display: grid;
   gap: 1rem;
-  border: 1px solid hsl(var(--border));
+  border: 1px solid hsl(var(--border-subtle));
   border-radius: var(--radius);
   background: hsl(var(--muted) / 0.16);
   padding: 1rem;
@@ -296,6 +365,11 @@
   color: hsl(var(--primary));
 }
 
+:root[data-resolved-theme='light'] .privacy-config-title svg,
+:root.theme-resolved-light .privacy-config-title svg {
+  color: hsl(var(--privacy));
+}
+
 .privacy-mode-help {
   display: flex;
   flex-wrap: wrap;
@@ -307,7 +381,7 @@
   display: grid;
   grid-column: 1 / -1;
   gap: 0.75rem;
-  border: 1px solid hsl(var(--border));
+  border: 1px solid hsl(var(--border-subtle));
   border-radius: var(--radius);
   background: hsl(var(--background) / 0.28);
   padding: 0.75rem;
@@ -315,7 +389,9 @@
 
 :root[data-resolved-theme='light'] .privacy-advanced-settings,
 :root.theme-resolved-light .privacy-advanced-settings {
-  background: hsl(var(--card) / 0.78);
+  border-color: hsl(var(--border-subtle));
+  background: hsl(var(--surface-card));
+  box-shadow: 0 1px 1px hsl(220 35% 16% / 0.04);
 }
 
 .privacy-advanced-settings summary {
@@ -355,10 +431,15 @@
   color: hsl(var(--primary));
 }
 
+:root[data-resolved-theme='light'] .local-ai-title svg,
+:root.theme-resolved-light .local-ai-title svg {
+  color: hsl(var(--info));
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
-  border: 1px solid hsl(var(--border));
+  border: 1px solid hsl(var(--border-subtle));
   border-radius: 999px;
   background: hsl(var(--muted));
   color: hsl(var(--muted-foreground));
@@ -371,6 +452,20 @@
   border-color: hsl(var(--success-subtle) / 0.45);
   background: hsl(var(--success-subtle) / 0.12);
   color: hsl(var(--success-subtle-foreground));
+}
+
+:root[data-resolved-theme='light'] .status-pill,
+:root.theme-resolved-light .status-pill {
+  border-color: hsl(var(--border-subtle));
+  background: hsl(var(--surface-panel-strong));
+  color: hsl(var(--text-secondary));
+}
+
+:root[data-resolved-theme='light'] .status-pill.success,
+:root.theme-resolved-light .status-pill.success {
+  border-color: hsl(var(--success) / 0.26);
+  background: hsl(var(--success-container));
+  color: hsl(var(--success-foreground));
 }
 
 .status-pill svg {
@@ -430,6 +525,13 @@
   white-space: nowrap;
 }
 
+:root[data-resolved-theme='light'] .local-ai-installed,
+:root.theme-resolved-light .local-ai-installed {
+  border-color: hsl(var(--success) / 0.26);
+  background: hsl(var(--success-container));
+  color: hsl(var(--success-foreground));
+}
+
 .local-ai-model-list {
   display: grid;
   gap: 0.5rem;
@@ -442,7 +544,7 @@
 }
 
 .local-ai-model-option {
-  border: 1px solid hsl(var(--border));
+  border: 1px solid hsl(var(--border-subtle));
   border-radius: 999px;
   background: hsl(var(--background));
   color: hsl(var(--foreground));
@@ -456,6 +558,21 @@
   border-color: hsl(var(--primary) / 0.55);
   background: hsl(var(--primary) / 0.1);
   color: hsl(var(--primary));
+}
+
+:root[data-resolved-theme='light'] .local-ai-model-option,
+:root.theme-resolved-light .local-ai-model-option {
+  border-color: hsl(var(--border-subtle));
+  background: hsl(var(--surface-card));
+}
+
+:root[data-resolved-theme='light'] .local-ai-model-option:hover:not(:disabled),
+:root[data-resolved-theme='light'] .local-ai-model-option.selected,
+:root.theme-resolved-light .local-ai-model-option:hover:not(:disabled),
+:root.theme-resolved-light .local-ai-model-option.selected {
+  border-color: hsl(var(--info) / 0.34);
+  background: hsl(var(--info-container));
+  color: hsl(var(--info));
 }
 
 .switch-row {
@@ -480,6 +597,12 @@
   transition: background-color 120ms ease;
 }
 
+:root[data-resolved-theme='light'] .switch,
+:root.theme-resolved-light .switch {
+  border-color: hsl(var(--border-strong) / 0.65);
+  background: hsl(var(--surface-panel-strong));
+}
+
 .switch span {
   position: absolute;
   top: 0.125rem;
@@ -492,7 +615,18 @@
   transition: transform 120ms ease;
 }
 
+:root[data-resolved-theme='light'] .switch span,
+:root.theme-resolved-light .switch span {
+  background: hsl(var(--surface-card));
+}
+
 .switch.checked {
+  background: hsl(var(--primary));
+}
+
+:root[data-resolved-theme='light'] .switch.checked,
+:root.theme-resolved-light .switch.checked {
+  border-color: hsl(var(--primary));
   background: hsl(var(--primary));
 }
 
@@ -512,7 +646,7 @@
   align-items: center;
   gap: 0.25rem;
   margin-left: auto;
-  border: 1px solid hsl(var(--border));
+  border: 1px solid hsl(var(--border-subtle));
   border-radius: calc(var(--radius) - 2px);
   background: hsl(var(--background));
   padding: 0.25rem;
@@ -520,7 +654,8 @@
 
 :root[data-resolved-theme='light'] .theme-mode-control,
 :root.theme-resolved-light .theme-mode-control {
-  background: hsl(var(--muted) / 0.58);
+  border-color: hsl(var(--border-subtle));
+  background: hsl(var(--surface-panel));
   box-shadow: inset 0 1px 2px hsl(220 35% 16% / 0.06);
 }
 
@@ -549,8 +684,17 @@
 :root[data-resolved-theme='light'] .theme-mode-option[aria-pressed='true'],
 :root.theme-resolved-light .theme-mode-option.active,
 :root.theme-resolved-light .theme-mode-option[aria-pressed='true'] {
-  background: hsl(var(--card));
+  border-color: hsl(var(--brand) / 0.32);
+  background: hsl(var(--surface-card));
+  color: hsl(var(--brand));
   box-shadow: 0 1px 2px hsl(220 35% 16% / 0.1);
+}
+
+:root[data-resolved-theme='light'] .theme-mode-option:hover:not(:disabled),
+:root.theme-resolved-light .theme-mode-option:hover:not(:disabled) {
+  border-color: hsl(var(--brand) / 0.32);
+  background: hsl(var(--surface-card));
+  color: hsl(var(--brand));
 }
 
 .theme-mode-option svg {

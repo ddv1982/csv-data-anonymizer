@@ -1,14 +1,18 @@
 .table-frame {
   max-width: 100%;
   overflow: auto;
-  border: 1px solid hsl(var(--border));
+  border: 1px solid hsl(var(--border-subtle));
   border-radius: var(--radius);
   background: hsl(var(--card));
 }
 
 :root[data-resolved-theme='light'] .table-frame,
 :root.theme-resolved-light .table-frame {
-  box-shadow: inset 0 1px 0 hsl(220 35% 16% / 0.04);
+  border-color: hsl(var(--border-subtle));
+  background: hsl(var(--surface-card));
+  box-shadow:
+    inset 0 1px 0 hsl(220 35% 16% / 0.04),
+    0 1px 2px hsl(220 35% 16% / 0.04);
 }
 
 .table-help-row {
@@ -23,7 +27,24 @@
 
 :root[data-resolved-theme='light'] .column-table thead,
 :root.theme-resolved-light .column-table thead {
-  background: hsl(var(--muted) / 0.72);
+  background: hsl(var(--surface-panel));
+}
+
+:root[data-resolved-theme='light'] .column-table th,
+:root.theme-resolved-light .column-table th {
+  color: hsl(var(--text-secondary));
+}
+
+:root[data-resolved-theme='light'] .column-table th .glossary-term-trigger,
+:root.theme-resolved-light .column-table th .glossary-term-trigger {
+  color: hsl(var(--foreground));
+}
+
+:root[data-resolved-theme='light'] .column-table th,
+:root[data-resolved-theme='light'] .column-table td,
+:root.theme-resolved-light .column-table th,
+:root.theme-resolved-light .column-table td {
+  border-bottom-color: hsl(var(--border-subtle));
 }
 
 .checkbox-column {
@@ -63,17 +84,18 @@
 
 :root[data-resolved-theme='light'] .clickable-row:hover,
 :root.theme-resolved-light .clickable-row:hover {
-  background: hsl(var(--accent) / 0.48);
+  background: hsl(var(--row-hover));
 }
 
 :root[data-resolved-theme='light'] .column-table tr.selected-row,
 :root.theme-resolved-light .column-table tr.selected-row {
-  background: hsl(var(--primary) / 0.08);
+  background: hsl(var(--row-selected));
+  box-shadow: inset 3px 0 0 hsl(var(--selection-border));
 }
 
 :root[data-resolved-theme='light'] .column-table tr.selected-row:hover,
 :root.theme-resolved-light .column-table tr.selected-row:hover {
-  background: hsl(var(--primary) / 0.12);
+  background: hsl(var(--row-selected-hover));
 }
 
 .muted-row {
@@ -140,9 +162,39 @@
 
 .risk-none,
 .risk-unknown {
-  border-color: hsl(var(--border));
+  border-color: hsl(var(--border-subtle));
   background: hsl(var(--muted) / 0.4);
   color: hsl(var(--muted-foreground));
+}
+
+:root[data-resolved-theme='light'] .risk-high,
+:root.theme-resolved-light .risk-high {
+  border-color: hsl(var(--risk-high) / 0.24);
+  background: hsl(var(--danger-container));
+  color: hsl(var(--risk-high-foreground));
+}
+
+:root[data-resolved-theme='light'] .risk-medium,
+:root.theme-resolved-light .risk-medium {
+  border-color: hsl(var(--warning) / 0.28);
+  background: hsl(var(--warning-container));
+  color: hsl(var(--warning-foreground));
+}
+
+:root[data-resolved-theme='light'] .risk-low,
+:root.theme-resolved-light .risk-low {
+  border-color: hsl(var(--success) / 0.26);
+  background: hsl(var(--success-container));
+  color: hsl(var(--risk-low-foreground));
+}
+
+:root[data-resolved-theme='light'] .risk-none,
+:root[data-resolved-theme='light'] .risk-unknown,
+:root.theme-resolved-light .risk-none,
+:root.theme-resolved-light .risk-unknown {
+  border-color: hsl(var(--border-subtle));
+  background: hsl(var(--surface-panel));
+  color: hsl(var(--text-secondary));
 }
 
 .empty-table-cell,
@@ -177,7 +229,7 @@
   max-width: 100%;
   min-width: 0;
   gap: 0.5rem;
-  border: 1px solid hsl(var(--border));
+  border: 1px solid hsl(var(--border-subtle));
   border-radius: var(--radius);
   background: hsl(var(--muted) / 0.22);
   padding: 1rem;
@@ -185,7 +237,9 @@
 
 :root[data-resolved-theme='light'] .preview-frame,
 :root.theme-resolved-light .preview-frame {
-  background: hsl(var(--muted) / 0.44);
+  border-color: hsl(var(--border-subtle));
+  background: hsl(var(--surface-panel));
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.68);
 }
 
 .preview-row {
@@ -213,6 +267,12 @@
   padding: 0.5rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+:root[data-resolved-theme='light'] .preview-row code,
+:root.theme-resolved-light .preview-row code {
+  border: 1px solid hsl(var(--border-subtle));
+  background: hsl(var(--surface-card));
 }
 
 .preview-frame p {
@@ -248,7 +308,7 @@
 .privacy-metric {
   display: grid;
   gap: 0.25rem;
-  border: 1px solid hsl(var(--border));
+  border: 1px solid hsl(var(--border-subtle));
   border-radius: calc(var(--radius) - 2px);
   background: hsl(var(--background) / 0.65);
   padding: 0.65rem;
@@ -258,7 +318,9 @@
 :root[data-resolved-theme='light'] .privacy-model-row,
 :root.theme-resolved-light .privacy-metric,
 :root.theme-resolved-light .privacy-model-row {
-  background: hsl(var(--card) / 0.82);
+  border-color: hsl(var(--border-subtle));
+  background: hsl(var(--surface-card));
+  box-shadow: 0 1px 1px hsl(220 35% 16% / 0.04);
 }
 
 .privacy-metric-label {
@@ -298,7 +360,7 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
   gap: 0.5rem 0.75rem;
-  border: 1px solid hsl(var(--border));
+  border: 1px solid hsl(var(--border-subtle));
   border-radius: calc(var(--radius) - 2px);
   background: hsl(var(--background) / 0.65);
   padding: 0.65rem;
