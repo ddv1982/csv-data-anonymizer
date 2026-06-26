@@ -1,6 +1,6 @@
 use crate::detection::{classify_pii_risk, detect_column_type_with_name, detect_empty_format};
 use crate::error::{AnonymizerError, Result};
-use crate::hash::{deterministic_number, deterministic_string, deterministic_uuid};
+use crate::hash::{deterministic_number, deterministic_string, deterministic_uuid, random_uuid_v4};
 use crate::service::build_privacy_report;
 use crate::smart::{SmartReplacementProvider, prepare_smart_replacements_from_rows};
 use crate::strategies::{TransformState, transform_value_with_state};
@@ -516,29 +516,7 @@ fn generated_uuid(
             &format!("{seed}:quick-generate:uuid"),
         )
     } else {
-        let mut bytes = [0_u8; 16];
-        rand::thread_rng().fill(&mut bytes);
-        bytes[6] = (bytes[6] & 0x0f) | 0x40;
-        bytes[8] = (bytes[8] & 0x3f) | 0x80;
-        format!(
-            "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-            bytes[0],
-            bytes[1],
-            bytes[2],
-            bytes[3],
-            bytes[4],
-            bytes[5],
-            bytes[6],
-            bytes[7],
-            bytes[8],
-            bytes[9],
-            bytes[10],
-            bytes[11],
-            bytes[12],
-            bytes[13],
-            bytes[14],
-            bytes[15]
-        )
+        random_uuid_v4()
     }
 }
 

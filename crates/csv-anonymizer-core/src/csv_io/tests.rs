@@ -1,6 +1,7 @@
 use super::*;
 use crate::error::AnonymizerError;
 use crate::metadata::{apply_column_selection, build_column_metadata};
+use crate::types::ProcessProgress;
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

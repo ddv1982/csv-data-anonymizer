@@ -1,3 +1,4 @@
+use crate::job_registry::{JobLifecycle, JobRegistry, JobRegistryEntry};
 use crate::local_ai::{LocalAiRequest, smart_provider_for_request};
 use crate::settings::DpBudgetLedger;
 use csv_anonymizer_core::{
@@ -5,10 +6,8 @@ use csv_anonymizer_core::{
     ProcessProgress, SmartReplacementProvider,
 };
 use serde::Serialize;
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
+use std::sync::Arc;
+use std::time::Duration;
 
 const MAX_RETAINED_TERMINAL_JOBS: usize = 20;
 const TERMINAL_JOB_TTL: Duration = Duration::from_secs(30 * 60);
@@ -34,188 +33,119 @@ pub struct AnonymizeJobStatus {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct AnonymizeJobStore {
-    next_id: AtomicU64,
-    jobs: Mutex<HashMap<String, Arc<AnonymizeJob>>>,
+    registry: JobRegistry<AnonymizeJob>,
 }
 
 #[derive(Debug)]
 pub struct AnonymizeJob {
-    created_sequence: u64,
-    cancel_requested: AtomicBool,
-    status: Mutex<AnonymizeJobStatus>,
-    terminal_at: Mutex<Option<SystemTime>>,
+    lifecycle: JobLifecycle<AnonymizeJobStatus>,
+}
+
+impl Default for AnonymizeJobStore {
+    fn default() -> Self {
+        Self {
+            registry: JobRegistry::new(
+                "job",
+                "Anonymization job store is unavailable.",
+                "anonymization job",
+                MAX_RETAINED_TERMINAL_JOBS,
+                TERMINAL_JOB_TTL,
+            ),
+        }
+    }
 }
 
 impl AnonymizeJobStore {
     pub fn create_job(&self, total_rows: Option<usize>) -> Result<Arc<AnonymizeJob>, String> {
-        let sequence = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
-        let id = format!("job-{}-{sequence}", std::process::id());
-        let job = Arc::new(AnonymizeJob {
-            created_sequence: sequence,
-            cancel_requested: AtomicBool::new(false),
-            terminal_at: Mutex::new(None),
-            status: Mutex::new(AnonymizeJobStatus {
-                job_id: id.clone(),
-                state: AnonymizeJobState::Running,
-                rows_processed: 0,
-                total_rows,
-                cancel_requested: false,
-                result: None,
-                error: None,
-            }),
-        });
-
-        let mut jobs = self.lock_jobs()?;
-        jobs.insert(id, job.clone());
-        prune_terminal_jobs(&mut jobs, None, MAX_RETAINED_TERMINAL_JOBS);
-        Ok(job)
+        self.registry.create_job(|id, sequence| AnonymizeJob {
+            lifecycle: JobLifecycle::new(
+                sequence,
+                AnonymizeJobStatus {
+                    job_id: id,
+                    state: AnonymizeJobState::Running,
+                    rows_processed: 0,
+                    total_rows,
+                    cancel_requested: false,
+                    result: None,
+                    error: None,
+                },
+                "Anonymization job status is unavailable.",
+            ),
+        })
     }
 
     pub fn snapshot_job(&self, job_id: &str) -> Result<AnonymizeJobStatus, String> {
-        let mut jobs = self.lock_jobs()?;
-        let job = jobs
-            .get(job_id)
-            .cloned()
-            .ok_or_else(|| format!("Unknown anonymization job: {job_id}"))?;
-        let status = job.snapshot()?;
-        prune_terminal_jobs(&mut jobs, Some(job_id), MAX_RETAINED_TERMINAL_JOBS);
-        if status.state.is_terminal() {
-            jobs.remove(job_id);
-        }
-        Ok(status)
+        self.registry.snapshot_job(job_id)
     }
 
     pub fn get_job(&self, job_id: &str) -> Result<Arc<AnonymizeJob>, String> {
-        let mut jobs = self.lock_jobs()?;
-        let job = jobs
-            .get(job_id)
-            .cloned()
-            .ok_or_else(|| format!("Unknown anonymization job: {job_id}"))?;
-        prune_terminal_jobs(&mut jobs, Some(job_id), MAX_RETAINED_TERMINAL_JOBS);
-        Ok(job)
-    }
-
-    fn lock_jobs(
-        &self,
-    ) -> Result<std::sync::MutexGuard<'_, HashMap<String, Arc<AnonymizeJob>>>, String> {
-        self.jobs
-            .lock()
-            .map_err(|_| "Anonymization job store is unavailable.".to_string())
+        self.registry.get_job(job_id)
     }
 
     #[cfg(test)]
     fn job_count(&self) -> usize {
-        self.jobs.lock().map(|jobs| jobs.len()).unwrap_or_default()
+        self.registry.job_count()
+    }
+}
+
+impl JobRegistryEntry for AnonymizeJob {
+    type Status = AnonymizeJobStatus;
+
+    fn lifecycle(&self) -> &JobLifecycle<Self::Status> {
+        &self.lifecycle
+    }
+
+    fn status_is_terminal(status: &Self::Status) -> bool {
+        status.state.is_terminal()
     }
 }
 
 impl AnonymizeJob {
     pub fn snapshot(&self) -> Result<AnonymizeJobStatus, String> {
-        self.status
-            .lock()
-            .map(|status| status.clone())
-            .map_err(|_| "Anonymization job status is unavailable.".to_string())
+        self.lifecycle.snapshot()
     }
 
     pub fn report_progress(&self, rows_processed: usize) {
-        if let Ok(mut status) = self.status.lock()
-            && status.state == AnonymizeJobState::Running
-        {
-            status.rows_processed = rows_processed;
-        }
+        let _ = self.lifecycle.update_status(|status| {
+            if status.state == AnonymizeJobState::Running {
+                status.rows_processed = rows_processed;
+            }
+        });
     }
 
     pub fn request_cancel(&self) -> Result<AnonymizeJobStatus, String> {
-        self.cancel_requested.store(true, Ordering::SeqCst);
-        {
-            let mut status = self.lock_status()?;
+        self.lifecycle.request_cancel(|status| {
             if status.state == AnonymizeJobState::Running {
                 status.cancel_requested = true;
             }
-        }
-        self.snapshot()
+        })
     }
 
     pub fn should_cancel(&self) -> bool {
-        self.cancel_requested.load(Ordering::SeqCst)
+        self.lifecycle.should_cancel()
     }
 
     pub fn finish(&self, result: Result<AnonymizeData, AnonymizerError>) {
-        if let Ok(mut status) = self.status.lock() {
-            match result {
-                Ok(data) => {
-                    status.rows_processed = data.row_count;
-                    status.state = AnonymizeJobState::Succeeded;
-                    status.result = Some(data);
-                    status.error = None;
-                }
-                Err(AnonymizerError::Canceled) => {
-                    status.state = AnonymizeJobState::Canceled;
-                    status.cancel_requested = true;
-                    status.error = None;
-                }
-                Err(error) => {
-                    status.state = AnonymizeJobState::Failed;
-                    status.error = Some(error.to_string());
-                }
+        let _ = self.lifecycle.update_status(|status| match result {
+            Ok(data) => {
+                status.rows_processed = data.row_count;
+                status.state = AnonymizeJobState::Succeeded;
+                status.result = Some(data);
+                status.error = None;
             }
-        }
-        if let Ok(mut terminal_at) = self.terminal_at.lock() {
-            *terminal_at = Some(SystemTime::now());
-        }
-    }
-
-    fn lock_status(&self) -> Result<std::sync::MutexGuard<'_, AnonymizeJobStatus>, String> {
-        self.status
-            .lock()
-            .map_err(|_| "Anonymization job status is unavailable.".to_string())
-    }
-}
-
-fn prune_terminal_jobs(
-    jobs: &mut HashMap<String, Arc<AnonymizeJob>>,
-    protected_job_id: Option<&str>,
-    max_retained: usize,
-) {
-    let now = SystemTime::now();
-    jobs.retain(|job_id, job| {
-        protected_job_id == Some(job_id.as_str())
-            || !terminal_job_expired(job, now, TERMINAL_JOB_TTL)
-    });
-
-    let mut terminal_jobs = jobs
-        .iter()
-        .filter(|(job_id, _)| protected_job_id != Some(job_id.as_str()))
-        .filter_map(|(job_id, job)| {
-            job.snapshot()
-                .ok()
-                .filter(|status| status.state.is_terminal())
-                .map(|_| (job_id.clone(), job.created_sequence))
-        })
-        .collect::<Vec<_>>();
-    if terminal_jobs.len() <= max_retained {
-        return;
-    }
-
-    terminal_jobs.sort_by_key(|(_, sequence)| *sequence);
-    let remove_count = terminal_jobs.len() - max_retained;
-    for (job_id, _) in terminal_jobs.into_iter().take(remove_count) {
-        jobs.remove(&job_id);
-    }
-}
-
-fn terminal_job_expired(job: &AnonymizeJob, now: SystemTime, ttl: Duration) -> bool {
-    let Ok(terminal_at) = job.terminal_at.lock() else {
-        return false;
-    };
-    let Some(terminal_at) = *terminal_at else {
-        return false;
-    };
-    match now.duration_since(terminal_at) {
-        Ok(age) => age >= ttl,
-        Err(_) => false,
+            Err(AnonymizerError::Canceled) => {
+                status.state = AnonymizeJobState::Canceled;
+                status.cancel_requested = true;
+                status.error = None;
+            }
+            Err(error) => {
+                status.state = AnonymizeJobState::Failed;
+                status.error = Some(error.to_string());
+            }
+        });
+        self.lifecycle.mark_terminal();
     }
 }
 
@@ -280,8 +210,9 @@ mod tests {
     }
 
     fn age_terminal_job(job: &AnonymizeJob) {
-        *job.terminal_at.lock().unwrap() =
-            Some(SystemTime::now() - TERMINAL_JOB_TTL - Duration::from_secs(1));
+        job.lifecycle.set_terminal_at(
+            std::time::SystemTime::now() - TERMINAL_JOB_TTL - Duration::from_secs(1),
+        );
     }
 
     #[test]

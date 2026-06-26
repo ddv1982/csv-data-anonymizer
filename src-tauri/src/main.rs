@@ -1,4 +1,5 @@
 mod commands;
+mod job_registry;
 mod jobs;
 mod local_ai;
 mod path_access;

@@ -1,0 +1,9 @@
+{
+  "$schema": "./frontend/node_modules/knip/schema.json",
+  "ignoreBinaries": [
+    "gpg",
+    "gpg-connect-agent",
+    "gpgconf",
+    "python3"
+  ]
+}
