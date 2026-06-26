@@ -112,6 +112,23 @@ pub fn smart_provider_for_request(
         return Ok(None);
     }
 
+    smart_provider_for_enabled_request(request)
+}
+
+pub fn smart_provider_for_strategy(
+    request: Option<LocalAiRequest>,
+    strategy: AnonymizationStrategy,
+) -> Result<Option<OllamaSmartReplacementProvider>, String> {
+    if strategy != AnonymizationStrategy::LocalAi {
+        return Ok(None);
+    }
+
+    smart_provider_for_enabled_request(request)
+}
+
+fn smart_provider_for_enabled_request(
+    request: Option<LocalAiRequest>,
+) -> Result<Option<OllamaSmartReplacementProvider>, String> {
     let Some(request) = request.filter(|request| request.enabled) else {
         return Ok(None);
     };

@@ -2,7 +2,7 @@ use super::shared::{
     authorize_or_confirm_input_file, default_output_path_with_suffix, run_blocking, service,
     should_auto_select,
 };
-use crate::local_ai::{LocalAiRequest, smart_provider_for_request};
+use crate::local_ai::{LocalAiRequest, smart_provider_for_request, smart_provider_for_strategy};
 use crate::path_access::PathAccess;
 use csv_anonymizer_core::{
     ColumnControl, HeadersData, PasteAnalyzeData, PasteAnalyzeParams, PastePreviewParams,
@@ -31,6 +31,30 @@ pub struct PreviewRequest {
     pub deterministic: bool,
     pub seed: String,
     pub sample_count: usize,
+    pub local_ai: Option<LocalAiRequest>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PastePreviewRequest {
+    #[serde(flatten)]
+    pub params: PastePreviewParams,
+    pub local_ai: Option<LocalAiRequest>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PasteTransformRequest {
+    #[serde(flatten)]
+    pub params: PasteTransformParams,
+    pub local_ai: Option<LocalAiRequest>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickGenerateRequest {
+    #[serde(flatten)]
+    pub params: QuickGenerateParams,
     pub local_ai: Option<LocalAiRequest>,
 }
 
@@ -121,32 +145,53 @@ pub async fn analyze_pasted_data(request: PasteAnalyzeParams) -> Result<PasteAna
 }
 
 #[tauri::command]
-pub async fn preview_pasted_data(request: PastePreviewParams) -> Result<PreviewData, String> {
+pub async fn preview_pasted_data(request: PastePreviewRequest) -> Result<PreviewData, String> {
     run_blocking(move || {
-        csv_anonymizer_core::direct_input::preview_paste_data(request)
-            .map_err(|error| error.to_string())
+        let mut provider = smart_provider_for_request(request.local_ai, &request.params.controls)?;
+        let provider = provider
+            .as_mut()
+            .map(|provider| provider as &mut dyn SmartReplacementProvider);
+        csv_anonymizer_core::direct_input::preview_paste_data_with_smart_provider(
+            request.params,
+            provider,
+        )
+        .map_err(|error| error.to_string())
     })
     .await
 }
 
 #[tauri::command]
 pub async fn anonymize_pasted_data(
-    request: PasteTransformParams,
+    request: PasteTransformRequest,
 ) -> Result<PasteTransformData, String> {
     run_blocking(move || {
-        csv_anonymizer_core::direct_input::transform_paste_data(request)
-            .map_err(|error| error.to_string())
+        let mut provider = smart_provider_for_request(request.local_ai, &request.params.controls)?;
+        let provider = provider
+            .as_mut()
+            .map(|provider| provider as &mut dyn SmartReplacementProvider);
+        csv_anonymizer_core::direct_input::transform_paste_data_with_smart_provider(
+            request.params,
+            provider,
+        )
+        .map_err(|error| error.to_string())
     })
     .await
 }
 
 #[tauri::command]
 pub async fn generate_quick_values(
-    request: QuickGenerateParams,
+    request: QuickGenerateRequest,
 ) -> Result<QuickTransformData, String> {
     run_blocking(move || {
-        csv_anonymizer_core::direct_input::generate_quick_values(request)
-            .map_err(|error| error.to_string())
+        let mut provider = smart_provider_for_strategy(request.local_ai, request.params.strategy)?;
+        let provider = provider
+            .as_mut()
+            .map(|provider| provider as &mut dyn SmartReplacementProvider);
+        csv_anonymizer_core::direct_input::generate_quick_values_with_smart_provider(
+            request.params,
+            provider,
+        )
+        .map_err(|error| error.to_string())
     })
     .await
 }

@@ -85,6 +85,7 @@ export function previewPasteData(
   deterministic: boolean,
   seed: string,
   sampleCount: number,
+  localAi: LocalAiRequest,
 ): Promise<PreviewData> {
   return invokeCommand('preview_pasted_data', {
     request: {
@@ -95,6 +96,7 @@ export function previewPasteData(
       deterministic,
       seed,
       sampleCount,
+      localAi,
     },
   })
 }
@@ -106,6 +108,7 @@ export function transformPasteData(
   controls: ColumnControl[],
   deterministic: boolean,
   seed: string,
+  localAi: LocalAiRequest,
 ): Promise<PasteTransformData> {
   return invokeCommand('anonymize_pasted_data', {
     request: {
@@ -115,6 +118,7 @@ export function transformPasteData(
       controls,
       deterministic,
       seed,
+      localAi,
     },
   })
 }
@@ -125,6 +129,7 @@ export function generateQuickValues(
   count: number,
   deterministic: boolean,
   seed: string,
+  localAi: LocalAiRequest,
 ): Promise<QuickTransformData> {
   return invokeCommand('generate_quick_values', {
     request: {
@@ -133,6 +138,7 @@ export function generateQuickValues(
       count,
       deterministic,
       seed,
+      localAi,
     },
   })
 }

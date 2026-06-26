@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 import { setAppTheme } from '../tauri'
 import type { ThemeMode } from '../types'
 
@@ -6,6 +6,7 @@ export type { ThemeMode } from '../types'
 export type ResolvedTheme = 'light' | 'dark'
 
 const systemThemeQuery = '(prefers-color-scheme: dark)'
+const useDocumentThemeEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
 
 export function useTheme(themeMode: ThemeMode) {
   const [systemTheme, setSystemTheme] = useState<ResolvedTheme>(() => getSystemTheme())
@@ -27,8 +28,11 @@ export function useTheme(themeMode: ThemeMode) {
     return () => media.removeListener(handleChange)
   }, [])
 
-  useEffect(() => {
+  useDocumentThemeEffect(() => {
     applyDocumentTheme(themeMode, resolvedTheme)
+  }, [resolvedTheme, themeMode])
+
+  useEffect(() => {
     void setAppTheme(themeMode === 'system' ? null : resolvedTheme)
   }, [resolvedTheme, themeMode])
 

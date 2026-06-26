@@ -1,5 +1,6 @@
 use crate::error::{AnonymizerError, Result};
 use crate::service::{build_privacy_report, count_transforming_selected_columns};
+use crate::smart::{SmartReplacementProvider, prepare_smart_replacements_from_rows};
 use crate::strategies::{TransformState, transform_value_with_state};
 use crate::types::{
     ColumnMetadata, PasteAnalyzeData, PasteDataFormat, PastePreviewParams, PasteTransformData,
@@ -10,15 +11,17 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use super::shared::{
-    FieldSamples, bounded_analysis_sample_count, bounded_preview_sample_count, fields_to_rows,
-    metadata_from_fields, next_row_index, prepare_selected_metadata, preview_from_fields,
-    push_identified_field_sample, selected_columns_by_source,
+    FieldSamples, PreviewSelection, bounded_analysis_sample_count, bounded_preview_sample_count,
+    fields_to_rows, metadata_from_fields, next_row_index, prepare_selected_metadata,
+    preview_from_fields_with_smart_provider, push_identified_field_sample,
+    selected_columns_by_source, transform_state_for_smart_replacements,
 };
 
-pub(super) fn preview_value_document(
+pub(super) fn preview_value_document_with_smart_provider(
     input: PastePreviewParams,
     value: Value,
     format: PasteDataFormat,
+    provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<PreviewData> {
     let sample_count = bounded_preview_sample_count(input.sample_count)?;
     let mut fields = Vec::new();
@@ -29,28 +32,36 @@ pub(super) fn preview_value_document(
         &mut fields,
         sample_count.saturating_mul(2).max(1),
     )?;
-    preview_from_fields(
-        format,
+    preview_from_fields_with_smart_provider(
         &fields,
-        &input.columns,
-        &input.controls,
-        sample_count,
-        input.deterministic,
-        &input.seed,
+        PreviewSelection {
+            columns: &input.columns,
+            controls: &input.controls,
+            sample_count,
+            deterministic: input.deterministic,
+            seed: &input.seed,
+            provider,
+        },
     )
 }
 
-pub(super) fn transform_json(input: PasteTransformParams) -> Result<PasteTransformData> {
+pub(super) fn transform_json_with_smart_provider(
+    input: PasteTransformParams,
+    provider: Option<&mut dyn SmartReplacementProvider>,
+) -> Result<PasteTransformData> {
     let value = parse_json(&input.content)?;
-    let (output, result) = transform_value_document(input, value, PasteDataFormat::Json)?;
+    let (output, result) = transform_value_document(input, value, PasteDataFormat::Json, provider)?;
     let output = serde_json::to_string_pretty(&output)
         .map_err(|error| AnonymizerError::input_parse("JSON", error.to_string()))?;
     Ok(PasteTransformData { output, ..result })
 }
 
-pub(super) fn transform_yaml(input: PasteTransformParams) -> Result<PasteTransformData> {
+pub(super) fn transform_yaml_with_smart_provider(
+    input: PasteTransformParams,
+    provider: Option<&mut dyn SmartReplacementProvider>,
+) -> Result<PasteTransformData> {
     let value = parse_yaml(&input.content)?;
-    let (output, result) = transform_value_document(input, value, PasteDataFormat::Yaml)?;
+    let (output, result) = transform_value_document(input, value, PasteDataFormat::Yaml, provider)?;
     let output = yaml_serde::to_string(&output)
         .map_err(|error| AnonymizerError::input_parse("YAML", error.to_string()))?;
     Ok(PasteTransformData { output, ..result })
@@ -60,12 +71,19 @@ fn transform_value_document(
     input: PasteTransformParams,
     mut value: Value,
     format: PasteDataFormat,
+    provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<(Value, PasteTransformData)> {
     let analysis = analyze_value_document(format, &value, 100)?;
     let metadata = prepare_selected_metadata(&analysis.columns, &input.columns, &input.controls)?;
     let selected_by_path = selected_columns_by_source(&metadata);
+    let smart_replacements =
+        prepare_value_smart_replacements(&value, format, &metadata, &input, provider)?;
     let start_time = Instant::now();
-    let mut state = TransformState::new(input.deterministic, &input.seed);
+    let mut state = transform_state_for_smart_replacements(
+        input.deterministic,
+        &input.seed,
+        smart_replacements,
+    );
     let mut row_indices = HashMap::new();
 
     let mut context = ValueTransformContext {
@@ -89,6 +107,25 @@ fn transform_value_document(
     };
 
     Ok((value, result))
+}
+
+fn prepare_value_smart_replacements(
+    value: &Value,
+    format: PasteDataFormat,
+    metadata: &[ColumnMetadata],
+    input: &PasteTransformParams,
+    provider: Option<&mut dyn SmartReplacementProvider>,
+) -> Result<crate::smart::SmartReplacementMap> {
+    let mut fields = Vec::new();
+    collect_json_fields(value, format, &mut Vec::new(), &mut fields, usize::MAX)?;
+    let (_headers, rows) = fields_to_rows(&fields, usize::MAX);
+    prepare_smart_replacements_from_rows(
+        &rows,
+        metadata,
+        input.deterministic,
+        &input.seed,
+        provider,
+    )
 }
 
 pub(super) fn analyze_value_document(

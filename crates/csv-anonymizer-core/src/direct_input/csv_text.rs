@@ -2,6 +2,7 @@ use crate::csv_io::{count_csv_data_rows_from_reader, process_csv_text, read_csv_
 use crate::error::Result;
 use crate::metadata::build_column_metadata;
 use crate::service::{build_privacy_report, count_transforming_selected_columns};
+use crate::smart::{SmartReplacementProvider, prepare_smart_replacements_from_rows};
 use crate::types::{
     PasteAnalyzeData, PasteDataFormat, PastePreviewParams, PasteTransformData,
     PasteTransformParams, PreviewData, ProcessOptions,
@@ -9,8 +10,8 @@ use crate::types::{
 use std::time::Instant;
 
 use super::shared::{
-    bounded_analysis_sample_count, bounded_preview_sample_count, prepare_selected_metadata,
-    preview_rows,
+    PreviewSelection, bounded_analysis_sample_count, bounded_preview_sample_count,
+    prepare_selected_metadata, preview_rows_with_smart_provider,
 };
 
 pub(super) fn analyze_csv_text(content: &str, sample_row_count: usize) -> Result<PasteAnalyzeData> {
@@ -27,24 +28,42 @@ pub(super) fn analyze_csv_text(content: &str, sample_row_count: usize) -> Result
     })
 }
 
-pub(super) fn preview_csv_text(input: PastePreviewParams) -> Result<PreviewData> {
+pub(super) fn preview_csv_text_with_smart_provider(
+    input: PastePreviewParams,
+    provider: Option<&mut dyn SmartReplacementProvider>,
+) -> Result<PreviewData> {
     let sample_count = bounded_preview_sample_count(input.sample_count)?;
     let sample = read_csv_sample_from_str(&input.content, sample_count.saturating_mul(2).max(1))?;
     let metadata = build_column_metadata(&sample.headers, &sample.rows);
-    preview_rows(
+    preview_rows_with_smart_provider(
         &sample.rows,
         &metadata,
-        &input.columns,
-        &input.controls,
-        input.deterministic,
-        &input.seed,
-        sample_count,
+        PreviewSelection {
+            columns: &input.columns,
+            controls: &input.controls,
+            sample_count,
+            deterministic: input.deterministic,
+            seed: &input.seed,
+            provider,
+        },
     )
 }
 
-pub(super) fn transform_csv_text(input: PasteTransformParams) -> Result<PasteTransformData> {
+pub(super) fn transform_csv_text_with_smart_provider(
+    input: PasteTransformParams,
+    provider: Option<&mut dyn SmartReplacementProvider>,
+) -> Result<PasteTransformData> {
     let analysis = analyze_csv_text(&input.content, 100)?;
     let metadata = prepare_selected_metadata(&analysis.columns, &input.columns, &input.controls)?;
+    let rows = read_csv_sample_from_str(&input.content, usize::MAX)?.rows;
+    let smart_replacements = prepare_smart_replacements_from_rows(
+        &rows,
+        &metadata,
+        input.deterministic,
+        &input.seed,
+        provider,
+    )?;
+    let smart_replacements = (!smart_replacements.is_empty()).then_some(smart_replacements);
     let start_time = Instant::now();
     let (output, result) = process_csv_text(
         &input.content,
@@ -52,7 +71,7 @@ pub(super) fn transform_csv_text(input: PasteTransformParams) -> Result<PasteTra
         ProcessOptions {
             deterministic: input.deterministic,
             seed: &input.seed,
-            smart_replacements: None,
+            smart_replacements: smart_replacements.as_ref(),
         },
     )?;
 

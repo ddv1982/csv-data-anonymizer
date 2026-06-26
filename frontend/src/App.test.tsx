@@ -152,6 +152,7 @@ describe('App input mode tabs', () => {
       [],
       false,
       '',
+      { enabled: false, model: 'gemma3:4b' },
     )
     expect(await screen.findByDisplayValue('[{"email":"masked@example.com"}]')).toBeInTheDocument()
 
@@ -173,6 +174,28 @@ describe('App input mode tabs', () => {
     expect(tauriMocks.analyzePasteData).not.toHaveBeenCalled()
   })
 
+  it('shows Local AI setup for pasted fields using Smart replacement', async () => {
+    const user = userEvent.setup()
+    tauriMocks.analyzePasteData.mockResolvedValue({
+      format: 'json',
+      rowCount: 1,
+      rowCountIsComplete: true,
+      columns: [columnFixture(0, '[].email', 'email', 'high')],
+    })
+    render(<App />)
+
+    await user.click(screen.getByRole('tab', { name: /paste data/i }))
+    fireEvent.change(screen.getByLabelText(/pasted data/i), {
+      target: { value: '[{"email":"ada@example.com"}]' },
+    })
+    await user.click(screen.getByRole('button', { name: /detect fields/i }))
+    await user.selectOptions(await screen.findByLabelText('Strategy for [].email'), 'localAi')
+
+    expect(screen.getByText('Local AI')).toBeInTheDocument()
+    expect(screen.getByText(/Set up Local AI before previewing or anonymizing/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /show preview/i })).toBeDisabled()
+  })
+
   it('generates quick values without requiring input or field detection', async () => {
     const user = userEvent.setup()
     tauriMocks.generateQuickValues.mockResolvedValue({
@@ -186,10 +209,25 @@ describe('App input mode tabs', () => {
     await user.click(screen.getByRole('tab', { name: /quick by data type/i }))
     await user.click(screen.getByRole('button', { name: /generate values/i }))
 
-    expect(tauriMocks.generateQuickValues).toHaveBeenCalledWith('email', 'auto', 1, false, '')
+    expect(tauriMocks.generateQuickValues).toHaveBeenCalledWith('email', 'auto', 1, false, '', {
+      enabled: false,
+      model: 'gemma3:4b',
+    })
     expect(screen.queryByLabelText(/values to anonymize/i)).not.toBeInTheDocument()
     expect(await screen.findByLabelText(/generated values/i)).toHaveValue('masked@example.com')
     expect(screen.queryByRole('button', { name: /detect fields/i })).not.toBeInTheDocument()
+  })
+
+  it('shows Local AI setup for quick Smart replacement generation', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('tab', { name: /quick by data type/i }))
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Strategy' }), 'localAi')
+
+    expect(screen.getByText('Local AI')).toBeInTheDocument()
+    expect(screen.getByText(/Set up Local AI before generating Smart replacement values/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /generate values/i })).toBeDisabled()
   })
 })
 

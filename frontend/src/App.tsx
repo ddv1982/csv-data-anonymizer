@@ -50,7 +50,12 @@ function App() {
           className="mode-panel"
         >
           {activeMode === 'paste' ? (
-            <PasteDataWorkflowView settings={workflow.settings} onError={workflow.setError} />
+            <PasteDataWorkflowView
+              settings={workflow.settings}
+              localAi={workflow.localAi}
+              onUpdateSetting={workflow.updateSetting}
+              onError={workflow.setError}
+            />
           ) : null}
         </section>
 
@@ -62,7 +67,12 @@ function App() {
           className="mode-panel"
         >
           {activeMode === 'quick' ? (
-            <QuickDataTypeWorkflowView settings={workflow.settings} onError={workflow.setError} />
+            <QuickDataTypeWorkflowView
+              settings={workflow.settings}
+              localAi={workflow.localAi}
+              onUpdateSetting={workflow.updateSetting}
+              onError={workflow.setError}
+            />
           ) : null}
         </section>
       </main>

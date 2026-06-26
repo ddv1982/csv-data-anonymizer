@@ -1,12 +1,15 @@
-import { Check, Clipboard, Loader2, Wand2 } from 'lucide-react'
+import { AlertCircle, Check, Clipboard, Loader2, Wand2 } from 'lucide-react'
 import { useState } from 'react'
 import { dataTypes, quickGenerateStrategies, strategyLabel } from '../dataOptions'
 import { generateQuickValues } from '../tauri'
 import type { AnonymizationStrategy, AppSettings, DataType, QuickTransformData } from '../types'
+import type { LocalAiState } from '../hooks/useLocalAi'
 import { copyTextToClipboard } from '../utils/clipboard'
 import { messageFrom } from '../utils/errors'
 import { formatToken } from '../utils/format'
+import { Alert } from './Alert'
 import { Card } from './Card'
+import { LocalAiSettingsBlock } from './LocalAiSettingsBlock'
 
 type QuickBusyState = 'idle' | 'generating' | 'copying'
 const MIN_COUNT = 1
@@ -14,9 +17,13 @@ const MAX_COUNT = 1000
 
 export function QuickDataTypeWorkflowView({
   settings,
+  localAi,
+  onUpdateSetting,
   onError,
 }: {
   settings: AppSettings
+  localAi: LocalAiState
+  onUpdateSetting: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => void
   onError: (message: string | null) => void
 }) {
   const [dataType, setDataType] = useState<DataType>('email')
@@ -27,10 +34,16 @@ export function QuickDataTypeWorkflowView({
   const [copyStatus, setCopyStatus] = useState<string | null>(null)
 
   const isBusy = busy !== 'idle'
-  const canGenerate = count >= MIN_COUNT && count <= MAX_COUNT && !isBusy
+  const usesLocalAi = strategy === 'localAi'
+  const localAiBlocked = usesLocalAi && (!localAi.ready || localAi.downloadRunning)
+  const canGenerate = count >= MIN_COUNT && count <= MAX_COUNT && !isBusy && !localAiBlocked
 
   async function handleGenerate() {
-    if (!canGenerate) return
+    if (count < MIN_COUNT || count > MAX_COUNT || isBusy) return
+    if (localAiBlocked) {
+      onError('Set up Local AI before generating Smart replacement values.')
+      return
+    }
     onError(null)
     setBusy('generating')
     setCopyStatus(null)
@@ -41,6 +54,7 @@ export function QuickDataTypeWorkflowView({
         count,
         settings.deterministicDefault,
         settings.seed,
+        localAi.request,
       )
       setResult(generated)
     } catch (caught) {
@@ -127,6 +141,22 @@ export function QuickDataTypeWorkflowView({
             />
             <span className="muted-text text-sm">Generate 1 to {MAX_COUNT.toLocaleString()} values.</span>
           </div>
+
+          {usesLocalAi ? (
+            <div className="quick-local-ai">
+              <LocalAiSettingsBlock
+                settings={settings}
+                localAi={localAi}
+                disabled={isBusy}
+                onUpdateSetting={onUpdateSetting}
+              />
+              {localAiBlocked ? (
+                <Alert icon={<AlertCircle aria-hidden="true" />}>
+                  Set up Local AI before generating Smart replacement values.
+                </Alert>
+              ) : null}
+            </div>
+          ) : null}
 
           <button type="button" className="button button-primary button-lg full-width" disabled={!canGenerate} onClick={handleGenerate}>
             {busy === 'generating' ? <Loader2 className="spin" aria-hidden="true" /> : <Wand2 aria-hidden="true" />}

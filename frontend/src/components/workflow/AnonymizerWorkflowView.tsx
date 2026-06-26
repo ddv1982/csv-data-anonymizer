@@ -12,7 +12,7 @@ import { Alert } from '../Alert'
 import { AppSettingsPanel } from '../AppSettingsPanel'
 import { Card } from '../Card'
 import { ColumnTable } from '../ColumnTable'
-import { LocalAiPanel } from '../LocalAiPanel'
+import { LocalAiSettingsBlock } from '../LocalAiSettingsBlock'
 import { PreviewTable } from '../PreviewTable'
 import { PrivacySettingsPanel } from '../PrivacySettingsPanel'
 import { ProcessingStatus } from '../ProcessingStatus'
@@ -232,18 +232,11 @@ function ConfigurationStep({ workflow }: { workflow: AnonymizerWorkflowState }) 
           </p>
         </div>
 
-        <LocalAiPanel
-          enabled={workflow.settings.localAiEnabled}
-          model={workflow.settings.localAiModel}
-          status={workflow.localAi.status}
-          downloadStatus={workflow.localAi.downloadStatus}
+        <LocalAiSettingsBlock
+          settings={workflow.settings}
+          localAi={workflow.localAi}
           disabled={!workflow.hasColumns || workflow.isLoading}
-          onToggle={(checked) => workflow.updateSetting('localAiEnabled', checked)}
-          onModelChange={(model) => workflow.updateSetting('localAiModel', model)}
-          onRefresh={() => void workflow.localAi.refresh()}
-          onDownload={() => void workflow.localAi.startDownload()}
-          onCancelDownload={() => void workflow.localAi.cancelDownload()}
-          onOpenSetup={() => void workflow.localAi.openSetup()}
+          onUpdateSetting={workflow.updateSetting}
         />
 
         <PrivacySettingsPanel
