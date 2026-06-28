@@ -61,7 +61,7 @@ export function useAnonymizerWorkflow() {
     toggleColumn: toggleCsvColumn,
   } = useCsvSelection()
   const { preview, result, setPreview, setResult, clearArtifacts } = useWorkflowArtifacts()
-  const { settings, latestSettingsRef, applyAuthoritativeSettings, persistSettings, refreshSettings } =
+  const { settings, settingsLoaded, latestSettingsRef, applyAuthoritativeSettings, persistSettings, refreshSettings } =
     usePersistentSettings({
       onError: setError,
       onAcceptedSettings: applySettingsBudget,
@@ -69,6 +69,7 @@ export function useAnonymizerWorkflow() {
   const localAi = useLocalAi(settings, setError)
   const csvAnalysis = useCsvAnalysis({
     settings,
+    settingsLoaded,
     busy,
     setBusy,
     setError,
@@ -103,6 +104,7 @@ export function useAnonymizerWorkflow() {
 
   const hasFile = Boolean(inputPath.trim())
   const isLoading = busy !== 'idle'
+  const settingsDisabled = isLoading || !settingsLoaded
   const localAiBlocked = localAiSelected && (!localAiReady || localAiDownloadRunning)
   const basePrivacyValidation = getPrivacyConfigValidation(privacyConfig, selectedSet, columns.length)
   const privacyValidation =
@@ -159,6 +161,8 @@ export function useAnonymizerWorkflow() {
   }
 
   function updateSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
+    if (!settingsLoaded) return
+
     const nextSettings = { ...latestSettingsRef.current, [key]: value }
     if (
       key === 'deterministicDefault' ||
@@ -234,6 +238,7 @@ export function useAnonymizerWorkflow() {
 
   return {
     settings,
+    settingsLoaded,
     inputPath,
     outputPath,
     headers,
@@ -262,6 +267,7 @@ export function useAnonymizerWorkflow() {
     hasColumns,
     hasSelectedColumns,
     isLoading,
+    settingsDisabled,
     canPreview: previewWorkflow.canPreview,
     canAnonymize: anonymizeJob.canAnonymize,
     privacyValidation,

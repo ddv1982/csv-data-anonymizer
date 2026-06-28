@@ -10,6 +10,7 @@ mod xml;
 mod tests;
 
 use crate::error::Result;
+use crate::service::validate_deterministic_seed;
 use crate::smart::SmartReplacementProvider;
 use crate::types::{
     AnonymizationStrategy, ColumnControl, ColumnMetadata, DataType, PasteAnalyzeData,
@@ -88,6 +89,7 @@ pub fn transform_paste_data_with_smart_provider(
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<PasteTransformData> {
     shared::validate_paste_content(&input.content)?;
+    validate_deterministic_seed(input.deterministic, &input.seed)?;
     let format = format_detection::resolve_format(input.format, &input.content);
 
     match format {

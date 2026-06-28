@@ -23,6 +23,7 @@ import { Alert } from './Alert'
 import { Card } from './Card'
 import { ColumnTable } from './ColumnTable'
 import { PreviewTable } from './PreviewTable'
+import { PrivacyReportSummary } from './ResultDisplay'
 
 type PasteBusyState = 'idle' | 'analyzing' | 'previewing' | 'transforming' | 'copying'
 
@@ -387,6 +388,8 @@ export function PasteDataWorkflowView({
           </div>
         </Card>
       ) : null}
+
+      {result ? <PrivacyReportSummary privacyReport={result.privacyReport} /> : null}
 
       {analysis && columns.length === 0 ? (
         <Alert icon={<AlertCircle aria-hidden="true" />}>No fields detected for this input.</Alert>

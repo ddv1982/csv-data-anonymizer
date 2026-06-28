@@ -29,12 +29,16 @@ function App() {
             <LocalAiTopbarControl
               settings={workflow.settings}
               localAi={workflow.localAi}
-              disabled={workflow.isLoading}
+              disabled={workflow.settingsDisabled}
               settingsOpen={localAiSettingsOpen}
               onToggleSettings={setLocalAiSettingsOpen}
               onUpdateSetting={workflow.updateSetting}
             />
-            <ThemeModeToggle themeMode={themeMode} onChange={(mode) => workflow.updateSetting('themeMode', mode)} />
+            <ThemeModeToggle
+              themeMode={themeMode}
+              disabled={workflow.settingsDisabled}
+              onChange={(mode) => workflow.updateSetting('themeMode', mode)}
+            />
           </div>
         </div>
       </header>

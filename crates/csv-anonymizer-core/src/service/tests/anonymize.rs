@@ -26,6 +26,29 @@ fn anonymizes_selected_columns_without_web_runtime() {
 }
 
 #[test]
+fn anonymize_rejects_deterministic_blank_seed() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let output_path = temp_dir.path().join("sample-anonymized.csv");
+
+    let error = service
+        .anonymize_csv(AnonymizeParams {
+            file_path: fixture("sample.csv"),
+            output_path,
+            columns: vec![1],
+            controls: vec![],
+            deterministic: true,
+            seed: " ".to_string(),
+            force: false,
+            preview_smart_replacements: vec![],
+            privacy_config: None,
+        })
+        .unwrap_err();
+
+    assert!(error.to_string().contains("non-empty private seed"));
+}
+
+#[test]
 fn standard_privacy_config_uses_streaming_transform_pipeline() {
     let service = AnonymizerService::new("test-version");
     let temp_dir = tempfile::tempdir().unwrap();

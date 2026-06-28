@@ -2,7 +2,10 @@ use crate::detection::classify_pii_risk;
 use crate::error::{AnonymizerError, Result};
 use crate::metadata::{apply_column_selection, build_column_metadata};
 use crate::preview::generate_column_preview;
-use crate::service::{apply_column_controls, build_privacy_report, validate_column_indices};
+use crate::service::{
+    apply_column_controls, build_privacy_report, preview_warning_for_column,
+    validate_column_indices, validate_deterministic_seed,
+};
 use crate::smart::{
     SmartReplacementMap, SmartReplacementProvider, has_smart_replacement_columns,
     prepare_smart_replacements_from_rows,
@@ -81,6 +84,7 @@ pub(super) fn preview_from_rows_with_smart_provider(
         provider,
     } = selection;
 
+    validate_deterministic_seed(deterministic, seed)?;
     validate_column_indices(metadata, columns)?;
     let controlled = apply_column_controls(metadata, controls)?;
     let selected_metadata = apply_column_selection(&controlled, columns);
@@ -107,9 +111,15 @@ pub(super) fn preview_from_rows_with_smart_provider(
         ));
     }
 
+    let warnings = selected_metadata
+        .iter()
+        .filter(|column| column.is_selected)
+        .filter_map(preview_warning_for_column)
+        .collect();
+
     Ok(PreviewData {
         previews,
-        warnings: Vec::new(),
+        warnings,
         smart_replacements: smart_replacement_entries,
     })
 }
@@ -134,6 +144,7 @@ pub(super) fn anonymize_rows_with_smart_provider(
     seed: &str,
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<(Vec<Vec<String>>, PrivacyReport)> {
+    validate_deterministic_seed(deterministic, seed)?;
     let selected_metadata = prepare_selected_metadata(metadata, columns, controls)?;
     let smart_replacements = prepare_smart_replacements_from_rows(
         rows,

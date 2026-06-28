@@ -147,6 +147,14 @@ impl AnonymizeJob {
         });
         self.lifecycle.mark_terminal();
     }
+
+    pub(super) fn finish_panic(&self) {
+        let _ = self.lifecycle.update_status(|status| {
+            status.state = AnonymizeJobState::Failed;
+            status.error = Some("Anonymization job failed unexpectedly.".to_string());
+        });
+        self.lifecycle.mark_terminal();
+    }
 }
 
 impl AnonymizeJobState {
@@ -339,6 +347,20 @@ mod tests {
         assert!(job.should_cancel());
         assert_eq!(status.state, AnonymizeJobState::Running);
         assert!(status.cancel_requested);
+    }
+
+    #[test]
+    fn panic_failure_marks_job_failed_and_terminal() {
+        let store = AnonymizeJobStore::default();
+        let job = store.create_job(Some(10)).unwrap();
+        let job_id = job.snapshot().unwrap().job_id;
+
+        job.finish_panic();
+
+        let status = store.snapshot_job(&job_id).unwrap();
+        assert_eq!(status.state, AnonymizeJobState::Failed);
+        assert!(status.error.unwrap().contains("unexpectedly"));
+        assert!(store.get_job(&job_id).is_err());
     }
 
     #[test]

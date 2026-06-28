@@ -102,6 +102,79 @@ fn row_helpers_preview_and_anonymize_rows() {
 }
 
 #[test]
+fn direct_input_preview_includes_selected_column_warnings() {
+    let rows = vec![vec!["ada@example.com".to_string(), "US".to_string()]];
+    let headers = vec!["email".to_string(), "country".to_string()];
+    let metadata = build_column_metadata(&headers, &rows);
+    let preview = preview_rows(
+        &rows,
+        &metadata,
+        &[0, 1],
+        &[
+            ColumnControl {
+                column_index: 0,
+                type_override: None,
+                strategy: AnonymizationStrategy::PassThrough,
+            },
+            ColumnControl {
+                column_index: 1,
+                type_override: Some(DataType::CountryCode),
+                strategy: AnonymizationStrategy::Auto,
+            },
+        ],
+        true,
+        "seed",
+        3,
+    )
+    .unwrap();
+
+    assert_eq!(preview.warnings.len(), 2);
+    assert!(
+        preview
+            .warnings
+            .iter()
+            .any(|warning| warning.column_name == "email" && warning.message.contains("unchanged"))
+    );
+    assert!(
+        preview
+            .warnings
+            .iter()
+            .any(|warning| warning.column_name == "country"
+                && warning.message.contains("pass-through behavior"))
+    );
+}
+
+#[test]
+fn direct_input_rejects_deterministic_blank_seed() {
+    let error = transform_quick_values(QuickTransformParams {
+        input: "ada@example.com".to_string(),
+        data_type: DataType::Email,
+        strategy: AnonymizationStrategy::Auto,
+        deterministic: true,
+        seed: " ".to_string(),
+    })
+    .unwrap_err();
+
+    assert!(error.to_string().contains("non-empty private seed"));
+}
+
+#[test]
+fn paste_transform_rejects_deterministic_blank_seed() {
+    let error = transform_paste_data(PasteTransformParams {
+        content: r#"[{"email":"ada@example.com"}]"#.to_string(),
+        format: PasteDataFormat::Json,
+        columns: vec![0],
+        controls: Vec::new(),
+        deterministic: true,
+        seed: " ".to_string(),
+        preview_smart_replacements: Vec::new(),
+    })
+    .unwrap_err();
+
+    assert!(error.to_string().contains("non-empty private seed"));
+}
+
+#[test]
 fn quick_anonymize_values_wrapper_uses_one_state() {
     let values = vec![
         "550e8400-e29b-41d4-a716-446655440000".to_string(),
@@ -587,6 +660,13 @@ fn previews_and_transforms_paste_data_with_smart_replacements() {
 
     assert_eq!(preview.smart_replacements.len(), 2);
     assert_eq!(preview.previews[0].samples[0].anonymized, "Smart Person 1");
+    assert!(
+        preview
+            .warnings
+            .iter()
+            .any(|warning| warning.column_name == "[].name"
+                && warning.message.contains("Local AI"))
+    );
 
     let result = transform_paste_data(PasteTransformParams {
         content: input.to_string(),

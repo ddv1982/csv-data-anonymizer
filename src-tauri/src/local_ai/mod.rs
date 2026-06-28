@@ -17,6 +17,7 @@ pub const DEFAULT_OLLAMA_MODEL: &str = "gemma3:4b";
 const OLLAMA_DOWNLOAD_URL: &str = "https://ollama.com/download";
 const OLLAMA_UNAVAILABLE_MESSAGE: &str =
     "Ollama is not running. Install or start Ollama to use Local AI.";
+const OLLAMA_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 
 pub fn open_setup_url() -> Result<(), String> {
     open::that(OLLAMA_DOWNLOAD_URL)
@@ -33,6 +34,7 @@ fn client() -> Result<Client, String> {
 
 fn download_client() -> Result<Client, String> {
     Client::builder()
+        .timeout(OLLAMA_DOWNLOAD_TIMEOUT)
         .connect_timeout(Duration::from_secs(2))
         .build()
         .map_err(|error| format!("Could not create Local AI download client: {error}"))

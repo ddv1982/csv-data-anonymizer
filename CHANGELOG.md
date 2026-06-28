@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.47 - 2026-06-29
+
+- Harden privacy safeguards by warning on selected direct-input columns, rejecting blank deterministic seeds across CLI/core/direct-input paths, and requiring all columns in formal tabular releases.
+- Make Tauri background work fail terminally on panic, bound Local AI model download time, and keep failed anonymize/download jobs observable through terminal status snapshots.
+- Improve frontend privacy and state correctness with typed DP budget reset confirmation, paste/quick privacy reports, model-specific Local AI readiness, and settings-load guards that prevent stale defaults from overwriting saved preferences.
+
 ## v1.0.46 - 2026-06-26
 
 - Make dead-code gates explicit with a root strict Knip scan and intentional system-binary ignores while preserving the existing required Rust and frontend checks.

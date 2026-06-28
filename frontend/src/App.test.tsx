@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+import { DpBudgetSettings } from './components/privacy-settings/DpBudgetSettings'
 import { defaultSettings } from './defaults'
 import { MAX_PASTE_CONTENT_BYTES } from './limits'
 import type { AppSettings, ColumnMetadata, PrivacyReport } from './types'
@@ -138,6 +139,62 @@ describe('App input mode tabs', () => {
     })
   })
 
+  it('does not save default settings before the initial settings load completes', async () => {
+    const user = userEvent.setup()
+    let resolveSettings: (settings: AppSettings) => void = () => undefined
+    tauriMocks.loadSettings.mockReturnValue(
+      new Promise<AppSettings>((resolve) => {
+        resolveSettings = resolve
+      }),
+    )
+    render(<App />)
+
+    const localAiSwitch = screen.getByRole('switch', { name: /use local ai/i })
+    const browseButton = screen.getByRole('button', { name: /browse for csv file/i })
+    expect(localAiSwitch).toBeDisabled()
+    expect(browseButton).toBeDisabled()
+    await user.click(localAiSwitch)
+    await user.click(browseButton)
+    expect(tauriMocks.saveSettings).not.toHaveBeenCalled()
+    expect(tauriMocks.pickInputCsv).not.toHaveBeenCalled()
+
+    resolveSettings(settingsFixture({ localAiEnabled: true }))
+    await waitFor(() => {
+      expect(localAiSwitch).toHaveAttribute('aria-checked', 'true')
+    })
+    expect(browseButton).not.toBeDisabled()
+    expect(tauriMocks.saveSettings).not.toHaveBeenCalled()
+  })
+
+  it('blocks Smart replacement when the ready Local AI status is for another model', async () => {
+    const user = userEvent.setup()
+    tauriMocks.loadSettings.mockResolvedValue(
+      settingsFixture({ localAiEnabled: true, localAiModel: 'llama3.2:3b' }),
+    )
+    tauriMocks.getLocalAiStatus.mockResolvedValue({
+      enabled: true,
+      provider: 'ollama',
+      model: 'gemma3:4b',
+      availableModels: ['gemma3:4b'],
+      endpoint: 'http://127.0.0.1:11434',
+      runtimeAvailable: true,
+      modelInstalled: true,
+      ready: true,
+      runtimeVersion: '0.9.0',
+      message: 'Ready.',
+    })
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: /use local ai/i })).toHaveAttribute('aria-checked', 'true')
+    })
+    await user.click(screen.getByRole('tab', { name: /quick by data type/i }))
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Strategy' }), 'localAi')
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/Set up Local AI before generating Smart replacement values/)
+    expect(screen.getByRole('button', { name: /generate values/i })).toBeDisabled()
+  })
+
   it('analyzes pasted JSON, transforms selected fields, and copies output', async () => {
     const user = userEvent.setup()
     tauriMocks.analyzePasteData.mockResolvedValue({
@@ -196,6 +253,8 @@ describe('App input mode tabs', () => {
       { enabled: false, model: 'gemma3:4b' },
     )
     expect(await screen.findByDisplayValue('[{"email":"masked@example.com"}]')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /privacy report/i })).toBeInTheDocument()
+    expect(screen.getByText('Direct identifiers')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /^copy$/i }))
     expect(await screen.findByText('Copied')).toBeInTheDocument()
@@ -259,6 +318,8 @@ describe('App input mode tabs', () => {
     })
     expect(screen.queryByLabelText(/values to anonymize/i)).not.toBeInTheDocument()
     expect(await screen.findByLabelText(/generated values/i)).toHaveValue('masked@example.com')
+    expect(screen.getByRole('heading', { name: /privacy report/i })).toBeInTheDocument()
+    expect(screen.getByText('Pseudonymized columns')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /detect fields/i })).not.toBeInTheDocument()
   })
 
@@ -275,6 +336,31 @@ describe('App input mode tabs', () => {
     await user.click(within(alert).getByRole('button', { name: /open local ai settings/i }))
     expect(await screen.findByRole('dialog', { name: /local ai settings/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /generate values/i })).toBeDisabled()
+  })
+
+  it('requires typed confirmation before resetting the DP budget', async () => {
+    const user = userEvent.setup()
+    const onResetBudget = vi.fn()
+    const prompt = vi.spyOn(window, 'prompt')
+    prompt.mockReturnValueOnce('')
+
+    render(
+      <DpBudgetSettings
+        budget={{ enabled: true, limitEpsilon: 1, spentEpsilon: 0.5, action: 'block' }}
+        disabled={false}
+        onResetBudget={onResetBudget}
+        onChange={vi.fn()}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /reset budget/i }))
+    expect(onResetBudget).not.toHaveBeenCalled()
+
+    prompt.mockReturnValueOnce('RESET DP BUDGET')
+    await user.click(screen.getByRole('button', { name: /reset budget/i }))
+    expect(onResetBudget).toHaveBeenCalledTimes(1)
+
+    prompt.mockRestore()
   })
 })
 

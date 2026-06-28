@@ -3,6 +3,7 @@ import type { ThemeMode } from '../hooks/useTheme'
 
 interface ThemeModeToggleProps {
   themeMode: ThemeMode
+  disabled?: boolean
   onChange: (themeMode: ThemeMode) => void
 }
 
@@ -28,7 +29,7 @@ const options = [
   icon: LucideIcon
 }>
 
-export function ThemeModeToggle({ themeMode, onChange }: ThemeModeToggleProps) {
+export function ThemeModeToggle({ themeMode, disabled = false, onChange }: ThemeModeToggleProps) {
   return (
     <div className="theme-mode-control" role="group" aria-label="Theme mode">
       {options.map(({ value, label, icon: Icon }) => {
@@ -41,6 +42,7 @@ export function ThemeModeToggle({ themeMode, onChange }: ThemeModeToggleProps) {
             aria-label={label}
             aria-pressed={selected}
             title={label}
+            disabled={disabled}
             onClick={() => onChange(value)}
           >
             <Icon aria-hidden="true" />

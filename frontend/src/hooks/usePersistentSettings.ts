@@ -11,7 +11,9 @@ type PersistentSettingsOptions = {
 
 export function usePersistentSettings({ onError, onAcceptedSettings }: PersistentSettingsOptions) {
   const [settings, setSettings] = useState<AppSettings>(defaultSettings)
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
   const latestSettingsRef = useRef(defaultSettings)
+  const settingsLoadedRef = useRef(false)
   const settingsSaveSequenceRef = useRef(0)
   const inFlightSettingsSavesRef = useRef(new Set<number>())
   const callbacksRef = useRef({ onError, onAcceptedSettings })
@@ -24,15 +26,23 @@ export function usePersistentSettings({ onError, onAcceptedSettings }: Persisten
     let isMounted = true
     loadSettings()
       .then((loaded) => {
-        if (isMounted && settingsSaveSequenceRef.current === 0) {
-          settingsSaveSequenceRef.current += 1
-          latestSettingsRef.current = loaded
-          setSettings(loaded)
-          callbacksRef.current.onAcceptedSettings?.(loaded)
+        if (isMounted) {
+          if (settingsSaveSequenceRef.current === 0) {
+            settingsSaveSequenceRef.current += 1
+            latestSettingsRef.current = loaded
+            setSettings(loaded)
+            callbacksRef.current.onAcceptedSettings?.(loaded)
+          }
+          settingsLoadedRef.current = true
+          setSettingsLoaded(true)
         }
       })
       .catch((caught: unknown) => {
-        if (isMounted) callbacksRef.current.onError(messageFrom(caught))
+        if (isMounted) {
+          callbacksRef.current.onError(messageFrom(caught))
+          settingsLoadedRef.current = true
+          setSettingsLoaded(true)
+        }
       })
 
     return () => {
@@ -56,6 +66,8 @@ export function usePersistentSettings({ onError, onAcceptedSettings }: Persisten
   }
 
   async function persistSettings(next: AppSettings) {
+    if (!settingsLoadedRef.current) return
+
     applySettings(next)
     const saveSequence = settingsSaveSequenceRef.current + 1
     settingsSaveSequenceRef.current = saveSequence
@@ -95,6 +107,7 @@ export function usePersistentSettings({ onError, onAcceptedSettings }: Persisten
 
   return {
     settings,
+    settingsLoaded,
     latestSettingsRef,
     applyAuthoritativeSettings,
     persistSettings,

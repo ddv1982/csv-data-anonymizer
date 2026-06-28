@@ -148,6 +148,10 @@ impl LocalAiDownloadJob {
         });
         self.lifecycle.mark_terminal();
     }
+
+    pub(crate) fn finish_panic(&self) {
+        self.finish_error("Local AI model download failed unexpectedly.".to_string());
+    }
 }
 
 pub fn start_download_job(job: Arc<LocalAiDownloadJob>, request: LocalAiRequest) {
@@ -304,5 +308,19 @@ mod tests {
                 .get_job(&active_job.snapshot().unwrap().job_id)
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn panic_failure_marks_download_failed_and_terminal() {
+        let store = LocalAiDownloadStore::default();
+        let job = store.create_job("gemma3:4b".to_string()).unwrap();
+        let job_id = job.snapshot().unwrap().job_id;
+
+        job.finish_panic();
+
+        let status = store.snapshot_job(&job_id).unwrap();
+        assert_eq!(status.state, LocalAiDownloadState::Failed);
+        assert!(status.error.unwrap().contains("unexpectedly"));
+        assert!(store.get_job(&job_id).is_err());
     }
 }

@@ -50,6 +50,23 @@ fn previews_are_deterministic() {
 }
 
 #[test]
+fn preview_rejects_deterministic_blank_seed() {
+    let service = AnonymizerService::new("test-version");
+    let error = service
+        .preview_anonymization(PreviewParams {
+            file_path: fixture("sample.csv"),
+            columns: vec![1],
+            controls: vec![],
+            deterministic: true,
+            seed: " ".to_string(),
+            sample_count: 2,
+        })
+        .unwrap_err();
+
+    assert!(error.to_string().contains("non-empty private seed"));
+}
+
+#[test]
 fn preview_preserves_short_numeric_code_shape() {
     let service = AnonymizerService::new("test-version");
     let temp_dir = tempfile::tempdir().unwrap();

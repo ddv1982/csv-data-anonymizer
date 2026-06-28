@@ -29,6 +29,12 @@ pub fn process_privacy_release(
     seed: &str,
     control: Option<&mut ProcessControl<'_>>,
 ) -> Result<PrivacyProcessResult> {
+    if deterministic && seed.trim().is_empty() {
+        return Err(AnonymizerError::Privacy(
+            "repeatable replacements require a non-empty private seed".to_string(),
+        ));
+    }
+
     validate_selected_release_config(columns, config)?;
 
     match config.release_mode {
@@ -93,6 +99,15 @@ fn validate_selected_release_config(
         if let Some(index) = config.differential_privacy.privacy_unit_column {
             validate_selected_column_reference(columns, index, "privacy_unit_column")?;
         }
+    }
+
+    if config.release_mode == ReleaseMode::FormalTabular
+        && columns.iter().any(|column| !column.is_selected)
+    {
+        return Err(AnonymizerError::Privacy(
+            "formal tabular releases require every column to be selected; unselected source columns would otherwise remain in the output"
+                .to_string(),
+        ));
     }
 
     if config.release_mode == ReleaseMode::SyntheticData {
