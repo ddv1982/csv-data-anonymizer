@@ -81,7 +81,7 @@ function FileStep({ workflow }: { workflow: AnonymizerWorkflowState }) {
           type="button"
           className="button button-outline"
           onClick={workflow.handlePickInput}
-          disabled={workflow.isLoading}
+          disabled={workflow.settingsDisabled}
           aria-label="Browse for CSV file"
         >
           {workflow.busy === 'picking' ? <Loader2 className="spin" aria-hidden="true" /> : <FolderOpen aria-hidden="true" />}
@@ -90,7 +90,7 @@ function FileStep({ workflow }: { workflow: AnonymizerWorkflowState }) {
         <input
           type="text"
           value={workflow.inputPath}
-          disabled={workflow.isLoading}
+          disabled={workflow.settingsDisabled}
           placeholder="Select a CSV file..."
           aria-label="File path input"
           onChange={(event) => workflow.handleInputChange(event.target.value)}
@@ -103,7 +103,7 @@ function FileStep({ workflow }: { workflow: AnonymizerWorkflowState }) {
             type="button"
             className="button button-ghost button-icon"
             onClick={workflow.clearFile}
-            disabled={workflow.isLoading}
+            disabled={workflow.settingsDisabled}
             aria-label="Clear file selection"
           >
             <X aria-hidden="true" />
@@ -273,7 +273,7 @@ function ConfigurationStep({
         <AppSettingsPanel
           settings={workflow.settings}
           open={workflow.settingsOpen}
-          disabled={workflow.isLoading}
+          disabled={workflow.settingsDisabled}
           onToggleOpen={() => workflow.setSettingsOpen((current) => !current)}
           onUpdateSetting={workflow.updateSetting}
         />

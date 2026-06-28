@@ -23,6 +23,7 @@ type CsvSelectionState = {
 
 type CsvAnalysisOptions = {
   settings: AppSettings
+  settingsLoaded: boolean
   busy: BusyState
   setBusy: Dispatch<SetStateAction<BusyState>>
   setError: Dispatch<SetStateAction<string | null>>
@@ -40,6 +41,7 @@ type CsvAnalysisOptions = {
 
 export function useCsvAnalysis({
   settings,
+  settingsLoaded,
   busy,
   setBusy,
   setError,
@@ -55,7 +57,7 @@ export function useCsvAnalysis({
   selection,
 }: CsvAnalysisOptions) {
   async function handlePickInput() {
-    if (busy !== 'idle') return
+    if (busy !== 'idle' || !settingsLoaded) return
 
     setError(null)
     setBusy('picking')
@@ -72,6 +74,8 @@ export function useCsvAnalysis({
   }
 
   async function loadCsv(path = inputPath) {
+    if (!settingsLoaded) return
+
     const normalized = path.trim()
     if (!normalized) {
       setError('Select or enter a CSV file path first.')
@@ -110,7 +114,7 @@ export function useCsvAnalysis({
   }
 
   async function handlePickOutput() {
-    if (!selection.headers || busy !== 'idle') return
+    if (!selection.headers || busy !== 'idle' || !settingsLoaded) return
 
     setError(null)
     setBusy('picking')
@@ -172,7 +176,7 @@ export function useCsvAnalysis({
 
   function maybeLoadManualPath() {
     const normalized = inputPath.trim()
-    if (busy === 'idle' && normalized && normalized !== selection.headers?.filePath) {
+    if (settingsLoaded && busy === 'idle' && normalized && normalized !== selection.headers?.filePath) {
       void loadCsv(normalized)
     }
   }

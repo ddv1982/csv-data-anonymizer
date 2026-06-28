@@ -82,7 +82,7 @@ fn formal_tabular_release_generalizes_and_reports_k_l_t_models() {
 }
 
 #[test]
-fn formal_tabular_release_leaves_unselected_columns_unprocessed() {
+fn formal_tabular_release_rejects_unselected_columns() {
     let service = AnonymizerService::new("test-version");
     let temp_dir = tempfile::tempdir().unwrap();
     let input_path = temp_dir.path().join("formal-selected.csv");
@@ -93,10 +93,10 @@ fn formal_tabular_release_leaves_unselected_columns_unprocessed() {
     )
     .unwrap();
 
-    let result = service
+    let error = service
         .anonymize_csv(AnonymizeParams {
             file_path: input_path,
-            output_path: output_path.clone(),
+            output_path,
             columns: vec![1],
             controls: vec![ColumnControl {
                 column_index: 1,
@@ -124,15 +124,13 @@ fn formal_tabular_release_leaves_unselected_columns_unprocessed() {
                 synthetic: SyntheticDataConfig::default(),
             }),
         })
-        .unwrap();
+        .unwrap_err();
 
-    let output = read_sample(&output_path, 10).unwrap();
-
-    assert_eq!(result.privacy_report.direct_identifiers, 0);
-    assert_eq!(result.privacy_report.quasi_identifiers, 1);
-    assert_eq!(result.privacy_report.dp_budget, None);
-    assert_eq!(output.rows[0][0], "alice@example.com");
-    assert_eq!(output.rows[1][0], "bob@example.com");
+    assert!(
+        error
+            .to_string()
+            .contains("formal tabular releases require every column")
+    );
 }
 
 #[test]

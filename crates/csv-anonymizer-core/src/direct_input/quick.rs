@@ -1,7 +1,7 @@
 use crate::detection::{classify_pii_risk, detect_column_type_with_name, detect_empty_format};
 use crate::error::{AnonymizerError, Result};
 use crate::hash::{deterministic_number, deterministic_string, deterministic_uuid, random_uuid_v4};
-use crate::service::build_privacy_report;
+use crate::service::{build_privacy_report, validate_deterministic_seed};
 use crate::smart::{SmartReplacementProvider, prepare_smart_replacements_from_rows};
 use crate::strategies::{TransformState, transform_value_with_state};
 use crate::types::{
@@ -16,6 +16,7 @@ const QUICK_GENERATE_MAX_COUNT: usize = 1_000;
 const HEX_CHARSET: &str = "0123456789abcdef";
 
 pub fn transform_quick_values(input: QuickTransformParams) -> Result<QuickTransformData> {
+    validate_deterministic_seed(input.deterministic, &input.seed)?;
     let values = parse_quick_lines(&input.input);
     if values.is_empty() {
         return Err(AnonymizerError::input_parse(
@@ -67,6 +68,7 @@ pub fn generate_quick_values_with_smart_provider(
     input: QuickGenerateParams,
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<QuickTransformData> {
+    validate_deterministic_seed(input.deterministic, &input.seed)?;
     if input.count == 0 {
         return Err(AnonymizerError::input_parse(
             "quick generation",

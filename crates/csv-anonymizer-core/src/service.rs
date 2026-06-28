@@ -90,6 +90,7 @@ impl AnonymizerService {
         input: PreviewParams,
         provider: Option<&mut dyn SmartReplacementProvider>,
     ) -> Result<PreviewData> {
+        validate_deterministic_seed(input.deterministic, &input.seed)?;
         let file_path = normalize_path(&input.file_path)?;
         let sample = read_sample(&file_path, input.sample_count.saturating_mul(2).max(1))?;
         let metadata = build_column_metadata(&sample.headers, &sample.rows);
@@ -184,6 +185,7 @@ impl AnonymizerService {
         mut control: Option<&mut ProcessControl<'_>>,
         provider: Option<&mut dyn SmartReplacementProvider>,
     ) -> Result<AnonymizeData> {
+        validate_deterministic_seed(input.deterministic, &input.seed)?;
         let input_path = normalize_path(&input.file_path)?;
         let output_path = validate_output_path(&input.output_path, input.force)?;
         let sample = read_sample(&input_path, sample_rows.max(1))?;
@@ -343,7 +345,7 @@ pub(crate) fn apply_column_controls(
     Ok(controlled)
 }
 
-fn preview_warning_for_column(column: &ColumnMetadata) -> Option<PreviewWarning> {
+pub(crate) fn preview_warning_for_column(column: &ColumnMetadata) -> Option<PreviewWarning> {
     let message = match column.strategy {
         AnonymizationStrategy::PassThrough => {
             "Pass-through leaves selected values unchanged.".to_string()
@@ -373,6 +375,15 @@ fn preview_warning_for_column(column: &ColumnMetadata) -> Option<PreviewWarning>
         message,
         severity: WarningSeverity::Warning,
     })
+}
+
+pub(crate) fn validate_deterministic_seed(deterministic: bool, seed: &str) -> Result<()> {
+    if deterministic && seed.trim().is_empty() {
+        return Err(AnonymizerError::Privacy(
+            "repeatable replacements require a non-empty private seed".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) fn build_privacy_report(

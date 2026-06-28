@@ -107,6 +107,10 @@ fn parse_anonymize_args(args: &[OsString]) -> Result<CliAction, String> {
         index += 1;
     }
 
+    if deterministic && seed.trim().is_empty() {
+        return Err("--deterministic requires a non-empty --seed".to_string());
+    }
+
     Ok(CliAction::Anonymize {
         input: input.ok_or_else(|| "anonymize requires --input".to_string())?,
         output: output.ok_or_else(|| "anonymize requires --output".to_string())?,
@@ -324,5 +328,41 @@ mod tests {
             .unwrap_err()
             .contains("--columns")
         );
+    }
+
+    #[test]
+    fn rejects_deterministic_without_seed() {
+        let error = parse_cli_args(os_args(&[
+            "anonymize",
+            "--input",
+            "input.csv",
+            "--output",
+            "output.csv",
+            "--columns",
+            "1",
+            "--deterministic",
+        ]))
+        .unwrap_err();
+
+        assert!(error.contains("--deterministic requires a non-empty --seed"));
+    }
+
+    #[test]
+    fn rejects_deterministic_blank_seed() {
+        let error = parse_cli_args(os_args(&[
+            "anonymize",
+            "--input",
+            "input.csv",
+            "--output",
+            "output.csv",
+            "--columns",
+            "1",
+            "--deterministic",
+            "--seed",
+            " ",
+        ]))
+        .unwrap_err();
+
+        assert!(error.contains("--deterministic requires a non-empty --seed"));
     }
 }

@@ -3,6 +3,7 @@ use crate::local_ai::{
     LocalAiStatus, ensure_ollama_runtime_available, local_ai_status, open_setup_url,
     start_download_job,
 };
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use tauri::State;
 
 #[tauri::command]
@@ -19,8 +20,14 @@ pub fn start_local_ai_model_download(
     let job = downloads.create_job(request.model_name())?;
     let initial_status = job.snapshot()?;
     let worker_job = job.clone();
+    let panic_job = job.clone();
     let _job_handle = tauri::async_runtime::spawn_blocking(move || {
-        start_download_job(worker_job, request);
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            start_download_job(worker_job, request);
+        }));
+        if result.is_err() {
+            panic_job.finish_panic();
+        }
     });
     Ok(initial_status)
 }

@@ -4,6 +4,8 @@ import { GlossaryPopover } from '../GlossaryPopover'
 import { SwitchRow } from '../SwitchRow'
 import { FieldLabel, NullableNumberField, NumberField } from './PrivacyFieldControls'
 
+const RESET_CONFIRMATION_PHRASE = 'RESET DP BUDGET'
+
 export function DpBudgetSettings({
   budget,
   disabled,
@@ -15,6 +17,15 @@ export function DpBudgetSettings({
   onResetBudget: () => void
   onChange: (config: Partial<DpBudgetConfig>) => void
 }) {
+  function confirmResetBudget() {
+    const confirmation = window.prompt(
+      `Type ${RESET_CONFIRMATION_PHRASE} to reset the local DP budget ledger.`,
+    )
+    if (confirmation === RESET_CONFIRMATION_PHRASE) {
+      onResetBudget()
+    }
+  }
+
   return (
     <>
       <SwitchRow
@@ -54,7 +65,7 @@ export function DpBudgetSettings({
             type="button"
             className="button button-outline button-sm"
             disabled={disabled || budget.spentEpsilon === 0}
-            onClick={onResetBudget}
+            onClick={confirmResetBudget}
           >
             <RefreshCcw aria-hidden="true" />
             Reset budget

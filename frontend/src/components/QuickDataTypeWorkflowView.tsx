@@ -9,6 +9,7 @@ import { messageFrom } from '../utils/errors'
 import { formatToken } from '../utils/format'
 import { Alert } from './Alert'
 import { Card } from './Card'
+import { PrivacyReportSummary } from './ResultDisplay'
 
 type QuickBusyState = 'idle' | 'generating' | 'copying'
 const MIN_COUNT = 1
@@ -175,6 +176,8 @@ export function QuickDataTypeWorkflowView({
           </div>
         </Card>
       ) : null}
+
+      {result ? <PrivacyReportSummary privacyReport={result.privacyReport} /> : null}
     </div>
   )
 }

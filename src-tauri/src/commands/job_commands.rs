@@ -5,6 +5,7 @@ use crate::path_access::PathAccess;
 use crate::settings::DpBudgetLedger;
 use csv_anonymizer_core::{AnonymizeParams, ColumnControl, PrivacyConfig, SmartReplacementEntry};
 use serde::Deserialize;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::State;
@@ -42,26 +43,32 @@ pub async fn start_anonymize_job(
     let job = jobs.create_job(request.total_row_count)?;
     let initial_status = job.snapshot()?;
     let worker_job = job.clone();
+    let panic_job = job.clone();
     let worker_ledger = ledger.inner().clone();
 
     let _job_handle = tauri::async_runtime::spawn_blocking(move || {
-        run_anonymize_job(
-            worker_job,
-            worker_ledger,
-            AnonymizeParams {
-                file_path,
-                output_path,
-                columns: request.columns,
-                controls: request.controls,
-                deterministic: request.deterministic,
-                seed: request.seed,
-                force: request.force,
-                preview_smart_replacements: request.preview_smart_replacements,
-                privacy_config: request.privacy_config,
-            },
-            request.sample_row_count,
-            request.local_ai,
-        );
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            run_anonymize_job(
+                worker_job,
+                worker_ledger,
+                AnonymizeParams {
+                    file_path,
+                    output_path,
+                    columns: request.columns,
+                    controls: request.controls,
+                    deterministic: request.deterministic,
+                    seed: request.seed,
+                    force: request.force,
+                    preview_smart_replacements: request.preview_smart_replacements,
+                    privacy_config: request.privacy_config,
+                },
+                request.sample_row_count,
+                request.local_ai,
+            );
+        }));
+        if result.is_err() {
+            panic_job.finish_panic();
+        }
     });
 
     Ok(initial_status)

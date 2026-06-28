@@ -20,6 +20,9 @@ export function useLocalAi(settings: AppSettings, onError: (message: string) => 
     }),
     [settings.localAiEnabled, settings.localAiModel],
   )
+  const selectedModel = request.model.trim() || 'gemma3:4b'
+  const statusMatchesModel = status?.model === selectedModel
+  const downloadMatchesModel = downloadStatus?.model === selectedModel
 
   const refresh = useCallback(async () => {
     try {
@@ -117,8 +120,8 @@ export function useLocalAi(settings: AppSettings, onError: (message: string) => 
     request,
     status,
     downloadStatus,
-    ready: Boolean(settings.localAiEnabled && status?.ready),
-    downloadRunning: downloadStatus?.state === 'running',
+    ready: Boolean(settings.localAiEnabled && statusMatchesModel && status?.ready),
+    downloadRunning: Boolean(downloadMatchesModel && downloadStatus?.state === 'running'),
     refresh,
     startDownload,
     cancelDownload,
