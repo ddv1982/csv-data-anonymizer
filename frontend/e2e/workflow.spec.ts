@@ -224,6 +224,20 @@ async function installTauriMock(page: Page) {
           message: 'Local AI is off.',
         }
       }
+      if (command === 'preflight_anonymization') {
+        const request = args?.request as { mode?: string; columns?: unknown[] } | undefined
+        return {
+          mode: request?.mode ?? 'preview',
+          readiness: {
+            status: 'verified',
+            blockers: [],
+            reviewItems: [],
+            verifiedItems: [`${request?.columns?.length ?? 0} column(s) selected.`],
+          },
+          evidence: [],
+          columnReports: [],
+        }
+      }
       if (command === 'pick_input_csv') return '/data/input.csv'
       if (command === 'pick_output_csv') return '/data/custom-output.csv'
       if (command === 'analyze_csv') {
@@ -379,8 +393,19 @@ async function installTauriMock(page: Page) {
         exhaustedPseudonymPools: 0,
         opaqueTokenValues: 0,
         smartReplacementValues: 0,
+        smartReplacementRejections: 0,
+        smartReplacementRejectionReasons: [],
         smartReplacementFallbacks: 0,
         formalModels: [],
+        readiness: {
+          status: 'verified',
+          blockers: [],
+          reviewItems: [],
+          verifiedItems: [],
+        },
+        evidence: [],
+        columnReports: [],
+        utilityMetrics: [],
         notes: [],
       }
     }

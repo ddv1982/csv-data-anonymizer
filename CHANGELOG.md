@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.49 - 2026-06-29
+
+- Supersede v1.0.48 without moving the failed tag, keeping the backend preflight, Smart rejection telemetry, and private seed vaulting changes.
+- Fix the Playwright workflow mock for backend preflight so Linux E2E preview, paste, and cancel flows exercise the new command path correctly.
+- Ignore Playwright result directories in frontend linting so local verification remains stable when browser tests have just run.
+
 ## v1.0.48 - 2026-06-29
 
 - Add backend-owned release preflight checks with Tauri command wiring, generated permissions, DP budget state injection, and frontend readiness integration for preview and anonymize flows.
