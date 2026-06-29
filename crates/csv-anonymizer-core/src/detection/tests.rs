@@ -139,6 +139,106 @@ fn detects_postal_code_and_address_from_header_context() {
 }
 
 #[test]
+fn detects_nested_zip_code_before_numeric_id() {
+    let result = detect_column_type_with_name("address.zipCode", &strings(&["81711"]));
+
+    assert_eq!(result.data_type, DataType::PostalCode);
+}
+
+#[test]
+fn detects_phone_number_from_header_context() {
+    let result = detect_column_type_with_name("phoneNumber", &strings(&["+1-555-0123"]));
+
+    assert_eq!(result.data_type, DataType::Phone);
+    assert_eq!(result.confidence, Confidence::High);
+}
+
+#[test]
+fn username_header_adds_account_identifier_evidence() {
+    let values = strings(&["johndoe"]);
+    let detection = detect_column_type_with_name("username", &values);
+    let analysis = analyze_column_privacy(
+        "username",
+        0,
+        &values,
+        detection.data_type,
+        detection.confidence,
+    );
+
+    assert_eq!(detection.data_type, DataType::String);
+    assert_eq!(analysis.pii_risk, PiiRisk::High);
+    assert!(analysis.evidence.iter().any(|summary| {
+        summary.kind == PrivacyFindingKind::AccountOrFinancialId
+            && summary.data_type == DataType::String
+    }));
+}
+
+#[test]
+fn private_and_user_event_dates_have_private_date_evidence() {
+    let date_of_birth_values = strings(&["1989-07-01"]);
+    let date_of_birth_detection =
+        detect_column_type_with_name("dateOfBirth", &date_of_birth_values);
+    let date_of_birth_analysis = analyze_column_privacy(
+        "dateOfBirth",
+        0,
+        &date_of_birth_values,
+        date_of_birth_detection.data_type,
+        date_of_birth_detection.confidence,
+    );
+
+    assert_eq!(date_of_birth_detection.data_type, DataType::Timestamp);
+    assert_eq!(date_of_birth_analysis.pii_risk, PiiRisk::Medium);
+
+    let last_login_values = strings(&["2024-12-15T14:22:00"]);
+    let last_login_detection = detect_column_type_with_name("lastLoginAt", &last_login_values);
+    let last_login_analysis = analyze_column_privacy(
+        "lastLoginAt",
+        0,
+        &last_login_values,
+        last_login_detection.data_type,
+        last_login_detection.confidence,
+    );
+
+    assert_eq!(last_login_detection.data_type, DataType::Timestamp);
+    assert_eq!(last_login_analysis.pii_risk, PiiRisk::Medium);
+    assert!(
+        last_login_analysis
+            .evidence
+            .iter()
+            .any(|summary| summary.kind == PrivacyFindingKind::PrivateDate)
+    );
+}
+
+#[test]
+fn avoids_private_date_false_positive_for_birth_substrings() {
+    let values = strings(&["2024-01-01"]);
+    let detection = detect_column_type_with_name("candidateOfBirth", &values);
+    let analysis = analyze_column_privacy(
+        "candidateOfBirth",
+        0,
+        &values,
+        detection.data_type,
+        detection.confidence,
+    );
+
+    assert_eq!(detection.data_type, DataType::Timestamp);
+    assert_eq!(analysis.pii_risk, PiiRisk::Low);
+    assert!(
+        !analysis
+            .findings
+            .iter()
+            .any(|finding| finding.detector.starts_with("header:"))
+    );
+}
+
+#[test]
+fn avoids_phone_false_positive_for_unrelated_phone_suffix_headers() {
+    let result = detect_column_type_with_name("headphone", &strings(&["1234567"]));
+
+    assert_ne!(result.data_type, DataType::Phone);
+}
+
+#[test]
 fn invalid_ipv4_values_fall_back_to_numeric_or_string_detection() {
     let result = detect_column_type(&strings(&["999.168.1.1", "10.0.0.999", "172.16.0.3"]));
     assert_ne!(result.data_type, DataType::IpAddress);

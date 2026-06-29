@@ -12,7 +12,7 @@ use crate::smart::{
     missing_smart_replacement_values_from_csv, prepare_smart_replacements_from_csv,
     prepare_smart_replacements_from_rows,
 };
-use crate::strategies::TransformState;
+use crate::strategies::{STRUCTURED_SCALAR_REDACTION_WARNING, TransformState};
 use crate::types::{
     AnonymizationStrategy, AnonymizeData, AnonymizeParams, ColumnControl, ColumnMetadata, DataType,
     HeadersData, PreflightData, PreflightMode, PreflightParams, PreviewData, PreviewParams,
@@ -575,6 +575,10 @@ pub(crate) fn preview_warning_for_column(column: &ColumnMetadata) -> Option<Prev
             "Smart replacement uses Local AI on your device. Review the preview before writing output."
                 .to_string()
         }
+        AnonymizationStrategy::Redact if redaction_changes_structured_scalar_type(column) => {
+            STRUCTURED_SCALAR_REDACTION_WARNING.to_string()
+        }
+        AnonymizationStrategy::Redact => return None,
         AnonymizationStrategy::Mask | AnonymizationStrategy::Tokenize => return None,
         AnonymizationStrategy::Auto | AnonymizationStrategy::Pseudonymize => {
             match column.detected_type {
@@ -595,6 +599,25 @@ pub(crate) fn preview_warning_for_column(column: &ColumnMetadata) -> Option<Prev
         column_name: column.name.clone(),
         message,
         severity: WarningSeverity::Warning,
+    })
+}
+
+pub(crate) fn redaction_changes_structured_scalar_type(column: &ColumnMetadata) -> bool {
+    column.strategy == AnonymizationStrategy::Redact
+        && is_json_or_yaml_source(column)
+        && matches!(
+            column.detected_type,
+            DataType::NumericId
+                | DataType::NumericValue
+                | DataType::Boolean
+                | DataType::Currency
+                | DataType::Percentage
+        )
+}
+
+fn is_json_or_yaml_source(column: &ColumnMetadata) -> bool {
+    column.source_path.as_deref().is_some_and(|path| {
+        matches!(path, "json" | "yaml") || path.starts_with("json/") || path.starts_with("yaml/")
     })
 }
 
@@ -642,6 +665,7 @@ pub(crate) fn build_privacy_report(
         smart_replacement_columns: 0,
         opaque_token_columns: 0,
         masked_columns: 0,
+        redacted_columns: 0,
         generalized_columns: 0,
         pass_through_columns: 0,
         suppressed_rows: 0,
@@ -689,6 +713,7 @@ pub(crate) fn build_privacy_report(
 
         match column.strategy {
             AnonymizationStrategy::Mask => report.masked_columns += 1,
+            AnonymizationStrategy::Redact => report.redacted_columns += 1,
             AnonymizationStrategy::PassThrough => report.pass_through_columns += 1,
             AnonymizationStrategy::Tokenize => report.opaque_token_columns += 1,
             AnonymizationStrategy::LocalAi => report.smart_replacement_columns += 1,
@@ -725,6 +750,7 @@ pub(crate) fn count_transforming_selected_columns(columns: &[ColumnMetadata]) ->
 fn strategy_changes_output(column: &ColumnMetadata) -> bool {
     match column.strategy {
         AnonymizationStrategy::Mask
+        | AnonymizationStrategy::Redact
         | AnonymizationStrategy::Tokenize
         | AnonymizationStrategy::LocalAi => true,
         AnonymizationStrategy::PassThrough => false,

@@ -113,7 +113,7 @@ export const glossaryTerms = {
   },
   strategy: {
     title: 'Strategy',
-    body: 'How selected cell values are transformed in standard row-level mode. Auto and Pseudonymize use type-based rules; Mask, Tokenize, Smart replacement, and Pass through are explicit choices.',
+    body: 'How selected cell values are transformed in standard row-level mode. Auto and Pseudonymize use type-based rules; Mask, Redact, Tokenize, Smart replacement, and Pass through are explicit choices.',
   },
   role: {
     title: 'Role',
@@ -167,6 +167,10 @@ export const glossaryTerms = {
     title: 'Mask',
     body: 'Replace every non-space character with an asterisk, preserving spaces and length cues.',
   },
+  redact: {
+    title: 'Redact',
+    body: 'Replace values with typed placeholders such as [EMAIL], [PERSON], or [DATE].',
+  },
   passThrough: {
     title: 'Pass through',
     body: 'Keep the original value unchanged.',
@@ -206,6 +210,10 @@ export const glossaryTerms = {
   maskedColumns: {
     title: 'Masked columns',
     body: 'Columns whose selected values were masked with asterisk characters.',
+  },
+  redactedColumns: {
+    title: 'Redacted columns',
+    body: 'Columns whose selected values were replaced with typed placeholders such as [EMAIL], [PERSON], or [DATE].',
   },
   generalizedColumns: {
     title: 'Generalized columns',

@@ -77,6 +77,7 @@ pub(super) fn process_synthetic_data(
             smart_replacement_columns: 0,
             opaque_token_columns: 0,
             masked_columns: 0,
+            redacted_columns: 0,
             generalized_columns: role_plan.role_count(ColumnRole::QuasiIdentifier),
             pass_through_columns: role_plan.role_count(ColumnRole::Attribute),
             suppressed_rows: 0,

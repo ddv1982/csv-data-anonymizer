@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.55 - 2026-06-30
+
+- Add Redact as a first-class manual strategy for CSV and pasted-data columns, with typed placeholders, privacy-report accounting, and rendered dropdown coverage.
+- Default high and medium-risk direct JSON/YAML/XML/text/log fields to Redact while preserving CSV Auto defaults and explicit user overrides.
+- Tighten sensitive-field detection for phones, usernames, postal codes, private dates, and user-linked timestamps, and scope scalar type-change warnings to structured JSON/YAML output.
+
 ## v1.0.54 - 2026-06-29
 
 - Gate direct Paste Data and Quick by Data Type actions on loaded settings, and keep CSV output creation disabled while selected Smart replacement columns still need Local AI setup.

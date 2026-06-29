@@ -71,6 +71,7 @@ pub(super) fn process_dp_aggregate(
             smart_replacement_columns: 0,
             opaque_token_columns: 0,
             masked_columns: 0,
+            redacted_columns: 0,
             generalized_columns: 0,
             pass_through_columns: 0,
             suppressed_rows: 0,

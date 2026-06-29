@@ -36,12 +36,14 @@ const smartReplacementStrategies: AnonymizationStrategy[] = [
 export const csvStrategies: AnonymizationStrategy[] = [
   ...smartReplacementStrategies,
   'mask',
+  'redact',
   'passThrough',
 ]
 
 export const directInputStrategies: AnonymizationStrategy[] = [
   ...smartReplacementStrategies,
   'mask',
+  'redact',
   'passThrough',
 ]
 
@@ -50,6 +52,9 @@ export const quickGenerateStrategies: AnonymizationStrategy[] = smartReplacement
 export function strategyLabel(strategy: AnonymizationStrategy) {
   if (strategy === 'localAi') {
     return 'Smart replacement (Local AI)'
+  }
+  if (strategy === 'redact') {
+    return 'Redact'
   }
   return formatToken(strategy)
 }

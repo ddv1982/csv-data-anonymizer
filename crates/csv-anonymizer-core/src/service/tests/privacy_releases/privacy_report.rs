@@ -29,6 +29,7 @@ fn anonymize_returns_privacy_report() {
     assert_eq!(result.privacy_report.direct_identifiers, 1);
     assert_eq!(result.privacy_report.quasi_identifiers, 1);
     assert_eq!(result.privacy_report.masked_columns, 1);
+    assert_eq!(result.privacy_report.redacted_columns, 0);
     assert_eq!(result.privacy_report.generalized_columns, 0);
     assert_eq!(result.privacy_report.pass_through_columns, 1);
     assert_eq!(result.privacy_report.opaque_token_columns, 0);
@@ -53,6 +54,7 @@ fn anonymize_returns_privacy_report() {
     assert_eq!(json["privacyReport"]["pseudonymizedColumns"], 0);
     assert_eq!(json["privacyReport"]["opaqueTokenColumns"], 0);
     assert_eq!(json["privacyReport"]["maskedColumns"], 1);
+    assert_eq!(json["privacyReport"]["redactedColumns"], 0);
     assert_eq!(json["privacyReport"]["generalizedColumns"], 0);
     assert_eq!(json["privacyReport"]["passThroughColumns"], 1);
     assert_eq!(json["privacyReport"]["uniquePseudonymValues"], 0);
@@ -65,6 +67,114 @@ fn anonymize_returns_privacy_report() {
             .as_str()
             .unwrap()
             .contains("pseudonymization")
+    );
+}
+
+#[test]
+fn csv_workflow_keeps_auto_default_but_allows_manual_redact() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("manual-redact.csv");
+    let output_path = temp_dir.path().join("manual-redact-output.csv");
+    fs::write(&input_path, "email,country\nuser@example.com,US\n").unwrap();
+
+    let analysis = service.analyze_csv(input_path.clone()).unwrap();
+    let email = analysis
+        .columns
+        .iter()
+        .find(|column| column.name == "email")
+        .unwrap();
+    assert_eq!(email.strategy, AnonymizationStrategy::Auto);
+
+    let preview = service
+        .preview_anonymization(PreviewParams {
+            file_path: input_path.clone(),
+            columns: vec![email.index],
+            controls: vec![ColumnControl {
+                column_index: email.index,
+                type_override: None,
+                strategy: AnonymizationStrategy::Redact,
+            }],
+            deterministic: true,
+            seed: "manual-redact-seed".to_string(),
+            sample_count: 3,
+        })
+        .unwrap();
+
+    assert_eq!(preview.previews[0].samples[0].anonymized, "[EMAIL]");
+
+    let result = service
+        .anonymize_csv(AnonymizeParams {
+            file_path: input_path,
+            output_path: output_path.clone(),
+            columns: vec![email.index],
+            controls: vec![ColumnControl {
+                column_index: email.index,
+                type_override: None,
+                strategy: AnonymizationStrategy::Redact,
+            }],
+            deterministic: true,
+            seed: "manual-redact-seed".to_string(),
+            force: false,
+            preview_smart_replacements: vec![],
+            privacy_config: None,
+        })
+        .unwrap();
+    let output = fs::read_to_string(output_path).unwrap();
+
+    assert!(output.contains("[EMAIL]"));
+    assert_eq!(result.columns_anonymized, 1);
+    assert_eq!(result.privacy_report.redacted_columns, 1);
+    assert_eq!(result.privacy_report.masked_columns, 0);
+}
+
+#[test]
+fn csv_redact_numeric_columns_does_not_emit_structured_scalar_warning() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("manual-redact-id.csv");
+    let output_path = temp_dir.path().join("manual-redact-id-output.csv");
+    fs::write(&input_path, "id\n93019\n").unwrap();
+
+    let preview = service
+        .preview_anonymization(PreviewParams {
+            file_path: input_path.clone(),
+            columns: vec![0],
+            controls: vec![ColumnControl {
+                column_index: 0,
+                type_override: None,
+                strategy: AnonymizationStrategy::Redact,
+            }],
+            deterministic: true,
+            seed: "manual-redact-seed".to_string(),
+            sample_count: 3,
+        })
+        .unwrap();
+    let result = service
+        .anonymize_csv(AnonymizeParams {
+            file_path: input_path,
+            output_path,
+            columns: vec![0],
+            controls: vec![ColumnControl {
+                column_index: 0,
+                type_override: None,
+                strategy: AnonymizationStrategy::Redact,
+            }],
+            deterministic: true,
+            seed: "manual-redact-seed".to_string(),
+            force: false,
+            preview_smart_replacements: vec![],
+            privacy_config: None,
+        })
+        .unwrap();
+
+    assert!(preview.warnings.is_empty());
+    assert!(
+        !result
+            .privacy_report
+            .notes
+            .iter()
+            .any(|note| note.contains("may change scalar value types"))
     );
 }
 

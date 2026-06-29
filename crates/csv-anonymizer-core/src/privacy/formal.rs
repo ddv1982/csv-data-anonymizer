@@ -102,6 +102,7 @@ pub(super) fn process_formal_tabular(
             smart_replacement_columns: 0,
             opaque_token_columns: 0,
             masked_columns: role_plan.role_count(ColumnRole::DirectIdentifier),
+            redacted_columns: 0,
             generalized_columns,
             pass_through_columns: role_plan.role_count(ColumnRole::Attribute)
                 + role_plan.role_count(ColumnRole::Sensitive),

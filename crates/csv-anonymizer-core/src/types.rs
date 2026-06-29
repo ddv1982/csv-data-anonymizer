@@ -156,6 +156,7 @@ pub enum AnonymizationStrategy {
     Tokenize,
     LocalAi,
     Mask,
+    Redact,
     PassThrough,
 }
 
@@ -497,6 +498,8 @@ pub struct PrivacyReport {
     pub smart_replacement_columns: usize,
     pub opaque_token_columns: usize,
     pub masked_columns: usize,
+    #[serde(default)]
+    pub redacted_columns: usize,
     pub generalized_columns: usize,
     pub pass_through_columns: usize,
     pub suppressed_rows: usize,

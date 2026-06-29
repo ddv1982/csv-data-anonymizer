@@ -36,7 +36,14 @@ export type PrivacyFindingKind =
   | 'url'
   | 'mixedSensitiveText'
 export type EmptyFormat = 'emptyString' | 'null' | 'mixed'
-export type AnonymizationStrategy = 'auto' | 'pseudonymize' | 'tokenize' | 'localAi' | 'mask' | 'passThrough'
+export type AnonymizationStrategy =
+  | 'auto'
+  | 'pseudonymize'
+  | 'tokenize'
+  | 'localAi'
+  | 'mask'
+  | 'redact'
+  | 'passThrough'
 export type ReleaseMode = 'standard' | 'formalTabular' | 'differentialPrivacyAggregate' | 'syntheticData'
 export type ColumnRole = 'auto' | 'directIdentifier' | 'quasiIdentifier' | 'sensitive' | 'attribute' | 'exclude'
 export type DpAggregate = 'count' | 'sum' | 'mean'
@@ -321,6 +328,7 @@ export interface PrivacyReport {
   smartReplacementColumns: number
   opaqueTokenColumns: number
   maskedColumns: number
+  redactedColumns: number
   generalizedColumns: number
   passThroughColumns: number
   suppressedRows: number

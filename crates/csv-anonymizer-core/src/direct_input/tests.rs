@@ -5,40 +5,7 @@ use crate::types::{
     PiiRisk, SmartReplacementEntry, SmartReplacementRejectionCount, SmartReplacementRejectionReason,
 };
 
-#[test]
-fn analyzes_and_transforms_json_array() {
-    let input = r#"[
-  {"email":"ada@example.com","id":"123456"},
-  {"email":"grace@example.com","id":"987654"}
-]"#;
-    let analysis = analyze_paste_data(PasteAnalyzeParams {
-        content: input.to_string(),
-        format: PasteDataFormat::Json,
-        sample_row_count: 10,
-    })
-    .unwrap();
-
-    let email = analysis
-        .columns
-        .iter()
-        .find(|column| column.name == "[].email")
-        .unwrap();
-    assert_eq!(email.detected_type, DataType::Email);
-
-    let result = transform_paste_data(PasteTransformParams {
-        content: input.to_string(),
-        format: PasteDataFormat::Json,
-        columns: vec![email.index],
-        controls: Vec::new(),
-        deterministic: true,
-        seed: "seed".to_string(),
-        preview_smart_replacements: Vec::new(),
-    })
-    .unwrap();
-
-    assert!(result.output.contains("@example.com"));
-    assert!(!result.output.contains("ada@example.com"));
-}
+mod redaction;
 
 #[test]
 fn transforms_csv_text_with_existing_csv_rules() {
