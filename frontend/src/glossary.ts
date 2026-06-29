@@ -251,6 +251,10 @@ export const glossaryTerms = {
     title: 'Smart fallbacks',
     body: 'AI replacement values that were missing or invalid and fell back to rule-based pseudonymization.',
   },
+  smartRejections: {
+    title: 'Smart rejections',
+    body: 'Local AI replacement candidates rejected during validation before rule-based fallback handling.',
+  },
   formalModel: {
     title: 'Formal model',
     body: 'A privacy check reported by a formal, DP aggregate, or synthetic release mode.',

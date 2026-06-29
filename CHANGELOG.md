@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.48 - 2026-06-29
+
+- Add backend-owned release preflight checks with Tauri command wiring, generated permissions, DP budget state injection, and frontend readiness integration for preview and anonymize flows.
+- Expand Smart replacement audit evidence with validated preview reuse plus Local AI rejection reason counts for empty, copied, leaking, duplicate, and malformed candidates.
+- Move remembered repeatable seeds out of settings JSON into the local OS credential store with migration, clear/save behavior, and private seed vault documentation.
+
 ## v1.0.47 - 2026-06-29
 
 - Harden privacy safeguards by warning on selected direct-input columns, rejecting blank deterministic seeds across CLI/core/direct-input paths, and requiring all columns in formal tabular releases.

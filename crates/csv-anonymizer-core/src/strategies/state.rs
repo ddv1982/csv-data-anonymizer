@@ -34,20 +34,26 @@ impl TransformState {
         smart_replacements: SmartReplacementMap,
     ) -> Self {
         let smart_replacement_values = smart_replacements.len();
+        let smart_replacement_requests = smart_replacements.requested_values();
+        let smart_replacement_rejections = smart_replacements.rejected_values();
+        let smart_replacement_rejection_reasons = smart_replacements.rejection_reasons();
         Self {
             deterministic,
             seed: seed.into(),
             mappers: HashMap::new(),
             smart_replacements,
             report: TransformReport {
+                smart_replacement_requests,
                 smart_replacement_values,
+                smart_replacement_rejections,
+                smart_replacement_rejection_reasons,
                 ..TransformReport::default()
             },
         }
     }
 
     pub fn report(&self) -> TransformReport {
-        self.report
+        self.report.clone()
     }
 
     fn mapper_mut(&mut self, domain: PseudonymDomain) -> &mut PseudonymMapper {

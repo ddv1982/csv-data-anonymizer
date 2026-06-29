@@ -1,16 +1,21 @@
 use super::shared::{
-    authorize_or_confirm_input_file, default_output_path_with_suffix, run_blocking, service,
-    should_auto_select,
+    authorize_or_confirm_input_file, authorize_or_confirm_output_file,
+    default_output_path_with_suffix, run_blocking, service, should_auto_select,
 };
-use crate::local_ai::{LocalAiRequest, smart_provider_for_request, smart_provider_for_strategy};
+use crate::local_ai::{
+    LocalAiRequest, local_ai_status, smart_provider_for_request, smart_provider_for_strategy,
+};
 use crate::path_access::PathAccess;
+use crate::settings::DpBudgetLedger;
 use csv_anonymizer_core::{
-    ColumnControl, HeadersData, PasteAnalyzeData, PasteAnalyzeParams, PastePreviewParams,
-    PasteTransformData, PasteTransformParams, PreviewData, PreviewParams, QuickGenerateParams,
-    QuickTransformData, SmartReplacementProvider,
+    AnonymizationStrategy, ColumnControl, HeadersData, PasteAnalyzeData, PasteAnalyzeParams,
+    PastePreviewParams, PasteTransformData, PasteTransformParams, PreflightData, PreflightMode,
+    PreflightParams, PreviewData, PreviewParams, PrivacyConfig, QuickGenerateParams,
+    QuickTransformData, SmartReplacementEntry, SmartReplacementProvider,
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::Arc;
 use tauri::State;
 
 #[derive(Debug, Clone, Serialize)]
@@ -31,6 +36,26 @@ pub struct PreviewRequest {
     pub deterministic: bool,
     pub seed: String,
     pub sample_count: usize,
+    pub local_ai: Option<LocalAiRequest>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreflightRequest {
+    pub mode: PreflightMode,
+    pub file_path: PathBuf,
+    pub output_path: Option<PathBuf>,
+    pub columns: Vec<usize>,
+    #[serde(default)]
+    pub controls: Vec<ColumnControl>,
+    pub deterministic: bool,
+    pub seed: String,
+    pub force: bool,
+    pub sample_row_count: usize,
+    #[serde(default)]
+    pub privacy_config: Option<PrivacyConfig>,
+    #[serde(default)]
+    pub preview_smart_replacements: Vec<SmartReplacementEntry>,
     pub local_ai: Option<LocalAiRequest>,
 }
 
@@ -116,6 +141,70 @@ pub async fn preview_anonymization(
                 },
                 provider,
             )
+            .map_err(|error| error.to_string())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn preflight_anonymization(
+    app: tauri::AppHandle,
+    path_access: State<'_, PathAccess>,
+    ledger: State<'_, Arc<DpBudgetLedger>>,
+    request: PreflightRequest,
+) -> Result<PreflightData, String> {
+    let mode = request.mode;
+    let file_path = authorize_or_confirm_input_file(&app, &path_access, request.file_path.clone())?;
+    let output_path = match (mode, request.output_path.clone()) {
+        (PreflightMode::Anonymize, Some(path)) => {
+            Some(authorize_or_confirm_output_file(&app, &path_access, path)?)
+        }
+        (_, output_path) => output_path,
+    };
+
+    let ledger = ledger.inner().clone();
+    run_blocking(move || {
+        let privacy_config = ledger
+            .privacy_config_for_preflight(request.privacy_config)
+            .map_err(|error| error.to_string())?;
+        let local_ai_required = request.controls.iter().any(|control| {
+            request.columns.contains(&control.column_index)
+                && control.strategy == AnonymizationStrategy::LocalAi
+        });
+        let (local_ai_ready, local_ai_message) = if local_ai_required {
+            match request.local_ai.clone() {
+                Some(local_ai) => match local_ai_status(local_ai) {
+                    Ok(status) => (status.ready, Some(status.message)),
+                    Err(error) => (false, Some(error)),
+                },
+                None => (
+                    false,
+                    Some(
+                        "Local AI is not configured for selected Smart replacement columns."
+                            .to_string(),
+                    ),
+                ),
+            }
+        } else {
+            (false, None)
+        };
+
+        service()
+            .preflight_anonymization(PreflightParams {
+                mode: request.mode,
+                file_path,
+                output_path,
+                columns: request.columns,
+                controls: request.controls,
+                deterministic: request.deterministic,
+                seed: request.seed,
+                force: request.force,
+                sample_row_count: request.sample_row_count,
+                privacy_config,
+                preview_smart_replacements: request.preview_smart_replacements,
+                local_ai_ready,
+                local_ai_message,
+            })
             .map_err(|error| error.to_string())
     })
     .await

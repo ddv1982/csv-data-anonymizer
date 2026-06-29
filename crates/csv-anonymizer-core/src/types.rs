@@ -59,6 +59,28 @@ pub struct DetectionResult {
     pub confidence: Confidence,
     pub sample_matches: usize,
     pub total_samples: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trace: Option<DetectionTrace>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DetectionTrace {
+    pub summary: String,
+    pub selected_reason: String,
+    pub total_non_empty: usize,
+    pub candidates: Vec<DetectionTraceItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DetectionTraceItem {
+    pub data_type: DataType,
+    pub reason: String,
+    pub match_count: usize,
+    pub total_considered: usize,
+    pub confidence: Confidence,
+    pub accepted: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -70,6 +92,8 @@ pub struct ColumnMetadata {
     pub index: usize,
     pub detected_type: DataType,
     pub confidence: Confidence,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detection_trace: Option<DetectionTrace>,
     pub pii_risk: PiiRisk,
     pub sample_values: Vec<String>,
     pub empty_format: EmptyFormat,
@@ -140,7 +164,7 @@ pub struct ProcessResult {
     pub transform_report: TransformReport,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TransformReport {
     pub unique_pseudonym_values: usize,
@@ -148,7 +172,10 @@ pub struct TransformReport {
     pub collisions_avoided: usize,
     pub exhausted_pseudonym_pools: usize,
     pub opaque_token_values: usize,
+    pub smart_replacement_requests: usize,
     pub smart_replacement_values: usize,
+    pub smart_replacement_rejections: usize,
+    pub smart_replacement_rejection_reasons: Vec<SmartReplacementRejectionCount>,
     pub smart_replacement_fallbacks: usize,
 }
 
@@ -299,6 +326,26 @@ pub struct SmartReplacementEntry {
     pub replacement: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SmartReplacementRejectionReason {
+    UnexpectedOriginal,
+    MissingOutput,
+    EmptyOutput,
+    SameAsOriginal,
+    ContainsOriginal,
+    ControlCharacter,
+    DuplicateOriginal,
+    DuplicateOutput,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SmartReplacementRejectionCount {
+    pub reason: SmartReplacementRejectionReason,
+    pub count: usize,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum WarningSeverity {
@@ -353,6 +400,45 @@ pub struct AnonymizeData {
     pub privacy_report: PrivacyReport,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PreflightMode {
+    Preview,
+    Anonymize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreflightParams {
+    pub mode: PreflightMode,
+    pub file_path: PathBuf,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_path: Option<PathBuf>,
+    pub columns: Vec<usize>,
+    #[serde(default)]
+    pub controls: Vec<ColumnControl>,
+    pub deterministic: bool,
+    pub seed: String,
+    pub force: bool,
+    pub sample_row_count: usize,
+    #[serde(default)]
+    pub privacy_config: Option<PrivacyConfig>,
+    #[serde(default)]
+    pub preview_smart_replacements: Vec<SmartReplacementEntry>,
+    pub local_ai_ready: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_ai_message: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreflightData {
+    pub mode: PreflightMode,
+    pub readiness: ReleaseReadiness,
+    pub evidence: Vec<ReleaseEvidenceItem>,
+    pub column_reports: Vec<ColumnReleaseReport>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PrivacyReport {
@@ -377,9 +463,83 @@ pub struct PrivacyReport {
     pub exhausted_pseudonym_pools: usize,
     pub opaque_token_values: usize,
     pub smart_replacement_values: usize,
+    #[serde(default)]
+    pub smart_replacement_rejections: usize,
+    #[serde(default)]
+    pub smart_replacement_rejection_reasons: Vec<SmartReplacementRejectionCount>,
     pub smart_replacement_fallbacks: usize,
     pub formal_models: Vec<PrivacyModelReport>,
+    #[serde(default)]
+    pub readiness: ReleaseReadiness,
+    #[serde(default)]
+    pub evidence: Vec<ReleaseEvidenceItem>,
+    #[serde(default)]
+    pub column_reports: Vec<ColumnReleaseReport>,
+    #[serde(default)]
+    pub utility_metrics: Vec<UtilityMetric>,
     pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReleaseReadiness {
+    pub status: ReleaseReadinessStatus,
+    pub blockers: Vec<String>,
+    pub review_items: Vec<String>,
+    pub verified_items: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ReleaseReadinessStatus {
+    Verified,
+    #[default]
+    Review,
+    Blocked,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReleaseEvidenceItem {
+    pub id: String,
+    pub label: String,
+    pub status: ReleaseEvidenceStatus,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ReleaseEvidenceStatus {
+    Verified,
+    Review,
+    Blocked,
+    Info,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColumnReleaseReport {
+    pub column_index: usize,
+    pub column_name: String,
+    pub selected: bool,
+    pub detected_type: DataType,
+    pub pii_risk: PiiRisk,
+    pub strategy: AnonymizationStrategy,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<ColumnRole>,
+    pub action: String,
+    pub status: ReleaseEvidenceStatus,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UtilityMetric {
+    pub label: String,
+    pub value: String,
+    pub status: ReleaseEvidenceStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

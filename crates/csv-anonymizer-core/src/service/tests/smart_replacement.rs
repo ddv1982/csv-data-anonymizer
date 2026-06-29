@@ -1,5 +1,8 @@
 use super::*;
 use crate::smart::SMART_REPLACEMENT_VALUE_CAP_PER_COLUMN;
+use crate::types::{
+    SmartReplacementEntry, SmartReplacementRejectionCount, SmartReplacementRejectionReason,
+};
 
 #[derive(Default)]
 struct MockSmartProvider;
@@ -32,6 +35,25 @@ impl RecordingSmartProvider {
             prefix,
             requests: Vec::new(),
         }
+    }
+}
+
+#[derive(Default)]
+struct RejectingSmartProvider;
+
+impl SmartReplacementProvider for RejectingSmartProvider {
+    fn generate_replacements(
+        &mut self,
+        request: SmartReplacementRequest<'_>,
+    ) -> Result<Vec<SmartReplacement>> {
+        Ok(request
+            .values
+            .iter()
+            .map(|value| SmartReplacement {
+                original: value.clone(),
+                replacement: value.clone(),
+            })
+            .collect())
     }
 }
 
@@ -185,6 +207,103 @@ fn anonymize_reuses_preview_smart_replacements_and_generates_missing_values() {
     assert_eq!(
         final_provider.requests,
         vec![vec!["Charlie Ray".to_string()]]
+    );
+}
+
+#[test]
+fn anonymize_rejects_invalid_preview_smart_replacements_and_generates_missing_values() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("smart-invalid-preview.csv");
+    let output_path = temp_dir.path().join("smart-invalid-preview-output.csv");
+    fs::write(&input_path, "name\nAlice Smith\n").unwrap();
+    let mut provider = RecordingSmartProvider::new("Generated");
+
+    let result = service
+        .anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+            AnonymizeParams {
+                file_path: input_path,
+                output_path: output_path.clone(),
+                columns: vec![0],
+                controls: vec![ColumnControl {
+                    column_index: 0,
+                    type_override: Some(DataType::FullName),
+                    strategy: AnonymizationStrategy::LocalAi,
+                }],
+                deterministic: true,
+                seed: "smart-invalid-preview-seed".to_string(),
+                force: false,
+                preview_smart_replacements: vec![SmartReplacementEntry {
+                    column_index: 0,
+                    original: "Alice Smith".to_string(),
+                    replacement: "Alice Smith".to_string(),
+                }],
+                privacy_config: None,
+            },
+            10,
+            None,
+            Some(&mut provider),
+        )
+        .unwrap();
+
+    let output = read_sample(&output_path, 10).unwrap();
+    assert_eq!(output.rows[0][0], "Generated 0 1");
+    assert_eq!(provider.requests, vec![vec!["Alice Smith".to_string()]]);
+    assert_eq!(result.privacy_report.smart_replacement_values, 1);
+    assert_eq!(result.privacy_report.smart_replacement_rejections, 1);
+    assert_eq!(
+        result.privacy_report.smart_replacement_rejection_reasons,
+        vec![SmartReplacementRejectionCount {
+            reason: SmartReplacementRejectionReason::SameAsOriginal,
+            count: 1,
+        }]
+    );
+}
+
+#[test]
+fn anonymize_reports_all_rejected_smart_replacement_batches() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("smart-all-rejected.csv");
+    let output_path = temp_dir.path().join("smart-all-rejected-output.csv");
+    fs::write(&input_path, "name\nAlice Smith\nBob Stone\n").unwrap();
+    let mut provider = RejectingSmartProvider;
+
+    let result = service
+        .anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+            AnonymizeParams {
+                file_path: input_path,
+                output_path: output_path.clone(),
+                columns: vec![0],
+                controls: vec![ColumnControl {
+                    column_index: 0,
+                    type_override: Some(DataType::FullName),
+                    strategy: AnonymizationStrategy::LocalAi,
+                }],
+                deterministic: true,
+                seed: "smart-all-rejected-seed".to_string(),
+                force: false,
+                preview_smart_replacements: vec![],
+                privacy_config: None,
+            },
+            10,
+            None,
+            Some(&mut provider),
+        )
+        .unwrap();
+
+    let output = read_sample(&output_path, 10).unwrap();
+    assert_ne!(output.rows[0][0], "Alice Smith");
+    assert_ne!(output.rows[1][0], "Bob Stone");
+    assert_eq!(result.privacy_report.smart_replacement_values, 0);
+    assert_eq!(result.privacy_report.smart_replacement_rejections, 2);
+    assert_eq!(result.privacy_report.smart_replacement_fallbacks, 2);
+    assert_eq!(
+        result.privacy_report.smart_replacement_rejection_reasons,
+        vec![SmartReplacementRejectionCount {
+            reason: SmartReplacementRejectionReason::SameAsOriginal,
+            count: 2,
+        }]
     );
 }
 

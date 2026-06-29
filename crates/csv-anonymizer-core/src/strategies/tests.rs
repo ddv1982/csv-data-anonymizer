@@ -9,6 +9,7 @@ fn column(detected_type: DataType) -> ColumnMetadata {
         index: 0,
         detected_type,
         confidence: Confidence::High,
+        detection_trace: None,
         pii_risk: PiiRisk::Medium,
         sample_values: vec![],
         empty_format: EmptyFormat::EmptyString,

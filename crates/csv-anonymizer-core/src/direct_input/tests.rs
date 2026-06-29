@@ -1,7 +1,9 @@
 use super::*;
 use crate::metadata::build_column_metadata;
 use crate::smart::{SmartReplacement, SmartReplacementProvider, SmartReplacementRequest};
-use crate::types::PiiRisk;
+use crate::types::{
+    PiiRisk, SmartReplacementEntry, SmartReplacementRejectionCount, SmartReplacementRejectionReason,
+};
 
 #[test]
 fn analyzes_and_transforms_json_array() {
@@ -750,6 +752,58 @@ fn paste_transform_reuses_preview_smart_replacements_and_generates_missing_value
     assert!(!result.output.contains("Grace Hopper"));
     assert!(!result.output.contains("Katherine Johnson"));
     assert_eq!(result.privacy_report.smart_replacement_values, 3);
+}
+
+#[test]
+fn paste_transform_rejects_invalid_preview_smart_replacements() {
+    let input = r#"[{"name":"Ada Lovelace"}]"#;
+    let analysis = analyze_paste_data(PasteAnalyzeParams {
+        content: input.to_string(),
+        format: PasteDataFormat::Json,
+        sample_row_count: 10,
+    })
+    .unwrap();
+    let name = analysis
+        .columns
+        .iter()
+        .find(|column| column.name == "[].name")
+        .unwrap();
+    let controls = vec![ColumnControl {
+        column_index: name.index,
+        type_override: Some(DataType::FullName),
+        strategy: AnonymizationStrategy::LocalAi,
+    }];
+    let mut provider = RecordingSmartProvider::default();
+
+    let result = transform_paste_data_with_smart_provider(
+        PasteTransformParams {
+            content: input.to_string(),
+            format: PasteDataFormat::Json,
+            columns: vec![name.index],
+            controls,
+            deterministic: true,
+            seed: "seed".to_string(),
+            preview_smart_replacements: vec![SmartReplacementEntry {
+                column_index: name.index,
+                original: "Ada Lovelace".to_string(),
+                replacement: "Ada Lovelace".to_string(),
+            }],
+        },
+        Some(&mut provider),
+    )
+    .unwrap();
+
+    assert_eq!(provider.requests, vec![vec!["Ada Lovelace".to_string()]]);
+    assert!(result.output.contains("Generated Person 1"));
+    assert_eq!(result.privacy_report.smart_replacement_values, 1);
+    assert_eq!(result.privacy_report.smart_replacement_rejections, 1);
+    assert_eq!(
+        result.privacy_report.smart_replacement_rejection_reasons,
+        vec![SmartReplacementRejectionCount {
+            reason: SmartReplacementRejectionReason::SameAsOriginal,
+            count: 1,
+        }]
+    );
 }
 
 #[test]

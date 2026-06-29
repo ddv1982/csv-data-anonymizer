@@ -175,6 +175,7 @@ fn quick_column(
         index: 0,
         detected_type: data_type,
         confidence: detection.confidence,
+        detection_trace: detection.trace,
         pii_risk: classify_pii_risk(data_type),
         sample_values: values
             .iter()

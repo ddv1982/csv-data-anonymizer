@@ -66,7 +66,9 @@ pub(super) fn transform_csv_text_with_smart_provider(
         existing_smart_replacements.as_ref(),
         provider,
     )?;
-    let smart_replacements = (!smart_replacements.is_empty()).then_some(smart_replacements);
+    let smart_replacements = smart_replacements
+        .has_activity()
+        .then_some(smart_replacements);
     let start_time = Instant::now();
     let (output, result) = process_csv_text(
         &input.content,

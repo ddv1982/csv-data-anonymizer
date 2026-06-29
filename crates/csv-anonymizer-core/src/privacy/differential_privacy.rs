@@ -8,6 +8,9 @@ use super::dataset::read_dataset;
 use super::roles::{build_role_plan, validate_common_config};
 use super::{PrivacyProcessResult, constrain_unselected_roles_to_attributes};
 use crate::error::{AnonymizerError, Result};
+use crate::release_report::{
+    ReportContext, build_column_reports, build_evidence, build_readiness, build_utility_metrics,
+};
 use crate::types::{
     ColumnMetadata, ColumnRole, PrivacyConfig, PrivacyModel, PrivacyModelReport, PrivacyReport,
     ProcessControl, ReleaseMode,
@@ -31,11 +34,10 @@ pub(super) fn process_dp_aggregate(
         ));
     }
     validate_common_config(columns, config)?;
-    validation::validate_dp_config(columns, &config.differential_privacy)?;
     let mut role_plan = build_role_plan(columns, config)?;
     constrain_unselected_roles_to_attributes(columns, &mut role_plan.roles);
-    validation::validate_group_label_policy(&role_plan.roles, &config.differential_privacy)?;
-    let budget_report = budget::evaluate_budget(&config.differential_privacy)?;
+    let budget_report =
+        validate_dp_release_config(columns, config, deterministic, &role_plan.roles)?;
     let start_time = Instant::now();
     let dataset = read_dataset(input_path, control.as_deref_mut())?;
     let (output_path, released_row_count) = writer::write_dp_aggregate_release(
@@ -48,6 +50,12 @@ pub(super) fn process_dp_aggregate(
     )?;
     let epsilon = budget::format_epsilon(config.differential_privacy.epsilon);
     let columns_anonymized = aggregate::dp_input_column_count(&config.differential_privacy);
+    let report_context = ReportContext {
+        roles: Some(&role_plan.roles),
+        dp_budget: budget_report.as_ref(),
+        dp_group_count: Some(released_row_count),
+        ..ReportContext::default()
+    };
 
     Ok(PrivacyProcessResult {
         row_count: released_row_count,
@@ -75,6 +83,8 @@ pub(super) fn process_dp_aggregate(
             exhausted_pseudonym_pools: 0,
             opaque_token_values: 0,
             smart_replacement_values: 0,
+            smart_replacement_rejections: 0,
+            smart_replacement_rejection_reasons: Vec::new(),
             smart_replacement_fallbacks: 0,
             formal_models: vec![PrivacyModelReport {
                 model: PrivacyModel::DifferentialPrivacy,
@@ -83,7 +93,45 @@ pub(super) fn process_dp_aggregate(
                 threshold: format!("epsilon={epsilon}"),
                 message: report::dp_model_message(budget_report.as_ref()),
             }],
+            readiness: build_readiness(
+                ReleaseMode::DifferentialPrivacyAggregate,
+                columns,
+                Some(config),
+                &report_context,
+            ),
+            evidence: build_evidence(
+                ReleaseMode::DifferentialPrivacyAggregate,
+                columns,
+                &report_context,
+            ),
+            column_reports: build_column_reports(
+                ReleaseMode::DifferentialPrivacyAggregate,
+                columns,
+                report_context.roles,
+            ),
+            utility_metrics: build_utility_metrics(
+                ReleaseMode::DifferentialPrivacyAggregate,
+                columns,
+                &report_context,
+            ),
             notes: report::dp_notes(&config.differential_privacy, budget_report.as_ref()),
         },
     })
+}
+
+pub(super) fn validate_dp_release_config(
+    columns: &[ColumnMetadata],
+    config: &PrivacyConfig,
+    deterministic: bool,
+    roles: &[ColumnRole],
+) -> Result<Option<crate::types::DpBudgetReport>> {
+    if deterministic {
+        return Err(AnonymizerError::Privacy(
+            "deterministic output is not supported for DP aggregate releases; turn off repeatable replacements before creating DP output"
+                .to_string(),
+        ));
+    }
+    validation::validate_dp_config(columns, &config.differential_privacy)?;
+    validation::validate_group_label_policy(roles, &config.differential_privacy)?;
+    budget::evaluate_budget(&config.differential_privacy)
 }

@@ -84,6 +84,7 @@ fn applies_column_selection_without_mutating_source() {
         index: 0,
         detected_type: DataType::Email,
         confidence: crate::types::Confidence::High,
+        detection_trace: None,
         pii_risk: PiiRisk::High,
         sample_values: vec![],
         empty_format: crate::types::EmptyFormat::EmptyString,
