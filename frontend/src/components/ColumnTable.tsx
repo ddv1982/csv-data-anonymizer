@@ -29,6 +29,10 @@ export function ColumnTable({
   onToggleShowAll,
   showRoles = true,
   availableStrategies = csvStrategies,
+  selectionLocked = false,
+  selectionLockedReason,
+  strategyControlsDisabled = false,
+  strategyControlsDisabledReason,
 }: {
   columns: ColumnMetadata[]
   allColumnCount: number
@@ -45,6 +49,10 @@ export function ColumnTable({
   onToggleShowAll: () => void
   showRoles?: boolean
   availableStrategies?: AnonymizationStrategy[]
+  selectionLocked?: boolean
+  selectionLockedReason?: string
+  strategyControlsDisabled?: boolean
+  strategyControlsDisabledReason?: string
 }) {
   const columnSpan = showRoles ? 8 : 7
 
@@ -85,14 +93,17 @@ export function ColumnTable({
                 const control = controls[column.index]
                 const role = roles?.[column.index]
                 const selected = selectedSet.has(column.index)
-                const rowClassName = [selectable ? 'clickable-row' : 'muted-row', selected ? 'selected-row' : '']
+                const canToggleSelection = selectable && !selectionLocked
+                const rowClassName = [canToggleSelection ? 'clickable-row' : '', !selectable ? 'muted-row' : '', selected ? 'selected-row' : '']
                   .filter(Boolean)
                   .join(' ')
                 return (
                   <tr
                     key={`${column.index}-${column.name}`}
                     className={rowClassName}
-                    onClick={() => onToggleColumn(column)}
+                    onClick={() => {
+                      if (canToggleSelection) onToggleColumn(column)
+                    }}
                   >
                     <td className="checkbox-column">
                       {selectable ? (
@@ -100,9 +111,17 @@ export function ColumnTable({
                           type="checkbox"
                           className="table-checkbox"
                           checked={selected}
-                          onChange={() => onToggleColumn(column)}
+                          disabled={selectionLocked}
+                          title={selectionLockedReason}
+                          onChange={() => {
+                            if (!selectionLocked) onToggleColumn(column)
+                          }}
                           onClick={(event) => event.stopPropagation()}
-                          aria-label={`Select column ${column.name}`}
+                          aria-label={
+                            selectionLocked
+                              ? `Column ${column.name} included in synthetic data`
+                              : `Select column ${column.name}`
+                          }
                         />
                       ) : (
                         <span className="checkbox-placeholder" aria-hidden="true" />
@@ -148,8 +167,9 @@ export function ColumnTable({
                     <td className="control-cell">
                       <span className="mobile-cell-label">Strategy</span>
                       <select
-                        value={control?.strategy ?? column.strategy ?? 'auto'}
-                        disabled={!selectable || loading}
+                        value={strategyControlsDisabled ? 'auto' : (control?.strategy ?? column.strategy ?? 'auto')}
+                        disabled={!selectable || loading || strategyControlsDisabled}
+                        title={strategyControlsDisabled ? strategyControlsDisabledReason : undefined}
                         aria-label={`Strategy for ${column.name}`}
                         onClick={(event) => event.stopPropagation()}
                         onChange={(event) => onStrategyChange(column, event.target.value as AnonymizationStrategy)}

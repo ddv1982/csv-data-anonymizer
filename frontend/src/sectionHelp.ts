@@ -205,7 +205,15 @@ export const sectionHelp = {
       },
       {
         label: 'Synthetic data',
-        text: 'Writes sampled test data from a simple per-column generator. It does not preserve relationships between columns and does not provide a DP synthetic guarantee.',
+        text: [
+          'Writes a complete replacement dataset from a simple per-column generator. Every CSV column is included, ',
+          { text: 'Strategy', term: 'strategy' },
+          ' choices such as ',
+          { text: 'Smart replacement', term: 'smartReplacement' },
+          ' are ignored, and ',
+          { text: 'Role', term: 'role' },
+          ' plus Type determine the generated placeholder shape. The same schema, row count, roles, types, and seed produce the same generated output. It does not preserve relationships between columns and does not provide a DP synthetic guarantee.',
+        ],
       },
     ],
   },
@@ -252,6 +260,10 @@ export const sectionHelp = {
           { text: 'fallbacks', term: 'fallback' },
           ', or suppressed rows.',
         ],
+      },
+      {
+        label: 'Synthetic data',
+        text: 'Synthetic data preview is disabled because the normal preview shows row-level Strategy transformations, while Synthetic data writes a generated replacement dataset.',
       },
     ],
   },

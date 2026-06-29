@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.50 - 2026-06-29
+
+- Make Synthetic data a self-correcting dataset-level release mode by selecting every CSV column, locking partial selection controls, and disabling the misleading row-level preview path.
+- Normalize Synthetic release controls so stale Smart replacement strategies no longer require Local AI, while preserving Type overrides and Role settings for generated output.
+- Expand Privacy Release help and regression coverage so users can see that Synthetic output includes every column, ignores row-level Strategy, and is deterministic for the same schema, settings, row count, roles, types, and seed.
+
 ## v1.0.49 - 2026-06-29
 
 - Supersede v1.0.48 without moving the failed tag, keeping the backend preflight, Smart rejection telemetry, and private seed vaulting changes.

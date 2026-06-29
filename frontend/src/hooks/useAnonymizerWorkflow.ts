@@ -9,6 +9,7 @@ import { DP_BUDGET_RESET_CONFIRMATION_PHRASE, resetDpBudgetLedger } from '../tau
 import type {
   AnonymizationStrategy,
   AppSettings,
+  ColumnControl,
   ColumnMetadata,
   ColumnRole,
   DataType,
@@ -99,9 +100,21 @@ export function useAnonymizerWorkflow() {
       >,
     [privacyConfig.columnRoles],
   )
-  const localAiSelected = selectionUsesLocalAi(selectedColumns)
+  const allSelectableColumnIndexes = useMemo(
+    () => selectableColumns.map((column) => column.index),
+    [selectableColumns],
+  )
+  const syntheticSelectionLocked = privacyConfig.releaseMode === 'syntheticData'
+  const localAiSelected = !syntheticSelectionLocked && selectionUsesLocalAi(selectedColumns)
   const localAiReady = localAi.ready
   const localAiDownloadRunning = localAi.downloadRunning
+  const selectedReleaseControls = useMemo(
+    () =>
+      syntheticSelectionLocked
+        ? syntheticControlsForColumns(selectedColumns, columns, columnControls)
+        : selectedControls,
+    [columnControls, columns, selectedColumns, selectedControls, syntheticSelectionLocked],
+  )
 
   const hasFile = Boolean(inputPath.trim())
   const isLoading = busy !== 'idle'
@@ -157,6 +170,7 @@ export function useAnonymizerWorkflow() {
     selectedColumns,
     hasColumns,
     hasSelectedColumns,
+    releaseMode: privacyConfig.releaseMode,
     busy,
     localAiReady,
     localAiBlocked,
@@ -173,7 +187,7 @@ export function useAnonymizerWorkflow() {
     inputPath,
     outputPath,
     selectedColumns,
-    selectedControls,
+    selectedControls: selectedReleaseControls,
     hasColumns,
     hasSelectedColumns,
     headers,
@@ -227,7 +241,7 @@ export function useAnonymizerWorkflow() {
   }
 
   function setColumnSelection(nextColumns: number[]) {
-    setCsvSelectedColumns(nextColumns)
+    setCsvSelectedColumns(syntheticSelectionLocked ? allSelectableColumnIndexes : nextColumns)
     clearArtifacts()
   }
 
@@ -242,6 +256,9 @@ export function useAnonymizerWorkflow() {
   }
 
   function updatePrivacyConfig(nextConfig: PrivacyConfig) {
+    if (nextConfig.releaseMode === 'syntheticData') {
+      setCsvSelectedColumns(allSelectableColumnIndexes)
+    }
     setPrivacyConfig(nextConfig)
     clearArtifacts()
     const currentSettings = latestSettingsRef.current
@@ -268,6 +285,11 @@ export function useAnonymizerWorkflow() {
   }
 
   function toggleColumn(column: ColumnMetadata) {
+    if (syntheticSelectionLocked) {
+      setCsvSelectedColumns(allSelectableColumnIndexes)
+      clearArtifacts()
+      return
+    }
     toggleCsvColumn(column)
     clearArtifacts()
   }
@@ -306,6 +328,7 @@ export function useAnonymizerWorkflow() {
     visibleColumns,
     hiddenColumnCount,
     allSelected,
+    syntheticSelectionLocked,
     hasFile,
     hasColumns,
     hasSelectedColumns,
@@ -447,6 +470,29 @@ function formatColumnList(names: string[]) {
   if (names.length === 0) return 'detector-flagged columns'
   if (names.length <= 3) return names.join(', ')
   return `${names.slice(0, 3).join(', ')} and ${names.length - 3} more detector-flagged columns`
+}
+
+function syntheticControlsForColumns(
+  columnIndexes: number[],
+  columns: ColumnMetadata[],
+  controls: Record<number, ColumnControl>,
+): ColumnControl[] {
+  return columnIndexes.flatMap((index) => {
+    const column = columns.find((candidate) => candidate.index === index)
+    const control = controls[index]
+    const strategy = control?.strategy ?? column?.strategy ?? 'auto'
+    const typeOverride = control?.typeOverride ?? null
+
+    if (strategy === 'auto' && typeOverride === null) return []
+
+    return [
+      {
+        columnIndex: index,
+        typeOverride,
+        strategy: 'auto',
+      },
+    ]
+  })
 }
 
 export type AnonymizerWorkflowState = ReturnType<typeof useAnonymizerWorkflow>

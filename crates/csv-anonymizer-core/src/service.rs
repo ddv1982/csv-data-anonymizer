@@ -86,7 +86,18 @@ impl AnonymizerService {
             verified_items.push(format!("{} column(s) selected.", input.columns.len()));
         }
 
-        let controlled_metadata = match apply_column_controls(&metadata, &input.controls) {
+        let release_mode = input
+            .privacy_config
+            .as_ref()
+            .map(|config| config.release_mode)
+            .unwrap_or_default();
+        let row_level_strategy_controls_ignored = release_mode != ReleaseMode::Standard
+            && input
+                .controls
+                .iter()
+                .any(|control| control.strategy != AnonymizationStrategy::Auto);
+        let effective_controls = controls_for_release_mode(&input.controls, release_mode);
+        let controlled_metadata = match apply_column_controls(&metadata, &effective_controls) {
             Ok(columns) => columns,
             Err(error) => {
                 blockers.push(error.to_string());
@@ -138,7 +149,7 @@ impl AnonymizerService {
             },
         }
 
-        let local_ai_required = if selected_smart_columns {
+        let local_ai_required = if selected_smart_columns && release_mode == ReleaseMode::Standard {
             match input.mode {
                 PreflightMode::Preview => true,
                 PreflightMode::Anonymize => match missing_smart_replacement_values_from_csv(
@@ -182,17 +193,23 @@ impl AnonymizerService {
             }
         } else {
             verified_items.push(if selected_smart_columns {
-                "Preview Smart replacements cover selected Smart columns.".to_string()
+                if release_mode == ReleaseMode::Standard {
+                    "Preview Smart replacements cover selected Smart columns.".to_string()
+                } else {
+                    "Privacy release mode does not use row-level Smart replacement strategies."
+                        .to_string()
+                }
             } else {
                 "No selected column requires Local AI.".to_string()
             });
         }
+        if row_level_strategy_controls_ignored {
+            verified_items.push(
+                "Privacy release mode uses Type and Role settings and ignores row-level Strategy controls."
+                    .to_string(),
+            );
+        }
 
-        let release_mode = input
-            .privacy_config
-            .as_ref()
-            .map(|config| config.release_mode)
-            .unwrap_or_default();
         if let Some(config) = input.privacy_config.as_ref() {
             if let Err(error) = validate_privacy_release_config(
                 &selected_metadata,
@@ -370,10 +387,16 @@ impl AnonymizerService {
         let sample = read_sample(&input_path, sample_rows.max(1))?;
         let metadata = build_column_metadata(&sample.headers, &sample.rows);
         validate_column_indices(&metadata, &input.columns)?;
-        let controlled_metadata = apply_column_controls(&metadata, &input.controls)?;
+        let release_mode = input
+            .privacy_config
+            .as_ref()
+            .map(|config| config.release_mode)
+            .unwrap_or_default();
+        let effective_controls = controls_for_release_mode(&input.controls, release_mode);
+        let controlled_metadata = apply_column_controls(&metadata, &effective_controls)?;
         let selected_metadata = apply_column_selection(&controlled_metadata, &input.columns);
         if let Some(privacy_config) = input.privacy_config.as_ref()
-            && privacy_config.release_mode != ReleaseMode::Standard
+            && release_mode != ReleaseMode::Standard
         {
             let result = process_privacy_release(
                 &input_path,
@@ -524,6 +547,23 @@ pub(crate) fn apply_column_controls(
         column.strategy = control.strategy;
     }
     Ok(controlled)
+}
+
+fn controls_for_release_mode(
+    controls: &[ColumnControl],
+    release_mode: ReleaseMode,
+) -> Vec<ColumnControl> {
+    if release_mode == ReleaseMode::Standard {
+        return controls.to_vec();
+    }
+
+    controls
+        .iter()
+        .map(|control| ColumnControl {
+            strategy: AnonymizationStrategy::Auto,
+            ..control.clone()
+        })
+        .collect()
 }
 
 pub(crate) fn preview_warning_for_column(column: &ColumnMetadata) -> Option<PreviewWarning> {

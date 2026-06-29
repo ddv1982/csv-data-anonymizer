@@ -118,10 +118,14 @@ function FileStep({ workflow }: { workflow: AnonymizerWorkflowState }) {
 }
 
 function ColumnSelectionStep({ workflow }: { workflow: AnonymizerWorkflowState }) {
-  const unselectedRiskColumns = workflow.selectableColumns.filter(
-    (column) =>
-      (column.piiRisk === 'high' || column.piiRisk === 'medium') && !workflow.selectedSet.has(column.index),
-  )
+  const syntheticSelectionMessage =
+    'Synthetic data is selected globally and creates a complete replacement dataset, so every CSV column is included. Switch release mode to choose individual columns or row-level strategies.'
+  const unselectedRiskColumns = workflow.syntheticSelectionLocked
+    ? []
+    : workflow.selectableColumns.filter(
+        (column) =>
+          (column.piiRisk === 'high' || column.piiRisk === 'medium') && !workflow.selectedSet.has(column.index),
+      )
   const unselectedRiskMessage =
     unselectedRiskColumns.length > 0
       ? formatUnselectedRiskMessage(
@@ -131,48 +135,55 @@ function ColumnSelectionStep({ workflow }: { workflow: AnonymizerWorkflowState }
       : null
 
   return (
-    <Card title="2. Select Data to Transform" disabled={!workflow.hasFile}>
+    <Card
+      title={workflow.syntheticSelectionLocked ? '2. Review Columns Included' : '2. Select Data to Transform'}
+      disabled={!workflow.hasFile}
+    >
       <div className="columns-stack">
-        <div className="bulk-actions">
-          <button
-            type="button"
-            className="button button-outline button-sm"
-            disabled={workflow.busy === 'loading' || workflow.allSelected || workflow.selectableColumns.length === 0}
-            onClick={() => workflow.setColumnSelection(workflow.selectableColumns.map((column) => column.index))}
-          >
-            Select All
-          </button>
-          <button
-            type="button"
-            className="button button-outline button-sm"
-            disabled={workflow.busy === 'loading' || workflow.selectedColumns.length === 0}
-            onClick={() => workflow.setColumnSelection([])}
-          >
-            Deselect All
-          </button>
-          <button
-            type="button"
-            className="button button-outline button-sm"
-            disabled={workflow.busy === 'loading' || workflow.highRiskColumns.length === 0}
-            onClick={() => workflow.setColumnSelection(workflow.highRiskColumns)}
-          >
-            Select High Detector Risk
-          </button>
-          <button
-            type="button"
-            className="button button-outline button-sm"
-            disabled={workflow.busy === 'loading' || workflow.selectableColumns.length === 0}
-            onClick={() =>
-              workflow.setColumnSelection(
-                workflow.selectableColumns
-                  .filter((column) => column.piiRisk === 'high' || column.piiRisk === 'medium')
-                  .map((column) => column.index),
-              )
-            }
-          >
-            Select Detected Risk
-          </button>
-        </div>
+        {workflow.syntheticSelectionLocked ? (
+          <Alert icon={<Info aria-hidden="true" />}>{syntheticSelectionMessage}</Alert>
+        ) : (
+          <div className="bulk-actions">
+            <button
+              type="button"
+              className="button button-outline button-sm"
+              disabled={workflow.busy === 'loading' || workflow.allSelected || workflow.selectableColumns.length === 0}
+              onClick={() => workflow.setColumnSelection(workflow.selectableColumns.map((column) => column.index))}
+            >
+              Select All
+            </button>
+            <button
+              type="button"
+              className="button button-outline button-sm"
+              disabled={workflow.busy === 'loading' || workflow.selectedColumns.length === 0}
+              onClick={() => workflow.setColumnSelection([])}
+            >
+              Deselect All
+            </button>
+            <button
+              type="button"
+              className="button button-outline button-sm"
+              disabled={workflow.busy === 'loading' || workflow.highRiskColumns.length === 0}
+              onClick={() => workflow.setColumnSelection(workflow.highRiskColumns)}
+            >
+              Select High Detector Risk
+            </button>
+            <button
+              type="button"
+              className="button button-outline button-sm"
+              disabled={workflow.busy === 'loading' || workflow.selectableColumns.length === 0}
+              onClick={() =>
+                workflow.setColumnSelection(
+                  workflow.selectableColumns
+                    .filter((column) => column.piiRisk === 'high' || column.piiRisk === 'medium')
+                    .map((column) => column.index),
+                )
+              }
+            >
+              Select Detected Risk
+            </button>
+          </div>
+        )}
 
         <div className="table-help-row">
           <SectionHelp topic="selectColumns" />
@@ -197,6 +208,10 @@ function ColumnSelectionStep({ workflow }: { workflow: AnonymizerWorkflowState }
           onStrategyChange={workflow.updateColumnStrategy}
           onRoleChange={workflow.updateColumnRole}
           onToggleShowAll={() => workflow.setShowAllColumns((current) => !current)}
+          selectionLocked={workflow.syntheticSelectionLocked}
+          selectionLockedReason="Synthetic data includes every CSV column."
+          strategyControlsDisabled={workflow.syntheticSelectionLocked}
+          strategyControlsDisabledReason="Synthetic data is selected as a global release mode, not as a per-column strategy."
         />
 
         <p className="muted-text text-sm">
@@ -286,6 +301,8 @@ function ConfigurationStep({
 }
 
 function PreviewStep({ workflow }: { workflow: AnonymizerWorkflowState }) {
+  const syntheticPreviewDisabled = workflow.privacyConfig.releaseMode === 'syntheticData'
+
   return (
     <Card
       title="4. Preview (Optional)"
@@ -302,7 +319,14 @@ function PreviewStep({ workflow }: { workflow: AnonymizerWorkflowState }) {
         </button>
       }
     >
-      <PreviewTable preview={workflow.preview} loading={workflow.busy === 'preview'} />
+      {syntheticPreviewDisabled ? (
+        <Alert icon={<Info aria-hidden="true" />}>
+          Preview is disabled for Synthetic data because the current preview shows row-level transformations, not the
+          final generated dataset.
+        </Alert>
+      ) : (
+        <PreviewTable preview={workflow.preview} loading={workflow.busy === 'preview'} />
+      )}
     </Card>
   )
 }

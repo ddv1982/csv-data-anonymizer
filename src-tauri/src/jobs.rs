@@ -3,7 +3,7 @@ use crate::local_ai::{LocalAiRequest, smart_provider_for_request};
 use crate::settings::DpBudgetLedger;
 use csv_anonymizer_core::{
     AnonymizeData, AnonymizeParams, AnonymizerError, AnonymizerService, ProcessControl,
-    ProcessProgress, SmartReplacementProvider,
+    ProcessProgress, ReleaseMode, SmartReplacementProvider,
 };
 use serde::Serialize;
 use std::sync::Arc;
@@ -181,7 +181,17 @@ pub fn run_anonymize_job(
         should_cancel: Some(&should_cancel),
     };
 
-    let result = match smart_provider_for_request(local_ai, &input.controls) {
+    let release_mode = input
+        .privacy_config
+        .as_ref()
+        .map(|config| config.release_mode)
+        .unwrap_or_default();
+    let provider_controls = if release_mode == ReleaseMode::Standard {
+        input.controls.as_slice()
+    } else {
+        &[]
+    };
+    let result = match smart_provider_for_request(local_ai, provider_controls) {
         Ok(mut provider) => {
             let provider = provider
                 .as_mut()
