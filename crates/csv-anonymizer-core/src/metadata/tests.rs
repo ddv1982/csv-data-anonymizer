@@ -85,6 +85,8 @@ fn applies_column_selection_without_mutating_source() {
         detected_type: DataType::Email,
         confidence: crate::types::Confidence::High,
         detection_trace: None,
+        privacy_findings: Vec::new(),
+        privacy_evidence: Vec::new(),
         pii_risk: PiiRisk::High,
         sample_values: vec![],
         empty_format: crate::types::EmptyFormat::EmptyString,
@@ -191,4 +193,68 @@ fn auto_selection_includes_sensitive_new_types_only() {
     for column in metadata.iter().take(9).skip(6) {
         assert!(!column.is_selected);
     }
+}
+
+#[test]
+fn metadata_lifts_embedded_span_findings_into_column_evidence() {
+    let headers = vec!["notes".to_string()];
+    let samples = vec![
+        vec!["contact ada@example.com".to_string()],
+        vec!["contact grace@example.com".to_string()],
+        vec!["contact alan@example.com".to_string()],
+    ];
+
+    let metadata = build_column_metadata(&headers, &samples);
+    let column = &metadata[0];
+
+    assert_eq!(column.detected_type, DataType::String);
+    assert_eq!(column.pii_risk, PiiRisk::High);
+    assert_eq!(column.privacy_evidence[0].match_count, 3);
+    assert_eq!(column.privacy_findings[0].start, "contact ".len());
+}
+
+#[test]
+fn metadata_adds_header_evidence_for_private_dates_and_secrets() {
+    let headers = vec!["date_of_birth".to_string(), "api_token".to_string()];
+    let samples = vec![
+        vec!["1990-01-01".to_string(), "abc123secret".to_string()],
+        vec!["1982-06-29".to_string(), "def456secret".to_string()],
+    ];
+
+    let metadata = build_column_metadata(&headers, &samples);
+
+    assert!(
+        metadata[0]
+            .privacy_evidence
+            .iter()
+            .any(
+                |summary| summary.kind == crate::types::PrivacyFindingKind::PrivateDate
+                    && summary.confidence == crate::types::Confidence::Medium
+            )
+    );
+    assert!(
+        metadata[1]
+            .privacy_evidence
+            .iter()
+            .any(
+                |summary| summary.kind == crate::types::PrivacyFindingKind::CredentialOrSecret
+                    && summary.match_count == 2
+            )
+    );
+}
+
+#[test]
+fn low_confidence_date_evidence_does_not_auto_select_column() {
+    let headers = vec!["event_notes".to_string()];
+    let samples = vec![vec!["created 2026-06-29".to_string()]];
+
+    let metadata = auto_select_pii_columns(&build_column_metadata(&headers, &samples));
+    let column = &metadata[0];
+
+    assert_eq!(column.detected_type, DataType::String);
+    assert_eq!(column.pii_risk, PiiRisk::Low);
+    assert!(!column.is_selected);
+    assert!(column.privacy_evidence.iter().any(|summary| summary.kind
+        == crate::types::PrivacyFindingKind::PrivateDate
+        && summary.confidence == crate::types::Confidence::Low));
 }

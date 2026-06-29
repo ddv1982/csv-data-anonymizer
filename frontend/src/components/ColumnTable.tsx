@@ -8,6 +8,12 @@ import type {
   PrivacyColumnRole,
 } from '../types'
 import { csvStrategies, dataTypes, strategyLabel } from '../dataOptions'
+import {
+  type DetectorStrictness,
+  detectorConfidenceLabel,
+  privacyFindingKindLabel,
+  visibleEvidence,
+} from '../utils/detectorEvidence'
 import { formatToken } from '../utils/format'
 import { hasSampleData, isSelectableColumn, maxVisibleColumns } from '../utils/columns'
 import { GlossaryLabel, HelpPopover } from './GlossaryPopover'
@@ -33,6 +39,7 @@ export function ColumnTable({
   selectionLockedReason,
   strategyControlsDisabled = false,
   strategyControlsDisabledReason,
+  detectorStrictness = 'balanced',
 }: {
   columns: ColumnMetadata[]
   allColumnCount: number
@@ -53,8 +60,9 @@ export function ColumnTable({
   selectionLockedReason?: string
   strategyControlsDisabled?: boolean
   strategyControlsDisabledReason?: string
+  detectorStrictness?: DetectorStrictness
 }) {
-  const columnSpan = showRoles ? 8 : 7
+  const columnSpan = showRoles ? 9 : 8
 
   return (
     <div className="table-frame">
@@ -74,6 +82,7 @@ export function ColumnTable({
                 <GlossaryLabel term="role">Role</GlossaryLabel>
               </th>
             ) : null}
+            <th>Evidence</th>
             <th>Risk</th>
           </tr>
         </thead>
@@ -199,6 +208,10 @@ export function ColumnTable({
                         </select>
                       </td>
                     ) : null}
+                    <td className="privacy-evidence-column">
+                      <span className="mobile-cell-label">Evidence</span>
+                      <PrivacyEvidenceCell column={column} strictness={detectorStrictness} />
+                    </td>
                     <td className="risk-cell">
                       <span className="mobile-cell-label">Risk</span>
                       <RiskBadge risk={column.piiRisk} />
@@ -220,6 +233,57 @@ export function ColumnTable({
         </tbody>
       </table>
     </div>
+  )
+}
+
+function PrivacyEvidenceCell({
+  column,
+  strictness,
+}: {
+  column: ColumnMetadata
+  strictness: DetectorStrictness
+}) {
+  const evidence = visibleEvidence(column.privacyEvidence, strictness)
+  if (evidence.length === 0) {
+    return <span className="muted-text text-sm">None</span>
+  }
+
+  const visible = evidence.slice(0, 2)
+  const hiddenCount = Math.max(evidence.length - visible.length, 0)
+
+  return (
+    <span className="privacy-evidence-cell">
+      {visible.map((item) => (
+        <span
+          key={`${item.kind}-${item.dataType}`}
+          className={`privacy-evidence-chip confidence-${item.confidence}`}
+          title={`${privacyFindingKindLabel(item.kind)}: ${item.matchCount} of ${item.sampleCount} sampled values`}
+        >
+          {privacyFindingKindLabel(item.kind)}
+          <span>{item.matchCount}</span>
+        </span>
+      ))}
+      {hiddenCount > 0 ? <span className="privacy-evidence-more">+{hiddenCount}</span> : null}
+      <HelpPopover title="Privacy evidence" triggerLabel={`Explain privacy evidence for ${column.name}`}>
+        <div className="detector-popover-content">
+          {evidence.map((item) => (
+            <div className="detector-candidate" key={`${item.kind}-${item.dataType}`}>
+              <span className={`status-pill ${item.confidence === 'high' ? 'success' : ''}`}>
+                {detectorConfidenceLabel(item.confidence)}
+              </span>
+              <span>
+                <strong>{privacyFindingKindLabel(item.kind)}</strong>
+                <span className="muted-text text-sm">
+                  {item.matchCount.toLocaleString()} of {item.sampleCount.toLocaleString()} samples,
+                  {` ${formatToken(item.dataType)}`}
+                </span>
+              </span>
+              <p className="muted-text text-sm">{item.reason}</p>
+            </div>
+          ))}
+        </div>
+      </HelpPopover>
+    </span>
   )
 }
 
@@ -290,6 +354,9 @@ function ColumnSkeletonRows({ showRoles }: { showRoles: boolean }) {
           </td>
           <td>
             <span className="skeleton skeleton-medium" />
+          </td>
+          <td>
+            <span className="skeleton skeleton-badge" />
           </td>
           <td>
             <span className="skeleton skeleton-badge" />

@@ -1,8 +1,9 @@
 use crate::types::{
-    Confidence, DataType, DetectionResult, DetectionTrace, DetectionTraceItem, EmptyFormat, PiiRisk,
+    Confidence, DataType, DetectionResult, DetectionTrace, DetectionTraceItem, EmptyFormat,
+    PiiRisk, PrivacyEvidenceSummary, PrivacyFinding, PrivacyFindingKind,
 };
 use regex::Regex;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
 struct HeaderTerms {
@@ -10,8 +11,756 @@ struct HeaderTerms {
     tokens: HashSet<String>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct PrivacySpan<'a> {
+    pub field_name: &'static str,
+    pub kind: PrivacyFindingKind,
+    pub data_type: DataType,
+    pub start: usize,
+    pub end: usize,
+    pub value: &'a str,
+    pub confidence: Confidence,
+    pub score: u8,
+    pub detector: &'static str,
+    pub reason: &'static str,
+    pub priority: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ColumnPrivacyAnalysis {
+    pub findings: Vec<PrivacyFinding>,
+    pub evidence: Vec<PrivacyEvidenceSummary>,
+    pub suggested_data_type: Option<DataType>,
+    pub pii_risk: PiiRisk,
+}
+
 pub fn is_empty_value(value: &str) -> bool {
     value.is_empty() || value.eq_ignore_ascii_case("null")
+}
+
+pub fn collect_privacy_spans(content: &str) -> Vec<PrivacySpan<'_>> {
+    let mut candidates = Vec::new();
+    push_secret_spans(content, &mut candidates);
+    push_account_number_spans(content, &mut candidates);
+    push_pattern_spans(
+        content,
+        &mut candidates,
+        SpanSpec {
+            field_name: "email",
+            kind: PrivacyFindingKind::Contact,
+            data_type: DataType::Email,
+            regex: inline_email_pattern(),
+            confidence: Confidence::High,
+            score: 96,
+            detector: "pattern:email",
+            reason: "Email address pattern.",
+            priority: 20,
+        },
+    );
+    push_pattern_spans(
+        content,
+        &mut candidates,
+        SpanSpec {
+            field_name: "url",
+            kind: PrivacyFindingKind::Url,
+            data_type: DataType::Url,
+            regex: inline_url_pattern(),
+            confidence: Confidence::Medium,
+            score: 78,
+            detector: "pattern:url",
+            reason: "URL pattern.",
+            priority: 30,
+        },
+    );
+    push_pattern_spans(
+        content,
+        &mut candidates,
+        SpanSpec {
+            field_name: "uuid",
+            kind: PrivacyFindingKind::NetworkOrDeviceId,
+            data_type: DataType::Uuid,
+            regex: inline_uuid_pattern(),
+            confidence: Confidence::Medium,
+            score: 76,
+            detector: "pattern:uuid",
+            reason: "UUID-like identifier pattern.",
+            priority: 40,
+        },
+    );
+    push_pattern_spans(
+        content,
+        &mut candidates,
+        SpanSpec {
+            field_name: "date",
+            kind: PrivacyFindingKind::PrivateDate,
+            data_type: DataType::Timestamp,
+            regex: inline_timestamp_pattern(),
+            confidence: Confidence::Low,
+            score: 54,
+            detector: "pattern:date",
+            reason: "Date or timestamp pattern; review context before treating it as private.",
+            priority: 50,
+        },
+    );
+    push_pattern_spans(
+        content,
+        &mut candidates,
+        SpanSpec {
+            field_name: "ipAddress",
+            kind: PrivacyFindingKind::NetworkOrDeviceId,
+            data_type: DataType::IpAddress,
+            regex: inline_ip_address_pattern(),
+            confidence: Confidence::Medium,
+            score: 78,
+            detector: "pattern:ip",
+            reason: "IPv4 address pattern.",
+            priority: 60,
+        },
+    );
+    push_pattern_spans(
+        content,
+        &mut candidates,
+        SpanSpec {
+            field_name: "macAddress",
+            kind: PrivacyFindingKind::NetworkOrDeviceId,
+            data_type: DataType::MacAddress,
+            regex: inline_mac_address_pattern(),
+            confidence: Confidence::Medium,
+            score: 76,
+            detector: "pattern:mac",
+            reason: "MAC address pattern.",
+            priority: 70,
+        },
+    );
+    push_pattern_spans(
+        content,
+        &mut candidates,
+        SpanSpec {
+            field_name: "taxId",
+            kind: PrivacyFindingKind::GovernmentId,
+            data_type: DataType::TaxId,
+            regex: inline_tax_id_pattern(),
+            confidence: Confidence::High,
+            score: 94,
+            detector: "pattern:tax-id",
+            reason: "US SSN or EIN-shaped identifier pattern.",
+            priority: 80,
+        },
+    );
+    push_pattern_spans(
+        content,
+        &mut candidates,
+        SpanSpec {
+            field_name: "phone",
+            kind: PrivacyFindingKind::Contact,
+            data_type: DataType::Phone,
+            regex: inline_phone_pattern(),
+            confidence: Confidence::High,
+            score: 90,
+            detector: "pattern:phone",
+            reason: "Formatted phone number pattern.",
+            priority: 90,
+        },
+    );
+
+    candidates.sort_by(|left, right| {
+        left.start
+            .cmp(&right.start)
+            .then(left.priority.cmp(&right.priority))
+            .then((right.end - right.start).cmp(&(left.end - left.start)))
+    });
+
+    let mut selected = Vec::new();
+    let mut last_end = 0;
+    for candidate in candidates {
+        if candidate.start < last_end {
+            continue;
+        }
+        last_end = candidate.end;
+        selected.push(candidate);
+    }
+    selected
+}
+
+pub fn analyze_column_privacy(
+    column_name: &str,
+    _column_index: usize,
+    values: &[String],
+    detected_type: DataType,
+    detection_confidence: Confidence,
+) -> ColumnPrivacyAnalysis {
+    let mut findings = Vec::new();
+    for (row_index, value) in values.iter().enumerate() {
+        if is_empty_value(value) {
+            continue;
+        }
+        for span in collect_privacy_spans(value) {
+            findings.push(finding_from_span(row_index, &span, value));
+        }
+    }
+
+    add_full_cell_findings_from_detection(
+        &mut findings,
+        column_name,
+        values,
+        detected_type,
+        detection_confidence,
+    );
+    add_full_cell_findings_from_header(&mut findings, column_name, values);
+
+    let sample_count = values.iter().filter(|value| !is_empty_value(value)).count();
+    let evidence = summarize_privacy_findings(&findings, sample_count);
+    let suggested_data_type = evidence
+        .iter()
+        .max_by_key(|summary| summary.score)
+        .map(|summary| summary.data_type)
+        .filter(|data_type| {
+            matches!(
+                detected_type,
+                DataType::String | DataType::Unknown | DataType::Enum
+            ) && *data_type != DataType::String
+        });
+    let pii_risk = evidence
+        .iter()
+        .filter(|summary| summary.confidence != Confidence::Low)
+        .map(|summary| risk_for_privacy_kind(summary.kind))
+        .fold(PiiRisk::Low, max_pii_risk);
+
+    ColumnPrivacyAnalysis {
+        findings,
+        evidence,
+        suggested_data_type,
+        pii_risk,
+    }
+}
+
+struct SpanSpec {
+    field_name: &'static str,
+    kind: PrivacyFindingKind,
+    data_type: DataType,
+    regex: &'static Regex,
+    confidence: Confidence,
+    score: u8,
+    detector: &'static str,
+    reason: &'static str,
+    priority: usize,
+}
+
+struct FullCellFindingSpec {
+    kind: PrivacyFindingKind,
+    data_type: DataType,
+    confidence: Confidence,
+    score: u8,
+    detector: &'static str,
+    reason: &'static str,
+}
+
+fn push_pattern_spans<'a>(content: &'a str, candidates: &mut Vec<PrivacySpan<'a>>, spec: SpanSpec) {
+    for regex_match in spec.regex.find_iter(content) {
+        candidates.push(PrivacySpan {
+            field_name: spec.field_name,
+            kind: spec.kind,
+            data_type: spec.data_type,
+            start: regex_match.start(),
+            end: regex_match.end(),
+            value: regex_match.as_str(),
+            confidence: spec.confidence,
+            score: spec.score,
+            detector: spec.detector,
+            reason: spec.reason,
+            priority: spec.priority,
+        });
+    }
+}
+
+fn push_secret_spans<'a>(content: &'a str, candidates: &mut Vec<PrivacySpan<'a>>) {
+    for captures in secret_assignment_pattern().captures_iter(content) {
+        if let Some(secret_value) = captures.get(1) {
+            candidates.push(PrivacySpan {
+                field_name: "secret",
+                kind: PrivacyFindingKind::CredentialOrSecret,
+                data_type: DataType::String,
+                start: secret_value.start(),
+                end: secret_value.end(),
+                value: secret_value.as_str(),
+                confidence: Confidence::High,
+                score: 98,
+                detector: "pattern:secret-assignment",
+                reason: "Credential or secret assignment pattern.",
+                priority: 0,
+            });
+        }
+    }
+
+    for captures in bearer_token_pattern().captures_iter(content) {
+        if let Some(secret_value) = captures.get(1) {
+            candidates.push(PrivacySpan {
+                field_name: "secret",
+                kind: PrivacyFindingKind::CredentialOrSecret,
+                data_type: DataType::String,
+                start: secret_value.start(),
+                end: secret_value.end(),
+                value: secret_value.as_str(),
+                confidence: Confidence::High,
+                score: 96,
+                detector: "pattern:bearer-token",
+                reason: "Bearer token pattern.",
+                priority: 1,
+            });
+        }
+    }
+
+    for regex_match in private_key_marker_pattern().find_iter(content) {
+        candidates.push(PrivacySpan {
+            field_name: "secret",
+            kind: PrivacyFindingKind::CredentialOrSecret,
+            data_type: DataType::String,
+            start: regex_match.start(),
+            end: regex_match.end(),
+            value: regex_match.as_str(),
+            confidence: Confidence::High,
+            score: 99,
+            detector: "pattern:private-key",
+            reason: "Private key marker pattern.",
+            priority: 2,
+        });
+    }
+}
+
+fn push_account_number_spans<'a>(content: &'a str, candidates: &mut Vec<PrivacySpan<'a>>) {
+    for regex_match in payment_card_candidate_pattern().find_iter(content) {
+        let digits = regex_match
+            .as_str()
+            .chars()
+            .filter(|character| character.is_ascii_digit())
+            .collect::<String>();
+        if digits.len() < 13 || digits.len() > 19 || !passes_luhn(&digits) {
+            continue;
+        }
+        candidates.push(PrivacySpan {
+            field_name: "accountNumber",
+            kind: PrivacyFindingKind::AccountOrFinancialId,
+            data_type: DataType::NumericId,
+            start: regex_match.start(),
+            end: regex_match.end(),
+            value: regex_match.as_str(),
+            confidence: Confidence::High,
+            score: 94,
+            detector: "validator:luhn",
+            reason: "Payment-card-shaped number with valid Luhn checksum.",
+            priority: 10,
+        });
+    }
+
+    for regex_match in iban_candidate_pattern().find_iter(content) {
+        candidates.push(PrivacySpan {
+            field_name: "accountNumber",
+            kind: PrivacyFindingKind::AccountOrFinancialId,
+            data_type: DataType::String,
+            start: regex_match.start(),
+            end: regex_match.end(),
+            value: regex_match.as_str(),
+            confidence: Confidence::Medium,
+            score: 74,
+            detector: "pattern:iban",
+            reason: "IBAN-shaped account identifier pattern.",
+            priority: 11,
+        });
+    }
+}
+
+fn finding_from_span(
+    row_index: usize,
+    span: &PrivacySpan<'_>,
+    sample_value: &str,
+) -> PrivacyFinding {
+    PrivacyFinding {
+        kind: span.kind,
+        data_type: span.data_type,
+        row_index,
+        start: utf16_index_for_byte(sample_value, span.start),
+        end: utf16_index_for_byte(sample_value, span.end),
+        match_value: span.value.to_string(),
+        sample_value: sample_value.to_string(),
+        confidence: span.confidence,
+        score: span.score,
+        detector: span.detector.to_string(),
+        reason: span.reason.to_string(),
+    }
+}
+
+fn add_full_cell_findings_from_detection(
+    findings: &mut Vec<PrivacyFinding>,
+    column_name: &str,
+    values: &[String],
+    detected_type: DataType,
+    detection_confidence: Confidence,
+) {
+    if detected_type == DataType::Timestamp && infer_private_date_from_header(column_name) {
+        promote_findings(
+            findings,
+            PrivacyFindingKind::PrivateDate,
+            Confidence::Medium,
+            72,
+        );
+    }
+
+    let Some((kind, reason)) = detected_type_privacy_kind(detected_type) else {
+        return;
+    };
+    for (row_index, value) in values.iter().enumerate() {
+        if is_empty_value(value) || has_row_finding(findings, row_index, kind) {
+            continue;
+        }
+        findings.push(full_cell_finding(
+            row_index,
+            value,
+            FullCellFindingSpec {
+                kind,
+                data_type: detected_type,
+                confidence: detection_confidence,
+                score: score_for_confidence(detection_confidence),
+                detector: "detector:column-type",
+                reason,
+            },
+        ));
+    }
+}
+
+fn add_full_cell_findings_from_header(
+    findings: &mut Vec<PrivacyFinding>,
+    column_name: &str,
+    values: &[String],
+) {
+    let header = header_terms(column_name);
+    let header_signal = if infer_secret_from_header(&header) {
+        Some((
+            PrivacyFindingKind::CredentialOrSecret,
+            DataType::String,
+            Confidence::Medium,
+            82,
+            "header:secret",
+            "Header terms suggest a credential or secret value.",
+        ))
+    } else if infer_account_from_header(&header) {
+        Some((
+            PrivacyFindingKind::AccountOrFinancialId,
+            DataType::NumericId,
+            Confidence::Medium,
+            76,
+            "header:account",
+            "Header terms suggest an account or financial identifier.",
+        ))
+    } else if infer_private_date_from_header(column_name) {
+        Some((
+            PrivacyFindingKind::PrivateDate,
+            DataType::Timestamp,
+            Confidence::Medium,
+            70,
+            "header:private-date",
+            "Header terms suggest a private date.",
+        ))
+    } else {
+        None
+    };
+
+    let Some((kind, data_type, confidence, score, detector, reason)) = header_signal else {
+        return;
+    };
+
+    for (row_index, value) in values.iter().enumerate() {
+        if is_empty_value(value)
+            || has_row_finding(findings, row_index, kind)
+            || !value_matches_header_signal(value, kind)
+        {
+            continue;
+        }
+        findings.push(full_cell_finding(
+            row_index,
+            value,
+            FullCellFindingSpec {
+                kind,
+                data_type,
+                confidence,
+                score,
+                detector,
+                reason,
+            },
+        ));
+    }
+}
+
+fn detected_type_privacy_kind(data_type: DataType) -> Option<(PrivacyFindingKind, &'static str)> {
+    match data_type {
+        DataType::Email | DataType::Phone => Some((
+            PrivacyFindingKind::Contact,
+            "Column type indicates contact information.",
+        )),
+        DataType::FirstName | DataType::LastName | DataType::FullName => Some((
+            PrivacyFindingKind::Person,
+            "Column type indicates person names.",
+        )),
+        DataType::Address => Some((
+            PrivacyFindingKind::PrivateAddress,
+            "Column type indicates private address data.",
+        )),
+        DataType::PostalCode => Some((
+            PrivacyFindingKind::PrivateAddress,
+            "Column type indicates postal address context.",
+        )),
+        DataType::TaxId => Some((
+            PrivacyFindingKind::GovernmentId,
+            "Column type indicates government or tax identifier data.",
+        )),
+        DataType::NumericId => Some((
+            PrivacyFindingKind::AccountOrFinancialId,
+            "Column type indicates identifier-shaped values; review context.",
+        )),
+        DataType::Uuid | DataType::IpAddress | DataType::MacAddress => Some((
+            PrivacyFindingKind::NetworkOrDeviceId,
+            "Column type indicates network, device, or persistent identifiers.",
+        )),
+        DataType::Url => Some((PrivacyFindingKind::Url, "Column type indicates URLs.")),
+        DataType::NumericValue
+        | DataType::Timestamp
+        | DataType::Boolean
+        | DataType::Currency
+        | DataType::Percentage
+        | DataType::CountryCode
+        | DataType::Enum
+        | DataType::String
+        | DataType::Unknown => None,
+    }
+}
+
+fn full_cell_finding(row_index: usize, value: &str, spec: FullCellFindingSpec) -> PrivacyFinding {
+    PrivacyFinding {
+        kind: spec.kind,
+        data_type: spec.data_type,
+        row_index,
+        start: 0,
+        end: utf16_len(value),
+        match_value: value.to_string(),
+        sample_value: value.to_string(),
+        confidence: spec.confidence,
+        score: spec.score,
+        detector: spec.detector.to_string(),
+        reason: spec.reason.to_string(),
+    }
+}
+
+fn has_row_finding(
+    findings: &[PrivacyFinding],
+    row_index: usize,
+    kind: PrivacyFindingKind,
+) -> bool {
+    findings
+        .iter()
+        .any(|finding| finding.row_index == row_index && finding.kind == kind)
+}
+
+fn promote_findings(
+    findings: &mut [PrivacyFinding],
+    kind: PrivacyFindingKind,
+    confidence: Confidence,
+    score: u8,
+) {
+    for finding in findings.iter_mut().filter(|finding| finding.kind == kind) {
+        if confidence_rank(confidence) > confidence_rank(finding.confidence) {
+            finding.confidence = confidence;
+        }
+        finding.score = finding.score.max(score);
+    }
+}
+
+fn summarize_privacy_findings(
+    findings: &[PrivacyFinding],
+    sample_count: usize,
+) -> Vec<PrivacyEvidenceSummary> {
+    let mut summaries: HashMap<(PrivacyFindingKind, DataType), PrivacyEvidenceAccumulator> =
+        HashMap::new();
+    for finding in findings {
+        let entry = summaries
+            .entry((finding.kind, finding.data_type))
+            .or_insert_with(|| PrivacyEvidenceAccumulator {
+                summary: PrivacyEvidenceSummary {
+                    kind: finding.kind,
+                    data_type: finding.data_type,
+                    confidence: finding.confidence,
+                    match_count: 0,
+                    sample_count,
+                    score: finding.score,
+                    reason: finding.reason.clone(),
+                },
+                matched_rows: HashSet::new(),
+            });
+        entry.matched_rows.insert(finding.row_index);
+        entry.summary.match_count = entry.matched_rows.len();
+        if finding.score > entry.summary.score {
+            entry.summary.score = finding.score;
+            entry.summary.reason = finding.reason.clone();
+        }
+        if confidence_rank(finding.confidence) > confidence_rank(entry.summary.confidence) {
+            entry.summary.confidence = finding.confidence;
+        }
+    }
+
+    let mut ordered = summaries
+        .into_values()
+        .map(|accumulator| accumulator.summary)
+        .collect::<Vec<_>>();
+    ordered.sort_by(|left, right| {
+        right
+            .score
+            .cmp(&left.score)
+            .then(right.match_count.cmp(&left.match_count))
+            .then(format!("{:?}", left.kind).cmp(&format!("{:?}", right.kind)))
+    });
+    ordered
+}
+
+struct PrivacyEvidenceAccumulator {
+    summary: PrivacyEvidenceSummary,
+    matched_rows: HashSet<usize>,
+}
+
+fn utf16_index_for_byte(value: &str, byte_index: usize) -> usize {
+    match value.get(..byte_index) {
+        Some(prefix) => utf16_len(prefix),
+        None => value
+            .char_indices()
+            .take_while(|(index, _)| *index < byte_index)
+            .map(|(_, character)| character.len_utf16())
+            .sum(),
+    }
+}
+
+fn utf16_len(value: &str) -> usize {
+    value.encode_utf16().count()
+}
+
+fn score_for_confidence(confidence: Confidence) -> u8 {
+    match confidence {
+        Confidence::High => 88,
+        Confidence::Medium => 72,
+        Confidence::Low => 54,
+    }
+}
+
+fn confidence_rank(confidence: Confidence) -> u8 {
+    match confidence {
+        Confidence::High => 3,
+        Confidence::Medium => 2,
+        Confidence::Low => 1,
+    }
+}
+
+fn risk_for_privacy_kind(kind: PrivacyFindingKind) -> PiiRisk {
+    match kind {
+        PrivacyFindingKind::Person
+        | PrivacyFindingKind::Contact
+        | PrivacyFindingKind::PrivateAddress
+        | PrivacyFindingKind::AccountOrFinancialId
+        | PrivacyFindingKind::GovernmentId
+        | PrivacyFindingKind::CredentialOrSecret
+        | PrivacyFindingKind::MixedSensitiveText => PiiRisk::High,
+        PrivacyFindingKind::PrivateDate
+        | PrivacyFindingKind::NetworkOrDeviceId
+        | PrivacyFindingKind::Url => PiiRisk::Medium,
+    }
+}
+
+pub fn max_pii_risk(left: PiiRisk, right: PiiRisk) -> PiiRisk {
+    match (left, right) {
+        (PiiRisk::High, _) | (_, PiiRisk::High) => PiiRisk::High,
+        (PiiRisk::Medium, _) | (_, PiiRisk::Medium) => PiiRisk::Medium,
+        (PiiRisk::Low, PiiRisk::Low) => PiiRisk::Low,
+    }
+}
+
+fn value_matches_header_signal(value: &str, kind: PrivacyFindingKind) -> bool {
+    match kind {
+        PrivacyFindingKind::CredentialOrSecret => {
+            value.len() >= 8
+                && value
+                    .chars()
+                    .any(|character| character.is_ascii_alphabetic())
+        }
+        PrivacyFindingKind::AccountOrFinancialId => {
+            value
+                .chars()
+                .filter(|character| character.is_ascii_digit())
+                .count()
+                >= 4
+        }
+        PrivacyFindingKind::PrivateDate => is_timestamp(value) || value.len() >= 4,
+        PrivacyFindingKind::Person
+        | PrivacyFindingKind::Contact
+        | PrivacyFindingKind::PrivateAddress
+        | PrivacyFindingKind::GovernmentId
+        | PrivacyFindingKind::NetworkOrDeviceId
+        | PrivacyFindingKind::Url
+        | PrivacyFindingKind::MixedSensitiveText => true,
+    }
+}
+
+fn infer_secret_from_header(terms: &HeaderTerms) -> bool {
+    matches!(
+        terms.compact.as_str(),
+        "apikey"
+            | "accesstoken"
+            | "authtoken"
+            | "password"
+            | "passwd"
+            | "pwd"
+            | "secret"
+            | "token"
+            | "privatekey"
+    ) || terms.tokens.contains("secret")
+        || terms.tokens.contains("password")
+        || terms.tokens.contains("passwd")
+        || terms.tokens.contains("pwd")
+        || terms.tokens.contains("token")
+        || terms.tokens.contains("key") && terms.tokens.contains("api")
+}
+
+fn infer_account_from_header(terms: &HeaderTerms) -> bool {
+    terms.tokens.contains("account")
+        || terms.tokens.contains("acct")
+        || terms.tokens.contains("iban")
+        || terms.tokens.contains("routing")
+        || terms.tokens.contains("card")
+        || terms.tokens.contains("pan")
+        || terms.tokens.contains("bank") && terms.tokens.contains("number")
+}
+
+fn infer_private_date_from_header(column_name: &str) -> bool {
+    let terms = header_terms(column_name);
+    matches!(
+        terms.compact.as_str(),
+        "dob" | "dateofbirth" | "birthdate" | "birthday"
+    ) || terms.tokens.contains("birth")
+        || terms.tokens.contains("dob")
+        || terms.tokens.contains("date") && terms.tokens.contains("birth")
+}
+
+fn passes_luhn(digits: &str) -> bool {
+    let mut sum = 0;
+    let mut double = false;
+    for character in digits.chars().rev() {
+        let Some(mut digit) = character.to_digit(10) else {
+            return false;
+        };
+        if double {
+            digit *= 2;
+            if digit > 9 {
+                digit -= 9;
+            }
+        }
+        sum += digit;
+        double = !double;
+    }
+    sum > 0 && sum % 10 == 0
 }
 
 pub fn detect_column_type(values: &[String]) -> DetectionResult {
@@ -481,6 +1230,88 @@ fn percentage_pattern() -> &'static Regex {
 fn country_code_pattern() -> &'static Regex {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
     PATTERN.get_or_init(|| Regex::new(r"^[A-Z]{2}$").unwrap())
+}
+
+fn inline_email_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| Regex::new(r"(?i)\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b").unwrap())
+}
+
+fn inline_url_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| Regex::new(r#"\b(?:https?://|www\.)[^\s<>'"]+"#).unwrap())
+}
+
+fn inline_uuid_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| {
+        Regex::new(
+            r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b",
+        )
+        .unwrap()
+    })
+}
+
+fn inline_timestamp_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| {
+        Regex::new(r"\b\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?)?\b").unwrap()
+    })
+}
+
+fn inline_ip_address_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| {
+        Regex::new(r"\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b")
+            .unwrap()
+    })
+}
+
+fn inline_mac_address_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| Regex::new(r"\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b").unwrap())
+}
+
+fn inline_tax_id_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| Regex::new(r"\b(?:\d{3}-\d{2}-\d{4}|\d{2}-\d{7})\b").unwrap())
+}
+
+fn inline_phone_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| {
+        Regex::new(r"\b(?:\+\d{1,3}[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}\b").unwrap()
+    })
+}
+
+fn secret_assignment_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| {
+        Regex::new(
+            r#"(?i)\b(?:api[_-]?key|access[_-]?token|auth[_-]?token|secret|password|passwd|pwd|private[_-]?key)\b\s*[:=]\s*["']?([A-Za-z0-9][A-Za-z0-9_\-./+=]{7,})"#,
+        )
+        .unwrap()
+    })
+}
+
+fn bearer_token_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| Regex::new(r"(?i)\bbearer\s+([A-Za-z0-9._~+/\-]{12,}=*)").unwrap())
+}
+
+fn private_key_marker_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| Regex::new(r"-----BEGIN [A-Z ]*PRIVATE KEY-----").unwrap())
+}
+
+fn payment_card_candidate_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| Regex::new(r"\b\d(?:[ -]?\d){12,18}\b").unwrap())
+}
+
+fn iban_candidate_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| Regex::new(r"\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b").unwrap())
 }
 
 fn detect_header_numeric_id(

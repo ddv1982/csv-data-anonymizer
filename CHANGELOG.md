@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.53 - 2026-06-29
+
+- Add local privacy detector evidence for contact values, secrets, account and government identifiers, network/device identifiers, URLs, and private-date cues across CSV and direct text/log review paths.
+- Add Detector Review with Balanced/Strict controls, column evidence chips, highlighted sample spans, and placeholder-redacted sample output so users can audit why a column was flagged.
+- Harden detector contracts so embedded span evidence no longer changes transform types, redaction offsets are UTF-16 safe for the frontend, low-confidence date cues stay out of default risk, and evidence counts mean matched sampled rows.
+
 ## v1.0.52 - 2026-06-29
 
 - Supersede v1.0.51 without moving the failed tag, keeping the Synthetic generator and release-mode UX changes.

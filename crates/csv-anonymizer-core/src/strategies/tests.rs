@@ -10,6 +10,8 @@ fn column(detected_type: DataType) -> ColumnMetadata {
         detected_type,
         confidence: Confidence::High,
         detection_trace: None,
+        privacy_findings: Vec::new(),
+        privacy_evidence: Vec::new(),
         pii_risk: PiiRisk::Medium,
         sample_values: vec![],
         empty_format: EmptyFormat::EmptyString,
