@@ -51,7 +51,7 @@ test('keeps Synthetic data as a global release mode with all CSV columns include
 
   await page.getByLabel('Privacy release mode').selectOption('syntheticData')
 
-  await expect(page.getByText(/Synthetic data is selected globally/)).toBeVisible()
+  await expect(page.getByText(/Synthetic data creates a complete replacement dataset/)).toBeVisible()
   await expect(page.getByText('3 of 3 columns selected, 150,000 rows loaded')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Deselect All' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Select High Detector Risk' })).toHaveCount(0)

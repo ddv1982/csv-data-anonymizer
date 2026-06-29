@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.52 - 2026-06-29
+
+- Supersede v1.0.51 without moving the failed tag, keeping the Synthetic generator and release-mode UX changes.
+- Fix the Playwright Synthetic data workflow assertion so CI and release validation expect the new table-linked explanatory copy.
+- Ship the v1.0.51 Synthetic improvements with passing e2e coverage for the locked all-column release mode.
+
 ## v1.0.51 - 2026-06-29
 
 - Improve Synthetic data generation so numeric, timestamp, MAC address, and placeholder values are keyed by column identity instead of sharing row-level synthetic values across columns.
