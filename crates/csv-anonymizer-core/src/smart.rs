@@ -2,7 +2,10 @@ use crate::csv_io::validate_file;
 use crate::detection::is_empty_value;
 use crate::error::{AnonymizerError, Result, csv_error};
 use crate::process_control::check_canceled;
-use crate::types::{ColumnMetadata, ProcessControl, SmartReplacementEntry};
+use crate::types::{
+    ColumnMetadata, ProcessControl, SmartReplacementEntry, SmartReplacementRejectionCount,
+    SmartReplacementRejectionReason,
+};
 use csv::{ReaderBuilder, Trim};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
@@ -34,6 +37,9 @@ pub trait SmartReplacementProvider {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SmartReplacementMap {
     replacements: HashMap<SmartReplacementKey, StoredSmartReplacement>,
+    requested_values: usize,
+    rejected_values: usize,
+    rejection_counts: BTreeMap<SmartReplacementRejectionReason, usize>,
 }
 
 impl SmartReplacementMap {
@@ -43,6 +49,28 @@ impl SmartReplacementMap {
 
     pub fn is_empty(&self) -> bool {
         self.replacements.is_empty()
+    }
+
+    pub fn has_activity(&self) -> bool {
+        !self.replacements.is_empty() || self.requested_values > 0 || self.rejected_values > 0
+    }
+
+    pub fn requested_values(&self) -> usize {
+        self.requested_values
+    }
+
+    pub fn rejected_values(&self) -> usize {
+        self.rejected_values
+    }
+
+    pub fn rejection_reasons(&self) -> Vec<SmartReplacementRejectionCount> {
+        self.rejection_counts
+            .iter()
+            .map(|(reason, count)| SmartReplacementRejectionCount {
+                reason: *reason,
+                count: *count,
+            })
+            .collect()
     }
 
     pub fn insert(&mut self, column_index: usize, original: &str, replacement: impl Into<String>) {
@@ -68,13 +96,28 @@ impl SmartReplacementMap {
     }
 
     pub fn from_entries(entries: &[SmartReplacementEntry]) -> Self {
-        let mut map = Self::default();
+        let mut entries_by_column = BTreeMap::<usize, Vec<SmartReplacement>>::new();
         for entry in entries {
-            map.insert(
-                entry.column_index,
-                &entry.original,
-                entry.replacement.clone(),
-            );
+            entries_by_column
+                .entry(entry.column_index)
+                .or_default()
+                .push(SmartReplacement {
+                    original: entry.original.clone(),
+                    replacement: entry.replacement.clone(),
+                });
+        }
+
+        let mut map = Self::default();
+        for (column_index, replacements) in entries_by_column {
+            let expected_values = replacements
+                .iter()
+                .map(|replacement| replacement.original.clone())
+                .collect::<Vec<_>>();
+            let validation = validated_replacements(&expected_values, replacements);
+            map.record_request_batch(expected_values.len(), &validation.rejection_reasons);
+            for (original, replacement) in validation.accepted {
+                map.insert(column_index, &original, replacement);
+            }
         }
         map
     }
@@ -95,6 +138,18 @@ impl SmartReplacementMap {
                 .then_with(|| left.original.cmp(&right.original))
         });
         entries
+    }
+
+    fn record_request_batch(
+        &mut self,
+        requested: usize,
+        rejection_reasons: &[SmartReplacementRejectionReason],
+    ) {
+        self.requested_values += requested;
+        self.rejected_values += rejection_reasons.len();
+        for reason in rejection_reasons {
+            *self.rejection_counts.entry(*reason).or_default() += 1;
+        }
     }
 }
 
@@ -150,6 +205,25 @@ pub fn prepare_smart_replacements_from_csv(
     validate_file(file_path)?;
     let batches = collect_unique_values_from_csv(file_path, columns, control)?;
     build_replacement_map(columns, batches, deterministic, seed, existing, provider)
+}
+
+pub fn missing_smart_replacement_values_from_csv(
+    file_path: &Path,
+    columns: &[ColumnMetadata],
+    existing: Option<&SmartReplacementMap>,
+) -> Result<bool> {
+    validate_file(file_path)?;
+    let batches = collect_unique_values_from_csv(file_path, columns, None)?;
+    Ok(has_missing_smart_replacement_values(batches, existing))
+}
+
+pub fn missing_smart_replacement_values_from_rows(
+    rows: &[Vec<String>],
+    columns: &[ColumnMetadata],
+    existing: Option<&SmartReplacementMap>,
+) -> bool {
+    let batches = collect_unique_values_from_rows(rows, columns);
+    has_missing_smart_replacement_values(batches, existing)
 }
 
 fn collect_unique_values_from_rows(
@@ -262,13 +336,16 @@ fn build_replacement_map(
         };
 
         for chunk in missing_values.chunks(SMART_REPLACEMENT_BATCH_SIZE) {
+            let requested = chunk.len();
             let replacements = provider.generate_replacements(SmartReplacementRequest {
                 column,
                 values: chunk,
                 deterministic,
                 seed,
             })?;
-            for (original, replacement) in validated_replacements(chunk, replacements) {
+            let validation = validated_replacements(chunk, replacements);
+            map.record_request_batch(requested, &validation.rejection_reasons);
+            for (original, replacement) in validation.accepted {
                 map.insert(column_index, &original, replacement);
             }
         }
@@ -277,53 +354,98 @@ fn build_replacement_map(
     Ok(map)
 }
 
+fn has_missing_smart_replacement_values(
+    batches: BTreeMap<usize, Vec<String>>,
+    existing: Option<&SmartReplacementMap>,
+) -> bool {
+    batches.into_iter().any(|(column_index, values)| {
+        values
+            .iter()
+            .any(|value| !existing.is_some_and(|map| map.contains(column_index, value)))
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ValidatedSmartReplacements {
+    accepted: Vec<(String, String)>,
+    rejection_reasons: Vec<SmartReplacementRejectionReason>,
+}
+
 fn validated_replacements(
     expected_values: &[String],
     replacements: Vec<SmartReplacement>,
-) -> Vec<(String, String)> {
+) -> ValidatedSmartReplacements {
     let expected_by_key = expected_values
         .iter()
         .map(|value| (normalized_value_key(value), value.clone()))
         .collect::<HashMap<_, _>>();
     let mut used_outputs = BTreeSet::new();
-    let mut valid = Vec::new();
+    let mut seen_expected_originals = BTreeSet::new();
+    let mut accepted_originals = BTreeSet::new();
+    let mut accepted = Vec::new();
+    let mut rejection_reasons = Vec::new();
 
     for replacement in replacements {
         let original_key = normalized_value_key(&replacement.original);
         let Some(original) = expected_by_key.get(&original_key) else {
+            rejection_reasons.push(SmartReplacementRejectionReason::UnexpectedOriginal);
             continue;
         };
+        seen_expected_originals.insert(original_key.clone());
+        if accepted_originals.contains(&original_key) {
+            rejection_reasons.push(SmartReplacementRejectionReason::DuplicateOriginal);
+            continue;
+        }
         let cleaned = replacement.replacement.trim();
-        if !is_valid_replacement(original, cleaned) {
+        if let Some(reason) = invalid_replacement_reason(original, cleaned) {
+            rejection_reasons.push(reason);
             continue;
         }
         let output_key = normalized_value_key(cleaned);
         if !used_outputs.insert(output_key) {
+            rejection_reasons.push(SmartReplacementRejectionReason::DuplicateOutput);
             continue;
         }
-        valid.push((original.clone(), cleaned.to_string()));
+        accepted_originals.insert(original_key);
+        accepted.push((original.clone(), cleaned.to_string()));
     }
 
-    valid
+    for value in expected_values {
+        let key = normalized_value_key(value);
+        if !accepted_originals.contains(&key) && !seen_expected_originals.contains(&key) {
+            rejection_reasons.push(SmartReplacementRejectionReason::MissingOutput);
+        }
+    }
+
+    ValidatedSmartReplacements {
+        accepted,
+        rejection_reasons,
+    }
 }
 
-fn is_valid_replacement(original: &str, replacement: &str) -> bool {
-    if replacement.is_empty() || replacement.eq_ignore_ascii_case(original) {
-        return false;
+fn invalid_replacement_reason(
+    original: &str,
+    replacement: &str,
+) -> Option<SmartReplacementRejectionReason> {
+    if replacement.is_empty() {
+        return Some(SmartReplacementRejectionReason::EmptyOutput);
+    }
+    if replacement.eq_ignore_ascii_case(original) {
+        return Some(SmartReplacementRejectionReason::SameAsOriginal);
     }
     if replacement
         .chars()
         .any(|character| character.is_control() && character != '\t')
     {
-        return false;
+        return Some(SmartReplacementRejectionReason::ControlCharacter);
     }
 
     let original_key = normalized_value_key(original);
     if original_key.len() >= 3 && normalized_value_key(replacement).contains(&original_key) {
-        return false;
+        return Some(SmartReplacementRejectionReason::ContainsOriginal);
     }
 
-    true
+    None
 }
 
 fn selected_smart_columns(columns: &[ColumnMetadata]) -> impl Iterator<Item = &ColumnMetadata> {

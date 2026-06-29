@@ -13,6 +13,9 @@ import type {
   PasteAnalyzeData,
   PasteDataFormat,
   PasteTransformData,
+  PreflightData,
+  PreflightMode,
+  PreflightParams,
   PreviewData,
   PrivacyConfig,
   QuickTransformData,
@@ -21,6 +24,9 @@ import type {
 
 type TauriTheme = 'light' | 'dark'
 type TestInvoke = (command: string, args?: Record<string, unknown>) => unknown
+type PreflightCommandRequest = Omit<PreflightParams, 'localAiReady' | 'localAiMessage'> & {
+  localAi: LocalAiRequest
+}
 
 declare global {
   interface Window {
@@ -167,6 +173,44 @@ export function previewAnonymization(
   })
 }
 
+export function preflightAnonymization(
+  mode: PreflightMode,
+  filePath: string,
+  outputPath: string | null,
+  columns: number[],
+  controls: ColumnControl[],
+  deterministic: boolean,
+  seed: string,
+  force: boolean,
+  sampleRowCount: number,
+  privacyConfig: PrivacyConfig | null,
+  previewSmartReplacements: SmartReplacementEntry[],
+  localAi: LocalAiRequest,
+): Promise<PreflightData> {
+  const request: PreflightCommandRequest = {
+    mode,
+    filePath,
+    outputPath,
+    columns,
+    controls,
+    deterministic,
+    seed,
+    force,
+    sampleRowCount,
+    privacyConfig,
+    previewSmartReplacements,
+    localAi,
+  }
+
+  return invokeCommand('preflight_anonymization', {
+    request,
+  })
+}
+
+export function firstPreflightBlocker(preflight: PreflightData): string | null {
+  return preflight.readiness.blockers[0] ?? null
+}
+
 export function startAnonymizeJob(
   filePath: string,
   outputPath: string,
@@ -278,6 +322,23 @@ function browserPreviewFallback(command: string, args?: Record<string, unknown>)
         runtimeVersion: null,
         message: 'Local AI is available in the desktop app.',
       } satisfies LocalAiStatus,
+    }
+  }
+  if (command === 'preflight_anonymization') {
+    const request = args?.request as { mode?: PreflightMode; columns?: unknown[] } | undefined
+    return {
+      handled: true,
+      value: {
+        mode: request?.mode ?? 'anonymize',
+        readiness: {
+          status: 'verified',
+          blockers: [],
+          reviewItems: [],
+          verifiedItems: [`${request?.columns?.length ?? 0} column(s) selected.`],
+        },
+        evidence: [],
+        columnReports: [],
+      } satisfies PreflightData,
     }
   }
 

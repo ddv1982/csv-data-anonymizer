@@ -65,6 +65,45 @@ pub fn process_privacy_release(
     }
 }
 
+pub(crate) fn validate_privacy_release_config(
+    columns: &[ColumnMetadata],
+    config: &PrivacyConfig,
+    deterministic: bool,
+    seed: &str,
+) -> Result<()> {
+    if deterministic && seed.trim().is_empty() {
+        return Err(AnonymizerError::Privacy(
+            "repeatable replacements require a non-empty private seed".to_string(),
+        ));
+    }
+
+    validate_selected_release_config(columns, config)?;
+
+    match config.release_mode {
+        ReleaseMode::Standard => Ok(()),
+        ReleaseMode::FormalTabular => {
+            roles::validate_common_config(columns, config)?;
+            formal::validate_formal_config(&config.formal)
+        }
+        ReleaseMode::DifferentialPrivacyAggregate => {
+            roles::validate_common_config(columns, config)?;
+            let mut role_plan = roles::build_role_plan(columns, config)?;
+            constrain_unselected_roles_to_attributes(columns, &mut role_plan.roles);
+            differential_privacy::validate_dp_release_config(
+                columns,
+                config,
+                deterministic,
+                &role_plan.roles,
+            )
+            .map(|_| ())
+        }
+        ReleaseMode::SyntheticData => {
+            roles::validate_common_config(columns, config)?;
+            synthetic::validate_synthetic_config(&config.synthetic)
+        }
+    }
+}
+
 pub(super) fn constrain_unselected_roles_to_attributes(
     columns: &[ColumnMetadata],
     roles: &mut [ColumnRole],

@@ -1,4 +1,6 @@
-use crate::types::{Confidence, DataType, DetectionResult, EmptyFormat, PiiRisk};
+use crate::types::{
+    Confidence, DataType, DetectionResult, DetectionTrace, DetectionTraceItem, EmptyFormat, PiiRisk,
+};
 use regex::Regex;
 use std::collections::HashSet;
 use std::sync::OnceLock;
@@ -24,70 +26,209 @@ pub fn detect_column_type_with_name(column_name: &str, values: &[String]) -> Det
     let total_non_empty = non_empty_values.len();
 
     if total_non_empty == 0 {
-        return DetectionResult {
-            data_type: DataType::Unknown,
-            confidence: Confidence::Low,
-            sample_matches: 0,
-            total_samples: values.len(),
-        };
+        return detection_result(
+            DataType::Unknown,
+            Confidence::Low,
+            0,
+            values.len(),
+            total_non_empty,
+            "No non-empty sample values were available for detection.",
+            Vec::new(),
+        );
     }
 
     if let Some(result) = detect_header_postal_code(column_name, &non_empty_values, values.len()) {
-        return result;
+        return attach_single_trace(
+            result,
+            total_non_empty,
+            "Header terms and sample shape matched postal code detection.",
+            "header postal code rule",
+        );
     }
 
     if let Some(result) = detect_header_address(column_name, &non_empty_values, values.len()) {
-        return result;
+        return attach_single_trace(
+            result,
+            total_non_empty,
+            "Header terms and sample shape matched address detection.",
+            "header address rule",
+        );
     }
 
     if let Some(result) = detect_header_tax_id(column_name, &non_empty_values, values.len()) {
-        return result;
+        return attach_single_trace(
+            result,
+            total_non_empty,
+            "Header terms and sample shape matched tax ID detection.",
+            "header tax ID rule",
+        );
     }
 
+    let mut candidates = Vec::new();
     for (data_type, matches) in detection_priority() {
         let match_count = values
             .iter()
             .filter(|value| !is_empty_value(value) && matches(value))
             .count();
         let confidence = calculate_confidence(match_count, total_non_empty);
+        let accepted = confidence != Confidence::Low;
+        candidates.push(trace_item(
+            data_type,
+            "pattern rule",
+            match_count,
+            total_non_empty,
+            confidence,
+            accepted,
+        ));
 
-        if confidence != Confidence::Low {
-            return DetectionResult {
+        if accepted {
+            return detection_result(
                 data_type,
                 confidence,
-                sample_matches: match_count,
-                total_samples: values.len(),
-            };
+                match_count,
+                values.len(),
+                total_non_empty,
+                "Sample values matched a built-in pattern rule.",
+                candidates,
+            );
         }
     }
 
     if let Some(result) = detect_header_numeric_id(column_name, &non_empty_values, values.len()) {
-        return result;
+        return attach_single_trace(
+            result,
+            total_non_empty,
+            "Header terms and integer sample shape matched numeric ID detection.",
+            "header numeric ID rule",
+        );
     }
 
     if let Some(result) = detect_numeric_value_type(values, total_non_empty) {
-        return result;
+        return attach_single_trace(
+            result,
+            total_non_empty,
+            "Sample values matched numeric value detection after identifier rules were rejected.",
+            "numeric value rule",
+        );
     }
 
     if let Some(result) = detect_name_type(column_name, &non_empty_values, values.len()) {
-        return result;
+        return attach_single_trace(
+            result,
+            total_non_empty,
+            "Header terms and sample shape matched name detection.",
+            "header name rule",
+        );
     }
 
     if detect_enum_type(&non_empty_values) {
-        return DetectionResult {
-            data_type: DataType::Enum,
-            confidence: Confidence::High,
-            sample_matches: non_empty_values.len(),
-            total_samples: values.len(),
-        };
+        return detection_result(
+            DataType::Enum,
+            Confidence::High,
+            non_empty_values.len(),
+            values.len(),
+            total_non_empty,
+            "Sample values formed a repeated finite set.",
+            vec![trace_item(
+                DataType::Enum,
+                "finite repeated values",
+                non_empty_values.len(),
+                total_non_empty,
+                Confidence::High,
+                true,
+            )],
+        );
     }
 
+    detection_result(
+        DataType::String,
+        Confidence::Low,
+        non_empty_values.len(),
+        values.len(),
+        total_non_empty,
+        "No sensitive pattern, header, numeric, name, or enum rule passed the threshold.",
+        candidates,
+    )
+}
+
+fn detection_result(
+    data_type: DataType,
+    confidence: Confidence,
+    sample_matches: usize,
+    total_samples: usize,
+    total_non_empty: usize,
+    selected_reason: impl Into<String>,
+    candidates: Vec<DetectionTraceItem>,
+) -> DetectionResult {
     DetectionResult {
-        data_type: DataType::String,
-        confidence: Confidence::Low,
-        sample_matches: non_empty_values.len(),
-        total_samples: values.len(),
+        data_type,
+        confidence,
+        sample_matches,
+        total_samples,
+        trace: Some(DetectionTrace {
+            summary: detection_summary(data_type, confidence, sample_matches, total_non_empty),
+            selected_reason: selected_reason.into(),
+            total_non_empty,
+            candidates,
+        }),
     }
+}
+
+fn attach_single_trace(
+    mut result: DetectionResult,
+    total_non_empty: usize,
+    selected_reason: impl Into<String>,
+    reason: impl Into<String>,
+) -> DetectionResult {
+    let reason = reason.into();
+    result.trace = Some(DetectionTrace {
+        summary: detection_summary(
+            result.data_type,
+            result.confidence,
+            result.sample_matches,
+            total_non_empty,
+        ),
+        selected_reason: selected_reason.into(),
+        total_non_empty,
+        candidates: vec![trace_item(
+            result.data_type,
+            reason,
+            result.sample_matches,
+            total_non_empty,
+            result.confidence,
+            true,
+        )],
+    });
+    result
+}
+
+fn trace_item(
+    data_type: DataType,
+    reason: impl Into<String>,
+    match_count: usize,
+    total_considered: usize,
+    confidence: Confidence,
+    accepted: bool,
+) -> DetectionTraceItem {
+    DetectionTraceItem {
+        data_type,
+        reason: reason.into(),
+        match_count,
+        total_considered,
+        confidence,
+        accepted,
+    }
+}
+
+fn detection_summary(
+    data_type: DataType,
+    confidence: Confidence,
+    sample_matches: usize,
+    total_non_empty: usize,
+) -> String {
+    format!(
+        "{data_type:?} selected with {confidence:?} confidence from {sample_matches}/{total_non_empty} non-empty sample value(s)."
+    )
 }
 
 pub fn classify_pii_risk(data_type: DataType) -> PiiRisk {
@@ -366,6 +507,7 @@ fn detect_header_numeric_id(
         confidence,
         sample_matches: match_count,
         total_samples,
+        trace: None,
     })
 }
 
@@ -385,6 +527,7 @@ fn detect_numeric_value_type(values: &[String], total_non_empty: usize) -> Optio
         confidence,
         sample_matches: match_count,
         total_samples: values.len(),
+        trace: None,
     })
 }
 
@@ -436,6 +579,7 @@ fn detect_header_postal_code(
         confidence,
         sample_matches: match_count,
         total_samples,
+        trace: None,
     })
 }
 
@@ -462,6 +606,7 @@ fn detect_header_address(
         confidence,
         sample_matches: match_count,
         total_samples,
+        trace: None,
     })
 }
 
@@ -488,6 +633,7 @@ fn detect_header_tax_id(
         confidence,
         sample_matches: match_count,
         total_samples,
+        trace: None,
     })
 }
 
@@ -608,6 +754,7 @@ fn detect_name_type(
                     confidence,
                     sample_matches: match_count,
                     total_samples,
+                    trace: None,
                 });
             }
         }
@@ -620,6 +767,7 @@ fn detect_name_type(
         confidence,
         sample_matches: match_count,
         total_samples,
+        trace: None,
     })
 }
 

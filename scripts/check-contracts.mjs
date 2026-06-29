@@ -21,6 +21,10 @@ const enumContracts = [
   'DpBudgetAction',
   'DpBudgetStatus',
   'PrivacyModel',
+  'SmartReplacementRejectionReason',
+  'PreflightMode',
+  'ReleaseReadinessStatus',
+  'ReleaseEvidenceStatus',
 ]
 
 const structContracts = [
@@ -34,9 +38,16 @@ const structContracts = [
   'ColumnPreview',
   'PreviewWarning',
   'SmartReplacementEntry',
+  'SmartReplacementRejectionCount',
   'PreviewData',
   'AnonymizeData',
+  'PreflightParams',
+  'PreflightData',
   'PrivacyReport',
+  'ReleaseReadiness',
+  'ReleaseEvidenceItem',
+  'ColumnReleaseReport',
+  'UtilityMetric',
   'PrivacyConfig',
   'PrivacyColumnRole',
   'FormalPrivacyConfig',

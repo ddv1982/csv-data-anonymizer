@@ -1,6 +1,10 @@
-use super::model::{AppSettings, DpReleaseRecord, trim_release_history};
+use super::model::{AppSettings, DpReleaseRecord, sanitize_session_settings, trim_release_history};
+#[cfg(not(test))]
+use super::seed_vault::KeyringSeedVault;
+use super::seed_vault::SeedVault;
 use super::store::{
-    SettingsStore, default_settings_path, load_settings_from_path, save_settings_to_path,
+    SettingsStore, default_settings_path, load_settings_from_path_with_seed_vault,
+    save_settings_to_path, save_settings_to_path_with_seed_vault,
 };
 use csv_anonymizer_core::{
     AnonymizeData, AnonymizeParams, AnonymizerError, DpAggregate, DpBudgetConfig, DpBudgetReport,
@@ -9,12 +13,12 @@ use csv_anonymizer_core::{
 use std::collections::BTreeSet;
 use std::io;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-#[derive(Debug)]
 pub struct DpBudgetLedger {
     store: SettingsStore,
+    seed_vault: Arc<dyn SeedVault>,
     lock: Mutex<()>,
 }
 
@@ -36,34 +40,56 @@ impl Default for DpBudgetLedger {
 
 impl DpBudgetLedger {
     pub fn new(path: PathBuf) -> Self {
+        Self::with_seed_vault(path, default_seed_vault())
+    }
+
+    pub fn with_seed_vault(path: PathBuf, seed_vault: Arc<dyn SeedVault>) -> Self {
         Self {
             store: SettingsStore::new(path),
+            seed_vault,
             lock: Mutex::new(()),
         }
     }
 
     pub fn load_settings(&self) -> io::Result<AppSettings> {
         let _guard = self.lock_settings()?;
-        self.store.load()
+        load_settings_from_path_with_seed_vault(&self.store.path, self.seed_vault.as_ref())
     }
 
     pub fn save_user_settings(&self, settings: &AppSettings) -> io::Result<AppSettings> {
         let _guard = self.lock_settings()?;
-        let current = self.store.load()?;
+        let current =
+            load_settings_from_path_with_seed_vault(&self.store.path, self.seed_vault.as_ref())?;
         let mut next = settings.clone();
         next.dp_budget_spent_epsilon = current.dp_budget_spent_epsilon;
         next.dp_release_history = current.dp_release_history;
-        save_settings_to_path(&self.store.path, &next)?;
-        load_settings_from_path(&self.store.path)
+        sanitize_session_settings(&mut next);
+        save_settings_to_path_with_seed_vault(&self.store.path, &next, self.seed_vault.as_ref())
     }
 
     pub fn reset_dp_budget(&self) -> io::Result<AppSettings> {
         let _guard = self.lock_settings()?;
-        let mut settings = self.store.load()?;
+        let mut settings =
+            load_settings_from_path_with_seed_vault(&self.store.path, self.seed_vault.as_ref())?;
         settings.dp_budget_spent_epsilon = 0.0;
         settings.dp_release_history.clear();
         save_settings_to_path(&self.store.path, &settings)?;
-        load_settings_from_path(&self.store.path)
+        load_settings_from_path_with_seed_vault(&self.store.path, self.seed_vault.as_ref())
+    }
+
+    pub fn privacy_config_for_preflight(
+        &self,
+        mut privacy_config: Option<PrivacyConfig>,
+    ) -> io::Result<Option<PrivacyConfig>> {
+        if dp_release_metadata(privacy_config.as_ref()).is_none() {
+            return Ok(privacy_config);
+        }
+
+        let _guard = self.lock_settings()?;
+        let settings =
+            load_settings_from_path_with_seed_vault(&self.store.path, self.seed_vault.as_ref())?;
+        inject_budget_from_settings(&mut privacy_config, &settings);
+        Ok(privacy_config)
     }
 
     pub fn run_with_budget<F>(
@@ -79,7 +105,9 @@ impl DpBudgetLedger {
         };
 
         let _guard = self.lock_for_privacy()?;
-        let settings = self.store.load().map_err(AnonymizerError::Io)?;
+        let settings =
+            load_settings_from_path_with_seed_vault(&self.store.path, self.seed_vault.as_ref())
+                .map_err(AnonymizerError::Io)?;
         inject_budget_from_settings(&mut input.privacy_config, &settings);
         let result = execute(input)?;
 
@@ -136,6 +164,16 @@ impl DpBudgetLedger {
             .lock()
             .map_err(|_| AnonymizerError::Privacy("local DP budget is unavailable".to_string()))
     }
+}
+
+#[cfg(not(test))]
+fn default_seed_vault() -> Arc<dyn SeedVault> {
+    Arc::new(KeyringSeedVault)
+}
+
+#[cfg(test)]
+fn default_seed_vault() -> Arc<dyn SeedVault> {
+    Arc::new(super::seed_vault::tests::MemorySeedVault::default())
 }
 
 fn dp_release_metadata(config: Option<&PrivacyConfig>) -> Option<DpReleaseMetadata> {
@@ -207,6 +245,7 @@ mod tests {
     use csv_anonymizer_core::{
         AnonymizationStrategy, ColumnControl, DpBudgetAction, DpBudgetStatus, PrivacyReport,
     };
+    use std::fs;
     use std::sync::{Arc, Barrier};
     use std::thread;
 
@@ -234,6 +273,27 @@ mod tests {
         assert_eq!(saved.dp_budget_limit_epsilon, Some(5.0));
         assert_eq!(saved.dp_budget_spent_epsilon, 2.0);
         assert_eq!(saved.dp_release_history.len(), 1);
+    }
+
+    #[test]
+    fn save_user_settings_returns_session_seed_without_persisting_it() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let settings_path = temp_dir.path().join("settings.json");
+        let ledger = DpBudgetLedger::new(settings_path.clone());
+        let session_settings = AppSettings {
+            deterministic_default: true,
+            remember_seed: false,
+            seed: "session-only-seed".to_string(),
+            ..AppSettings::default()
+        };
+
+        let saved = ledger.save_user_settings(&session_settings).unwrap();
+
+        assert_eq!(saved.seed, "session-only-seed");
+        let saved_content = fs::read_to_string(&settings_path).unwrap();
+        assert!(!saved_content.contains("session-only-seed"));
+        let loaded = ledger.load_settings().unwrap();
+        assert!(loaded.seed.is_empty());
     }
 
     #[test]
@@ -276,6 +336,49 @@ mod tests {
         assert_eq!(saved.dp_release_history.len(), 1);
         assert_eq!(saved.dp_release_history[0].spent_epsilon_before, "1.25");
         assert_eq!(saved.dp_release_history[0].spent_epsilon_after, "2.25");
+    }
+
+    #[test]
+    fn privacy_config_for_preflight_injects_persisted_budget_state() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let settings_path = temp_dir.path().join("settings.json");
+        let ledger = DpBudgetLedger::new(settings_path.clone());
+        save_settings_to_path(
+            &settings_path,
+            &AppSettings {
+                dp_budget_enabled: true,
+                dp_budget_limit_epsilon: Some(1.5),
+                dp_budget_spent_epsilon: 1.25,
+                dp_budget_action: DpBudgetAction::Block,
+                ..AppSettings::default()
+            },
+        )
+        .unwrap();
+        let mut stale_config = dp_input(temp_dir.path().join("out.csv"))
+            .privacy_config
+            .unwrap();
+        stale_config.differential_privacy.budget = DpBudgetConfig {
+            enabled: true,
+            limit_epsilon: Some(10.0),
+            spent_epsilon: 0.0,
+            action: DpBudgetAction::Warn,
+        };
+
+        let prepared = ledger
+            .privacy_config_for_preflight(Some(stale_config))
+            .unwrap()
+            .unwrap();
+
+        assert!(prepared.differential_privacy.budget.enabled);
+        assert_eq!(
+            prepared.differential_privacy.budget.limit_epsilon,
+            Some(1.5)
+        );
+        assert_eq!(prepared.differential_privacy.budget.spent_epsilon, 1.25);
+        assert_eq!(
+            prepared.differential_privacy.budget.action,
+            DpBudgetAction::Block
+        );
     }
 
     #[test]
@@ -453,8 +556,14 @@ mod tests {
                 exhausted_pseudonym_pools: 0,
                 opaque_token_values: 0,
                 smart_replacement_values: 0,
+                smart_replacement_rejections: 0,
+                smart_replacement_rejection_reasons: Vec::new(),
                 smart_replacement_fallbacks: 0,
                 formal_models: Vec::new(),
+                readiness: Default::default(),
+                evidence: Vec::new(),
+                column_reports: Vec::new(),
+                utility_metrics: Vec::new(),
                 notes: Vec::new(),
             },
         }

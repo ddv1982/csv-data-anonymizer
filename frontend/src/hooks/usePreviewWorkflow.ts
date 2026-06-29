@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react'
-import { previewAnonymization } from '../tauri'
+import { firstPreflightBlocker, preflightAnonymization, previewAnonymization } from '../tauri'
 import type {
   AnonymizeData,
   AppSettings,
@@ -60,10 +60,31 @@ export function usePreviewWorkflow({
     setBusy('preview')
     setError(null)
     try {
+      const controls = controlsForColumns(columnsToPreview)
+      const preflight = await preflightAnonymization(
+        'preview',
+        path,
+        null,
+        columnsToPreview,
+        controls,
+        settings.deterministicDefault,
+        settings.seed,
+        false,
+        settings.previewSampleCount,
+        null,
+        [],
+        localAiRequest,
+      )
+      const blocker = firstPreflightBlocker(preflight)
+      if (blocker) {
+        setPreview(null)
+        setError(blocker)
+        return
+      }
       const nextPreview = await previewAnonymization(
         path,
         columnsToPreview,
-        controlsForColumns(columnsToPreview),
+        controls,
         settings.deterministicDefault,
         settings.seed,
         settings.previewSampleCount,

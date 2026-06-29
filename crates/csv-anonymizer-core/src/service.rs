@@ -2,17 +2,22 @@ use crate::csv_io::{count_csv_data_rows, process_file_with_control, read_sample}
 use crate::error::{AnonymizerError, Result};
 use crate::metadata::{apply_column_selection, build_column_metadata};
 use crate::preview::generate_column_preview;
-use crate::privacy::process_privacy_release;
-use crate::report_notes::push_unselected_column_note;
+use crate::privacy::{process_privacy_release, validate_privacy_release_config};
+use crate::release_report::{
+    ReportContext, build_column_reports, build_evidence, build_readiness, build_utility_metrics,
+    standard_notes,
+};
 use crate::smart::{
     SmartReplacementMap, SmartReplacementProvider, has_smart_replacement_columns,
-    prepare_smart_replacements_from_csv, prepare_smart_replacements_from_rows,
+    missing_smart_replacement_values_from_csv, prepare_smart_replacements_from_csv,
+    prepare_smart_replacements_from_rows,
 };
 use crate::strategies::TransformState;
 use crate::types::{
     AnonymizationStrategy, AnonymizeData, AnonymizeParams, ColumnControl, ColumnMetadata, DataType,
-    HeadersData, PreviewData, PreviewParams, PreviewWarning, PrivacyReport, ProcessControl,
-    ProcessOptions, ReleaseMode, WarningSeverity,
+    HeadersData, PreflightData, PreflightMode, PreflightParams, PreviewData, PreviewParams,
+    PreviewWarning, PrivacyReport, ProcessControl, ProcessOptions, ReleaseEvidenceItem,
+    ReleaseEvidenceStatus, ReleaseMode, ReleaseReadiness, ReleaseReadinessStatus, WarningSeverity,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -53,6 +58,180 @@ impl AnonymizerService {
         sample_rows: usize,
     ) -> Result<HeadersData> {
         self.analyze_csv_with_options(file_path, sample_rows, false)
+    }
+
+    pub fn preflight_anonymization(&self, input: PreflightParams) -> Result<PreflightData> {
+        let file_path = normalize_path(&input.file_path)?;
+        let headers = self.analyze_csv_sampled(&file_path, input.sample_row_count.max(1))?;
+        let metadata = headers.columns;
+        let mut blockers = Vec::new();
+        let mut review_items = Vec::new();
+        let mut verified_items = vec![
+            "Input file is readable.".to_string(),
+            format!("{} column(s) analyzed.", metadata.len()),
+        ];
+        let mut evidence = vec![ReleaseEvidenceItem {
+            id: "input-file".to_string(),
+            label: "Input file".to_string(),
+            status: ReleaseEvidenceStatus::Verified,
+            detail: format!("Read metadata from {}.", file_path.display()),
+        }];
+
+        if input.columns.is_empty() {
+            blockers.push("Select at least one column to transform or release.".to_string());
+        }
+        if let Err(error) = validate_column_indices(&metadata, &input.columns) {
+            blockers.push(error.to_string());
+        } else if !input.columns.is_empty() {
+            verified_items.push(format!("{} column(s) selected.", input.columns.len()));
+        }
+
+        let controlled_metadata = match apply_column_controls(&metadata, &input.controls) {
+            Ok(columns) => columns,
+            Err(error) => {
+                blockers.push(error.to_string());
+                metadata.clone()
+            }
+        };
+        let selected_metadata = apply_column_selection(&controlled_metadata, &input.columns);
+        let selected_smart_columns = has_smart_replacement_columns(&selected_metadata);
+        let preview_smart_replacements =
+            SmartReplacementMap::from_entries(&input.preview_smart_replacements);
+        let existing_smart_replacements = (selected_smart_columns
+            && preview_smart_replacements.has_activity())
+        .then_some(preview_smart_replacements);
+
+        if let Err(error) = validate_deterministic_seed(input.deterministic, &input.seed) {
+            blockers.push(error.to_string());
+        } else if input.deterministic {
+            verified_items.push("Repeatable replacements have a private seed.".to_string());
+        } else {
+            verified_items.push("Repeatable replacements are off.".to_string());
+        }
+
+        match input.mode {
+            PreflightMode::Preview => {
+                verified_items.push("Preview does not require an output path.".to_string());
+            }
+            PreflightMode::Anonymize => match input.output_path.as_ref() {
+                Some(output_path) => match validate_output_path(output_path, input.force) {
+                    Ok(path) => {
+                        verified_items.push("Output path is writable.".to_string());
+                        evidence.push(ReleaseEvidenceItem {
+                            id: "output-path".to_string(),
+                            label: "Output path".to_string(),
+                            status: ReleaseEvidenceStatus::Verified,
+                            detail: format!("Output can be written to {}.", path.display()),
+                        });
+                    }
+                    Err(error) => {
+                        blockers.push(error.to_string());
+                        evidence.push(ReleaseEvidenceItem {
+                            id: "output-path".to_string(),
+                            label: "Output path".to_string(),
+                            status: ReleaseEvidenceStatus::Blocked,
+                            detail: error.to_string(),
+                        });
+                    }
+                },
+                None => blockers.push("Choose an output path.".to_string()),
+            },
+        }
+
+        let local_ai_required = if selected_smart_columns {
+            match input.mode {
+                PreflightMode::Preview => true,
+                PreflightMode::Anonymize => match missing_smart_replacement_values_from_csv(
+                    &file_path,
+                    &selected_metadata,
+                    existing_smart_replacements.as_ref(),
+                ) {
+                    Ok(has_missing_values) => has_missing_values,
+                    Err(error) => {
+                        blockers.push(error.to_string());
+                        true
+                    }
+                },
+            }
+        } else {
+            false
+        };
+
+        if local_ai_required {
+            if input.local_ai_ready {
+                verified_items.push("Local AI is ready for Smart replacement columns.".to_string());
+                evidence.push(ReleaseEvidenceItem {
+                    id: "local-ai".to_string(),
+                    label: "Local AI".to_string(),
+                    status: ReleaseEvidenceStatus::Verified,
+                    detail: input.local_ai_message.unwrap_or_else(|| {
+                        "Local AI is ready for selected Smart replacement columns.".to_string()
+                    }),
+                });
+            } else {
+                let message = input.local_ai_message.unwrap_or_else(|| {
+                    "Local AI is not ready for selected Smart replacement columns.".to_string()
+                });
+                blockers.push(message.clone());
+                evidence.push(ReleaseEvidenceItem {
+                    id: "local-ai".to_string(),
+                    label: "Local AI".to_string(),
+                    status: ReleaseEvidenceStatus::Blocked,
+                    detail: message,
+                });
+            }
+        } else {
+            verified_items.push(if selected_smart_columns {
+                "Preview Smart replacements cover selected Smart columns.".to_string()
+            } else {
+                "No selected column requires Local AI.".to_string()
+            });
+        }
+
+        let release_mode = input
+            .privacy_config
+            .as_ref()
+            .map(|config| config.release_mode)
+            .unwrap_or_default();
+        if let Some(config) = input.privacy_config.as_ref() {
+            if let Err(error) = validate_privacy_release_config(
+                &selected_metadata,
+                config,
+                input.deterministic,
+                &input.seed,
+            ) {
+                blockers.push(error.to_string());
+            } else {
+                verified_items
+                    .push("Privacy release settings passed backend validation.".to_string());
+            }
+        } else {
+            verified_items
+                .push("Standard transform settings passed backend validation.".to_string());
+        }
+
+        let context = ReportContext {
+            deterministic: input.deterministic,
+            ..ReportContext::default()
+        };
+        let release_readiness = build_readiness(
+            release_mode,
+            &selected_metadata,
+            input.privacy_config.as_ref(),
+            &context,
+        );
+        blockers.extend(release_readiness.blockers);
+        review_items.extend(release_readiness.review_items);
+        verified_items.extend(release_readiness.verified_items);
+        evidence.extend(build_evidence(release_mode, &selected_metadata, &context));
+
+        let readiness = finish_readiness(blockers, review_items, verified_items);
+        Ok(PreflightData {
+            mode: input.mode,
+            readiness,
+            evidence,
+            column_reports: build_column_reports(release_mode, &selected_metadata, None),
+        })
     }
 
     fn analyze_csv_with_options(
@@ -106,14 +285,14 @@ impl AnonymizerService {
             provider,
         )?;
         let smart_replacement_entries = smart_replacements.to_entries();
-        let mut transform_state = if smart_replacements.is_empty() {
-            TransformState::new(input.deterministic, &input.seed)
-        } else {
+        let mut transform_state = if smart_replacements.has_activity() {
             TransformState::with_smart_replacements(
                 input.deterministic,
                 &input.seed,
                 smart_replacements,
             )
+        } else {
+            TransformState::new(input.deterministic, &input.seed)
         };
         let mut previews = Vec::new();
         for column in selected_metadata.iter().filter(|column| column.is_selected) {
@@ -216,7 +395,7 @@ impl AnonymizerService {
         }
         let preview_smart_replacements =
             SmartReplacementMap::from_entries(&input.preview_smart_replacements);
-        let existing_smart_replacements = (!preview_smart_replacements.is_empty()
+        let existing_smart_replacements = (preview_smart_replacements.has_activity()
             && has_smart_replacement_columns(&selected_metadata))
         .then_some(preview_smart_replacements);
         let smart_replacements = prepare_smart_replacements_from_csv(
@@ -228,7 +407,9 @@ impl AnonymizerService {
             existing_smart_replacements.as_ref(),
             provider,
         )?;
-        let smart_replacements = (!smart_replacements.is_empty()).then_some(smart_replacements);
+        let smart_replacements = smart_replacements
+            .has_activity()
+            .then_some(smart_replacements);
         let result = process_file_with_control(
             &input_path,
             &output_path,
@@ -386,6 +567,27 @@ pub(crate) fn validate_deterministic_seed(deterministic: bool, seed: &str) -> Re
     Ok(())
 }
 
+fn finish_readiness(
+    blockers: Vec<String>,
+    review_items: Vec<String>,
+    verified_items: Vec<String>,
+) -> ReleaseReadiness {
+    let status = if !blockers.is_empty() {
+        ReleaseReadinessStatus::Blocked
+    } else if !review_items.is_empty() {
+        ReleaseReadinessStatus::Review
+    } else {
+        ReleaseReadinessStatus::Verified
+    };
+
+    ReleaseReadiness {
+        status,
+        blockers,
+        review_items,
+        verified_items,
+    }
+}
+
 pub(crate) fn build_privacy_report(
     columns: &[ColumnMetadata],
     transform_report: crate::types::TransformReport,
@@ -412,16 +614,17 @@ pub(crate) fn build_privacy_report(
         exhausted_pseudonym_pools: transform_report.exhausted_pseudonym_pools,
         opaque_token_values: transform_report.opaque_token_values,
         smart_replacement_values: transform_report.smart_replacement_values,
+        smart_replacement_rejections: transform_report.smart_replacement_rejections,
+        smart_replacement_rejection_reasons: transform_report
+            .smart_replacement_rejection_reasons
+            .clone(),
         smart_replacement_fallbacks: transform_report.smart_replacement_fallbacks,
         formal_models: Vec::new(),
-        notes: vec![
-            "Standard CSV transform changes selected cells in place with local strategies such as masking, tokenization, pseudonymization, pass-through, and optional Local AI replacement."
-                .to_string(),
-            "Treat this as risk reduction, not proof of anonymity; review the output against your sharing context and re-identification risk."
-                .to_string(),
-            "For k-anonymity, l-diversity, t-closeness, DP aggregate output, or synthetic/test rows, rerun with the matching Privacy Release mode selected."
-                .to_string(),
-        ],
+        readiness: Default::default(),
+        evidence: Vec::new(),
+        column_reports: Vec::new(),
+        utility_metrics: Vec::new(),
+        notes: standard_notes(columns, transform_report.clone(), deterministic),
     };
 
     for column in columns.iter().filter(|column| column.is_selected) {
@@ -459,48 +662,15 @@ pub(crate) fn build_privacy_report(
         }
     }
 
-    push_unselected_column_note(&mut report.notes, columns);
-
-    if report.unique_pseudonym_values > 0
-        || report.pseudonymized_columns > 0
-        || report.opaque_token_columns > 0
-    {
-        if deterministic {
-            report.notes.push(
-                "Deterministic pseudonyms and tokens use keyed HMAC-SHA256 with the configured seed; treat that seed as sensitive."
-                    .to_string(),
-            );
-        } else {
-            report.notes.push(
-                "Random-mode pseudonyms and tokens are tracked within each run so repeated source values stay consistent while distinct readable names avoid reuse while capacity remains."
-                    .to_string(),
-            );
-        }
-    }
-    if report.collisions_avoided > 0 {
-        report.notes.push(format!(
-            "{} pseudonym candidate collision(s) were avoided by assigning unused alternatives.",
-            report.collisions_avoided
-        ));
-    }
-    if report.exhausted_pseudonym_pools > 0 {
-        report.notes.push(format!(
-            "{} pseudonym pool exhaustion event(s) used generated fallback values.",
-            report.exhausted_pseudonym_pools
-        ));
-    }
-    if report.smart_replacement_columns > 0 {
-        report.notes.push(
-            "Smart replacement used Local AI on this device to generate realistic replacement values; review outputs because this is not a formal anonymization guarantee."
-                .to_string(),
-        );
-    }
-    if report.smart_replacement_fallbacks > 0 {
-        report.notes.push(format!(
-            "{} smart replacement value(s) fell back to rule-based pseudonymization after missing or invalid AI output.",
-            report.smart_replacement_fallbacks
-        ));
-    }
+    let context = ReportContext {
+        transform_report: Some(&transform_report),
+        deterministic,
+        ..ReportContext::default()
+    };
+    report.readiness = build_readiness(ReleaseMode::Standard, columns, None, &context);
+    report.evidence = build_evidence(ReleaseMode::Standard, columns, &context);
+    report.column_reports = build_column_reports(ReleaseMode::Standard, columns, None);
+    report.utility_metrics = build_utility_metrics(ReleaseMode::Standard, columns, &context);
 
     report
 }

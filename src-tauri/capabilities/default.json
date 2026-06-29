@@ -12,6 +12,7 @@
     "allow-analyze-csv",
     "allow-analyze-pasted-data",
     "allow-count-csv-rows",
+    "allow-preflight-anonymization",
     "allow-preview-anonymization",
     "allow-preview-pasted-data",
     "allow-anonymize-pasted-data",

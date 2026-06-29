@@ -10,7 +10,7 @@ import type {
 import { csvStrategies, dataTypes, strategyLabel } from '../dataOptions'
 import { formatToken } from '../utils/format'
 import { hasSampleData, isSelectableColumn, maxVisibleColumns } from '../utils/columns'
-import { GlossaryLabel } from './GlossaryPopover'
+import { GlossaryLabel, HelpPopover } from './GlossaryPopover'
 import { RiskBadge } from './RiskBadge'
 
 export function ColumnTable({
@@ -123,7 +123,10 @@ export function ColumnTable({
                     </td>
                     <td className="detected-type-cell">
                       <span className="mobile-cell-label">Detected type</span>
-                      <span className="muted-text">{formatToken(column.detectedType)}</span>
+                      <span className="detected-type-value">
+                        <span className="muted-text">{formatToken(column.detectedType)}</span>
+                        <DetectionTracePopover column={column} />
+                      </span>
                     </td>
                     <td className="control-cell">
                       <span className="mobile-cell-label">Type Override</span>
@@ -197,6 +200,41 @@ export function ColumnTable({
         </tbody>
       </table>
     </div>
+  )
+}
+
+function DetectionTracePopover({ column }: { column: ColumnMetadata }) {
+  const trace = column.detectionTrace
+  if (!trace) return null
+
+  const candidates = trace.candidates.slice(0, 5)
+
+  return (
+    <HelpPopover title="Detector evidence" triggerLabel={`Explain detector evidence for ${column.name}`}>
+      <div className="detector-popover-content">
+        <p>{trace.summary}</p>
+        <p>
+          <strong>Selected:</strong> {trace.selectedReason}
+        </p>
+        <div className="detector-candidates" aria-label="Detector candidates">
+          {candidates.map((candidate) => (
+            <div className="detector-candidate" key={`${candidate.dataType}-${candidate.reason}`}>
+              <span className={candidate.accepted ? 'status-pill success' : 'status-pill'}>
+                {candidate.accepted ? 'Selected' : 'Checked'}
+              </span>
+              <span>
+                <strong>{formatToken(candidate.dataType)}</strong>
+                <span className="muted-text text-sm">
+                  {candidate.matchCount.toLocaleString()} of {candidate.totalConsidered.toLocaleString()} values,
+                  {` ${formatToken(candidate.confidence)} confidence`}
+                </span>
+              </span>
+              <p className="muted-text text-sm">{candidate.reason}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </HelpPopover>
   )
 }
 

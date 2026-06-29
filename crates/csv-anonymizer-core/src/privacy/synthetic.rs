@@ -6,6 +6,9 @@ use super::generalization::generalize_value;
 use super::roles::{RolePlan, build_role_plan, validate_common_config};
 use crate::error::{AnonymizerError, Result};
 use crate::hash::{deterministic_number, deterministic_uuid};
+use crate::release_report::{
+    ReportContext, build_column_reports, build_evidence, build_readiness, build_utility_metrics,
+};
 use crate::types::{
     ColumnMetadata, ColumnRole, DataType, PrivacyConfig, PrivacyModel, PrivacyModelReport,
     PrivacyReport, ProcessControl, ReleaseMode, SyntheticDataConfig,
@@ -53,6 +56,11 @@ pub(super) fn process_synthetic_data(
         message: "Generated rows are sampled independently from column distributions and direct identifiers are replaced."
             .to_string(),
     }];
+    let report_context = ReportContext {
+        roles: Some(&role_plan.roles),
+        synthetic_rows: Some(requested_rows),
+        ..ReportContext::default()
+    };
 
     Ok(PrivacyProcessResult {
         row_count: requested_rows,
@@ -81,14 +89,33 @@ pub(super) fn process_synthetic_data(
             exhausted_pseudonym_pools: 0,
             opaque_token_values: 0,
             smart_replacement_values: 0,
+            smart_replacement_rejections: 0,
+            smart_replacement_rejection_reasons: Vec::new(),
             smart_replacement_fallbacks: 0,
             formal_models,
+            readiness: build_readiness(
+                ReleaseMode::SyntheticData,
+                columns,
+                Some(config),
+                &report_context,
+            ),
+            evidence: build_evidence(ReleaseMode::SyntheticData, columns, &report_context),
+            column_reports: build_column_reports(
+                ReleaseMode::SyntheticData,
+                columns,
+                report_context.roles,
+            ),
+            utility_metrics: build_utility_metrics(
+                ReleaseMode::SyntheticData,
+                columns,
+                &report_context,
+            ),
             notes: synthetic_notes(),
         },
     })
 }
 
-fn validate_synthetic_config(config: &SyntheticDataConfig) -> Result<()> {
+pub(super) fn validate_synthetic_config(config: &SyntheticDataConfig) -> Result<()> {
     if let Some(row_count) = config.row_count
         && row_count > 1_000_000
     {

@@ -1,11 +1,14 @@
 import {
   AlertCircle,
   AlertTriangle,
+  CheckCircle2,
   FolderOpen,
+  Info,
   Loader2,
   Shield,
   X,
 } from 'lucide-react'
+import type { ReactNode } from 'react'
 import type { AnonymizerWorkflowState } from '../../hooks/useAnonymizerWorkflow'
 import { formatRowCount } from '../../utils/format'
 import { Alert } from '../Alert'
@@ -307,6 +310,7 @@ function PreviewStep({ workflow }: { workflow: AnonymizerWorkflowState }) {
 function RunStep({ workflow }: { workflow: AnonymizerWorkflowState }) {
   return (
     <Card contentClassName="anonymize-card-content">
+      <ReleaseReadinessPanel readiness={workflow.releaseReadiness} />
       {workflow.busy === 'running' ? (
         <ProcessingStatus
           status={workflow.jobStatus}
@@ -331,5 +335,57 @@ function RunStep({ workflow }: { workflow: AnonymizerWorkflowState }) {
         </button>
       )}
     </Card>
+  )
+}
+
+function ReleaseReadinessPanel({ readiness }: { readiness: AnonymizerWorkflowState['releaseReadiness'] }) {
+  const statusLabel =
+    readiness.status === 'verified' ? 'Ready' : readiness.status === 'blocked' ? 'Blocked' : 'Review'
+  const statusClass =
+    readiness.status === 'verified'
+      ? 'status-pill success'
+      : readiness.status === 'blocked'
+        ? 'status-pill blocked'
+        : 'status-pill warning'
+
+  return (
+    <div className="release-readiness-panel">
+      <div className="release-readiness-header">
+        <span className="privacy-config-title">
+          <Shield aria-hidden="true" />
+          Release readiness
+        </span>
+        <span className={statusClass}>{statusLabel}</span>
+      </div>
+      {readiness.blockers.length > 0 ? (
+        <ReadinessList title="Blocked" icon={<AlertCircle aria-hidden="true" />} items={readiness.blockers} />
+      ) : null}
+      {readiness.reviewItems.length > 0 ? (
+        <ReadinessList title="Review" icon={<AlertTriangle aria-hidden="true" />} items={readiness.reviewItems} />
+      ) : null}
+      {readiness.verifiedItems.length > 0 ? (
+        <ReadinessList
+          title="Verified"
+          icon={readiness.status === 'verified' ? <CheckCircle2 aria-hidden="true" /> : <Info aria-hidden="true" />}
+          items={readiness.verifiedItems.slice(0, 5)}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+function ReadinessList({ title, icon, items }: { title: string; icon: ReactNode; items: string[] }) {
+  return (
+    <div className="release-readiness-list">
+      <span className="release-readiness-list-title">
+        {icon}
+        {title}
+      </span>
+      <ul>
+        {items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </div>
   )
 }

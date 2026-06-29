@@ -3,7 +3,7 @@ use csv_anonymizer_core::{DpAggregate, DpBudgetAction, DpBudgetStatus};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-pub(super) const SETTINGS_SCHEMA_VERSION: u32 = 6;
+pub(super) const SETTINGS_SCHEMA_VERSION: u32 = 8;
 pub(super) const DEFAULT_OUTPUT_SUFFIX: &str = "_private_output";
 pub(super) const LEGACY_OUTPUT_SUFFIX: &str = "_anonymized";
 const DEFAULT_DP_BUDGET_LIMIT_EPSILON: f64 = 10.0;
@@ -25,6 +25,8 @@ pub struct AppSettings {
     #[serde(default)]
     pub theme_mode: ThemeMode,
     pub deterministic_default: bool,
+    #[serde(default)]
+    pub remember_seed: bool,
     pub seed: String,
     pub overwrite_output: bool,
     pub sample_row_count: usize,
@@ -55,6 +57,7 @@ impl Default for AppSettings {
             schema_version: SETTINGS_SCHEMA_VERSION,
             theme_mode: ThemeMode::System,
             deterministic_default: false,
+            remember_seed: false,
             seed: String::new(),
             overwrite_output: false,
             sample_row_count: 100,
@@ -95,10 +98,27 @@ pub struct DpReleaseRecord {
 }
 
 pub fn sanitize_settings(settings: &mut AppSettings) {
+    sanitize_settings_with_seed_policy(settings, true);
+}
+
+pub fn sanitize_persistent_settings(settings: &mut AppSettings) {
+    sanitize_settings_with_seed_policy(settings, true);
+    settings.seed.clear();
+}
+
+pub fn sanitize_session_settings(settings: &mut AppSettings) {
+    sanitize_settings_with_seed_policy(settings, false);
+}
+
+fn sanitize_settings_with_seed_policy(settings: &mut AppSettings, clear_unremembered_seed: bool) {
+    settings.schema_version = SETTINGS_SCHEMA_VERSION;
     settings.sample_row_count = settings.sample_row_count.clamp(1, 10_000);
     settings.preview_sample_count = settings.preview_sample_count.clamp(1, 100);
     if settings.default_output_suffix.trim().is_empty() {
         settings.default_output_suffix = DEFAULT_OUTPUT_SUFFIX.to_string();
+    }
+    if clear_unremembered_seed && !settings.remember_seed {
+        settings.seed.clear();
     }
     if settings.dp_budget_enabled {
         let valid_limit = settings

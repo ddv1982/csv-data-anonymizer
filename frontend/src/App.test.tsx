@@ -7,6 +7,8 @@ import { defaultSettings } from './defaults'
 import { MAX_PASTE_CONTENT_BYTES } from './limits'
 import type { AppSettings, ColumnMetadata, PrivacyReport } from './types'
 
+type PreflightLike = { readiness: { blockers: string[] } }
+
 const tauriMocks = vi.hoisted(() => ({
   loadSettings: vi.fn(),
   saveSettings: vi.fn(),
@@ -19,6 +21,8 @@ const tauriMocks = vi.hoisted(() => ({
   transformPasteData: vi.fn(),
   generateQuickValues: vi.fn(),
   countCsvRows: vi.fn(),
+  preflightAnonymization: vi.fn(),
+  firstPreflightBlocker: vi.fn((preflight: PreflightLike) => preflight.readiness.blockers[0] ?? null),
   previewAnonymization: vi.fn(),
   startAnonymizeJob: vi.fn(),
   getAnonymizeJobStatus: vi.fn(),
@@ -41,6 +45,10 @@ describe('App input mode tabs', () => {
     vi.clearAllMocks()
     tauriMocks.loadSettings.mockResolvedValue(settingsFixture())
     tauriMocks.saveSettings.mockImplementation(async (settings: AppSettings) => settings)
+    tauriMocks.preflightAnonymization.mockResolvedValue(verifiedPreflightFixture())
+    tauriMocks.firstPreflightBlocker.mockImplementation(
+      (preflight: PreflightLike) => preflight.readiness.blockers[0] ?? null,
+    )
     tauriMocks.getLocalAiStatus.mockResolvedValue({
       enabled: false,
       provider: 'ollama',
@@ -412,9 +420,34 @@ function privacyReportFixture(overrides: Partial<PrivacyReport> = {}): PrivacyRe
     exhaustedPseudonymPools: 0,
     opaqueTokenValues: 0,
     smartReplacementValues: 0,
+    smartReplacementRejections: 0,
+    smartReplacementRejectionReasons: [],
     smartReplacementFallbacks: 0,
     formalModels: [],
+    readiness: {
+      status: 'verified',
+      blockers: [],
+      reviewItems: [],
+      verifiedItems: [],
+    },
+    evidence: [],
+    columnReports: [],
+    utilityMetrics: [],
     notes: [],
     ...overrides,
+  }
+}
+
+function verifiedPreflightFixture() {
+  return {
+    mode: 'anonymize',
+    readiness: {
+      status: 'verified',
+      blockers: [],
+      reviewItems: [],
+      verifiedItems: [],
+    },
+    evidence: [],
+    columnReports: [],
   }
 }

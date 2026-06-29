@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
-import { cancelAnonymizeJob, getAnonymizeJobStatus, startAnonymizeJob } from '../tauri'
+import {
+  cancelAnonymizeJob,
+  firstPreflightBlocker,
+  getAnonymizeJobStatus,
+  preflightAnonymization,
+  startAnonymizeJob,
+} from '../tauri'
 import type {
   AnonymizeData,
   AnonymizeJobStatus,
@@ -26,7 +32,6 @@ type AnonymizeJobOptions = {
   privacyConfig: PrivacyConfig
   privacyConfigValid: boolean
   privacyValidation: PrivacyConfigValidation
-  localAiBlocked: boolean
   settings: AppSettings
   previewSmartReplacements: SmartReplacementEntry[]
   localAiRequest: LocalAiRequest
@@ -49,7 +54,6 @@ export function useAnonymizeJob({
   privacyConfig,
   privacyConfigValid,
   privacyValidation,
-  localAiBlocked,
   settings,
   previewSmartReplacements,
   localAiRequest,
@@ -69,7 +73,6 @@ export function useAnonymizeJob({
       inputPath &&
       outputPath &&
       busy === 'idle' &&
-      !localAiBlocked &&
       privacyConfigValid,
   )
 
@@ -143,9 +146,7 @@ export function useAnonymizeJob({
   async function runAnonymization() {
     if (!canAnonymize) {
       setError(
-        localAiBlocked
-          ? 'Set up Local AI before creating output with Smart replacement columns.'
-          : !privacyConfigValid
+        !privacyConfigValid
             ? (privacyValidation.reason ?? 'Complete the privacy release settings before running.')
             : 'Load a CSV, select at least one column, and choose an output path.',
       )
@@ -158,6 +159,26 @@ export function useAnonymizeJob({
     setJobStatus(null)
 
     try {
+      const preflight = await preflightAnonymization(
+        'anonymize',
+        inputPath,
+        outputPath,
+        selectedColumns,
+        selectedControls,
+        settings.deterministicDefault,
+        settings.seed,
+        settings.overwriteOutput,
+        settings.sampleRowCount,
+        privacyConfig,
+        previewSmartReplacements,
+        localAiRequest,
+      )
+      const blocker = firstPreflightBlocker(preflight)
+      if (blocker) {
+        setBusy('idle')
+        setError(blocker)
+        return
+      }
       const status = await startAnonymizeJob(
         inputPath,
         outputPath,

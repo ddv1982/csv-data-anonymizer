@@ -179,10 +179,10 @@ pub(super) fn transform_state_for_smart_replacements(
     seed: &str,
     smart_replacements: SmartReplacementMap,
 ) -> TransformState {
-    if smart_replacements.is_empty() {
-        TransformState::new(deterministic, seed)
-    } else {
+    if smart_replacements.has_activity() {
         TransformState::with_smart_replacements(deterministic, seed, smart_replacements)
+    } else {
+        TransformState::new(deterministic, seed)
     }
 }
 
@@ -192,7 +192,7 @@ pub(super) fn preview_smart_replacements_for_transform(
 ) -> Option<SmartReplacementMap> {
     let preview_smart_replacements =
         SmartReplacementMap::from_entries(&input.preview_smart_replacements);
-    (!preview_smart_replacements.is_empty() && has_smart_replacement_columns(metadata))
+    (preview_smart_replacements.has_activity() && has_smart_replacement_columns(metadata))
         .then_some(preview_smart_replacements)
 }
 

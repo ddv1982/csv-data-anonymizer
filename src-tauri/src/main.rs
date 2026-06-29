@@ -10,8 +10,8 @@ use commands::{
     cancel_local_ai_model_download, count_csv_rows, generate_quick_values,
     get_anonymize_job_status, get_local_ai_model_download_status, get_local_ai_status,
     load_settings, open_local_ai_setup_url, open_output_location, pick_input_csv, pick_output_csv,
-    preview_anonymization, preview_pasted_data, reset_dp_budget_ledger, save_settings,
-    start_anonymize_job, start_local_ai_model_download,
+    preflight_anonymization, preview_anonymization, preview_pasted_data, reset_dp_budget_ledger,
+    save_settings, start_anonymize_job, start_local_ai_model_download,
 };
 use std::sync::Arc;
 
@@ -31,6 +31,7 @@ fn main() {
             analyze_csv,
             analyze_pasted_data,
             count_csv_rows,
+            preflight_anonymization,
             preview_anonymization,
             preview_pasted_data,
             anonymize_pasted_data,

@@ -12,6 +12,8 @@ import type {
 } from '../types'
 import { useAnonymizerWorkflow, type AnonymizerWorkflowState } from './useAnonymizerWorkflow'
 
+type PreflightLike = { readiness: { blockers: string[] } }
+
 const tauriMocks = vi.hoisted(() => ({
   loadSettings: vi.fn(),
   saveSettings: vi.fn(),
@@ -20,6 +22,8 @@ const tauriMocks = vi.hoisted(() => ({
   pickOutputCsv: vi.fn(),
   analyzeCsv: vi.fn(),
   countCsvRows: vi.fn(),
+  preflightAnonymization: vi.fn(),
+  firstPreflightBlocker: vi.fn((preflight: PreflightLike) => preflight.readiness.blockers[0] ?? null),
   previewAnonymization: vi.fn(),
   startAnonymizeJob: vi.fn(),
   getAnonymizeJobStatus: vi.fn(),
@@ -45,6 +49,10 @@ describe('useAnonymizerWorkflow', () => {
     tauriMocks.pickInputCsv.mockResolvedValue('/data/input.csv')
     tauriMocks.pickOutputCsv.mockResolvedValue('/data/custom-output.csv')
     tauriMocks.countCsvRows.mockResolvedValue(2)
+    tauriMocks.preflightAnonymization.mockResolvedValue(verifiedPreflightFixture())
+    tauriMocks.firstPreflightBlocker.mockImplementation(
+      (preflight: PreflightLike) => preflight.readiness.blockers[0] ?? null,
+    )
     tauriMocks.previewAnonymization.mockResolvedValue({
       previews: [],
       warnings: [],
@@ -382,9 +390,34 @@ function privacyReportFixture(overrides: Partial<PrivacyReport> = {}): PrivacyRe
     exhaustedPseudonymPools: 0,
     opaqueTokenValues: 0,
     smartReplacementValues: 0,
+    smartReplacementRejections: 0,
+    smartReplacementRejectionReasons: [],
     smartReplacementFallbacks: 0,
     formalModels: [],
+    readiness: {
+      status: 'verified',
+      blockers: [],
+      reviewItems: [],
+      verifiedItems: [],
+    },
+    evidence: [],
+    columnReports: [],
+    utilityMetrics: [],
     notes: [],
     ...overrides,
+  }
+}
+
+function verifiedPreflightFixture() {
+  return {
+    mode: 'anonymize',
+    readiness: {
+      status: 'verified',
+      blockers: [],
+      reviewItems: [],
+      verifiedItems: [],
+    },
+    evidence: [],
+    columnReports: [],
   }
 }

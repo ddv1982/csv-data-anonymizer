@@ -69,6 +69,7 @@ fn build_single_column_metadata(
         index,
         detected_type: detection.data_type,
         confidence: detection.confidence,
+        detection_trace: detection.trace,
         pii_risk,
         sample_values,
         empty_format,

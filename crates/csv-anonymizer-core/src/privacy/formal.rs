@@ -6,6 +6,9 @@ use super::roles::{RolePlan, build_role_plan, validate_common_config};
 use super::{PrivacyProcessResult, constrain_unselected_roles_to_attributes};
 use crate::detection::is_empty_value;
 use crate::error::{AnonymizerError, Result};
+use crate::release_report::{
+    ReportContext, build_column_reports, build_evidence, build_readiness, build_utility_metrics,
+};
 use crate::report_notes::push_unselected_column_note;
 use crate::types::{
     ColumnMetadata, ColumnRole, DataType, FormalPrivacyConfig, PrivacyConfig, PrivacyModel,
@@ -70,10 +73,20 @@ pub(super) fn process_formal_tabular(
         &suppressed_rows,
         &config.formal,
     );
+    let released_classes =
+        released_equivalence_classes(&dataset, columns, &quasi_indices, &levels, &suppressed_rows);
+    let min_released_class_size = min_class_size(&released_classes).unwrap_or(0);
     let generalized_columns = quasi_indices
         .iter()
         .filter(|index| levels.get(index).copied().unwrap_or_default() > 0)
         .count();
+    let report_context = ReportContext {
+        roles: Some(&role_plan.roles),
+        formal_min_class_size: Some(min_released_class_size),
+        formal_suppressed_rows: Some(suppressed_rows.len()),
+        formal_released_rows: Some(released_count),
+        ..ReportContext::default()
+    };
 
     Ok(PrivacyProcessResult {
         row_count: dataset.data_row_count(),
@@ -102,14 +115,33 @@ pub(super) fn process_formal_tabular(
             exhausted_pseudonym_pools: 0,
             opaque_token_values: 0,
             smart_replacement_values: 0,
+            smart_replacement_rejections: 0,
+            smart_replacement_rejection_reasons: Vec::new(),
             smart_replacement_fallbacks: 0,
             formal_models,
+            readiness: build_readiness(
+                ReleaseMode::FormalTabular,
+                columns,
+                Some(config),
+                &report_context,
+            ),
+            evidence: build_evidence(ReleaseMode::FormalTabular, columns, &report_context),
+            column_reports: build_column_reports(
+                ReleaseMode::FormalTabular,
+                columns,
+                report_context.roles,
+            ),
+            utility_metrics: build_utility_metrics(
+                ReleaseMode::FormalTabular,
+                columns,
+                &report_context,
+            ),
             notes: formal_notes(columns, config, released_count),
         },
     })
 }
 
-fn validate_formal_config(config: &FormalPrivacyConfig) -> Result<()> {
+pub(super) fn validate_formal_config(config: &FormalPrivacyConfig) -> Result<()> {
     if config.k == 0 {
         return Err(AnonymizerError::Privacy(
             "k-anonymity requires k to be at least 1".to_string(),

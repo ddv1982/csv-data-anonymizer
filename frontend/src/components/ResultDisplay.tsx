@@ -1,12 +1,13 @@
 import { CheckCircle2, FolderOpen, RefreshCcw } from 'lucide-react'
 import type { GlossaryKey } from '../glossary'
 import { openOutputLocation } from '../tauri'
-import type { AnonymizeData, PrivacyModel, PrivacyReport } from '../types'
+import type { AnonymizeData, PrivacyModel, PrivacyReport, ReleaseEvidenceStatus } from '../types'
 import { messageFrom } from '../utils/errors'
 import { formatResultStats, formatToken } from '../utils/format'
 import { releaseModeGlossaryTerm, releaseModeLabel } from '../utils/privacyDisplay'
 import { Alert } from './Alert'
 import { GlossaryLabel, GlossaryPopover } from './GlossaryPopover'
+import { RiskBadge } from './RiskBadge'
 import { SectionHelp } from './SectionHelp'
 
 export function ResultDisplay({
@@ -90,6 +91,11 @@ export function PrivacyReportSummary({ privacyReport }: { privacyReport: Privacy
       value: privacyReport.smartReplacementValues,
       glossaryTerm: 'smartReplacementValues',
     },
+    {
+      label: 'Smart rejections',
+      value: privacyReport.smartReplacementRejections,
+      glossaryTerm: 'smartRejections',
+    },
     { label: 'Smart fallbacks', value: privacyReport.smartReplacementFallbacks, glossaryTerm: 'smartFallbacks' },
   ]
   if (privacyReport.dpBudget) {
@@ -157,6 +163,100 @@ export function PrivacyReportSummary({ privacyReport }: { privacyReport: Privacy
             ))}
           </div>
         ) : null}
+        {privacyReport.readiness ? <ReportReadinessSummary privacyReport={privacyReport} /> : null}
+        {privacyReport.utilityMetrics.length > 0 ? (
+          <div className="report-subsection">
+            <h4>Utility</h4>
+            <div className="privacy-metrics">
+              {privacyReport.utilityMetrics.map((metric) => (
+                <div className="privacy-metric" key={`${metric.label}-${metric.value}`}>
+                  <span className="privacy-metric-label muted-text text-sm">{metric.label}</span>
+                  <strong>{metric.value}</strong>
+                  <span className={statusPillClass(metric.status)}>{statusLabel(metric.status)}</span>
+                  {metric.detail ? <p className="muted-text text-sm">{metric.detail}</p> : null}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {privacyReport.evidence.length > 0 ? (
+          <div className="report-subsection">
+            <h4>Evidence</h4>
+            <div className="privacy-models">
+              {privacyReport.evidence.map((item) => (
+                <div className="privacy-model-row" key={item.id}>
+                  <span>
+                    <strong>{item.label}</strong>
+                    <span className="muted-text text-sm">{item.detail}</span>
+                  </span>
+                  <span className={statusPillClass(item.status)}>{statusLabel(item.status)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {privacyReport.smartReplacementRejectionReasons.length > 0 ? (
+          <div className="report-subsection">
+            <h4>Local AI Rejections</h4>
+            <div className="privacy-metrics">
+              {privacyReport.smartReplacementRejectionReasons.map((item) => (
+                <div className="privacy-metric" key={item.reason}>
+                  <span className="privacy-metric-label muted-text text-sm">
+                    {smartRejectionReasonLabel(item.reason)}
+                  </span>
+                  <strong>{item.count.toLocaleString()}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {privacyReport.columnReports.length > 0 ? (
+          <div className="report-subsection">
+            <h4>Column Decisions</h4>
+            <div className="table-frame release-column-frame">
+              <table className="release-column-table">
+                <thead>
+                  <tr>
+                    <th>Column</th>
+                    <th>Risk</th>
+                    <th>Strategy</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {privacyReport.columnReports.slice(0, 12).map((column) => (
+                    <tr key={`${column.columnIndex}-${column.columnName}`}>
+                      <td>
+                        <strong>{column.columnName}</strong>
+                        <span className="muted-text text-sm">
+                          #{column.columnIndex} · {formatToken(column.detectedType)}
+                          {column.role ? ` · ${formatToken(column.role)}` : ''}
+                        </span>
+                      </td>
+                      <td>
+                        <RiskBadge risk={column.piiRisk} />
+                      </td>
+                      <td>{formatToken(column.strategy)}</td>
+                      <td>
+                        <span className={statusPillClass(column.status)}>{statusLabel(column.status)}</span>
+                      </td>
+                      <td>
+                        <strong>{column.action}</strong>
+                        <p className="muted-text text-sm">{column.detail}</p>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {privacyReport.columnReports.length > 12 ? (
+              <p className="muted-text text-sm">
+                Showing 12 of {privacyReport.columnReports.length.toLocaleString()} column decisions.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         {privacyReport.notes.map((note) => (
           <p className="muted-text text-sm" key={note}>
             {note}
@@ -165,6 +265,52 @@ export function PrivacyReportSummary({ privacyReport }: { privacyReport: Privacy
       </div>
     </div>
   )
+}
+
+function ReportReadinessSummary({ privacyReport }: { privacyReport: PrivacyReport }) {
+  const readiness = privacyReport.readiness
+  return (
+    <div className="report-subsection">
+      <div className="report-subsection-header">
+        <h4>Release Readiness</h4>
+        <span className={statusPillClass(readiness.status)}>{statusLabel(readiness.status)}</span>
+      </div>
+      <div className="report-readiness-grid">
+        <ReportList title="Blocked" items={readiness.blockers} />
+        <ReportList title="Review" items={readiness.reviewItems} />
+        <ReportList title="Verified" items={readiness.verifiedItems} />
+      </div>
+    </div>
+  )
+}
+
+function ReportList({ title, items }: { title: string; items: string[] }) {
+  if (items.length === 0) return null
+
+  return (
+    <div className="report-list">
+      <strong>{title}</strong>
+      <ul>
+        {items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function statusPillClass(status: ReleaseEvidenceStatus | PrivacyReport['readiness']['status']) {
+  if (status === 'verified') return 'status-pill success'
+  if (status === 'blocked') return 'status-pill blocked'
+  if (status === 'review') return 'status-pill warning'
+  return 'status-pill'
+}
+
+function statusLabel(status: ReleaseEvidenceStatus | PrivacyReport['readiness']['status']) {
+  if (status === 'verified') return 'Verified'
+  if (status === 'blocked') return 'Blocked'
+  if (status === 'review') return 'Review'
+  return 'Info'
 }
 
 function privacyModelGlossaryTerm(model: PrivacyModel): GlossaryKey {
@@ -181,4 +327,16 @@ function budgetStatusLabel(status: string) {
   if (status === 'atBudget') return 'At budget'
   if (status === 'overBudget') return 'Over budget'
   return formatToken(status)
+}
+
+function smartRejectionReasonLabel(reason: PrivacyReport['smartReplacementRejectionReasons'][number]['reason']) {
+  if (reason === 'unexpectedOriginal') return 'Unexpected source'
+  if (reason === 'missingOutput') return 'Missing output'
+  if (reason === 'emptyOutput') return 'Empty output'
+  if (reason === 'sameAsOriginal') return 'Copied source'
+  if (reason === 'containsOriginal') return 'Source text included'
+  if (reason === 'controlCharacter') return 'Control character'
+  if (reason === 'duplicateOriginal') return 'Duplicate source'
+  if (reason === 'duplicateOutput') return 'Duplicate output'
+  return formatToken(reason)
 }

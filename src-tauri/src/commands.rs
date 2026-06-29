@@ -7,7 +7,7 @@ mod shared;
 
 pub use csv::{
     analyze_csv, analyze_pasted_data, anonymize_pasted_data, count_csv_rows, generate_quick_values,
-    preview_anonymization, preview_pasted_data,
+    preflight_anonymization, preview_anonymization, preview_pasted_data,
 };
 pub use files::{open_output_location, pick_input_csv, pick_output_csv};
 pub use job_commands::{cancel_anonymize_job, get_anonymize_job_status, start_anonymize_job};

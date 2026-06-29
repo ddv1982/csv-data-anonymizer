@@ -33,6 +33,18 @@ export type DpBudgetAction = 'warn' | 'block'
 export type DpBudgetStatus = 'withinBudget' | 'atBudget' | 'overBudget'
 export type PrivacyModel = 'kAnonymity' | 'lDiversity' | 'tCloseness' | 'differentialPrivacy' | 'syntheticData'
 export type ThemeMode = 'system' | 'light' | 'dark'
+export type ReleaseReadinessStatus = 'verified' | 'review' | 'blocked'
+export type ReleaseEvidenceStatus = 'verified' | 'review' | 'blocked' | 'info'
+export type SmartReplacementRejectionReason =
+  | 'unexpectedOriginal'
+  | 'missingOutput'
+  | 'emptyOutput'
+  | 'sameAsOriginal'
+  | 'containsOriginal'
+  | 'controlCharacter'
+  | 'duplicateOriginal'
+  | 'duplicateOutput'
+export type PreflightMode = 'preview' | 'anonymize'
 
 export interface ColumnControl {
   columnIndex: number
@@ -91,6 +103,7 @@ export interface AppSettings {
   schemaVersion: number
   themeMode: ThemeMode
   deterministicDefault: boolean
+  rememberSeed: boolean
   seed: string
   overwriteOutput: boolean
   sampleRowCount: number
@@ -132,11 +145,28 @@ export interface ColumnMetadata {
   index: number
   detectedType: DataType
   confidence: Confidence
+  detectionTrace?: DetectionTrace | null
   piiRisk: PiiRisk
   sampleValues: string[]
   emptyFormat: EmptyFormat
   isSelected: boolean
   strategy: AnonymizationStrategy
+}
+
+export interface DetectionTrace {
+  summary: string
+  selectedReason: string
+  totalNonEmpty: number
+  candidates: DetectionTraceItem[]
+}
+
+export interface DetectionTraceItem {
+  dataType: DataType
+  reason: string
+  matchCount: number
+  totalConsidered: number
+  confidence: Confidence
+  accepted: boolean
 }
 
 export interface HeadersData {
@@ -203,6 +233,11 @@ export interface SmartReplacementEntry {
   replacement: string
 }
 
+export interface SmartReplacementRejectionCount {
+  reason: SmartReplacementRejectionReason
+  count: number
+}
+
 export interface PreviewData {
   previews: ColumnPreview[]
   warnings: PreviewWarning[]
@@ -215,6 +250,29 @@ export interface AnonymizeData {
   columnsAnonymized: number
   durationMs: number
   privacyReport: PrivacyReport
+}
+
+export interface PreflightParams {
+  mode: PreflightMode
+  filePath: string
+  outputPath?: string | null
+  columns: number[]
+  controls: ColumnControl[]
+  deterministic: boolean
+  seed: string
+  force: boolean
+  sampleRowCount: number
+  privacyConfig?: PrivacyConfig | null
+  previewSmartReplacements: SmartReplacementEntry[]
+  localAiReady: boolean
+  localAiMessage?: string | null
+}
+
+export interface PreflightData {
+  mode: PreflightMode
+  readiness: ReleaseReadiness
+  evidence: ReleaseEvidenceItem[]
+  columnReports: ColumnReleaseReport[]
 }
 
 export interface PrivacyReport {
@@ -238,9 +296,49 @@ export interface PrivacyReport {
   exhaustedPseudonymPools: number
   opaqueTokenValues: number
   smartReplacementValues: number
+  smartReplacementRejections: number
+  smartReplacementRejectionReasons: SmartReplacementRejectionCount[]
   smartReplacementFallbacks: number
   formalModels: PrivacyModelReport[]
+  readiness: ReleaseReadiness
+  evidence: ReleaseEvidenceItem[]
+  columnReports: ColumnReleaseReport[]
+  utilityMetrics: UtilityMetric[]
   notes: string[]
+}
+
+export interface ReleaseReadiness {
+  status: ReleaseReadinessStatus
+  blockers: string[]
+  reviewItems: string[]
+  verifiedItems: string[]
+}
+
+export interface ReleaseEvidenceItem {
+  id: string
+  label: string
+  status: ReleaseEvidenceStatus
+  detail: string
+}
+
+export interface ColumnReleaseReport {
+  columnIndex: number
+  columnName: string
+  selected: boolean
+  detectedType: DataType
+  piiRisk: PiiRisk
+  strategy: AnonymizationStrategy
+  role?: ColumnRole | null
+  action: string
+  status: ReleaseEvidenceStatus
+  detail: string
+}
+
+export interface UtilityMetric {
+  label: string
+  value: string
+  status: ReleaseEvidenceStatus
+  detail?: string | null
 }
 
 export interface DpBudgetReport {
