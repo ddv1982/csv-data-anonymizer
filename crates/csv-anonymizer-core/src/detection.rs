@@ -6,10 +6,7 @@ use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
-struct HeaderTerms {
-    compact: String,
-    tokens: HashSet<String>,
-}
+mod header;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PrivacySpan<'a> {
@@ -396,7 +393,9 @@ fn add_full_cell_findings_from_detection(
     detected_type: DataType,
     detection_confidence: Confidence,
 ) {
-    if detected_type == DataType::Timestamp && infer_private_date_from_header(column_name) {
+    if detected_type == DataType::Timestamp
+        && (header::infer_private_date(column_name) || header::infer_user_event_date(column_name))
+    {
         promote_findings(
             findings,
             PrivacyFindingKind::PrivateDate,
@@ -432,8 +431,8 @@ fn add_full_cell_findings_from_header(
     column_name: &str,
     values: &[String],
 ) {
-    let header = header_terms(column_name);
-    let header_signal = if infer_secret_from_header(&header) {
+    let header = header::terms(column_name);
+    let header_signal = if header::infer_secret(&header) {
         Some((
             PrivacyFindingKind::CredentialOrSecret,
             DataType::String,
@@ -442,7 +441,7 @@ fn add_full_cell_findings_from_header(
             "header:secret",
             "Header terms suggest a credential or secret value.",
         ))
-    } else if infer_account_from_header(&header) {
+    } else if header::infer_account_number(&header) {
         Some((
             PrivacyFindingKind::AccountOrFinancialId,
             DataType::NumericId,
@@ -451,7 +450,7 @@ fn add_full_cell_findings_from_header(
             "header:account",
             "Header terms suggest an account or financial identifier.",
         ))
-    } else if infer_private_date_from_header(column_name) {
+    } else if header::infer_private_date(column_name) {
         Some((
             PrivacyFindingKind::PrivateDate,
             DataType::Timestamp,
@@ -459,6 +458,24 @@ fn add_full_cell_findings_from_header(
             70,
             "header:private-date",
             "Header terms suggest a private date.",
+        ))
+    } else if header::infer_user_event_date(column_name) {
+        Some((
+            PrivacyFindingKind::PrivateDate,
+            DataType::Timestamp,
+            Confidence::Medium,
+            68,
+            "header:user-event-date",
+            "Header terms suggest a user-linked timestamp.",
+        ))
+    } else if header::infer_account_identifier(&header) {
+        Some((
+            PrivacyFindingKind::AccountOrFinancialId,
+            DataType::String,
+            Confidence::Medium,
+            76,
+            "header:account-identifier",
+            "Header terms suggest an account or user identifier.",
         ))
     } else {
         None
@@ -687,11 +704,11 @@ fn value_matches_header_signal(value: &str, kind: PrivacyFindingKind) -> bool {
                     .any(|character| character.is_ascii_alphabetic())
         }
         PrivacyFindingKind::AccountOrFinancialId => {
-            value
+            let digit_count = value
                 .chars()
                 .filter(|character| character.is_ascii_digit())
-                .count()
-                >= 4
+                .count();
+            digit_count >= 4 || is_account_identifier_value(value)
         }
         PrivacyFindingKind::PrivateDate => is_timestamp(value) || value.len() >= 4,
         PrivacyFindingKind::Person
@@ -704,44 +721,15 @@ fn value_matches_header_signal(value: &str, kind: PrivacyFindingKind) -> bool {
     }
 }
 
-fn infer_secret_from_header(terms: &HeaderTerms) -> bool {
-    matches!(
-        terms.compact.as_str(),
-        "apikey"
-            | "accesstoken"
-            | "authtoken"
-            | "password"
-            | "passwd"
-            | "pwd"
-            | "secret"
-            | "token"
-            | "privatekey"
-    ) || terms.tokens.contains("secret")
-        || terms.tokens.contains("password")
-        || terms.tokens.contains("passwd")
-        || terms.tokens.contains("pwd")
-        || terms.tokens.contains("token")
-        || terms.tokens.contains("key") && terms.tokens.contains("api")
-}
-
-fn infer_account_from_header(terms: &HeaderTerms) -> bool {
-    terms.tokens.contains("account")
-        || terms.tokens.contains("acct")
-        || terms.tokens.contains("iban")
-        || terms.tokens.contains("routing")
-        || terms.tokens.contains("card")
-        || terms.tokens.contains("pan")
-        || terms.tokens.contains("bank") && terms.tokens.contains("number")
-}
-
-fn infer_private_date_from_header(column_name: &str) -> bool {
-    let terms = header_terms(column_name);
-    matches!(
-        terms.compact.as_str(),
-        "dob" | "dateofbirth" | "birthdate" | "birthday"
-    ) || terms.tokens.contains("birth")
-        || terms.tokens.contains("dob")
-        || terms.tokens.contains("date") && terms.tokens.contains("birth")
+fn is_account_identifier_value(value: &str) -> bool {
+    let trimmed = value.trim();
+    (3..=64).contains(&trimmed.len())
+        && trimmed
+            .chars()
+            .any(|character| character.is_ascii_alphabetic())
+        && trimmed.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.')
+        })
 }
 
 fn passes_luhn(digits: &str) -> bool {
@@ -786,70 +774,33 @@ pub fn detect_column_type_with_name(column_name: &str, values: &[String]) -> Det
         );
     }
 
-    if let Some(result) = detect_header_postal_code(column_name, &non_empty_values, values.len()) {
-        return attach_single_trace(
-            result,
-            total_non_empty,
-            "Header terms and sample shape matched postal code detection.",
-            "header postal code rule",
-        );
+    if let Some(result) = first_header_detection(
+        column_name,
+        &non_empty_values,
+        values.len(),
+        total_non_empty,
+        &early_header_detection_rules(),
+    ) {
+        return result;
     }
 
-    if let Some(result) = detect_header_address(column_name, &non_empty_values, values.len()) {
-        return attach_single_trace(
-            result,
-            total_non_empty,
-            "Header terms and sample shape matched address detection.",
-            "header address rule",
-        );
-    }
+    let candidates = match detect_priority_pattern(values, total_non_empty) {
+        Ok(result) => return result,
+        Err(candidates) => candidates,
+    };
 
-    if let Some(result) = detect_header_tax_id(column_name, &non_empty_values, values.len()) {
-        return attach_single_trace(
-            result,
-            total_non_empty,
-            "Header terms and sample shape matched tax ID detection.",
-            "header tax ID rule",
-        );
-    }
-
-    let mut candidates = Vec::new();
-    for (data_type, matches) in detection_priority() {
-        let match_count = values
-            .iter()
-            .filter(|value| !is_empty_value(value) && matches(value))
-            .count();
-        let confidence = calculate_confidence(match_count, total_non_empty);
-        let accepted = confidence != Confidence::Low;
-        candidates.push(trace_item(
-            data_type,
-            "pattern rule",
-            match_count,
-            total_non_empty,
-            confidence,
-            accepted,
-        ));
-
-        if accepted {
-            return detection_result(
-                data_type,
-                confidence,
-                match_count,
-                values.len(),
-                total_non_empty,
-                "Sample values matched a built-in pattern rule.",
-                candidates,
-            );
-        }
-    }
-
-    if let Some(result) = detect_header_numeric_id(column_name, &non_empty_values, values.len()) {
-        return attach_single_trace(
-            result,
-            total_non_empty,
-            "Header terms and integer sample shape matched numeric ID detection.",
-            "header numeric ID rule",
-        );
+    if let Some(result) = first_header_detection(
+        column_name,
+        &non_empty_values,
+        values.len(),
+        total_non_empty,
+        &[HeaderDetectionRule {
+            detect: detect_header_numeric_id,
+            selected_reason: "Header terms and integer sample shape matched numeric ID detection.",
+            trace_reason: "header numeric ID rule",
+        }],
+    ) {
+        return result;
     }
 
     if let Some(result) = detect_numeric_value_type(values, total_non_empty) {
@@ -861,13 +812,18 @@ pub fn detect_column_type_with_name(column_name: &str, values: &[String]) -> Det
         );
     }
 
-    if let Some(result) = detect_name_type(column_name, &non_empty_values, values.len()) {
-        return attach_single_trace(
-            result,
-            total_non_empty,
-            "Header terms and sample shape matched name detection.",
-            "header name rule",
-        );
+    if let Some(result) = first_header_detection(
+        column_name,
+        &non_empty_values,
+        values.len(),
+        total_non_empty,
+        &[HeaderDetectionRule {
+            detect: detect_name_type,
+            selected_reason: "Header terms and sample shape matched name detection.",
+            trace_reason: "header name rule",
+        }],
+    ) {
+        return result;
     }
 
     if detect_enum_type(&non_empty_values) {
@@ -898,6 +854,95 @@ pub fn detect_column_type_with_name(column_name: &str, values: &[String]) -> Det
         "No sensitive pattern, header, numeric, name, or enum rule passed the threshold.",
         candidates,
     )
+}
+
+type HeaderDetector = fn(&str, &[&String], usize) -> Option<DetectionResult>;
+
+#[derive(Clone, Copy)]
+struct HeaderDetectionRule {
+    detect: HeaderDetector,
+    selected_reason: &'static str,
+    trace_reason: &'static str,
+}
+
+fn early_header_detection_rules() -> [HeaderDetectionRule; 4] {
+    [
+        HeaderDetectionRule {
+            detect: detect_header_phone,
+            selected_reason: "Header terms and sample shape matched phone detection.",
+            trace_reason: "header phone rule",
+        },
+        HeaderDetectionRule {
+            detect: detect_header_postal_code,
+            selected_reason: "Header terms and sample shape matched postal code detection.",
+            trace_reason: "header postal code rule",
+        },
+        HeaderDetectionRule {
+            detect: detect_header_address,
+            selected_reason: "Header terms and sample shape matched address detection.",
+            trace_reason: "header address rule",
+        },
+        HeaderDetectionRule {
+            detect: detect_header_tax_id,
+            selected_reason: "Header terms and sample shape matched tax ID detection.",
+            trace_reason: "header tax ID rule",
+        },
+    ]
+}
+
+fn first_header_detection(
+    column_name: &str,
+    non_empty_values: &[&String],
+    total_samples: usize,
+    total_non_empty: usize,
+    rules: &[HeaderDetectionRule],
+) -> Option<DetectionResult> {
+    rules.iter().find_map(|rule| {
+        (rule.detect)(column_name, non_empty_values, total_samples).map(|result| {
+            attach_single_trace(
+                result,
+                total_non_empty,
+                rule.selected_reason,
+                rule.trace_reason,
+            )
+        })
+    })
+}
+
+fn detect_priority_pattern(
+    values: &[String],
+    total_non_empty: usize,
+) -> std::result::Result<DetectionResult, Vec<DetectionTraceItem>> {
+    let mut candidates = Vec::new();
+    for (data_type, matches) in detection_priority() {
+        let match_count = values
+            .iter()
+            .filter(|value| !is_empty_value(value) && matches(value))
+            .count();
+        let confidence = calculate_confidence(match_count, total_non_empty);
+        let accepted = confidence != Confidence::Low;
+        candidates.push(trace_item(
+            data_type,
+            "pattern rule",
+            match_count,
+            total_non_empty,
+            confidence,
+            accepted,
+        ));
+
+        if accepted {
+            return Ok(detection_result(
+                data_type,
+                confidence,
+                match_count,
+                values.len(),
+                total_non_empty,
+                "Sample values matched a built-in pattern rule.",
+                candidates,
+            ));
+        }
+    }
+    Err(candidates)
 }
 
 fn detection_result(
@@ -1280,7 +1325,7 @@ fn inline_tax_id_pattern() -> &'static Regex {
 fn inline_phone_pattern() -> &'static Regex {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
     PATTERN.get_or_init(|| {
-        Regex::new(r"\b(?:\+\d{1,3}[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}\b").unwrap()
+        Regex::new(r"(?:\+\d{1,3}[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}\b").unwrap()
     })
 }
 
@@ -1319,7 +1364,7 @@ fn detect_header_numeric_id(
     non_empty_values: &[&String],
     total_samples: usize,
 ) -> Option<DetectionResult> {
-    if !infer_numeric_id_from_header(column_name) {
+    if !header::infer_numeric_id(column_name) {
         return None;
     }
 
@@ -1335,6 +1380,33 @@ fn detect_header_numeric_id(
 
     Some(DetectionResult {
         data_type: DataType::NumericId,
+        confidence,
+        sample_matches: match_count,
+        total_samples,
+        trace: None,
+    })
+}
+
+fn detect_header_phone(
+    column_name: &str,
+    non_empty_values: &[&String],
+    total_samples: usize,
+) -> Option<DetectionResult> {
+    if !header::infer_phone(column_name) {
+        return None;
+    }
+
+    let match_count = non_empty_values
+        .iter()
+        .filter(|value| is_header_phone_value(value))
+        .count();
+    let confidence = calculate_confidence(match_count, non_empty_values.len());
+    if confidence == Confidence::Low {
+        return None;
+    }
+
+    Some(DetectionResult {
+        data_type: DataType::Phone,
         confidence,
         sample_matches: match_count,
         total_samples,
@@ -1362,37 +1434,12 @@ fn detect_numeric_value_type(values: &[String], total_non_empty: usize) -> Optio
     })
 }
 
-fn infer_numeric_id_from_header(column_name: &str) -> bool {
-    let terms = header_terms(column_name);
-
-    matches!(
-        terms.compact.as_str(),
-        "id" | "userid"
-            | "usernumber"
-            | "customerid"
-            | "customernumber"
-            | "clientid"
-            | "clientnumber"
-            | "accountid"
-            | "accountnumber"
-            | "orderid"
-            | "ordernumber"
-            | "code"
-    ) || terms.tokens.contains("id")
-        || terms.tokens.contains("identifier")
-        || terms.tokens.contains("code")
-        || terms.tokens.contains("account") && terms.tokens.contains("number")
-        || terms.tokens.contains("customer") && terms.tokens.contains("number")
-        || terms.tokens.contains("client") && terms.tokens.contains("number")
-        || terms.tokens.contains("order") && terms.tokens.contains("number")
-}
-
 fn detect_header_postal_code(
     column_name: &str,
     non_empty_values: &[&String],
     total_samples: usize,
 ) -> Option<DetectionResult> {
-    if !infer_postal_code_from_header(column_name) {
+    if !header::infer_postal_code(column_name) {
         return None;
     }
 
@@ -1419,7 +1466,7 @@ fn detect_header_address(
     non_empty_values: &[&String],
     total_samples: usize,
 ) -> Option<DetectionResult> {
-    if !infer_address_from_header(column_name) {
+    if !header::infer_address(column_name) {
         return None;
     }
 
@@ -1446,7 +1493,7 @@ fn detect_header_tax_id(
     non_empty_values: &[&String],
     total_samples: usize,
 ) -> Option<DetectionResult> {
-    if !infer_tax_id_from_header(column_name) {
+    if !header::infer_tax_id(column_name) {
         return None;
     }
 
@@ -1468,53 +1515,17 @@ fn detect_header_tax_id(
     })
 }
 
-fn infer_postal_code_from_header(column_name: &str) -> bool {
-    let compact = compact_header(column_name);
-    let tokens = header_tokens(column_name);
-
-    matches!(
-        compact.as_str(),
-        "zip" | "zipcode" | "postalcode" | "postcode"
-    ) || tokens.contains("zip")
-        || tokens.contains("postal") && tokens.contains("code")
-        || tokens.contains("post") && tokens.contains("code")
-}
-
-fn infer_address_from_header(column_name: &str) -> bool {
-    let compact = compact_header(column_name);
-    let tokens = header_tokens(column_name);
-
-    matches!(
-        compact.as_str(),
-        "address" | "streetaddress" | "mailingaddress"
-    ) || tokens.contains("address")
-        || tokens.contains("street")
-}
-
-fn infer_tax_id_from_header(column_name: &str) -> bool {
-    let compact = compact_header(column_name);
-    let tokens = header_tokens(column_name);
-
-    matches!(compact.as_str(), "ssn" | "taxid" | "taxnumber" | "ein")
-        || tokens.contains("ssn")
-        || tokens.contains("ein")
-        || tokens.contains("tax") && (tokens.contains("id") || tokens.contains("number"))
-}
-
-fn compact_header(column_name: &str) -> String {
-    column_name
+fn is_header_phone_value(value: &str) -> bool {
+    let trimmed = value.trim();
+    let digit_count = trimmed
         .chars()
-        .filter(|character| character.is_ascii_alphanumeric())
-        .flat_map(char::to_lowercase)
-        .collect()
-}
+        .filter(|character| character.is_ascii_digit())
+        .count();
 
-fn header_tokens(column_name: &str) -> HashSet<String> {
-    column_name
-        .split(|character: char| !character.is_ascii_alphanumeric())
-        .filter(|token| !token.is_empty())
-        .map(|token| token.to_ascii_lowercase())
-        .collect()
+    (7..=15).contains(&digit_count)
+        && trimmed.chars().all(|character| {
+            character.is_ascii_digit() || matches!(character, '+' | ' ' | '-' | '(' | ')' | '.')
+        })
 }
 
 fn is_postal_code(value: &str) -> bool {
@@ -1559,7 +1570,7 @@ fn detect_name_type(
     non_empty_values: &[&String],
     total_samples: usize,
 ) -> Option<DetectionResult> {
-    let data_type = infer_name_type_from_header(column_name)?;
+    let data_type = header::infer_name_type(column_name)?;
     let mut match_count = non_empty_values
         .iter()
         .filter(|value| match data_type {
@@ -1572,7 +1583,7 @@ fn detect_name_type(
     let confidence = calculate_confidence(match_count, non_empty_values.len());
 
     if confidence == Confidence::Low {
-        if data_type == DataType::FullName && infer_generic_name_header(column_name) {
+        if data_type == DataType::FullName && header::infer_generic_name(column_name) {
             match_count = non_empty_values
                 .iter()
                 .filter(|value| is_plausible_name_part(value, 1))
@@ -1600,75 +1611,6 @@ fn detect_name_type(
         total_samples,
         trace: None,
     })
-}
-
-fn infer_name_type_from_header(column_name: &str) -> Option<DataType> {
-    let terms = header_terms(column_name);
-
-    if matches!(
-        terms.compact.as_str(),
-        "firstname" | "givenname" | "forename"
-    ) || terms.tokens.contains("firstname")
-        || terms.tokens.contains("forename")
-        || terms.tokens.contains("given")
-        || terms.tokens.contains("first") && terms.tokens.contains("name")
-    {
-        return Some(DataType::FirstName);
-    }
-
-    if matches!(
-        terms.compact.as_str(),
-        "lastname" | "surname" | "familyname"
-    ) || terms.tokens.contains("lastname")
-        || terms.tokens.contains("surname")
-        || terms.tokens.contains("family") && terms.tokens.contains("name")
-        || terms.tokens.contains("last") && terms.tokens.contains("name")
-    {
-        return Some(DataType::LastName);
-    }
-
-    if matches!(
-        terms.compact.as_str(),
-        "name"
-            | "fullname"
-            | "displayname"
-            | "legalname"
-            | "personname"
-            | "contactname"
-            | "customername"
-            | "clientname"
-    ) || terms.tokens.contains("fullname")
-        || terms.tokens.contains("display") && terms.tokens.contains("name")
-        || terms.tokens.contains("legal") && terms.tokens.contains("name")
-        || terms.tokens.contains("person") && terms.tokens.contains("name")
-        || terms.tokens.contains("contact") && terms.tokens.contains("name")
-        || terms.tokens.contains("customer") && terms.tokens.contains("name")
-        || terms.tokens.contains("client") && terms.tokens.contains("name")
-        || terms.tokens.contains("full") && terms.tokens.contains("name")
-    {
-        return Some(DataType::FullName);
-    }
-
-    None
-}
-
-fn header_terms(column_name: &str) -> HeaderTerms {
-    HeaderTerms {
-        compact: column_name
-            .chars()
-            .filter(|character| character.is_ascii_alphanumeric())
-            .flat_map(char::to_lowercase)
-            .collect(),
-        tokens: column_name
-            .split(|character: char| !character.is_ascii_alphanumeric())
-            .filter(|token| !token.is_empty())
-            .map(|token| token.to_ascii_lowercase())
-            .collect(),
-    }
-}
-
-fn infer_generic_name_header(column_name: &str) -> bool {
-    compact_header(column_name) == "name"
 }
 
 fn is_plausible_name_part(value: &str, max_tokens: usize) -> bool {

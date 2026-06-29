@@ -72,6 +72,7 @@ export function PrivacyReportSummary({ privacyReport }: { privacyReport: Privacy
     },
     { label: 'Opaque token columns', value: privacyReport.opaqueTokenColumns, glossaryTerm: 'opaqueTokenColumns' },
     { label: 'Masked columns', value: privacyReport.maskedColumns, glossaryTerm: 'maskedColumns' },
+    { label: 'Redacted columns', value: privacyReport.redactedColumns, glossaryTerm: 'redactedColumns' },
     { label: 'Generalized columns', value: privacyReport.generalizedColumns, glossaryTerm: 'generalizedColumns' },
     { label: 'Pass-through/no-op', value: privacyReport.passThroughColumns, glossaryTerm: 'passThroughNoOp' },
     { label: 'Suppressed rows', value: privacyReport.suppressedRows, glossaryTerm: 'suppressedRows' },
@@ -100,7 +101,7 @@ export function PrivacyReportSummary({ privacyReport }: { privacyReport: Privacy
   ]
   if (privacyReport.dpBudget) {
     privacyMetrics.splice(
-      13,
+      14,
       0,
       {
         label: 'DP budget status',

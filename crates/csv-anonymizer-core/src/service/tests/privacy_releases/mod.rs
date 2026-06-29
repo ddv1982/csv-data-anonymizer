@@ -2,7 +2,8 @@ pub(super) use crate::csv_io::read_sample;
 pub(super) use crate::{
     AnonymizationStrategy, AnonymizeParams, AnonymizerService, ColumnControl, ColumnRole, DataType,
     DifferentialPrivacyConfig, DpAggregate, DpBudgetAction, DpBudgetConfig, DpBudgetStatus,
-    FormalPrivacyConfig, PrivacyColumnRole, PrivacyConfig, ReleaseMode, SyntheticDataConfig,
+    FormalPrivacyConfig, PreviewParams, PrivacyColumnRole, PrivacyConfig, ReleaseMode,
+    SyntheticDataConfig,
 };
 pub(super) use std::fs;
 

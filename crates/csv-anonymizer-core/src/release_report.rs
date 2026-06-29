@@ -1,5 +1,6 @@
 use crate::report_notes::push_unselected_column_note;
-use crate::service::preview_warning_for_column;
+use crate::service::{preview_warning_for_column, redaction_changes_structured_scalar_type};
+use crate::strategies::STRUCTURED_SCALAR_REDACTION_WARNING;
 use crate::types::{
     AnonymizationStrategy, ColumnMetadata, ColumnReleaseReport, ColumnRole, DpBudgetReport,
     DpBudgetStatus, PrivacyConfig, ReleaseEvidenceItem, ReleaseEvidenceStatus, ReleaseMode,
@@ -396,7 +397,7 @@ pub(crate) fn standard_notes(
     deterministic: bool,
 ) -> Vec<String> {
     let mut notes = vec![
-        "Standard CSV transform changes selected cells in place with local strategies such as masking, tokenization, pseudonymization, pass-through, and optional Local AI replacement."
+        "Standard CSV transform changes selected cells in place with local strategies such as masking, redaction, tokenization, pseudonymization, pass-through, and optional Local AI replacement."
             .to_string(),
         "Treat this as risk reduction, not proof of anonymity; review the output against your sharing context and re-identification risk."
             .to_string(),
@@ -449,6 +450,14 @@ pub(crate) fn standard_notes(
                 .to_string(),
         );
     }
+    if columns
+        .iter()
+        .any(|column| column.is_selected && redaction_changes_structured_scalar_type(column))
+    {
+        notes.push(format!(
+            "{STRUCTURED_SCALAR_REDACTION_WARNING} Use schema-preserving pseudonymization when downstream consumers require original scalar types."
+        ));
+    }
     if transform_report.smart_replacement_rejections > 0 {
         notes.push(format!(
             "{} smart replacement candidate(s) were rejected before fallback handling: {}.",
@@ -492,6 +501,11 @@ fn column_action(
                 "Masked".to_string(),
                 ReleaseEvidenceStatus::Verified,
                 "Selected values are replaced with mask characters.".to_string(),
+            ),
+            AnonymizationStrategy::Redact => (
+                "Redacted".to_string(),
+                ReleaseEvidenceStatus::Verified,
+                "Selected values are replaced with typed placeholders.".to_string(),
             ),
             AnonymizationStrategy::Tokenize => (
                 "Tokenized".to_string(),

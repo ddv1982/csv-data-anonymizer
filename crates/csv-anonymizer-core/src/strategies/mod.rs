@@ -3,9 +3,11 @@ use crate::types::{AnonymizationStrategy, ColumnMetadata, DataType, TransformCon
 
 mod names;
 mod numeric;
+mod redaction;
 mod state;
 mod structured;
 
+pub(crate) use redaction::STRUCTURED_SCALAR_REDACTION_WARNING;
 pub use state::TransformState;
 
 pub fn transform_value(
@@ -30,6 +32,9 @@ pub fn transform_value_with_state(
     match column.strategy {
         AnonymizationStrategy::PassThrough => return value.to_string(),
         AnonymizationStrategy::Mask => return mask_value(value),
+        AnonymizationStrategy::Redact => {
+            return redaction::placeholder_for_column(column).to_string();
+        }
         AnonymizationStrategy::Tokenize => {
             return structured::transform_opaque_token(value, context, state);
         }

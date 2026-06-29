@@ -259,6 +259,50 @@ describe('App input mode tabs', () => {
     expect(tauriMocks.preflightAnonymization).not.toHaveBeenCalled()
   })
 
+  it('renders Redact for column workflows but not quick generation', async () => {
+    const user = userEvent.setup()
+    tauriMocks.pickInputCsv.mockResolvedValue('/data/input.csv')
+    tauriMocks.analyzeCsv.mockResolvedValue({
+      headers: {
+        filePath: '/data/input.csv',
+        rowCount: 1,
+        rowCountIsComplete: true,
+        defaultOutputPath: '/data/input_private_output.csv',
+        columns: [columnFixture(0, 'email', 'email', 'high')],
+      },
+      selectedColumns: [0],
+      suggestedOutputPath: '/data/input_private_output.csv',
+    })
+    tauriMocks.analyzePasteData.mockResolvedValue({
+      format: 'json',
+      rowCount: 1,
+      rowCountIsComplete: true,
+      columns: [columnFixture(0, '[].email', 'email', 'high')],
+    })
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: /browse for csv file/i }))
+    const csvStrategy = await screen.findByRole('combobox', { name: 'Strategy for email' })
+    expect(within(csvStrategy).getByRole('option', { name: 'Redact' })).toHaveValue('redact')
+    await user.selectOptions(csvStrategy, 'redact')
+    expect(csvStrategy).toHaveValue('redact')
+
+    await user.click(screen.getByRole('tab', { name: /paste data/i }))
+    fireEvent.change(screen.getByLabelText(/pasted data/i), {
+      target: { value: '[{"email":"ada@example.com"}]' },
+    })
+    await user.click(screen.getByRole('button', { name: /detect fields/i }))
+    const pasteStrategy = await screen.findByRole('combobox', { name: 'Strategy for [].email' })
+    expect(within(pasteStrategy).getByRole('option', { name: 'Redact' })).toHaveValue('redact')
+    await user.selectOptions(pasteStrategy, 'redact')
+    expect(pasteStrategy).toHaveValue('redact')
+
+    await user.click(screen.getByRole('tab', { name: /quick by data type/i }))
+    const quickStrategy = screen.getByRole('combobox', { name: 'Strategy' })
+    expect(within(quickStrategy).queryByRole('option', { name: 'Redact' })).not.toBeInTheDocument()
+    expect(quickStrategy).not.toHaveValue('redact')
+  })
+
   it('analyzes pasted JSON, transforms selected fields, and copies output', async () => {
     const user = userEvent.setup()
     tauriMocks.analyzePasteData.mockResolvedValue({
@@ -600,6 +644,7 @@ function privacyReportFixture(overrides: Partial<PrivacyReport> = {}): PrivacyRe
     smartReplacementColumns: 0,
     opaqueTokenColumns: 0,
     maskedColumns: 0,
+    redactedColumns: 0,
     generalizedColumns: 0,
     passThroughColumns: 0,
     suppressedRows: 0,

@@ -1,6 +1,9 @@
 use super::*;
 use crate::smart::SmartReplacementMap;
-use crate::types::{AnonymizationStrategy, ColumnMetadata, Confidence, EmptyFormat, PiiRisk};
+use crate::types::{
+    AnonymizationStrategy, ColumnMetadata, Confidence, EmptyFormat, PiiRisk,
+    PrivacyEvidenceSummary, PrivacyFindingKind,
+};
 
 fn column(detected_type: DataType) -> ColumnMetadata {
     ColumnMetadata {
@@ -141,6 +144,46 @@ fn phone_preserves_punctuation_shape() {
             .chars()
             .filter(|character| *character != '-')
             .all(|character| character.is_ascii_digit())
+    );
+}
+
+#[test]
+fn redact_uses_typed_placeholders() {
+    let mut email_column = column(DataType::Email);
+    email_column.strategy = AnonymizationStrategy::Redact;
+    assert_eq!(
+        transform_value("john.doe@example.com", &email_column, &context("seed")),
+        "[EMAIL]"
+    );
+
+    let mut name_column = column(DataType::FirstName);
+    name_column.strategy = AnonymizationStrategy::Redact;
+    assert_eq!(
+        transform_value("Ada", &name_column, &context("seed")),
+        "[PERSON]"
+    );
+
+    let mut date_column = column(DataType::Timestamp);
+    date_column.strategy = AnonymizationStrategy::Redact;
+    assert_eq!(
+        transform_value("2024-06-15", &date_column, &context("seed")),
+        "[DATE]"
+    );
+
+    let mut username_column = column(DataType::String);
+    username_column.strategy = AnonymizationStrategy::Redact;
+    username_column.privacy_evidence = vec![PrivacyEvidenceSummary {
+        kind: PrivacyFindingKind::AccountOrFinancialId,
+        data_type: DataType::String,
+        confidence: Confidence::Medium,
+        match_count: 1,
+        sample_count: 1,
+        score: 76,
+        reason: "Header terms suggest an account or user identifier.".to_string(),
+    }];
+    assert_eq!(
+        transform_value("johndoe", &username_column, &context("seed")),
+        "[ACCOUNT_ID]"
     );
 }
 

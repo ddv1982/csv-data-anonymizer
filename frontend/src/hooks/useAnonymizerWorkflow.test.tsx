@@ -506,6 +506,7 @@ function privacyReportFixture(overrides: Partial<PrivacyReport> = {}): PrivacyRe
     smartReplacementColumns: 0,
     opaqueTokenColumns: 0,
     maskedColumns: 0,
+    redactedColumns: 0,
     generalizedColumns: 0,
     passThroughColumns: 0,
     suppressedRows: 0,
