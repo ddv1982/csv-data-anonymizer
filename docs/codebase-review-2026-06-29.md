@@ -2,145 +2,149 @@
 
 ## Scope
 
-Reviewed the CSV Anonymizer repository as a local-first Tauri desktop app with a React/Vite frontend, Rust anonymization core, Tauri command shell, release/package scripts, and CI metadata.
-
-Validation run during the review:
-
-- `npm run test` passed: contract check, 31 frontend tests, frontend production build, 4 CLI tests, 137 core tests, 36 Tauri tests, and core doc-tests.
+Reviewed the current CSV Anonymizer repository as a local-first Tauri desktop app with a React/Vite frontend, Rust anonymization core, Tauri command shell, local settings/secret persistence, release/package scripts, and CI metadata.
 
 Deployment context used for severity: single-user desktop app and local CLI smoke harness, not a shared multi-tenant service. Optional Local AI traffic is intended for local Ollama on loopback.
 
-## Findings
+Validation run during the review:
 
-### 1. Direct-input previews miss safety warnings shown in CSV-file previews
+- `npm run test` passed: contract check for 17 enums and 28 structs, 39 frontend unit tests, frontend production build, 6 CLI tests, 164 core tests, 47 Tauri tests, and core doc-tests.
 
-Severity: medium
+Implementation validation after the follow-up pass:
 
-Evidence: `crates/csv-anonymizer-core/src/direct_input/shared.rs:110` returns `PreviewData` with `warnings: Vec::new()`, while CSV-file previews build warnings from selected columns in `crates/csv-anonymizer-core/src/service.rs:128` and `crates/csv-anonymizer-core/src/service.rs:346`. Those warnings cover pass-through, Local AI, and currently no-op auto/pseudonymize types in `crates/csv-anonymizer-core/src/service.rs:347`.
+- `npm run release:check` passed: release metadata validation and Linux package metadata tests.
+- `npm run test` passed: contract check for 17 enums and 28 structs, 41 frontend unit tests, frontend production build, 7 CLI tests, 164 core tests, 50 Tauri tests, and core doc-tests.
 
-Guards checked: direct-input transform reports still produce privacy notes later, and file previews have tests for pass-through/no-op warnings. The pre-write direct-input preview remains silent, so paste/quick workflows can show less warning context before output is generated.
+Implementation update: the follow-up Flow implementation pass addressed all findings below. This section is retained as the trace from original finding to implemented fix.
 
-Why it matters: paste workflows support CSV text, JSON, YAML, XML, plain text, and logs up to 5 MiB. Users can review a preview before writing/copying output, but direct-input previews do not surface the same unchanged-value warnings as the file workflow.
+## Implemented Findings Trace
 
-Fix shape: share the file-preview warning builder with direct-input preview generation and add tests covering pass-through, Local AI, and no-op type warnings for pasted data.
+### 1. Local AI model-download cancellation could not promptly interrupt a stalled stream read
 
-### 2. Formal tabular releases can still include unselected source columns unchanged
+Original severity: medium, UX/reliability
 
-Severity: medium, product-policy risk
+Evidence: cancellation sets the model-download job cancellation flag through `cancel_local_ai_model_download` in `src-tauri/src/commands/local_ai_commands.rs:44`, while the download worker checks `job.should_cancel()` only after the blocking iterator yields a streamed line in `src-tauri/src/local_ai/download.rs:182`. The download client now has an overall one-hour timeout in `src-tauri/src/local_ai/mod.rs:20` and `src-tauri/src/local_ai/mod.rs:35`, so the old no-timeout problem is fixed, but a stalled response body can still delay a user-visible cancel action until a line read returns or the long timeout expires.
 
-Evidence: unselected columns are coerced to `Attribute` in `crates/csv-anonymizer-core/src/privacy/mod.rs:62`, formal writes preserve unmatched roles through `_ => value` in `crates/csv-anonymizer-core/src/privacy/formal.rs:251`, and an existing test asserts unselected email values remain unchanged in `crates/csv-anonymizer-core/src/service/tests/privacy_releases/formal_privacy.rs:84` and `crates/csv-anonymizer-core/src/service/tests/privacy_releases/formal_privacy.rs:134`. Report notes do warn about unchanged high/medium-risk unselected columns in `crates/csv-anonymizer-core/src/report_notes.rs:15`.
+Guards checked: the endpoint is fixed to local Ollama at `src-tauri/src/local_ai/mod.rs:15`; normal success, error, cancel, and panic paths transition the job to terminal states in `src-tauri/src/local_ai/download.rs:157`; Local AI download panics are now caught by the command worker. Those guards do not make cancellation abort the in-flight blocking read.
 
-Guards checked: explicit privacy roles that reference unselected columns are rejected in `crates/csv-anonymizer-core/src/privacy/mod.rs:75`, and synthetic releases reject unselected columns in `crates/csv-anonymizer-core/src/privacy/mod.rs:98`. Those guards do not prevent formal output from carrying unselected source columns unchanged.
+Why it matters: a Cancel button should be responsive even when Ollama or the local network stack stalls mid-pull. In this desktop context the impact is user trust and recoverability, not service availability.
 
-Why it matters: the current behavior is intentional enough to be tested, but it may surprise users who read "formal tabular release" as applying to the whole output table. The risk is especially high when an unselected column is detector-risky but not part of the formal role plan.
+Implemented fix: Local AI downloads now use async chunk streaming with a bounded per-read timeout, so cancellation is observed after the next chunk or timeout instead of waiting on an unbounded blocking read.
 
-Fix shape: decide the product contract explicitly: require all columns selected for formal releases, drop unselected columns, or require a stronger "release unchanged columns" acknowledgement before writing.
+### 2. Direct paste and quick workflows could invoke processing before persisted settings load
 
-### 3. Deterministic CLI anonymization allows an empty seed
+Original severity: medium
 
-Severity: medium
+Evidence: persistent settings initialize from defaults while `settingsLoaded` starts false in `frontend/src/hooks/usePersistentSettings.ts:12`. The CSV workflow computes `settingsDisabled` from that flag in `frontend/src/hooks/useAnonymizerWorkflow.ts:121`, but `App` passes only `workflow.settings` and `workflow.localAi` into paste and quick views in `frontend/src/App.tsx:70` and `frontend/src/App.tsx:87`. Paste enables analysis/preview/transform based on content, selection, busy state, and Local AI readiness in `frontend/src/components/PasteDataWorkflowView.tsx:83`, then sends current deterministic, seed, sample, and Local AI settings in `frontend/src/components/PasteDataWorkflowView.tsx:129` and `frontend/src/components/PasteDataWorkflowView.tsx:157`. Quick generation similarly enables on count/busy/Local AI state in `frontend/src/components/QuickDataTypeWorkflowView.tsx:37` and sends current deterministic/seed settings in `frontend/src/components/QuickDataTypeWorkflowView.tsx:51`.
 
-Evidence: the CLI initializes `seed` to an empty string in `crates/csv-anonymizer-app/src/cli.rs:71`, `--deterministic` does not require `--seed` in `crates/csv-anonymizer-app/src/cli.rs:95`, and the seed is passed into `AnonymizeParams` in `crates/csv-anonymizer-app/src/cli.rs:217`. Deterministic hashing pads the seed bytes to the HMAC key in `crates/csv-anonymizer-core/src/hash.rs:31`, so an empty seed becomes a common all-zero padded key.
+Guards checked: the earlier settings overwrite race is fixed because `persistSettings` returns before load in `frontend/src/hooks/usePersistentSettings.ts:68`, settings controls are gated by the workflow, and tests cover the topbar/Browse disabled state before load. The remaining gap is direct processing actions using default settings if the user switches to paste or quick before persisted settings resolve.
 
-Guards checked: deterministic mode defaults to false, and the core privacy report warns that configured seeds are sensitive. No CLI/core validation rejects deterministic mode with an empty seed.
+Why it matters: deterministic defaults, private seed, preview sample count, and Local AI configuration affect generated output. A fast user action at launch can run with defaults rather than the user's saved privacy settings.
 
-Why it matters: deterministic mode is meant for repeatable private pseudonyms across files. An accidental empty seed makes outputs reproducible by anyone using the same empty-seed path.
+Implemented fix: `settingsLoaded` is passed into paste and quick workflows, and their processing actions stay disabled until persisted settings have loaded.
 
-Fix shape: reject `deterministic=true` with a blank seed at the CLI and core boundary, and add a CLI test for the error.
+### 3. Direct Linux release downloads lacked independent integrity or provenance artifacts
 
-### 4. Local AI model-download cancellation can wait on a stalled stream read
+Original severity: medium, release trust
 
-Severity: medium
+Evidence: the README tells Linux users to download `.AppImage`, `.deb`, or `.rpm` files directly from GitHub Releases in `README.md:80`. The release workflow uploads those direct Linux assets in `.github/workflows/release.yml:563`, `.github/workflows/release.yml:564`, and `.github/workflows/release.yml:565`, but only uploads checksum and signature sidecars for the APT repository setup package in `.github/workflows/release.yml:566`, `.github/workflows/release.yml:567`, and `.github/workflows/release.yml:568`.
 
-Evidence: cancellation only sets a job flag through `cancel_local_ai_model_download` in `src-tauri/src/commands/local_ai_commands.rs:37`, the download loop checks that flag before each streamed line in `src-tauri/src/local_ai/download.rs:179`, and the download client has a connect timeout but no read/overall timeout in `src-tauri/src/local_ai/mod.rs:34`.
+Guards checked: the APT repository path is signed, the setup package checksum is signed, macOS artifacts are signed and notarized, and release validation is otherwise broad. This finding is limited to direct Linux installers outside the signed APT path.
 
-Guards checked: normal success/error paths finish the job in `src-tauri/src/local_ai/download.rs:153`, and the endpoint is fixed to local Ollama in `src-tauri/src/local_ai/mod.rs:15`. A stalled response body can still delay observing cancellation.
+Why it matters: users who download a Linux installer directly from a release do not get a documented checksum/signature or artifact attestation path comparable to the APT install route.
 
-Why it matters: a user-visible cancel action should not depend on Ollama producing another streamed line. In a local desktop app this is not a service availability issue, but it can leave the UI feeling stuck during model pulls.
+Implemented fix: the release workflow now publishes signed checksum sidecars for direct `.deb`, `.rpm`, and AppImage assets, uploads the archive keyring, and documents verification in `README.md` and `docs/releasing.md`.
 
-Fix shape: add a read or total request timeout, or move download cancellation to an abortable request mechanism that can interrupt the blocking read.
+### 4. Disabling remembered seeds could silently leave an old seed in the OS keyring if deletion failed
 
-### 5. Background jobs can remain running forever if a worker panics
+Original severity: low/medium
 
-Severity: medium
+Evidence: when `remember_seed` is false, settings save attempts `seed_vault.delete_seed()` but discards the result in `src-tauri/src/settings/store.rs:87`. The test `save_settings_keeps_saving_when_unremembered_seed_vault_delete_fails` intentionally verifies that a save still succeeds while `old-remembered-seed` remains in the vault in `src-tauri/src/settings/store.rs:305` and `src-tauri/src/settings/store.rs:322`.
 
-Evidence: anonymize and model-download workers discard their `spawn_blocking` handles in `src-tauri/src/commands/job_commands.rs:47` and `src-tauri/src/commands/local_ai_commands.rs:22`. Terminal statuses are set only by the normal worker paths in `src-tauri/src/jobs.rs:176` and `src-tauri/src/local_ai/download.rs:153`. The registry prunes terminal jobs but retains running jobs in `src-tauri/src/job_registry.rs:108`.
+Guards checked: disk settings clear the seed before JSON persistence in `src-tauri/src/settings/store.rs:91`, persistent settings sanitize unremembered seeds, and future loads only read the vault when `remember_seed` is true. Those guards prevent accidental reuse through normal loads, but they do not tell the user that a secret they tried to stop remembering may still exist in the platform keyring.
 
-Guards checked: many ordinary error paths convert to failed job states, and tests cover pruning terminal jobs plus retaining running jobs. There is no supervisor/catch-unwind path that marks a panicked worker as failed.
+Why it matters: this is a local-secret cleanup and user-expectation issue. A user who disables remembered seeds likely expects the old persisted seed to be removed or to receive an actionable warning if removal fails.
 
-Why it matters: panics should be rare, but a stuck running job can leave the frontend polling indefinitely and prevent users from understanding the failure.
+Implemented fix: seed-vault deletion failures now surface as settings-save errors when users disable remembered seeds or blank a remembered seed.
 
-Fix shape: keep/supervise join handles or wrap worker bodies so panics transition the job to a terminal failed state.
+### 5. Suggested output auto-grant accepted arbitrary suffix text before constructing the output path
 
-### 6. DP budget reset UI bypasses the human confirmation that the backend API models
+Original severity: low, defense in depth
 
-Severity: medium
+Evidence: `analyze_csv` accepts `output_suffix` from IPC in `src-tauri/src/commands/csv.rs:87`, passes it into `default_output_path_with_suffix` in `src-tauri/src/commands/csv.rs:106`, and auto-grants the suggested output path in `src-tauri/src/commands/csv.rs:116`. The suffix helper trims empty text but otherwise formats it into the generated filename in `src-tauri/src/commands/shared.rs:87`.
 
-Evidence: the reset button calls `onResetBudget` directly in `frontend/src/components/privacy-settings/DpBudgetSettings.tsx:53`, while the workflow sends the hardcoded confirmation phrase in `frontend/src/hooks/useAnonymizerWorkflow.ts:207` using `DP_BUDGET_RESET_CONFIRMATION_PHRASE` from `frontend/src/tauri.ts:40`. The backend does validate the phrase, but the frontend supplies it automatically.
+Guards checked: output path authorization canonicalizes parents and rejects symlink or non-file existing leaves in `src-tauri/src/path_access.rs`, and non-granted output paths require explicit dialog confirmation. The residual issue is that backend IPC input should still be validated as a filename suffix before it participates in an auto-granted path.
 
-Guards checked: backend tests cover accepting and rejecting confirmation phrases, and the button is disabled when spent epsilon is zero. There is no user-entered confirmation or modal in the frontend path.
+Why it matters: Tauri IPC is not a public network API, so this is not high severity. It is still better for the backend to reject path separators, parent components, and control characters in fields that are supposed to be suffixes.
 
-Why it matters: the ledger is backend-owned and preserves DP spend across settings saves, so resetting it is a sensitive privacy-budget action. The current UI makes that reset a single click.
+Implemented fix: output suffixes are validated at the Tauri command boundary before suggested output paths are constructed and auto-granted.
 
-Fix shape: require an explicit modal/typed confirmation in the UI before passing the phrase, and add a frontend test for accidental-click protection.
+### 6. CSV file run button stayed enabled when Local AI readiness was blocked
 
-### 7. Local AI readiness can be stale for a changed model
+Original severity: low, UX/test consistency
 
-Severity: medium
+Evidence: the workflow computes `localAiBlocked` in `frontend/src/hooks/useAnonymizerWorkflow.ts:122` and includes it in review blockers in `frontend/src/hooks/useAnonymizerWorkflow.ts:436`. However, `canAnonymize` in `frontend/src/hooks/useAnonymizeJob.ts:70` does not include Local AI readiness, and the primary button disables only on `!workflow.canAnonymize` in `frontend/src/components/workflow/AnonymizerWorkflowView.tsx:699`. Backend preflight checks Local AI readiness before starting in `src-tauri/src/commands/csv.rs:174`.
 
-Evidence: `useLocalAi` exposes `ready` as `Boolean(settings.localAiEnabled && status?.ready)` in `frontend/src/hooks/useLocalAi.ts:116` without checking `status.model`. The panel itself computes `statusMatchesModel` before showing readiness in `frontend/src/components/LocalAiPanel.tsx:32`, but CSV preview/anonymize gating uses the hook-level `ready` through `frontend/src/hooks/useAnonymizerWorkflow.ts:100`.
+Guards checked: preview blocks Local AI readiness, paste and quick block Local AI actions, the UI displays a readiness blocker, and backend preflight prevents unsafe output. The remaining issue is that the CSV file button can still look actionable and then fail via preflight.
 
-Guards checked: the UI panel tries to display "Checking ..." when status and selected model differ, and backend Local AI calls use a fixed loopback endpoint. The workflow gate can still treat the previous model's status as ready during settings changes until refresh settles.
+Why it matters: this does not appear to produce unsafe output, but it creates inconsistent behavior between CSV, paste, and quick workflows and leaves an avoidable error path uncovered by the frontend enablement model.
 
-Why it matters: preview/anonymize actions can be enabled against the wrong model readiness state, causing avoidable backend errors or unexpected fallback behavior.
+Implemented fix: CSV output creation is disabled when selected Smart replacement columns require Local AI setup, with frontend regression coverage.
 
-Fix shape: make hook readiness require `status.model === request.model`, and add a test for changing models while the previous status is ready.
+### 7. CLI help did not document the deterministic seed requirement
 
-### 8. Settings can be saved from defaults before the initial load resolves
+Original severity: low
 
-Severity: medium
+Evidence: the CLI now correctly rejects `--deterministic` without a non-empty seed in `crates/csv-anonymizer-app/src/cli.rs:110`, but help still lists `csv-anonymizer anonymize ... [--deterministic] [--seed <seed>]` without explaining that `--seed` is required when deterministic mode is enabled in `crates/csv-anonymizer-app/src/cli.rs:253`.
 
-Evidence: persistent settings start from `defaultSettings` in `frontend/src/hooks/usePersistentSettings.ts:13`; the initial `loadSettings()` result is accepted only when `settingsSaveSequenceRef.current === 0` in `frontend/src/hooks/usePersistentSettings.ts:23`. Any setting change calls `persistSettings` with `latestSettingsRef.current` from `frontend/src/hooks/useAnonymizerWorkflow.ts:161`, increments the save sequence in `frontend/src/hooks/usePersistentSettings.ts:58`, and can cause the later loaded settings to be ignored.
+Guards checked: this is not the old empty-seed privacy bug; parser and core validation now block blank deterministic seeds, and tests cover missing/blank seed. The remaining issue is user-facing CLI contract clarity.
 
-Guards checked: stale save responses are reconciled, and authoritative refresh exists. That does not protect the first-load race where a user changes a setting before persisted settings are accepted.
+Why it matters: command-line users can discover the requirement only by triggering an error.
 
-Why it matters: a quick toggle at launch can overwrite previously saved preferences with defaults plus one changed value.
+Implemented fix: CLI help now shows `--deterministic --seed <seed>` together and documents that deterministic anonymization requires a non-empty seed.
 
-Fix shape: expose a settings-loaded flag and disable/save-gate settings controls until the initial load is accepted, or merge early edits into the loaded settings instead of replacing them.
+## Resolved Prior Findings
 
-### 9. Paste and quick workflows do not display privacy reports they receive
+The previous version of this report contained several valid findings that are now fixed in the current workspace:
 
-Severity: low
+- Direct-input previews now include safety warnings: `crates/csv-anonymizer-core/src/direct_input/shared.rs:114` builds warnings, and tests cover selected-column warnings.
+- Formal tabular releases now reject unselected columns: `crates/csv-anonymizer-core/src/privacy/mod.rs:143` enforces full selection, with regression coverage.
+- Deterministic empty seeds are now blocked at CLI and core boundaries: `crates/csv-anonymizer-app/src/cli.rs:110` and `crates/csv-anonymizer-core/src/service.rs:601` enforce the guard.
+- Background job panics now transition to terminal failure states: anonymize and Local AI workers catch panics and call terminal failure handlers.
+- DP budget reset now requires typed frontend confirmation before the workflow passes the backend confirmation phrase.
+- Local AI readiness is now model-specific in the frontend hook.
+- Settings persistence no longer overwrites stored settings with defaults before the initial load resolves.
+- Paste and quick workflows now render privacy report summaries they receive.
 
-Evidence: paste and quick result types include `privacyReport` in `frontend/src/types.ts:165` and `frontend/src/types.ts:173`, but paste output renders only the anonymized text and stats in `frontend/src/components/PasteDataWorkflowView.tsx:366`, and quick output renders only generated values/count in `frontend/src/components/QuickDataTypeWorkflowView.tsx:154`. CSV-file results render privacy metrics, formal model reports, and notes in `frontend/src/components/ResultDisplay.tsx:105`.
+## Implementation Status
 
-Guards checked: the backend result shape already carries the report for these workflows. The gap is presentation, not missing computation.
-
-Why it matters: non-file workflows are a prominent path for copied output, and users get less privacy-review context than in the file workflow.
-
-Fix shape: add a compact shared privacy-report component for paste/quick outputs and cover it with UI tests.
+- Local AI model downloads now use an async streaming client with a bounded per-read timeout so cancellation is observed after the next chunk or timeout instead of waiting on an unbounded blocking read.
+- Paste and quick workflows now keep processing actions disabled until persisted settings have loaded.
+- Direct Linux `.deb`, `.rpm`, and AppImage release downloads now get signed checksum sidecars in the release workflow, with verification guidance in `README.md` and `docs/releasing.md`.
+- Seed-vault deletion failures now surface as settings-save errors when users disable remembered seeds or blank a remembered seed.
+- Suggested output suffixes are now validated before the backend constructs and auto-grants output paths.
+- CSV output creation is now disabled when selected Smart replacement columns require Local AI setup.
+- CLI help now documents that deterministic anonymization requires a non-empty seed.
 
 ## Positive Findings
 
-- CSV-file processing is streaming and uses atomic replacement paths rather than materializing standard transforms in memory.
-- Privacy release modes that do need materialization have explicit row caps and cancellation checks.
-- CSV output neutralizes spreadsheet formula prefixes in headers and cells, with tests for ASCII and full-width variants.
-- Ragged rows with non-empty fields beyond headers are rejected without committing partial output.
+- Standard CSV-file processing remains streaming and uses atomic replacement paths rather than materializing standard transforms in memory.
+- Privacy release modes that need materialization have explicit row caps and cancellation checks.
+- CSV output neutralizes spreadsheet formula prefixes in headers and cells, including full-width variants.
+- Ragged rows with non-empty fields beyond headers are rejected before committing partial output.
 - DP aggregate releases include important safeguards: deterministic DP output is rejected, grouped output requires public group labels/allowed values, and budget tracking can block or warn on over-budget releases.
-- Tauri file/path access has explicit in-memory grants, canonicalization, and symlink/leaf checks.
+- Tauri file/path access uses in-memory grants, canonicalization, and symlink/leaf checks.
 - DP budget ledger state is backend-owned, serialized, and preserved across normal settings saves.
-- CI and release workflows are present and cover frontend audit, Rust audit, contracts, dead-code checks, frontend tests/e2e/a11y, build, Rust fmt/test/clippy, packaging, and smoke checks.
+- Frontend unit/e2e/a11y coverage exists for key workflows, typed DP reset confirmation, model-specific Local AI readiness, settings-load guards, paste/quick privacy report rendering, keyboard navigation, and axe checks.
+- CI and release workflows are broad: frontend/Rust audits, contract checks, dead-code scans, frontend lint/test/e2e/a11y/build, Rust fmt/test/clippy/build, packaging checks, release metadata validation, APT repository checks, and smoke tests.
 - Release metadata scripts validate cross-file versions, Linux desktop/AppStream metadata, icons, changelog tag expectations, and local model/runtime artifact exclusions.
 
-## Refuted Candidate
+## Implemented Follow-up Order
 
-- A worker reported that `.github/workflows/release.yml` and `.github/workflows/dead-code.yml` were absent. Direct inspection refuted this: `.github/workflows/ci.yml`, `.github/workflows/release.yml`, and `.github/workflows/dead-code.yml` are present and contain the expected gates.
-
-## Recommended Follow-up Order
-
-1. Fix warning and confirmation gaps that can affect user privacy decisions: direct-input preview warnings, DP budget reset confirmation, and paste/quick privacy-report display.
-2. Tighten deterministic seed validation for CLI/core to prevent common-key deterministic output.
-3. Decide and document the formal tabular release contract for unselected columns, then enforce it in code and tests.
-4. Harden job lifecycle behavior: abortable Local AI downloads and terminal failure states for panicked workers.
-5. Fix frontend state race conditions around initial settings load and model-specific Local AI readiness.
-6. Add regression tests for every accepted finding before or alongside implementation.
+1. User-facing privacy decision gaps were fixed first: direct workflow settings-load gating and CSV Local AI button disable consistency.
+2. Local AI download cancellation was hardened with bounded per-read timeout behavior.
+3. Direct Linux installer provenance was added with signed checksum sidecars and verification docs.
+4. Keyring seed deletion failures now surface when users disable remembered seeds.
+5. Output suffixes are validated at the Tauri command boundary before suggested output paths are auto-granted.
+6. CLI help now documents that deterministic anonymization requires a non-empty seed.
+7. The resolved-prior-findings list remains for the next review cycle so future work does not chase stale issues.

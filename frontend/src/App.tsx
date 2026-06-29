@@ -70,6 +70,7 @@ function App() {
           {activeMode === 'paste' ? (
             <PasteDataWorkflowView
               settings={workflow.settings}
+              settingsLoaded={workflow.settingsLoaded}
               localAi={workflow.localAi}
               onOpenLocalAiSettings={() => setLocalAiSettingsOpen(true)}
               onError={workflow.setError}
@@ -87,6 +88,7 @@ function App() {
           {activeMode === 'quick' ? (
             <QuickDataTypeWorkflowView
               settings={workflow.settings}
+              settingsLoaded={workflow.settingsLoaded}
               localAi={workflow.localAi}
               onOpenLocalAiSettings={() => setLocalAiSettingsOpen(true)}
               onError={workflow.setError}

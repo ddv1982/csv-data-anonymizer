@@ -523,6 +523,33 @@ jobs:
             --output "${setup_sha256_sig}" "${setup_sha256}"
           GNUPGHOME="${LINUX_VERIFICATION_GNUPGHOME}" gpg --quiet --batch --trust-model always --verify "${setup_sha256_sig}" "${setup_sha256}"
 
+      - name: Sign direct Linux installer checksums
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          artifacts=(
+            dist/rust/artifacts/csv-anonymizer-*.rpm
+            dist/rust/artifacts/*.AppImage
+            dist/rust/artifacts/csv-anonymizer_*.deb
+          )
+
+          if [ ${#artifacts[@]} -eq 0 ]; then
+            echo "Expected at least one direct Linux installer artifact to sign." >&2
+            exit 1
+          fi
+
+          for artifact in "${artifacts[@]}"; do
+            checksum="${artifact}.sha256"
+            signature="${checksum}.asc"
+            (cd "$(dirname "${artifact}")" && sha256sum "$(basename "${artifact}")" > "$(basename "${checksum}")")
+            GNUPGHOME="${LINUX_GNUPGHOME}" gpg --batch --yes --pinentry-mode loopback \
+              --passphrase-file "${LINUX_GPG_PASSPHRASE_FILE}" \
+              --local-user "${LINUX_GPG_FINGERPRINT}" --armor --detach-sign \
+              --output "${signature}" "${checksum}"
+            GNUPGHOME="${LINUX_VERIFICATION_GNUPGHOME}" gpg --quiet --batch --trust-model always --verify "${signature}" "${checksum}"
+          done
+
       - name: Stage APT repository installer
         run: |
           set -euo pipefail
@@ -561,11 +588,18 @@ jobs:
           draft: true
           files: |
             dist/rust/artifacts/csv-anonymizer-*.rpm
+            dist/rust/artifacts/csv-anonymizer-*.rpm.sha256
+            dist/rust/artifacts/csv-anonymizer-*.rpm.sha256.asc
             dist/rust/artifacts/*.AppImage
+            dist/rust/artifacts/*.AppImage.sha256
+            dist/rust/artifacts/*.AppImage.sha256.asc
             dist/rust/artifacts/csv-anonymizer_*.deb
+            dist/rust/artifacts/csv-anonymizer_*.deb.sha256
+            dist/rust/artifacts/csv-anonymizer_*.deb.sha256.asc
             dist/rust/artifacts/csv-anonymizer-repository-setup_*.deb
             dist/rust/artifacts/csv-anonymizer-repository-setup_*.deb.sha256
             dist/rust/artifacts/csv-anonymizer-repository-setup_*.deb.sha256.asc
+            dist/rust/artifacts/csv-anonymizer-archive-keyring.pgp
             dist/rust/artifacts/install-apt-repo.sh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

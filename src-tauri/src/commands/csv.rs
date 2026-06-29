@@ -104,7 +104,7 @@ pub async fn analyze_csv(
             .map(|column| column.index)
             .collect::<Vec<_>>();
         let suggested_output_path =
-            default_output_path_with_suffix(&headers.file_path, &output_suffix);
+            default_output_path_with_suffix(&headers.file_path, &output_suffix)?;
 
         Ok(AnalyzeResponse {
             headers,

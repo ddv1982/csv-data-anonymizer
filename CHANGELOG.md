@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.54 - 2026-06-29
+
+- Gate direct Paste Data and Quick by Data Type actions on loaded settings, and keep CSV output creation disabled while selected Smart replacement columns still need Local AI setup.
+- Harden backend privacy and path boundaries with bounded Local AI download reads, surfaced seed-vault deletion failures, safe output suffix validation, and clearer deterministic CLI seed help.
+- Add direct Linux installer provenance by signing checksum sidecars for `.deb`, `.rpm`, and AppImage downloads, publishing the archive keyring, and documenting verification steps.
+
 ## v1.0.53 - 2026-06-29
 
 - Add local privacy detector evidence for contact values, secrets, account and government identifiers, network/device identifiers, URLs, and private-date cues across CSV and direct text/log review paths.

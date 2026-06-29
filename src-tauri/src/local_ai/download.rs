@@ -1,7 +1,6 @@
 use crate::job_registry::{JobLifecycle, JobRegistry, JobRegistryEntry};
 use serde::Deserialize;
 use serde_json::json;
-use std::io::{BufRead, BufReader};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -155,7 +154,7 @@ impl LocalAiDownloadJob {
 }
 
 pub fn start_download_job(job: Arc<LocalAiDownloadJob>, request: LocalAiRequest) {
-    let result = download_model(job.clone(), request.model_name());
+    let result = tauri::async_runtime::block_on(download_model(job.clone(), request.model_name()));
     match result {
         Ok(()) if job.should_cancel() => job.finish_canceled(),
         Ok(()) => job.finish_success(),
@@ -164,12 +163,13 @@ pub fn start_download_job(job: Arc<LocalAiDownloadJob>, request: LocalAiRequest)
     }
 }
 
-fn download_model(job: Arc<LocalAiDownloadJob>, model: String) -> Result<(), String> {
+async fn download_model(job: Arc<LocalAiDownloadJob>, model: String) -> Result<(), String> {
     let client = download_client()?;
-    let response = client
+    let mut response = client
         .post(format!("{DEFAULT_OLLAMA_ENDPOINT}/api/pull"))
         .json(&json!({ "model": model, "stream": true }))
         .send()
+        .await
         .map_err(|error| {
             if error.is_connect() {
                 OLLAMA_UNAVAILABLE_MESSAGE.to_string()
@@ -179,23 +179,41 @@ fn download_model(job: Arc<LocalAiDownloadJob>, model: String) -> Result<(), Str
         })?
         .error_for_status()
         .map_err(|error| format!("Ollama model download failed: {error}"))?;
-    let reader = BufReader::new(response);
-    for line in reader.lines() {
+    let mut pending = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| format!("Could not read Ollama download progress: {error}"))?
+    {
         if job.should_cancel() {
             return Ok(());
         }
-        let line =
-            line.map_err(|error| format!("Could not read Ollama download progress: {error}"))?;
-        if line.trim().is_empty() {
-            continue;
+
+        pending.extend_from_slice(&chunk);
+        while let Some(newline_index) = pending.iter().position(|byte| *byte == b'\n') {
+            let line = pending.drain(..=newline_index).collect::<Vec<_>>();
+            process_download_line(&job, &line)?;
         }
-        let progress = serde_json::from_str::<OllamaPullProgress>(&line)
-            .map_err(|error| format!("Ollama returned invalid download progress: {error}"))?;
-        if let Some(error) = progress.error {
-            return Err(format!("Ollama model download failed: {error}"));
-        }
-        job.report_progress(progress);
     }
+
+    if !pending.is_empty() {
+        process_download_line(&job, &pending)?;
+    }
+    Ok(())
+}
+
+fn process_download_line(job: &LocalAiDownloadJob, line: &[u8]) -> Result<(), String> {
+    let line = String::from_utf8_lossy(line);
+    let line = line.trim();
+    if line.is_empty() {
+        return Ok(());
+    }
+    let progress = serde_json::from_str::<OllamaPullProgress>(line)
+        .map_err(|error| format!("Ollama returned invalid download progress: {error}"))?;
+    if let Some(error) = progress.error {
+        return Err(format!("Ollama model download failed: {error}"));
+    }
+    job.report_progress(progress);
     Ok(())
 }
 
@@ -322,5 +340,38 @@ mod tests {
         assert_eq!(status.state, LocalAiDownloadState::Failed);
         assert!(status.error.unwrap().contains("unexpectedly"));
         assert!(store.get_job(&job_id).is_err());
+    }
+
+    #[test]
+    fn download_progress_line_updates_status() {
+        let store = LocalAiDownloadStore::default();
+        let job = store.create_job("gemma3:4b".to_string()).unwrap();
+
+        process_download_line(
+            &job,
+            br#"{"status":"pulling manifest","completed":4,"total":10}
+"#,
+        )
+        .unwrap();
+
+        let status = job.snapshot().unwrap();
+        assert_eq!(status.status_message, "pulling manifest");
+        assert_eq!(status.completed_bytes, Some(4));
+        assert_eq!(status.total_bytes, Some(10));
+    }
+
+    #[test]
+    fn download_progress_line_reports_ollama_error() {
+        let store = LocalAiDownloadStore::default();
+        let job = store.create_job("gemma3:4b".to_string()).unwrap();
+
+        let error = process_download_line(
+            &job,
+            br#"{"error":"model missing"}
+"#,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("model missing"));
     }
 }

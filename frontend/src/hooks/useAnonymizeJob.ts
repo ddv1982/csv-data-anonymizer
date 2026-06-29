@@ -35,6 +35,7 @@ type AnonymizeJobOptions = {
   settings: AppSettings
   previewSmartReplacements: SmartReplacementEntry[]
   localAiRequest: LocalAiRequest
+  localAiBlocked: boolean
   busy: BusyState
   setBusy: Dispatch<SetStateAction<BusyState>>
   setError: Dispatch<SetStateAction<string | null>>
@@ -57,6 +58,7 @@ export function useAnonymizeJob({
   settings,
   previewSmartReplacements,
   localAiRequest,
+  localAiBlocked,
   busy,
   setBusy,
   setError,
@@ -73,7 +75,8 @@ export function useAnonymizeJob({
       inputPath &&
       outputPath &&
       busy === 'idle' &&
-      privacyConfigValid,
+      privacyConfigValid &&
+      !localAiBlocked,
   )
 
   useEffect(() => {
@@ -146,7 +149,9 @@ export function useAnonymizeJob({
   async function runAnonymization() {
     if (!canAnonymize) {
       setError(
-        !privacyConfigValid
+        localAiBlocked
+          ? 'Set up Local AI before creating output with Smart replacement columns.'
+          : !privacyConfigValid
             ? (privacyValidation.reason ?? 'Complete the privacy release settings before running.')
             : 'Load a CSV, select at least one column, and choose an output path.',
       )

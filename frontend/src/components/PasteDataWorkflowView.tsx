@@ -40,11 +40,13 @@ const EMPTY_COLUMNS: ColumnMetadata[] = []
 
 export function PasteDataWorkflowView({
   settings,
+  settingsLoaded,
   localAi,
   onOpenLocalAiSettings,
   onError,
 }: {
   settings: AppSettings
+  settingsLoaded: boolean
   localAi: LocalAiState
   onOpenLocalAiSettings: () => void
   onError: (message: string | null) => void
@@ -81,9 +83,9 @@ export function PasteDataWorkflowView({
     [columns, controls, selectedColumns],
   )
   const localAiBlocked = selectedUsesLocalAi && (!localAi.ready || localAi.downloadRunning)
-  const canAnalyze = content.trim().length > 0 && !isBusy && !isContentTooLarge
-  const canPreview = Boolean(analysis) && selectedColumns.length > 0 && !isBusy && !localAiBlocked
-  const canTransform = Boolean(analysis) && selectedColumns.length > 0 && !isBusy && !localAiBlocked
+  const canAnalyze = settingsLoaded && content.trim().length > 0 && !isBusy && !isContentTooLarge
+  const canPreview = settingsLoaded && Boolean(analysis) && selectedColumns.length > 0 && !isBusy && !localAiBlocked
+  const canTransform = settingsLoaded && Boolean(analysis) && selectedColumns.length > 0 && !isBusy && !localAiBlocked
 
   function resetDerivedState() {
     setAnalysis(null)
@@ -116,7 +118,7 @@ export function PasteDataWorkflowView({
   }
 
   async function handlePreview() {
-    if (!analysis || selectedColumns.length === 0 || isBusy) return
+    if (!settingsLoaded || !analysis || selectedColumns.length === 0 || isBusy) return
     if (localAiBlocked) {
       onError('Set up Local AI before previewing Smart replacement fields.')
       return
@@ -145,7 +147,7 @@ export function PasteDataWorkflowView({
   }
 
   async function handleTransform() {
-    if (!analysis || selectedColumns.length === 0 || isBusy) return
+    if (!settingsLoaded || !analysis || selectedColumns.length === 0 || isBusy) return
     if (localAiBlocked) {
       onError('Set up Local AI before anonymizing Smart replacement fields.')
       return

@@ -78,6 +78,7 @@ macOS:
 Linux:
 
 - Download the `.AppImage`, `.deb`, or `.rpm` from the latest release.
+- For direct downloads, also download the matching `.sha256` and `.sha256.asc` files and verify them with the release signing key (`csv-anonymizer-archive-keyring.pgp`) before installing.
 - Debian/Ubuntu users can enable the signed APT repository:
 
 ```bash
