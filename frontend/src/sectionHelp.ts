@@ -30,10 +30,10 @@ export const sectionHelp = {
     ],
   },
   selectColumns: {
-    title: 'Select Data to Transform',
+    title: 'Release Mode and Columns',
     summary: [
       [
-        'Choose which columns need protection, then adjust the detected type, ',
+        'Choose the release mode, then decide which columns need protection. Adjust the detected type, ',
         { text: 'Strategy', term: 'strategy' },
         ', and ',
         { text: 'Role', term: 'role' },
@@ -41,6 +41,16 @@ export const sectionHelp = {
       ],
     ],
     points: [
+      {
+        label: 'Synthetic data',
+        text: [
+          'Synthetic data is a complete replacement dataset, so every CSV column is included. Column checkboxes and ',
+          { text: 'Strategy', term: 'strategy' },
+          ' controls are locked; Type override and ',
+          { text: 'Role', term: 'role' },
+          ' stay editable because they control the generated placeholder shape.',
+        ],
+      },
       {
         label: 'Strategy',
         text: [
@@ -85,9 +95,9 @@ export const sectionHelp = {
     title: 'Configuration',
     summary: [
       [
-        'This section decides where the output goes and which release workflow is used. Standard row-level transformation uses the per-column ',
+        'This section decides where the output goes and holds release-specific settings. Standard row-level transformation uses the per-column ',
         { text: 'Strategy', term: 'strategy' },
-        ' values; formal, DP aggregate, and synthetic releases use the ',
+        ' values; formal, DP aggregate, and synthetic releases use the mode selected near the column table plus the ',
         { text: 'Role', term: 'role' },
         ' and privacy settings.',
       ],
@@ -112,11 +122,11 @@ export const sectionHelp = {
         ],
       },
       {
-        label: 'Privacy release',
+        label: 'Release settings',
         text: [
-          'Choose Standard CSV transform for row-level transformed files, k/l/t tabular for formal row-level checks such as ',
+          'After choosing the release mode near the column table, complete any mode-specific settings here: k/l/t thresholds for formal row-level checks such as ',
           { text: 'k-anonymity', term: 'kAnonymity' },
-          ', DP aggregate for noisy summary statistics, or Synthetic data for sampled test rows.',
+          ', DP aggregate bounds for noisy summary statistics, or row count for Synthetic data.',
         ],
       },
     ],
@@ -212,7 +222,7 @@ export const sectionHelp = {
           { text: 'Smart replacement', term: 'smartReplacement' },
           ' are ignored, and ',
           { text: 'Role', term: 'role' },
-          ' plus Type determine the generated placeholder shape. The same schema, row count, roles, types, and seed produce the same generated output. It does not preserve relationships between columns and does not provide a DP synthetic guarantee.',
+          ' plus Type determine the generated placeholder shape. Values are keyed by column so generated columns stay independent unless explicit relationship controls are added later. The same schema, row count, roles, types, and seed produce the same generated output. It does not preserve source relationships between columns and does not provide a DP synthetic guarantee.',
         ],
       },
     ],

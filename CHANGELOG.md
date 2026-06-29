@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.51 - 2026-06-29
+
+- Improve Synthetic data generation so numeric, timestamp, MAC address, and placeholder values are keyed by column identity instead of sharing row-level synthetic values across columns.
+- Move Privacy Release selection next to the column table, lock Synthetic data into its all-column dataset behavior, and keep Type Override plus Role controls available for generated values.
+- Expand Synthetic data help and regression coverage around determinism, column independence, disabled preview behavior, stale Smart replacement strategies, and structured placeholder formats.
+
 ## v1.0.50 - 2026-06-29
 
 - Make Synthetic data a self-correcting dataset-level release mode by selecting every CSV column, locking partial selection controls, and disabling the misleading row-level preview path.
