@@ -84,12 +84,19 @@ pub(super) fn should_auto_select(column: &ColumnMetadata) -> bool {
     !column.sample_values.is_empty() && matches!(column.pii_risk, PiiRisk::High | PiiRisk::Medium)
 }
 
-pub(super) fn default_output_path_with_suffix(input_path: &Path, suffix: &str) -> PathBuf {
+pub(super) fn default_output_path_with_suffix(
+    input_path: &Path,
+    suffix: &str,
+) -> Result<PathBuf, String> {
+    if suffix.chars().any(char::is_control) {
+        return Err("Output suffix must be plain filename text without path separators or control characters.".to_string());
+    }
     let suffix = if suffix.trim().is_empty() {
         "_private_output"
     } else {
         suffix.trim()
     };
+    validate_output_suffix(suffix)?;
     let stem = input_path
         .file_stem()
         .and_then(|value| value.to_str())
@@ -98,7 +105,15 @@ pub(super) fn default_output_path_with_suffix(input_path: &Path, suffix: &str) -
         Some(extension) if !extension.is_empty() => format!("{stem}{suffix}.{extension}"),
         _ => format!("{stem}{suffix}"),
     };
-    input_path.with_file_name(file_name)
+    Ok(input_path.with_file_name(file_name))
+}
+
+fn validate_output_suffix(suffix: &str) -> Result<(), String> {
+    if suffix.contains('/') || suffix.contains('\\') || suffix.chars().any(char::is_control) {
+        Err("Output suffix must be plain filename text without path separators or control characters.".to_string())
+    } else {
+        Ok(())
+    }
 }
 
 pub(super) fn selected_dialog_path(path: FilePath, file_kind: &str) -> Result<PathBuf, String> {
@@ -137,8 +152,17 @@ mod tests {
     #[test]
     fn builds_output_path_with_custom_suffix() {
         assert_eq!(
-            default_output_path_with_suffix(Path::new("/tmp/data.csv"), "_private"),
+            default_output_path_with_suffix(Path::new("/tmp/data.csv"), "_private").unwrap(),
             PathBuf::from("/tmp/data_private.csv")
         );
+    }
+
+    #[test]
+    fn rejects_path_like_output_suffixes() {
+        assert!(default_output_path_with_suffix(Path::new("/tmp/data.csv"), "../private").is_err());
+        assert!(
+            default_output_path_with_suffix(Path::new("/tmp/data.csv"), "..\\private").is_err()
+        );
+        assert!(default_output_path_with_suffix(Path::new("/tmp/data.csv"), "_private\n").is_err());
     }
 }

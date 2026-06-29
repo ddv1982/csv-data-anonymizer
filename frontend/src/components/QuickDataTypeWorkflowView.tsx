@@ -17,11 +17,13 @@ const MAX_COUNT = 1000
 
 export function QuickDataTypeWorkflowView({
   settings,
+  settingsLoaded,
   localAi,
   onOpenLocalAiSettings,
   onError,
 }: {
   settings: AppSettings
+  settingsLoaded: boolean
   localAi: LocalAiState
   onOpenLocalAiSettings: () => void
   onError: (message: string | null) => void
@@ -36,10 +38,10 @@ export function QuickDataTypeWorkflowView({
   const { copyOutput, copyStatus, setCopyStatus } = useCopyOutput({ isBusy, onError, setBusy })
   const usesLocalAi = strategy === 'localAi'
   const localAiBlocked = usesLocalAi && (!localAi.ready || localAi.downloadRunning)
-  const canGenerate = count >= MIN_COUNT && count <= MAX_COUNT && !isBusy && !localAiBlocked
+  const canGenerate = settingsLoaded && count >= MIN_COUNT && count <= MAX_COUNT && !isBusy && !localAiBlocked
 
   async function handleGenerate() {
-    if (count < MIN_COUNT || count > MAX_COUNT || isBusy) return
+    if (!settingsLoaded || count < MIN_COUNT || count > MAX_COUNT || isBusy) return
     if (localAiBlocked) {
       onError('Set up Local AI before generating Smart replacement values.')
       return

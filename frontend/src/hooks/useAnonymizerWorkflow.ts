@@ -197,6 +197,7 @@ export function useAnonymizerWorkflow() {
     settings,
     previewSmartReplacements: preview?.smartReplacements ?? [],
     localAiRequest: localAi.request,
+    localAiBlocked,
     busy,
     setBusy,
     setError,

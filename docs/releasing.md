@@ -37,9 +37,9 @@ git push origin v1.0.0
 The release workflow builds Tauri desktop artifacts:
 
 - macOS: signed and notarized `.dmg` installers named with standard architecture suffixes, for example `CSV.Anonymizer_1.0.0_aarch64.dmg` and `CSV.Anonymizer_1.0.0_x64.dmg`
-- Linux: `.deb`, `.rpm`, AppImage, APT repository, APT repository setup `.deb`, setup checksum sidecar, setup checksum signature, and `install-apt-repo.sh`
+- Linux: `.deb`, `.rpm`, AppImage, signed checksum sidecars for direct installers, APT repository, APT repository setup `.deb`, setup checksum sidecar, setup checksum signature, and `install-apt-repo.sh`
 
-Artifacts are written to `dist/rust/artifacts/`. The GitHub Release intentionally publishes only user-facing installers and APT bootstrap files; the archive keyring stays on GitHub Pages because it is consumed by `install-apt-repo.sh`.
+Artifacts are written to `dist/rust/artifacts/`. The GitHub Release intentionally publishes only user-facing installers, direct-download verification files, the public archive keyring, and APT bootstrap files. The archive keyring is also published on GitHub Pages because it is consumed by `install-apt-repo.sh`.
 
 CI and release jobs install the Tauri CLI with the pinned workflow `TAURI_CLI_VERSION`, which should match the Tauri crate version resolved in `Cargo.lock`.
 
@@ -71,7 +71,7 @@ Configure these signing inputs:
 - `DEB_SIGNING_KEY_PASSPHRASE`: passphrase for the Linux signing key
 - `DEB_SIGNING_PUBLIC_KEY`: repository variable containing the base64-encoded ASCII-armored public key
 
-The names are historical. The key signs APT metadata and the APT setup package checksum.
+The names are historical. The key signs APT metadata, the APT setup package checksum, and direct Linux installer checksum sidecars.
 
 The APT repository is generated under `dist/rust/apt-pages/apt` and deployed with GitHub Pages. Repository Pages must be configured to use GitHub Actions as the Pages source.
 
@@ -94,6 +94,7 @@ The release workflow:
 - validates the prebuilt frontend contains `index.html` and non-empty CSS assets before Tauri consumes it
 - builds Linux output as `.deb`, `.rpm`, and AppImage through Tauri
 - validates Linux package metadata and builds a signed APT repository
+- signs checksum sidecars for direct Linux `.deb`, `.rpm`, and AppImage downloads
 - stages `install-apt-repo.sh` with the pinned APT signing key fingerprint and validates the rendered installer keeps that effective fingerprint
 - publishes public APT bootstrap assets in the APT Pages artifact for installer-side signature verification
 - uploads macOS and Linux release assets
@@ -147,3 +148,21 @@ python3 scripts/validate_linux_package_metadata.py "dist/rust/artifacts/*.deb" "
 node scripts/check-apt-repository.mjs
 node scripts/check-apt-installer.mjs
 ```
+
+## Direct Linux Download Verification
+
+For each direct Linux installer on GitHub Releases, the workflow uploads:
+
+- the installer, for example `csv-anonymizer_1.0.0_amd64.deb`
+- a checksum sidecar, for example `csv-anonymizer_1.0.0_amd64.deb.sha256`
+- a detached signature for that sidecar, for example `csv-anonymizer_1.0.0_amd64.deb.sha256.asc`
+
+To verify a direct download, import the release signing public key, verify the checksum signature, then verify the installer bytes:
+
+```bash
+gpg --import csv-anonymizer-archive-keyring.pgp
+gpg --verify csv-anonymizer_1.0.0_amd64.deb.sha256.asc csv-anonymizer_1.0.0_amd64.deb.sha256
+sha256sum --check csv-anonymizer_1.0.0_amd64.deb.sha256
+```
+
+The signed APT repository remains the preferred Debian/Ubuntu install path when package-manager updates are desired.

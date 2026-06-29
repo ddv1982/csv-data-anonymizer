@@ -174,6 +174,37 @@ describe('App input mode tabs', () => {
     expect(tauriMocks.saveSettings).not.toHaveBeenCalled()
   })
 
+  it('keeps paste and quick processing disabled until settings load', async () => {
+    const user = userEvent.setup()
+    let resolveSettings: (settings: AppSettings) => void = () => undefined
+    tauriMocks.loadSettings.mockReturnValue(
+      new Promise<AppSettings>((resolve) => {
+        resolveSettings = resolve
+      }),
+    )
+    render(<App />)
+
+    await user.click(screen.getByRole('tab', { name: /paste data/i }))
+    fireEvent.change(screen.getByLabelText(/pasted data/i), {
+      target: { value: '[{"email":"ada@example.com"}]' },
+    })
+    const detectButton = screen.getByRole('button', { name: /detect fields/i })
+    expect(detectButton).toBeDisabled()
+    await user.click(detectButton)
+    expect(tauriMocks.analyzePasteData).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('tab', { name: /quick by data type/i }))
+    const generateButton = screen.getByRole('button', { name: /generate values/i })
+    expect(generateButton).toBeDisabled()
+    await user.click(generateButton)
+    expect(tauriMocks.generateQuickValues).not.toHaveBeenCalled()
+
+    resolveSettings(settingsFixture())
+    await waitFor(() => {
+      expect(generateButton).not.toBeDisabled()
+    })
+  })
+
   it('blocks Smart replacement when the ready Local AI status is for another model', async () => {
     const user = userEvent.setup()
     tauriMocks.loadSettings.mockResolvedValue(
@@ -201,6 +232,31 @@ describe('App input mode tabs', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent(/Set up Local AI before generating Smart replacement values/)
     expect(screen.getByRole('button', { name: /generate values/i })).toBeDisabled()
+  })
+
+  it('disables CSV output creation when selected Smart replacement needs Local AI setup', async () => {
+    const user = userEvent.setup()
+    tauriMocks.pickInputCsv.mockResolvedValue('/data/input.csv')
+    tauriMocks.analyzeCsv.mockResolvedValue({
+      headers: {
+        filePath: '/data/input.csv',
+        rowCount: 1,
+        rowCountIsComplete: true,
+        defaultOutputPath: '/data/input_private_output.csv',
+        columns: [columnFixture(0, 'email', 'email', 'high')],
+      },
+      selectedColumns: [0],
+      suggestedOutputPath: '/data/input_private_output.csv',
+    })
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: /browse for csv file/i }))
+    await user.selectOptions(await screen.findByLabelText('Strategy for email'), 'localAi')
+
+    expect(screen.getByText(/Set up Local AI before previewing or creating output/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /create anonymized csv/i })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: /create anonymized csv/i }))
+    expect(tauriMocks.preflightAnonymization).not.toHaveBeenCalled()
   })
 
   it('analyzes pasted JSON, transforms selected fields, and copies output', async () => {

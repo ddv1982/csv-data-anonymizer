@@ -82,10 +82,10 @@ pub(super) fn save_settings_to_path_with_seed_vault(
         } else {
             session_settings.seed.clear();
             session_settings.remember_seed = false;
-            let _ = seed_vault.delete_seed();
+            seed_vault.delete_seed()?;
         }
     } else {
-        let _ = seed_vault.delete_seed();
+        seed_vault.delete_seed()?;
     }
 
     let mut disk_settings = session_settings.clone();
@@ -303,7 +303,7 @@ mod tests {
     }
 
     #[test]
-    fn save_settings_keeps_saving_when_unremembered_seed_vault_delete_fails() {
+    fn save_settings_reports_unremembered_seed_vault_delete_failure() {
         let temp_dir = tempfile::tempdir().unwrap();
         let settings_path = temp_dir.path().join("settings.json");
         let seed_vault = MemorySeedVault::with_delete_failure("old-remembered-seed");
@@ -314,15 +314,12 @@ mod tests {
             ..AppSettings::default()
         };
 
-        let returned =
-            save_settings_to_path_with_seed_vault(&settings_path, &settings, &seed_vault).unwrap();
+        let error = save_settings_to_path_with_seed_vault(&settings_path, &settings, &seed_vault)
+            .unwrap_err();
 
-        assert_eq!(returned.seed, "session-only-seed");
-        assert!(!returned.remember_seed);
+        assert!(error.to_string().contains("seed vault delete failed"));
         assert_eq!(seed_vault.seed().as_deref(), Some("old-remembered-seed"));
-        let loaded = load_settings_from_path(&settings_path).unwrap();
-        assert!(loaded.seed.is_empty());
-        assert!(!loaded.remember_seed);
+        assert!(!settings_path.exists());
     }
 
     #[test]

@@ -244,20 +244,28 @@ pub(crate) fn run_cli(action: CliAction) -> Result<(), String> {
 }
 
 pub(crate) fn print_help() {
-    println!(
+    println!("{}", help_text());
+}
+
+fn help_text() -> String {
+    format!(
         "CSV Anonymizer {version}
 
 Usage:
   csv-anonymizer
   csv-anonymizer analyze <input.csv>
-  csv-anonymizer anonymize --input <input.csv> --output <output.csv> --columns <0,1> [--deterministic] [--seed <seed>] [--force]
+  csv-anonymizer anonymize --input <input.csv> --output <output.csv> --columns <0,1> [--deterministic --seed <seed>] [--force]
   csv-anonymizer --smoke-anonymize <input.csv> <output.csv>
 
 Options:
   --help, -h       Show this help.
-  --version, -V    Print the application version.",
+  --version, -V    Print the application version.
+
+Anonymize options:
+  --deterministic  Use repeatable replacements; requires a non-empty --seed.
+  --seed <seed>    Private seed used with --deterministic.",
         version = env!("CARGO_PKG_VERSION")
-    );
+    )
 }
 
 #[cfg(test)]
@@ -364,5 +372,13 @@ mod tests {
         .unwrap_err();
 
         assert!(error.contains("--deterministic requires a non-empty --seed"));
+    }
+
+    #[test]
+    fn help_documents_deterministic_seed_requirement() {
+        let help = help_text();
+
+        assert!(help.contains("[--deterministic --seed <seed>]"));
+        assert!(help.contains("requires a non-empty --seed"));
     }
 }
