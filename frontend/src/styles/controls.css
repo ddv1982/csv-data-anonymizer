@@ -208,6 +208,68 @@
   gap: 0.5rem;
 }
 
+.detector-view-controls {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.segmented-control {
+  display: inline-flex;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid hsl(var(--border-subtle));
+  border-radius: calc(var(--radius) - 2px);
+  background: hsl(var(--muted) / 0.24);
+  padding: 0.1875rem;
+}
+
+.segmented-button {
+  display: inline-flex;
+  min-width: 0;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: calc(var(--radius) - 4px);
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  padding: 0 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.segmented-button:hover {
+  color: hsl(var(--foreground));
+}
+
+.segmented-button.active {
+  background: hsl(var(--surface-card));
+  color: hsl(var(--foreground));
+  box-shadow: 0 1px 2px hsl(220 35% 16% / 0.08);
+}
+
+.checkbox-row {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.45rem;
+  color: hsl(var(--foreground));
+  font-size: 0.875rem;
+}
+
+.checkbox-row input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: hsl(var(--primary));
+}
+
 .field {
   display: grid;
   gap: 0.5rem;

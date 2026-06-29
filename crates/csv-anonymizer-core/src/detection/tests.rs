@@ -179,3 +179,163 @@ fn generic_name_header_with_single_names_detects_first_name() {
     assert_eq!(result.data_type, DataType::FirstName);
     assert_eq!(result.confidence, Confidence::High);
 }
+
+#[test]
+fn privacy_spans_detect_contact_secret_account_and_network_values() {
+    let spans = collect_privacy_spans(
+        "email ada@example.com api_key=sk_test_1234567890 card 4111 1111 1111 1111 ip 192.168.1.20",
+    );
+
+    assert!(
+        spans
+            .iter()
+            .any(|span| span.kind == PrivacyFindingKind::Contact
+                && span.data_type == DataType::Email
+                && span.value == "ada@example.com")
+    );
+    assert!(
+        spans
+            .iter()
+            .any(|span| span.kind == PrivacyFindingKind::CredentialOrSecret
+                && span.value == "sk_test_1234567890")
+    );
+    assert!(
+        spans
+            .iter()
+            .any(|span| span.kind == PrivacyFindingKind::AccountOrFinancialId
+                && span.value == "4111 1111 1111 1111")
+    );
+    assert!(
+        spans
+            .iter()
+            .any(|span| span.kind == PrivacyFindingKind::NetworkOrDeviceId
+                && span.data_type == DataType::IpAddress
+                && span.value == "192.168.1.20")
+    );
+}
+
+#[test]
+fn privacy_spans_do_not_treat_benign_numeric_ids_as_payment_cards() {
+    let spans = collect_privacy_spans("order_id=1234567890123 account=1000000000000");
+
+    assert!(
+        spans
+            .iter()
+            .all(|span| span.kind != PrivacyFindingKind::AccountOrFinancialId)
+    );
+}
+
+#[test]
+fn column_privacy_analysis_summarizes_header_and_span_evidence() {
+    let values = strings(&[
+        "contact ada@example.com",
+        "contact grace@example.com",
+        "contact alan@example.com",
+    ]);
+    let detection = detect_column_type_with_name("notes", &values);
+    let analysis = analyze_column_privacy(
+        "notes",
+        0,
+        &values,
+        detection.data_type,
+        detection.confidence,
+    );
+
+    assert_eq!(analysis.suggested_data_type, Some(DataType::Email));
+    assert_eq!(analysis.pii_risk, PiiRisk::High);
+    assert!(
+        analysis
+            .evidence
+            .iter()
+            .any(|summary| summary.kind == PrivacyFindingKind::Contact
+                && summary.match_count == 3
+                && summary.sample_count == 3)
+    );
+}
+
+#[test]
+fn column_privacy_analysis_counts_matched_rows_not_spans() {
+    let values = strings(&["primary ada@example.com backup alan@example.com"]);
+    let detection = detect_column_type_with_name("notes", &values);
+    let analysis = analyze_column_privacy(
+        "notes",
+        0,
+        &values,
+        detection.data_type,
+        detection.confidence,
+    );
+
+    let summary = analysis
+        .evidence
+        .iter()
+        .find(|summary| {
+            summary.kind == PrivacyFindingKind::Contact && summary.data_type == DataType::Email
+        })
+        .expect("email evidence summary");
+    assert_eq!(summary.match_count, 1);
+    assert_eq!(summary.sample_count, 1);
+}
+
+#[test]
+fn privacy_findings_use_utf16_offsets_for_frontend_redaction() {
+    let values = strings(&["🔒 ada@example.com"]);
+    let detection = detect_column_type_with_name("notes", &values);
+    let analysis = analyze_column_privacy(
+        "notes",
+        0,
+        &values,
+        detection.data_type,
+        detection.confidence,
+    );
+
+    let finding = analysis
+        .findings
+        .iter()
+        .find(|finding| finding.data_type == DataType::Email)
+        .expect("email finding");
+    assert_eq!(finding.start, 3);
+    assert_eq!(finding.end, 18);
+    assert_eq!(finding.match_value, "ada@example.com");
+}
+
+#[test]
+fn full_cell_privacy_findings_use_utf16_end_offsets() {
+    let values = strings(&["Renée"]);
+    let analysis = analyze_column_privacy(
+        "first_name",
+        0,
+        &values,
+        DataType::FirstName,
+        Confidence::High,
+    );
+
+    let finding = analysis
+        .findings
+        .iter()
+        .find(|finding| finding.kind == PrivacyFindingKind::Person)
+        .expect("person finding");
+    assert_eq!(finding.start, 0);
+    assert_eq!(finding.end, 5);
+}
+
+#[test]
+fn low_confidence_date_spans_do_not_raise_default_privacy_risk() {
+    let values = strings(&["created 2026-06-29"]);
+    let detection = detect_column_type_with_name("event_notes", &values);
+    let analysis = analyze_column_privacy(
+        "event_notes",
+        0,
+        &values,
+        detection.data_type,
+        detection.confidence,
+    );
+
+    assert_eq!(analysis.pii_risk, PiiRisk::Low);
+    assert!(
+        analysis
+            .evidence
+            .iter()
+            .any(|summary| summary.kind == PrivacyFindingKind::PrivateDate
+                && summary.confidence == Confidence::Low)
+    );
+}

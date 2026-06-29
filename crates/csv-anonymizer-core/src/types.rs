@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DataType {
     Email,
@@ -42,6 +42,21 @@ pub enum PiiRisk {
     High,
     Medium,
     Low,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PrivacyFindingKind {
+    Person,
+    Contact,
+    PrivateAddress,
+    PrivateDate,
+    AccountOrFinancialId,
+    GovernmentId,
+    CredentialOrSecret,
+    NetworkOrDeviceId,
+    Url,
+    MixedSensitiveText,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -85,6 +100,34 @@ pub struct DetectionTraceItem {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PrivacyFinding {
+    pub kind: PrivacyFindingKind,
+    pub data_type: DataType,
+    pub row_index: usize,
+    pub start: usize,
+    pub end: usize,
+    pub match_value: String,
+    pub sample_value: String,
+    pub confidence: Confidence,
+    pub score: u8,
+    pub detector: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivacyEvidenceSummary {
+    pub kind: PrivacyFindingKind,
+    pub data_type: DataType,
+    pub confidence: Confidence,
+    pub match_count: usize,
+    pub sample_count: usize,
+    pub score: u8,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ColumnMetadata {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -94,6 +137,10 @@ pub struct ColumnMetadata {
     pub confidence: Confidence,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detection_trace: Option<DetectionTrace>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub privacy_findings: Vec<PrivacyFinding>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub privacy_evidence: Vec<PrivacyEvidenceSummary>,
     pub pii_risk: PiiRisk,
     pub sample_values: Vec<String>,
     pub empty_format: EmptyFormat,

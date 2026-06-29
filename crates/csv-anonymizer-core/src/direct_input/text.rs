@@ -1,3 +1,4 @@
+use crate::detection::collect_privacy_spans;
 use crate::error::{AnonymizerError, Result};
 use crate::service::{build_privacy_report, count_transforming_selected_columns};
 use crate::smart::{SmartReplacementProvider, prepare_smart_replacements_from_rows};
@@ -138,12 +139,6 @@ struct TextMatch<'a> {
     priority: usize,
 }
 
-struct TextTokenSpec {
-    name: &'static str,
-    data_type: DataType,
-    regex: &'static Regex,
-}
-
 pub(super) fn looks_like_logs(content: &str) -> bool {
     content.lines().take(20).any(|line| {
         timestamp_regex().is_match(line)
@@ -172,25 +167,23 @@ fn text_fields_from_matches(
 
 fn collect_text_matches(content: &str) -> Result<Vec<TextMatch<'_>>> {
     let mut candidates = Vec::new();
-    for (priority, spec) in text_token_specs().iter().enumerate() {
-        for regex_match in spec.regex.find_iter(content) {
-            if candidates.len() >= PASTE_MAX_TEXT_CANDIDATES {
-                return Err(AnonymizerError::input_parse(
-                    "pasted data",
-                    format!(
-                        "Detected more than {PASTE_MAX_TEXT_CANDIDATES} text token candidates. Use a smaller paste or the CSV file workflow."
-                    ),
-                ));
-            }
-            candidates.push(TextMatch {
-                name: spec.name,
-                data_type: spec.data_type,
-                start: regex_match.start(),
-                end: regex_match.end(),
-                value: regex_match.as_str(),
-                priority,
-            });
+    for span in collect_privacy_spans(content) {
+        if candidates.len() >= PASTE_MAX_TEXT_CANDIDATES {
+            return Err(AnonymizerError::input_parse(
+                "pasted data",
+                format!(
+                    "Detected more than {PASTE_MAX_TEXT_CANDIDATES} text token candidates. Use a smaller paste or the CSV file workflow."
+                ),
+            ));
         }
+        candidates.push(TextMatch {
+            name: span.field_name,
+            data_type: span.data_type,
+            start: span.start,
+            end: span.end,
+            value: span.value,
+            priority: span.priority,
+        });
     }
 
     candidates.sort_by(|left, right| {
@@ -220,100 +213,10 @@ fn collect_text_matches(content: &str) -> Result<Vec<TextMatch<'_>>> {
     Ok(selected)
 }
 
-fn text_token_specs() -> [TextTokenSpec; 8] {
-    [
-        TextTokenSpec {
-            name: "email",
-            data_type: DataType::Email,
-            regex: email_regex(),
-        },
-        TextTokenSpec {
-            name: "url",
-            data_type: DataType::Url,
-            regex: url_regex(),
-        },
-        TextTokenSpec {
-            name: "uuid",
-            data_type: DataType::Uuid,
-            regex: uuid_regex(),
-        },
-        TextTokenSpec {
-            name: "timestamp",
-            data_type: DataType::Timestamp,
-            regex: timestamp_regex(),
-        },
-        TextTokenSpec {
-            name: "ipAddress",
-            data_type: DataType::IpAddress,
-            regex: ip_address_regex(),
-        },
-        TextTokenSpec {
-            name: "macAddress",
-            data_type: DataType::MacAddress,
-            regex: mac_address_regex(),
-        },
-        TextTokenSpec {
-            name: "taxId",
-            data_type: DataType::TaxId,
-            regex: tax_id_regex(),
-        },
-        TextTokenSpec {
-            name: "phone",
-            data_type: DataType::Phone,
-            regex: phone_regex(),
-        },
-    ]
-}
-
-fn email_regex() -> &'static Regex {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| Regex::new(r"(?i)\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b").unwrap())
-}
-
-fn url_regex() -> &'static Regex {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| Regex::new(r#"\b(?:https?://|www\.)[^\s<>'"]+"#).unwrap())
-}
-
-fn uuid_regex() -> &'static Regex {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| {
-        Regex::new(
-            r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b",
-        )
-        .unwrap()
-    })
-}
-
 fn timestamp_regex() -> &'static Regex {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
     PATTERN.get_or_init(|| {
         Regex::new(r"\b\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?)?\b").unwrap()
-    })
-}
-
-fn ip_address_regex() -> &'static Regex {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| {
-        Regex::new(r"\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b")
-            .unwrap()
-    })
-}
-
-fn mac_address_regex() -> &'static Regex {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| Regex::new(r"\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b").unwrap())
-}
-
-fn tax_id_regex() -> &'static Regex {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| Regex::new(r"\b(?:\d{3}-\d{2}-\d{4}|\d{2}-\d{7})\b").unwrap())
-}
-
-fn phone_regex() -> &'static Regex {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| {
-        Regex::new(r"\b(?:\+\d{1,3}[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}\b").unwrap()
     })
 }
 

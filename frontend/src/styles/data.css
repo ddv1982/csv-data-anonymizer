@@ -137,6 +137,59 @@
   gap: 0.25rem;
 }
 
+.privacy-evidence-column {
+  min-width: 12rem;
+}
+
+.privacy-evidence-cell {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 18rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.privacy-evidence-chip,
+.privacy-evidence-more {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid hsl(var(--border-subtle));
+  border-radius: 999px;
+  background: hsl(var(--muted) / 0.28);
+  color: hsl(var(--foreground));
+  padding: 0.125rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.privacy-evidence-chip > span {
+  color: hsl(var(--muted-foreground));
+  font-weight: 700;
+}
+
+.privacy-evidence-chip.confidence-high {
+  border-color: hsl(var(--risk-high) / 0.35);
+  background: hsl(var(--risk-high) / 0.14);
+  color: hsl(var(--risk-high-foreground));
+}
+
+.privacy-evidence-chip.confidence-medium {
+  border-color: hsl(var(--risk-medium) / 0.35);
+  background: hsl(var(--risk-medium) / 0.13);
+  color: hsl(var(--risk-medium-foreground));
+}
+
+.privacy-evidence-chip.confidence-low {
+  border-color: hsl(var(--border-subtle));
+  background: hsl(var(--muted) / 0.22);
+  color: hsl(var(--muted-foreground));
+}
+
 .detector-popover-content,
 .detector-candidates {
   display: grid;
@@ -258,6 +311,139 @@
   border-radius: var(--radius);
   background: hsl(var(--muted) / 0.22);
   padding: 1rem;
+}
+
+.detector-review-panel {
+  display: grid;
+  min-width: 0;
+  gap: 0.85rem;
+}
+
+.detector-review-toolbar {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+}
+
+.detector-summary-strip {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.detector-summary-strip > span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid hsl(var(--border-subtle));
+  border-radius: 999px;
+  background: hsl(var(--muted) / 0.22);
+  padding: 0.25rem 0.65rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.8125rem;
+}
+
+.detector-summary-strip strong {
+  color: hsl(var(--foreground));
+}
+
+.detector-review-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.detector-review-section {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 0.6rem;
+}
+
+.detector-review-section h3 {
+  margin: 0;
+  color: hsl(var(--foreground));
+  font-size: 0.95rem;
+}
+
+.detector-sample-list {
+  display: grid;
+  min-width: 0;
+  gap: 0.5rem;
+}
+
+.detector-sample-row {
+  display: grid;
+  min-width: 0;
+  gap: 0.35rem;
+  border: 1px solid hsl(var(--border-subtle));
+  border-radius: var(--radius);
+  background: hsl(var(--muted) / 0.18);
+  padding: 0.65rem;
+}
+
+.detector-sample-meta {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.detector-highlighted-sample,
+.detector-redacted-output {
+  display: block;
+  min-width: 0;
+  overflow-x: auto;
+  color: hsl(var(--foreground));
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.privacy-span-highlight {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 0.25rem;
+  color: inherit;
+  padding: 0.05rem 0.2rem;
+}
+
+.privacy-span-highlight > span {
+  border-radius: 0.2rem;
+  background: hsl(var(--background) / 0.72);
+  color: currentColor;
+  padding: 0.05rem 0.2rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.privacy-span-highlight.confidence-high {
+  background: hsl(var(--risk-high) / 0.24);
+}
+
+.privacy-span-highlight.confidence-medium {
+  background: hsl(var(--risk-medium) / 0.22);
+}
+
+.privacy-span-highlight.confidence-low {
+  background: hsl(var(--muted) / 0.5);
+}
+
+@media (max-width: 860px) {
+  .detector-review-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 :root[data-resolved-theme='light'] .preview-frame,

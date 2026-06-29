@@ -89,6 +89,10 @@ export const sectionHelp = {
         label: 'Type override',
         text: 'Use this when detection picked the wrong data type. Strategy and Role both become easier to reason about when the type is accurate.',
       },
+      {
+        label: 'Detector Review',
+        text: 'Use Detector Review to inspect sample-level evidence behind the column risk: highlighted spans, the privacy category, confidence, and a redacted sample output. Balanced mode hides lower-confidence cues; Strict mode includes them for a broader review with more false positives.',
+      },
     ],
   },
   configuration: {

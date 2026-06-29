@@ -352,6 +352,97 @@ describe('App input mode tabs', () => {
     expect(screen.getByRole('button', { name: /show preview/i })).toBeDisabled()
   })
 
+  it('shows detector review highlights, redaction output, and strict evidence', async () => {
+    const user = userEvent.setup()
+    tauriMocks.analyzeCsv.mockResolvedValue({
+      headers: {
+        filePath: '/data/input.csv',
+        rowCount: 2,
+        rowCountIsComplete: true,
+        defaultOutputPath: '/data/input_private_output.csv',
+        columns: [
+          {
+            ...columnFixture(0, 'notes', 'string', 'high'),
+            sampleValues: ['contact ada@example.com'],
+            privacyEvidence: [
+              {
+                kind: 'contact',
+                dataType: 'email',
+                confidence: 'high',
+                matchCount: 1,
+                sampleCount: 1,
+                score: 96,
+                reason: 'Email address pattern.',
+              },
+            ],
+            privacyFindings: [
+              {
+                kind: 'contact',
+                dataType: 'email',
+                rowIndex: 0,
+                start: 8,
+                end: 23,
+                matchValue: 'ada@example.com',
+                sampleValue: 'contact ada@example.com',
+                confidence: 'high',
+                score: 96,
+                detector: 'pattern:email',
+                reason: 'Email address pattern.',
+              },
+            ],
+          },
+          {
+            ...columnFixture(1, 'event_date', 'timestamp', 'low'),
+            sampleValues: ['2026-06-29'],
+            privacyEvidence: [
+              {
+                kind: 'privateDate',
+                dataType: 'timestamp',
+                confidence: 'low',
+                matchCount: 1,
+                sampleCount: 1,
+                score: 54,
+                reason: 'Date or timestamp pattern; review context before treating it as private.',
+              },
+            ],
+            privacyFindings: [
+              {
+                kind: 'privateDate',
+                dataType: 'timestamp',
+                rowIndex: 0,
+                start: 0,
+                end: 10,
+                matchValue: '2026-06-29',
+                sampleValue: '2026-06-29',
+                confidence: 'low',
+                score: 54,
+                detector: 'pattern:date',
+                reason: 'Date or timestamp pattern; review context before treating it as private.',
+              },
+            ],
+          },
+        ],
+      },
+      selectedColumns: [0],
+      suggestedOutputPath: '/data/input_private_output.csv',
+    })
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: /browse for csv file/i }))
+    await user.click(await screen.findByRole('tab', { name: /detector review/i }))
+
+    expect(screen.getByText('Detected spans')).toBeInTheDocument()
+    expect(screen.getByText('ada@example.com')).toBeInTheDocument()
+    expect(screen.getByText('contact [EMAIL]')).toBeInTheDocument()
+    expect(screen.queryByText('Private date')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Strict' }))
+
+    expect(screen.getByText(/Strict detector review includes/)).toBeInTheDocument()
+    expect(screen.getAllByText('Private date').length).toBeGreaterThan(0)
+    expect(screen.getByText('[DATE]')).toBeInTheDocument()
+  })
+
   it('generates quick values without requiring input or field detection', async () => {
     const user = userEvent.setup()
     tauriMocks.generateQuickValues.mockResolvedValue({

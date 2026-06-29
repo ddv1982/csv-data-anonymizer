@@ -1,4 +1,7 @@
-use crate::detection::{classify_pii_risk, detect_column_type_with_name, detect_empty_format};
+use crate::detection::{
+    analyze_column_privacy, classify_pii_risk, detect_column_type_with_name, detect_empty_format,
+    max_pii_risk,
+};
 use crate::types::{AnonymizationStrategy, ColumnMetadata, PiiRisk};
 use std::collections::HashSet;
 
@@ -54,7 +57,15 @@ fn build_single_column_metadata(
     sample_count: usize,
 ) -> ColumnMetadata {
     let detection = detect_column_type_with_name(name, values);
-    let pii_risk = classify_pii_risk(detection.data_type);
+    let privacy = analyze_column_privacy(
+        name,
+        index,
+        values,
+        detection.data_type,
+        detection.confidence,
+    );
+    let detected_type = detection.data_type;
+    let pii_risk = max_pii_risk(classify_pii_risk(detected_type), privacy.pii_risk);
     let empty_format = detect_empty_format(values);
     let sample_values = values
         .iter()
@@ -67,9 +78,11 @@ fn build_single_column_metadata(
         name: name.to_string(),
         source_path: None,
         index,
-        detected_type: detection.data_type,
+        detected_type,
         confidence: detection.confidence,
         detection_trace: detection.trace,
+        privacy_findings: privacy.findings,
+        privacy_evidence: privacy.evidence,
         pii_risk,
         sample_values,
         empty_format,

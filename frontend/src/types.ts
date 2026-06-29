@@ -24,6 +24,17 @@ export type DataType =
 
 export type Confidence = 'high' | 'medium' | 'low'
 export type PiiRisk = 'high' | 'medium' | 'low'
+export type PrivacyFindingKind =
+  | 'person'
+  | 'contact'
+  | 'privateAddress'
+  | 'privateDate'
+  | 'accountOrFinancialId'
+  | 'governmentId'
+  | 'credentialOrSecret'
+  | 'networkOrDeviceId'
+  | 'url'
+  | 'mixedSensitiveText'
 export type EmptyFormat = 'emptyString' | 'null' | 'mixed'
 export type AnonymizationStrategy = 'auto' | 'pseudonymize' | 'tokenize' | 'localAi' | 'mask' | 'passThrough'
 export type ReleaseMode = 'standard' | 'formalTabular' | 'differentialPrivacyAggregate' | 'syntheticData'
@@ -146,11 +157,37 @@ export interface ColumnMetadata {
   detectedType: DataType
   confidence: Confidence
   detectionTrace?: DetectionTrace | null
+  privacyFindings?: PrivacyFinding[]
+  privacyEvidence?: PrivacyEvidenceSummary[]
   piiRisk: PiiRisk
   sampleValues: string[]
   emptyFormat: EmptyFormat
   isSelected: boolean
   strategy: AnonymizationStrategy
+}
+
+export interface PrivacyFinding {
+  kind: PrivacyFindingKind
+  dataType: DataType
+  rowIndex: number
+  start: number
+  end: number
+  matchValue: string
+  sampleValue: string
+  confidence: Confidence
+  score: number
+  detector: string
+  reason: string
+}
+
+export interface PrivacyEvidenceSummary {
+  kind: PrivacyFindingKind
+  dataType: DataType
+  confidence: Confidence
+  matchCount: number
+  sampleCount: number
+  score: number
+  reason: string
 }
 
 export interface DetectionTrace {
