@@ -169,90 +169,195 @@ fn synthetic_value(
     seed: &str,
 ) -> String {
     if matches!(role, ColumnRole::DirectIdentifier | ColumnRole::Exclude) {
-        return synthetic_identifier(column.detected_type, row_index, seed);
+        return synthetic_identifier(column, role, row_index, seed);
     }
     if role == ColumnRole::Sensitive {
-        return synthetic_sensitive_value(column.detected_type, row_index, seed);
+        return synthetic_sensitive_value(column, role, row_index, seed);
     }
     if role == ColumnRole::QuasiIdentifier {
-        let value = synthetic_attribute_value(column.detected_type, row_index, seed);
+        let value = synthetic_attribute_value(column, role, row_index, seed);
         generalize_value(&value, column.detected_type, 1)
     } else {
-        synthetic_attribute_value(column.detected_type, row_index, seed)
+        synthetic_attribute_value(column, role, row_index, seed)
     }
 }
 
-fn synthetic_identifier(data_type: DataType, row_index: usize, seed: &str) -> String {
-    let ordinal = row_index + 1;
-    match data_type {
-        DataType::Email => format!("person{ordinal}@example.invalid"),
-        DataType::Phone => format!("555-010-{:04}", ordinal % 10_000),
-        DataType::FirstName => format!("First{ordinal}"),
-        DataType::LastName => format!("Last{ordinal}"),
-        DataType::FullName => format!("Person {ordinal}"),
-        DataType::TaxId => format!("TAX-{:06}", ordinal % 1_000_000),
-        DataType::Address => format!("{ordinal} Example Street"),
-        DataType::Uuid => deterministic_uuid(&format!("synthetic:{ordinal}"), seed),
-        _ => format!("synthetic-{ordinal}"),
+fn synthetic_identifier(
+    column: &ColumnMetadata,
+    role: ColumnRole,
+    row_index: usize,
+    seed: &str,
+) -> String {
+    let suffix = synthetic_sequence_number(column, role, row_index, seed, "identifier", 1_000_000);
+    let key = synthetic_value_key(column, role, row_index, "identifier");
+    match column.detected_type {
+        DataType::Email => format!("person{suffix}@example.invalid"),
+        DataType::Phone => format!("555-010-{:04}", suffix % 10_000),
+        DataType::FirstName => format!("First{suffix}"),
+        DataType::LastName => format!("Last{suffix}"),
+        DataType::FullName => format!("Person {suffix}"),
+        DataType::TaxId => format!("TAX-{:06}", suffix % 1_000_000),
+        DataType::Address => format!("{suffix} Example Street"),
+        DataType::Uuid => deterministic_uuid(&key, seed),
+        _ => format!("synthetic-{suffix}"),
     }
 }
 
-fn synthetic_sensitive_value(data_type: DataType, row_index: usize, seed: &str) -> String {
-    let ordinal = row_index + 1;
-    match data_type {
+fn synthetic_sensitive_value(
+    column: &ColumnMetadata,
+    role: ColumnRole,
+    row_index: usize,
+    seed: &str,
+) -> String {
+    let key = synthetic_value_key(column, role, row_index, "sensitive");
+    let suffix = synthetic_sequence_number(column, role, row_index, seed, "sensitive", 1_000_000);
+    match column.detected_type {
         DataType::NumericId
         | DataType::NumericValue
         | DataType::Currency
-        | DataType::Percentage => {
-            deterministic_number(&format!("synthetic-sensitive:{ordinal}"), seed, 1, 100)
-                .to_string()
-        }
+        | DataType::Percentage => deterministic_number(&key, seed, 1, 100).to_string(),
         DataType::Boolean => {
-            if deterministic_number(&format!("synthetic-sensitive:{ordinal}"), seed, 0, 1) == 0 {
+            if deterministic_number(&key, seed, 0, 1) == 0 {
                 "false".to_string()
             } else {
                 "true".to_string()
             }
         }
-        DataType::Timestamp => "2000-01-01T00:00:00Z".to_string(),
-        _ => format!("synthetic-sensitive-{ordinal}"),
+        DataType::Timestamp => synthetic_timestamp(&key, seed),
+        _ => format!("synthetic-sensitive-{suffix}"),
     }
 }
 
-fn synthetic_attribute_value(data_type: DataType, row_index: usize, seed: &str) -> String {
-    let ordinal = row_index + 1;
-    match data_type {
-        DataType::Email => format!("attribute{ordinal}@example.invalid"),
-        DataType::Phone => format!("555-020-{:04}", ordinal % 10_000),
-        DataType::FirstName => format!("AttrFirst{ordinal}"),
-        DataType::LastName => format!("AttrLast{ordinal}"),
-        DataType::FullName => format!("Attribute Person {ordinal}"),
-        DataType::TaxId => format!("ATTR-{:06}", ordinal % 1_000_000),
-        DataType::Address => format!("{ordinal} Attribute Avenue"),
-        DataType::Uuid => deterministic_uuid(&format!("synthetic-attribute:{ordinal}"), seed),
+fn synthetic_attribute_value(
+    column: &ColumnMetadata,
+    role: ColumnRole,
+    row_index: usize,
+    seed: &str,
+) -> String {
+    let key = synthetic_value_key(column, role, row_index, "attribute");
+    let suffix = synthetic_sequence_number(column, role, row_index, seed, "attribute", 1_000_000);
+    match column.detected_type {
+        DataType::Email => format!("attribute{suffix}@example.invalid"),
+        DataType::Phone => format!("555-020-{:04}", suffix % 10_000),
+        DataType::FirstName => format!("AttrFirst{suffix}"),
+        DataType::LastName => format!("AttrLast{suffix}"),
+        DataType::FullName => format!("Attribute Person {suffix}"),
+        DataType::TaxId => format!("ATTR-{:06}", suffix % 1_000_000),
+        DataType::Address => format!("{suffix} Attribute Avenue"),
+        DataType::Uuid => deterministic_uuid(&key, seed),
         DataType::NumericId | DataType::NumericValue | DataType::Currency => {
-            deterministic_number(&format!("synthetic-attribute:{ordinal}"), seed, 1, 10_000)
-                .to_string()
+            deterministic_number(&key, seed, 1, 10_000).to_string()
         }
-        DataType::Percentage => {
-            deterministic_number(&format!("synthetic-attribute:{ordinal}"), seed, 0, 100)
-                .to_string()
-        }
+        DataType::Percentage => deterministic_number(&key, seed, 0, 100).to_string(),
         DataType::Boolean => {
-            if deterministic_number(&format!("synthetic-attribute:{ordinal}"), seed, 0, 1) == 0 {
+            if deterministic_number(&key, seed, 0, 1) == 0 {
                 "false".to_string()
             } else {
                 "true".to_string()
             }
         }
-        DataType::Timestamp => "2000-01-01T00:00:00Z".to_string(),
-        DataType::CountryCode => format!("ZZ{:02}", ordinal % 100),
-        DataType::Enum => format!("synthetic-enum-{ordinal}"),
-        DataType::PostalCode => format!("000{:02}", ordinal % 100),
-        DataType::IpAddress => format!("192.0.2.{}", (ordinal % 254) + 1),
-        DataType::Url => format!("https://example.invalid/item/{ordinal}"),
-        DataType::MacAddress => format!("02:00:00:00:{:02x}:{:02x}", ordinal / 256, ordinal % 256),
-        DataType::String | DataType::Unknown => format!("synthetic-attribute-{ordinal}"),
+        DataType::Timestamp => synthetic_timestamp(&key, seed),
+        DataType::CountryCode => format!("ZZ{:02}", suffix % 100),
+        DataType::Enum => format!("synthetic-enum-{suffix}"),
+        DataType::PostalCode => format!("000{:02}", suffix % 100),
+        DataType::IpAddress => format!("192.0.2.{}", (suffix % 254) + 1),
+        DataType::Url => format!("https://example.invalid/item/{suffix}"),
+        DataType::MacAddress => synthetic_mac_address(&key, seed),
+        DataType::String | DataType::Unknown => format!("synthetic-attribute-{suffix}"),
+    }
+}
+
+fn synthetic_timestamp(key: &str, seed: &str) -> String {
+    let year = deterministic_number(&format!("{key}:year"), seed, 2000, 2029);
+    let month = deterministic_number(&format!("{key}:month"), seed, 1, 12);
+    let day = deterministic_number(&format!("{key}:day"), seed, 1, 28);
+    let hour = deterministic_number(&format!("{key}:hour"), seed, 0, 23);
+    let minute = deterministic_number(&format!("{key}:minute"), seed, 0, 59);
+    let second = deterministic_number(&format!("{key}:second"), seed, 0, 59);
+
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
+}
+
+fn synthetic_mac_address(key: &str, seed: &str) -> String {
+    let octet_3 = deterministic_number(&format!("{key}:mac:3"), seed, 0, 255);
+    let octet_4 = deterministic_number(&format!("{key}:mac:4"), seed, 0, 255);
+    let octet_5 = deterministic_number(&format!("{key}:mac:5"), seed, 0, 255);
+    let octet_6 = deterministic_number(&format!("{key}:mac:6"), seed, 0, 255);
+
+    format!("02:00:{octet_3:02x}:{octet_4:02x}:{octet_5:02x}:{octet_6:02x}")
+}
+
+fn synthetic_sequence_number(
+    column: &ColumnMetadata,
+    role: ColumnRole,
+    row_index: usize,
+    seed: &str,
+    namespace: &str,
+    modulus: usize,
+) -> usize {
+    let column_key = synthetic_column_key(column, role, namespace);
+    let offset = deterministic_number(&column_key, seed, 0, modulus.saturating_sub(1) as i64);
+    ((offset as usize + row_index) % modulus) + 1
+}
+
+fn synthetic_value_key(
+    column: &ColumnMetadata,
+    role: ColumnRole,
+    row_index: usize,
+    namespace: &str,
+) -> String {
+    format!(
+        "{}:row={}",
+        synthetic_column_key(column, role, namespace),
+        row_index + 1
+    )
+}
+
+fn synthetic_column_key(column: &ColumnMetadata, role: ColumnRole, namespace: &str) -> String {
+    format!(
+        "synthetic:v2:{namespace}:role={}:type={}:column={}:name={}",
+        synthetic_role_key(role),
+        synthetic_data_type_key(column.detected_type),
+        column.index,
+        column.name
+    )
+}
+
+fn synthetic_role_key(role: ColumnRole) -> &'static str {
+    match role {
+        ColumnRole::Auto => "auto",
+        ColumnRole::DirectIdentifier => "direct-identifier",
+        ColumnRole::QuasiIdentifier => "quasi-identifier",
+        ColumnRole::Sensitive => "sensitive",
+        ColumnRole::Attribute => "attribute",
+        ColumnRole::Exclude => "exclude",
+    }
+}
+
+fn synthetic_data_type_key(data_type: DataType) -> &'static str {
+    match data_type {
+        DataType::Email => "email",
+        DataType::Uuid => "uuid",
+        DataType::Timestamp => "timestamp",
+        DataType::NumericId => "numeric-id",
+        DataType::NumericValue => "numeric-value",
+        DataType::PostalCode => "postal-code",
+        DataType::Address => "address",
+        DataType::IpAddress => "ip-address",
+        DataType::Url => "url",
+        DataType::MacAddress => "mac-address",
+        DataType::TaxId => "tax-id",
+        DataType::Boolean => "boolean",
+        DataType::Currency => "currency",
+        DataType::Percentage => "percentage",
+        DataType::CountryCode => "country-code",
+        DataType::Phone => "phone",
+        DataType::FirstName => "first-name",
+        DataType::LastName => "last-name",
+        DataType::FullName => "full-name",
+        DataType::Enum => "enum",
+        DataType::String => "string",
+        DataType::Unknown => "unknown",
     }
 }
 

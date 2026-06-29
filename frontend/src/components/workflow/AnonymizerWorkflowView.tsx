@@ -16,7 +16,7 @@ import { AppSettingsPanel } from '../AppSettingsPanel'
 import { Card } from '../Card'
 import { ColumnTable } from '../ColumnTable'
 import { PreviewTable } from '../PreviewTable'
-import { PrivacySettingsPanel } from '../PrivacySettingsPanel'
+import { PrivacyReleaseModeSelector, PrivacySettingsPanel } from '../PrivacySettingsPanel'
 import { ProcessingStatus } from '../ProcessingStatus'
 import { ResultDisplay } from '../ResultDisplay'
 import { SectionHelp } from '../SectionHelp'
@@ -119,7 +119,7 @@ function FileStep({ workflow }: { workflow: AnonymizerWorkflowState }) {
 
 function ColumnSelectionStep({ workflow }: { workflow: AnonymizerWorkflowState }) {
   const syntheticSelectionMessage =
-    'Synthetic data is selected globally and creates a complete replacement dataset, so every CSV column is included. Switch release mode to choose individual columns or row-level strategies.'
+    'Synthetic data creates a complete replacement dataset. Every CSV column is included; Type Override and Role control the generated values. Strategy is ignored.'
   const unselectedRiskColumns = workflow.syntheticSelectionLocked
     ? []
     : workflow.selectableColumns.filter(
@@ -136,10 +136,16 @@ function ColumnSelectionStep({ workflow }: { workflow: AnonymizerWorkflowState }
 
   return (
     <Card
-      title={workflow.syntheticSelectionLocked ? '2. Review Columns Included' : '2. Select Data to Transform'}
+      title="2. Release Mode and Columns"
       disabled={!workflow.hasFile}
     >
       <div className="columns-stack">
+        <PrivacyReleaseModeSelector
+          config={workflow.privacyConfig}
+          disabled={!workflow.hasColumns || workflow.isLoading}
+          onChange={workflow.updatePrivacyConfig}
+        />
+
         {workflow.syntheticSelectionLocked ? (
           <Alert icon={<Info aria-hidden="true" />}>{syntheticSelectionMessage}</Alert>
         ) : (
