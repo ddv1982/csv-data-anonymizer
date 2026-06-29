@@ -11,7 +11,7 @@ use csv_anonymizer_core::{
     AnonymizationStrategy, ColumnControl, HeadersData, PasteAnalyzeData, PasteAnalyzeParams,
     PastePreviewParams, PasteTransformData, PasteTransformParams, PreflightData, PreflightMode,
     PreflightParams, PreviewData, PreviewParams, PrivacyConfig, QuickGenerateParams,
-    QuickTransformData, SmartReplacementEntry, SmartReplacementProvider,
+    QuickTransformData, ReleaseMode, SmartReplacementEntry, SmartReplacementProvider,
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -167,10 +167,15 @@ pub async fn preflight_anonymization(
         let privacy_config = ledger
             .privacy_config_for_preflight(request.privacy_config)
             .map_err(|error| error.to_string())?;
-        let local_ai_required = request.controls.iter().any(|control| {
-            request.columns.contains(&control.column_index)
-                && control.strategy == AnonymizationStrategy::LocalAi
-        });
+        let release_mode = privacy_config
+            .as_ref()
+            .map(|config| config.release_mode)
+            .unwrap_or(ReleaseMode::Standard);
+        let local_ai_required = release_mode == ReleaseMode::Standard
+            && request.controls.iter().any(|control| {
+                request.columns.contains(&control.column_index)
+                    && control.strategy == AnonymizationStrategy::LocalAi
+            });
         let (local_ai_ready, local_ai_message) = if local_ai_required {
             match request.local_ai.clone() {
                 Some(local_ai) => match local_ai_status(local_ai) {

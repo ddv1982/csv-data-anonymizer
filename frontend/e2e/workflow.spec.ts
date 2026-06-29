@@ -29,6 +29,8 @@ test('covers disabled states, privacy scale warnings, and glossary help', async 
   await page.getByRole('button', { name: 'How privacy release works' }).click()
   const helpDialog = page.getByRole('dialog', { name: 'Privacy Release' })
   await expect(helpDialog).toBeVisible()
+  await expect(helpDialog).toContainText('Every CSV column is included')
+  await expect(helpDialog).toContainText('same schema, row count, roles, types, and seed')
 
   await helpDialog.getByRole('button', { name: 'k-anonymity', exact: true }).click()
   await expect(page.getByRole('tooltip')).toContainText('k-anonymity')
@@ -39,6 +41,25 @@ test('covers disabled states, privacy scale warnings, and glossary help', async 
 
   await page.keyboard.press('Escape')
   await expect(page.getByRole('dialog', { name: 'Privacy Release' })).toBeHidden()
+})
+
+test('keeps Synthetic data as a global release mode with all CSV columns included', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Browse for CSV file' }).click()
+
+  await expect(page.getByText('2 of 3 columns selected, 150,000 rows loaded')).toBeVisible()
+
+  await page.getByLabel('Privacy release mode').selectOption('syntheticData')
+
+  await expect(page.getByText(/Synthetic data is selected globally/)).toBeVisible()
+  await expect(page.getByText('3 of 3 columns selected, 150,000 rows loaded')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Deselect All' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Select High Detector Risk' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Select Detected Risk' })).toHaveCount(0)
+  await expect(page.getByRole('checkbox', { name: 'Column notes included in synthetic data' })).toBeDisabled()
+  await expect(page.getByLabel('Strategy for email')).toBeDisabled()
+  await expect(page.getByText(/Preview is disabled for Synthetic data/)).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Show Preview' })).toBeDisabled()
 })
 
 test('recovers from preview errors and cancels a running job', async ({ page }) => {

@@ -135,6 +135,130 @@ describe('useAnonymizerWorkflow', () => {
     )
   })
 
+  it('selects every column and prevents partial selection in synthetic data mode', async () => {
+    tauriMocks.analyzeCsv.mockResolvedValue(
+      analyzeResponseFixture({
+        columns: [
+          columnFixture(0, 'email', 'email', 'high'),
+          columnFixture(1, 'country', 'countryCode', 'medium'),
+          columnFixture(2, 'notes', 'string', 'low'),
+        ],
+      }),
+    )
+    const harness = renderWorkflow()
+    await flushPromises()
+
+    await act(async () => {
+      await harness.workflow.handlePickInput()
+    })
+
+    expect(harness.workflow.selectedColumns).toEqual([0, 1])
+
+    act(() => {
+      harness.workflow.updatePrivacyConfig({
+        ...privacyConfigFromSettings(defaultSettings),
+        releaseMode: 'syntheticData',
+      })
+    })
+
+    expect(harness.workflow.syntheticSelectionLocked).toBe(true)
+    expect(harness.workflow.selectedColumns).toEqual([0, 1, 2])
+
+    act(() => {
+      harness.workflow.setColumnSelection([0])
+    })
+    expect(harness.workflow.selectedColumns).toEqual([0, 1, 2])
+
+    act(() => {
+      harness.workflow.toggleColumn(harness.workflow.columns[1])
+    })
+    expect(harness.workflow.selectedColumns).toEqual([0, 1, 2])
+  })
+
+  it('does not run the standard preview path in synthetic data mode', async () => {
+    tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())
+    const harness = renderWorkflow()
+    await flushPromises()
+
+    await act(async () => {
+      await harness.workflow.handlePickInput()
+    })
+    act(() => {
+      harness.workflow.updatePrivacyConfig({
+        ...privacyConfigFromSettings(defaultSettings),
+        releaseMode: 'syntheticData',
+      })
+    })
+    await act(async () => {
+      await harness.workflow.previewCsv()
+    })
+
+    expect(harness.workflow.canPreview).toBe(false)
+    expect(tauriMocks.preflightAnonymization).not.toHaveBeenCalled()
+    expect(tauriMocks.previewAnonymization).not.toHaveBeenCalled()
+  })
+
+  it('ignores stale Smart replacement strategies when running synthetic data mode', async () => {
+    tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())
+    tauriMocks.startAnonymizeJob.mockResolvedValue(succeededJobStatus())
+    const harness = renderWorkflow()
+    await flushPromises()
+
+    await act(async () => {
+      await harness.workflow.handlePickInput()
+    })
+    act(() => {
+      harness.workflow.updateColumnType(harness.workflow.columns[1], 'string')
+      harness.workflow.updateColumnStrategy(harness.workflow.columns[1], 'localAi')
+    })
+
+    expect(harness.workflow.localAiSelected).toBe(true)
+    expect(harness.workflow.localAiBlocked).toBe(true)
+
+    act(() => {
+      harness.workflow.updatePrivacyConfig({
+        ...privacyConfigFromSettings(defaultSettings),
+        releaseMode: 'syntheticData',
+      })
+    })
+
+    expect(harness.workflow.localAiSelected).toBe(false)
+    expect(harness.workflow.localAiBlocked).toBe(false)
+
+    await act(async () => {
+      await harness.workflow.runAnonymization()
+    })
+
+    expect(tauriMocks.preflightAnonymization).toHaveBeenCalledWith(
+      'anonymize',
+      '/data/input.csv',
+      '/data/input_private_output.csv',
+      [0, 1],
+      [{ columnIndex: 1, typeOverride: 'string', strategy: 'auto' }],
+      false,
+      '',
+      false,
+      100,
+      expect.objectContaining({ releaseMode: 'syntheticData' }),
+      [],
+      { enabled: false, model: 'gemma3:4b' },
+    )
+    expect(tauriMocks.startAnonymizeJob).toHaveBeenCalledWith(
+      '/data/input.csv',
+      '/data/input_private_output.csv',
+      [0, 1],
+      [{ columnIndex: 1, typeOverride: 'string', strategy: 'auto' }],
+      false,
+      '',
+      false,
+      100,
+      2,
+      [],
+      expect.objectContaining({ releaseMode: 'syntheticData' }),
+      { enabled: false, model: 'gemma3:4b' },
+    )
+  })
+
   it('blocks DP aggregate output when repeatable replacements are enabled', async () => {
     tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())
     const harness = renderWorkflow()
@@ -308,13 +432,17 @@ function analyzeResponseFixture(overrides: Partial<ReturnType<typeof headersFixt
 function headersFixture(overrides: Partial<{
   rowCount: number
   rowCountIsComplete: boolean
+  columns: ColumnMetadata[]
 }> = {}) {
   return {
     filePath: '/data/input.csv',
     rowCount: overrides.rowCount ?? 2,
     rowCountIsComplete: overrides.rowCountIsComplete ?? true,
     defaultOutputPath: '/data/input_private_output.csv',
-    columns: [columnFixture(0, 'email', 'email', 'high'), columnFixture(1, 'country', 'countryCode', 'medium')],
+    columns: overrides.columns ?? [
+      columnFixture(0, 'email', 'email', 'high'),
+      columnFixture(1, 'country', 'countryCode', 'medium'),
+    ],
   }
 }
 

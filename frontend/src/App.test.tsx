@@ -307,6 +307,47 @@ describe('App input mode tabs', () => {
     expect(screen.getByRole('button', { name: /show preview/i })).toBeDisabled()
   })
 
+  it('treats Synthetic data as a global CSV release mode and locks column selection', async () => {
+    const user = userEvent.setup()
+    tauriMocks.pickInputCsv.mockResolvedValue('/data/input.csv')
+    tauriMocks.analyzeCsv.mockResolvedValue({
+      headers: {
+        filePath: '/data/input.csv',
+        rowCount: 3,
+        rowCountIsComplete: true,
+        defaultOutputPath: '/data/input_private_output.csv',
+        columns: [
+          columnFixture(0, 'email', 'email', 'high'),
+          columnFixture(1, 'country', 'countryCode', 'medium'),
+          columnFixture(2, 'notes', 'string', 'low'),
+        ],
+      },
+      selectedColumns: [0, 1],
+      suggestedOutputPath: '/data/input_private_output.csv',
+    })
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: /browse for csv file/i }))
+    expect(await screen.findByText('2 of 3 columns selected, 3 rows loaded')).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Strategy for email'), 'localAi')
+    expect(screen.getByText(/Set up Local AI before previewing or creating output/)).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Privacy release mode'), 'syntheticData')
+
+    expect(screen.getByText(/Synthetic data is selected globally/)).toBeInTheDocument()
+    expect(screen.getByText('3 of 3 columns selected, 3 rows loaded')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /deselect all/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /select high detector risk/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /select detected risk/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: /column notes included in synthetic data/i })).toBeDisabled()
+    expect(screen.getByLabelText('Strategy for email')).toBeDisabled()
+    expect(screen.getByLabelText('Strategy for email')).toHaveValue('auto')
+    expect(screen.queryByText(/Set up Local AI before previewing or creating output/)).not.toBeInTheDocument()
+    expect(screen.getByText(/Preview is disabled for Synthetic data/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /show preview/i })).toBeDisabled()
+  })
+
   it('generates quick values without requiring input or field detection', async () => {
     const user = userEvent.setup()
     tauriMocks.generateQuickValues.mockResolvedValue({

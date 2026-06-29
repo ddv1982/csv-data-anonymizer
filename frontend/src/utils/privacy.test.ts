@@ -164,6 +164,8 @@ describe('getPrivacyConfigValidation', () => {
     ).toMatch(/does not provide a DP synthetic guarantee/)
     expect(getPrivacyConfigValidation({ ...defaultPrivacyConfig(), releaseMode: 'syntheticData' }, new Set([0]), 2).reason)
       .toMatch(/Select every CSV column/)
+    expect(getPrivacyConfigValidation({ ...defaultPrivacyConfig(), releaseMode: 'syntheticData' }, new Set([0, 1]), 2).valid)
+      .toBe(true)
   })
 })
 

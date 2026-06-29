@@ -177,6 +177,56 @@ fn preflight_blocks_local_ai_anonymize_when_preview_replacements_are_incomplete(
 }
 
 #[test]
+fn preflight_synthetic_release_ignores_smart_replacement_strategy_controls() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("synthetic-smart.csv");
+    let output_path = temp_dir.path().join("synthetic-smart-output.csv");
+    fs::write(&input_path, "name\nAlice Smith\nBob Stone\n").unwrap();
+
+    let result = service
+        .preflight_anonymization(PreflightParams {
+            file_path: input_path,
+            mode: PreflightMode::Anonymize,
+            output_path: Some(output_path),
+            columns: vec![0],
+            controls: vec![ColumnControl {
+                column_index: 0,
+                type_override: Some(DataType::FullName),
+                strategy: AnonymizationStrategy::LocalAi,
+            }],
+            deterministic: false,
+            seed: String::new(),
+            force: false,
+            sample_row_count: 10,
+            privacy_config: Some(PrivacyConfig {
+                release_mode: ReleaseMode::SyntheticData,
+                synthetic: SyntheticDataConfig::default(),
+                ..PrivacyConfig::default()
+            }),
+            preview_smart_replacements: vec![],
+            local_ai_ready: false,
+            local_ai_message: Some("Local AI is unavailable.".to_string()),
+        })
+        .unwrap();
+
+    assert!(
+        !result
+            .readiness
+            .blockers
+            .iter()
+            .any(|item| item.contains("Local AI"))
+    );
+    assert!(
+        result
+            .readiness
+            .verified_items
+            .iter()
+            .any(|item| item.contains("ignores row-level Strategy controls"))
+    );
+}
+
+#[test]
 fn preflight_blocks_invalid_dp_budget_config() {
     let service = AnonymizerService::new("test-version");
     let temp_dir = tempfile::tempdir().unwrap();
