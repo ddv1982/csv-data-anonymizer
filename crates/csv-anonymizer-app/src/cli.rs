@@ -18,8 +18,6 @@ pub(crate) enum CliAction {
         input: PathBuf,
         output: PathBuf,
         columns: Vec<usize>,
-        deterministic: bool,
-        seed: String,
         force: bool,
     },
 }
@@ -68,8 +66,6 @@ fn parse_anonymize_args(args: &[OsString]) -> Result<CliAction, String> {
     let mut input = None;
     let mut output = None;
     let mut columns = None;
-    let mut deterministic = false;
-    let mut seed = String::new();
     let mut force = false;
     let mut index = 0;
 
@@ -92,31 +88,16 @@ fn parse_anonymize_args(args: &[OsString]) -> Result<CliAction, String> {
                     .to_string_lossy();
                 columns = Some(parse_columns(&value)?);
             }
-            "--deterministic" => deterministic = true,
-            "--seed" => {
-                index += 1;
-                seed = args
-                    .get(index)
-                    .ok_or_else(|| "--seed requires a value".to_string())?
-                    .to_string_lossy()
-                    .to_string();
-            }
             "--force" => force = true,
             _ => return Err(format!("unknown anonymize option '{flag}'")),
         }
         index += 1;
     }
 
-    if deterministic && seed.trim().is_empty() {
-        return Err("--deterministic requires a non-empty --seed".to_string());
-    }
-
     Ok(CliAction::Anonymize {
         input: input.ok_or_else(|| "anonymize requires --input".to_string())?,
         output: output.ok_or_else(|| "anonymize requires --output".to_string())?,
         columns: columns.ok_or_else(|| "anonymize requires --columns".to_string())?,
-        deterministic,
-        seed,
         force,
     })
 }
@@ -180,8 +161,6 @@ pub(crate) fn run_cli(action: CliAction) -> Result<(), String> {
                     file_path: input.clone(),
                     columns: columns.clone(),
                     controls: vec![],
-                    deterministic: true,
-                    seed: "csv-anonymizer-smoke".to_string(),
                     sample_count: 2,
                 })
                 .map_err(|error| error.to_string())?;
@@ -195,8 +174,6 @@ pub(crate) fn run_cli(action: CliAction) -> Result<(), String> {
                     output_path: output,
                     columns,
                     controls: vec![],
-                    deterministic: true,
-                    seed: "csv-anonymizer-smoke".to_string(),
                     force: true,
                     preview_smart_replacements: preview.smart_replacements,
                 })
@@ -213,8 +190,6 @@ pub(crate) fn run_cli(action: CliAction) -> Result<(), String> {
             input,
             output,
             columns,
-            deterministic,
-            seed,
             force,
         } => {
             let result = service
@@ -223,8 +198,6 @@ pub(crate) fn run_cli(action: CliAction) -> Result<(), String> {
                     output_path: output,
                     columns,
                     controls: vec![],
-                    deterministic,
-                    seed,
                     force,
                     preview_smart_replacements: vec![],
                 })
@@ -252,7 +225,7 @@ fn help_text() -> String {
 Usage:
   csv-anonymizer
   csv-anonymizer analyze <input.csv>
-  csv-anonymizer anonymize --input <input.csv> --output <output.csv> --columns <0,1> [--deterministic --seed <seed>] [--force]
+  csv-anonymizer anonymize --input <input.csv> --output <output.csv> --columns <0,1> [--force]
   csv-anonymizer --smoke-anonymize <input.csv> <output.csv>
 
 Options:
@@ -260,8 +233,7 @@ Options:
   --version, -V    Print the application version.
 
 Anonymize options:
-  --deterministic  Use repeatable replacements; requires a non-empty --seed.
-  --seed <seed>    Private seed used with --deterministic.",
+  --force          Overwrite the output file if it already exists.",
         version = env!("CARGO_PKG_VERSION")
     )
 }
@@ -304,9 +276,6 @@ mod tests {
                 "output.csv",
                 "--columns",
                 "1,3",
-                "--deterministic",
-                "--seed",
-                "stable",
                 "--force",
             ]))
             .unwrap(),
@@ -314,8 +283,6 @@ mod tests {
                 input: PathBuf::from("input.csv"),
                 output: PathBuf::from("output.csv"),
                 columns: vec![1, 3],
-                deterministic: true,
-                seed: "stable".to_string(),
                 force: true,
             }
         );
@@ -337,7 +304,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_deterministic_without_seed() {
+    fn rejects_removed_deterministic_flag() {
         let error = parse_cli_args(os_args(&[
             "anonymize",
             "--input",
@@ -350,11 +317,11 @@ mod tests {
         ]))
         .unwrap_err();
 
-        assert!(error.contains("--deterministic requires a non-empty --seed"));
+        assert!(error.contains("unknown anonymize option '--deterministic'"));
     }
 
     #[test]
-    fn rejects_deterministic_blank_seed() {
+    fn rejects_removed_seed_flag() {
         let error = parse_cli_args(os_args(&[
             "anonymize",
             "--input",
@@ -363,20 +330,19 @@ mod tests {
             "output.csv",
             "--columns",
             "1",
-            "--deterministic",
             "--seed",
             " ",
         ]))
         .unwrap_err();
 
-        assert!(error.contains("--deterministic requires a non-empty --seed"));
+        assert!(error.contains("unknown anonymize option '--seed'"));
     }
 
     #[test]
-    fn help_documents_deterministic_seed_requirement() {
+    fn help_omits_removed_seed_options() {
         let help = help_text();
 
-        assert!(help.contains("[--deterministic --seed <seed>]"));
-        assert!(help.contains("requires a non-empty --seed"));
+        assert!(!help.contains("--deterministic"));
+        assert!(!help.contains("--seed"));
     }
 }

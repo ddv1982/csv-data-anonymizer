@@ -2,7 +2,7 @@ use crate::local_ai::DEFAULT_OLLAMA_MODEL;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-pub(super) const SETTINGS_SCHEMA_VERSION: u32 = 9;
+pub(super) const SETTINGS_SCHEMA_VERSION: u32 = 10;
 pub(super) const DEFAULT_OUTPUT_SUFFIX: &str = "_private_output";
 pub(super) const LEGACY_OUTPUT_SUFFIX: &str = "_anonymized";
 
@@ -21,8 +21,6 @@ pub struct AppSettings {
     pub schema_version: u32,
     #[serde(default)]
     pub theme_mode: ThemeMode,
-    pub deterministic_default: bool,
-    pub seed: String,
     pub overwrite_output: bool,
     pub sample_row_count: usize,
     pub preview_sample_count: usize,
@@ -41,8 +39,6 @@ impl Default for AppSettings {
         Self {
             schema_version: SETTINGS_SCHEMA_VERSION,
             theme_mode: ThemeMode::System,
-            deterministic_default: false,
-            seed: String::new(),
             overwrite_output: false,
             sample_row_count: 100,
             preview_sample_count: 5,
@@ -58,12 +54,10 @@ impl Default for AppSettings {
 
 pub fn sanitize_settings(settings: &mut AppSettings) {
     sanitize_common_settings(settings);
-    settings.seed.clear();
 }
 
 pub fn sanitize_persistent_settings(settings: &mut AppSettings) {
     sanitize_common_settings(settings);
-    settings.seed.clear();
 }
 
 pub fn sanitize_session_settings(settings: &mut AppSettings) {

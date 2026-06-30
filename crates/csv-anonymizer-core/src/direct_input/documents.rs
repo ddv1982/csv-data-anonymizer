@@ -39,8 +39,6 @@ pub(super) fn preview_value_document_with_smart_provider(
             columns: &input.columns,
             controls: &input.controls,
             sample_count,
-            deterministic: input.deterministic,
-            seed: &input.seed,
             provider,
         },
     )
@@ -80,11 +78,7 @@ fn transform_value_document(
     let smart_replacements =
         prepare_value_smart_replacements(&value, format, &metadata, &input, provider)?;
     let start_time = Instant::now();
-    let mut state = transform_state_for_smart_replacements(
-        input.deterministic,
-        &input.seed,
-        smart_replacements,
-    );
+    let mut state = transform_state_for_smart_replacements(smart_replacements);
     let mut row_indices = HashMap::new();
 
     let mut context = ValueTransformContext {
@@ -92,8 +86,6 @@ fn transform_value_document(
         selected_by_path: &selected_by_path,
         row_indices: &mut row_indices,
         state: &mut state,
-        seed: &input.seed,
-        deterministic: input.deterministic,
     };
 
     transform_json_value(&mut value, &mut Vec::new(), &mut context);
@@ -104,7 +96,7 @@ fn transform_value_document(
         row_count,
         columns_anonymized: count_transforming_selected_columns(&metadata),
         duration_ms: start_time.elapsed().as_millis(),
-        privacy_report: build_privacy_report(&metadata, state.report(), input.deterministic),
+        privacy_report: build_privacy_report(&metadata, state.report()),
     };
 
     Ok((value, result))
@@ -124,8 +116,6 @@ fn prepare_value_smart_replacements(
     prepare_smart_replacements_from_rows(
         &rows,
         metadata,
-        input.deterministic,
-        &input.seed,
         existing_smart_replacements.as_ref(),
         provider,
     )
@@ -190,8 +180,6 @@ fn transform_json_value(
                 column_name: &column.name,
                 column_index: column.index,
                 row_index,
-                seed: context.seed,
-                deterministic: context.deterministic,
                 empty_format: column.empty_format,
             };
             let anonymized =
@@ -206,8 +194,6 @@ struct ValueTransformContext<'a> {
     selected_by_path: &'a HashMap<String, ColumnMetadata>,
     row_indices: &'a mut HashMap<String, usize>,
     state: &'a mut TransformState,
-    seed: &'a str,
-    deterministic: bool,
 }
 
 pub(super) fn parse_json(content: &str) -> Result<Value> {

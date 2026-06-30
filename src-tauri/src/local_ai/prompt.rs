@@ -29,12 +29,3 @@ pub(super) fn replacement_schema() -> Value {
         "required": ["replacements"]
     })
 }
-
-pub(super) fn stable_seed(seed: &str, column_index: usize) -> u64 {
-    let mut hash = 14_695_981_039_346_656_037_u64;
-    for byte in format!("{seed}:{column_index}").bytes() {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(1_099_511_628_211);
-    }
-    hash & 0x7fff_ffff
-}

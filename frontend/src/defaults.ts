@@ -1,10 +1,8 @@
 import type { AppSettings } from './types'
 
 export const defaultSettings: AppSettings = {
-  schemaVersion: 9,
+  schemaVersion: 10,
   themeMode: 'system',
-  deterministicDefault: false,
-  seed: '',
   overwriteOutput: false,
   sampleRowCount: 100,
   previewSampleCount: 5,

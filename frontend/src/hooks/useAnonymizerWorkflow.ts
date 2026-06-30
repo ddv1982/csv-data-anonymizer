@@ -124,12 +124,7 @@ export function useAnonymizerWorkflow() {
     if (!settingsLoaded) return
 
     const nextSettings = { ...latestSettingsRef.current, [key]: value }
-    if (key === 'deterministicDefault' && value === false) {
-      nextSettings.seed = ''
-    }
     if (
-      key === 'deterministicDefault' ||
-      key === 'seed' ||
       key === 'previewSampleCount' ||
       key === 'localAiEnabled' ||
       key === 'localAiModel'

@@ -43,8 +43,6 @@ pub(super) fn preview_csv_text_with_smart_provider(
             columns: &input.columns,
             controls: &input.controls,
             sample_count,
-            deterministic: input.deterministic,
-            seed: &input.seed,
             provider,
         },
     )
@@ -61,8 +59,6 @@ pub(super) fn transform_csv_text_with_smart_provider(
     let smart_replacements = prepare_smart_replacements_from_rows(
         &rows,
         &metadata,
-        input.deterministic,
-        &input.seed,
         existing_smart_replacements.as_ref(),
         provider,
     )?;
@@ -74,8 +70,6 @@ pub(super) fn transform_csv_text_with_smart_provider(
         &input.content,
         &metadata,
         ProcessOptions {
-            deterministic: input.deterministic,
-            seed: &input.seed,
             smart_replacements: smart_replacements.as_ref(),
         },
     )?;
@@ -85,10 +79,6 @@ pub(super) fn transform_csv_text_with_smart_provider(
         row_count: result.row_count,
         columns_anonymized: count_transforming_selected_columns(&metadata),
         duration_ms: start_time.elapsed().as_millis(),
-        privacy_report: build_privacy_report(
-            &metadata,
-            result.transform_report,
-            input.deterministic,
-        ),
+        privacy_report: build_privacy_report(&metadata, result.transform_report),
     })
 }

@@ -1,4 +1,3 @@
-use crate::hash::{deterministic_number, deterministic_string};
 use crate::smart::SmartReplacementMap;
 use crate::types::TransformReport;
 use rand::Rng;
@@ -8,38 +7,24 @@ const GENERATED_ATTEMPT_LIMIT: usize = 512;
 pub(super) const TOKEN_CHARSET: &str = "abcdefghijklmnopqrstuvwxyz0123456789";
 pub(super) const LETTER_CHARSET: &str = "abcdefghijklmnopqrstuvwxyz";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct TransformState {
-    deterministic: bool,
-    seed: String,
     mappers: HashMap<PseudonymDomain, PseudonymMapper>,
     smart_replacements: SmartReplacementMap,
     report: TransformReport,
 }
 
 impl TransformState {
-    pub fn new(deterministic: bool, seed: impl Into<String>) -> Self {
-        Self {
-            deterministic,
-            seed: seed.into(),
-            mappers: HashMap::new(),
-            smart_replacements: SmartReplacementMap::default(),
-            report: TransformReport::default(),
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    pub fn with_smart_replacements(
-        deterministic: bool,
-        seed: impl Into<String>,
-        smart_replacements: SmartReplacementMap,
-    ) -> Self {
+    pub fn with_smart_replacements(smart_replacements: SmartReplacementMap) -> Self {
         let smart_replacement_values = smart_replacements.len();
         let smart_replacement_requests = smart_replacements.requested_values();
         let smart_replacement_rejections = smart_replacements.rejected_values();
         let smart_replacement_rejection_reasons = smart_replacements.rejection_reasons();
         Self {
-            deterministic,
-            seed: seed.into(),
             mappers: HashMap::new(),
             smart_replacements,
             report: TransformReport {
@@ -78,16 +63,7 @@ impl TransformState {
             return existing;
         }
 
-        let start_index = if self.deterministic {
-            deterministic_number(
-                &source_key,
-                &format!("{}:{}:pool", self.seed, domain.seed_key()),
-                0,
-                candidates.len() as i64 - 1,
-            ) as usize
-        } else {
-            rand::thread_rng().gen_range(0..candidates.len())
-        };
+        let start_index = rand::thread_rng().gen_range(0..candidates.len());
         let mut collided = false;
 
         for offset in 0..candidates.len() {
@@ -109,8 +85,7 @@ impl TransformState {
         self.report.exhausted_pseudonym_pools += 1;
         for attempt in 0..GENERATED_ATTEMPT_LIMIT {
             let base = candidates[(start_index + attempt) % candidates.len()];
-            let suffix =
-                generated_name_suffix(&source_key, &self.seed, domain, attempt, self.deterministic);
+            let suffix = generated_name_suffix();
             let candidate = format!("{base}{suffix}");
             if excluded_tokens
                 .iter()
@@ -123,17 +98,7 @@ impl TransformState {
             }
         }
 
-        let fallback = format!(
-            "{}{}",
-            candidates[start_index],
-            generated_name_suffix(
-                &source_key,
-                &self.seed,
-                domain,
-                GENERATED_ATTEMPT_LIMIT,
-                self.deterministic,
-            )
-        );
+        let fallback = format!("{}{}", candidates[start_index], generated_name_suffix());
         self.register_exhausted_assignment(domain, &source_key, fallback)
     }
 
@@ -259,23 +224,6 @@ pub(super) enum PseudonymDomain {
     OpaqueToken,
 }
 
-impl PseudonymDomain {
-    fn seed_key(self) -> &'static str {
-        match self {
-            PseudonymDomain::EmailLocal => "email-local",
-            PseudonymDomain::Uuid => "uuid",
-            PseudonymDomain::Timestamp => "timestamp",
-            PseudonymDomain::NumericId => "numeric-id",
-            PseudonymDomain::NumericValue => "numeric-value",
-            PseudonymDomain::Phone => "phone",
-            PseudonymDomain::FirstName => "first-name",
-            PseudonymDomain::LastName => "last-name",
-            PseudonymDomain::GenericString => "generic-string",
-            PseudonymDomain::OpaqueToken => "opaque-token",
-        }
-    }
-}
-
 pub(super) fn normalized_identity(value: &str) -> String {
     value.trim().to_ascii_lowercase()
 }
@@ -291,21 +239,6 @@ pub(super) fn random_string(length: usize, charset: &str) -> String {
         .collect()
 }
 
-fn generated_name_suffix(
-    source_key: &str,
-    seed: &str,
-    domain: PseudonymDomain,
-    attempt: usize,
-    deterministic: bool,
-) -> String {
-    if deterministic {
-        deterministic_string(
-            source_key,
-            &format!("{seed}:{}:fallback:{attempt}", domain.seed_key()),
-            4,
-            LETTER_CHARSET,
-        )
-    } else {
-        random_string(4, LETTER_CHARSET)
-    }
+fn generated_name_suffix() -> String {
+    random_string(4, LETTER_CHARSET)
 }

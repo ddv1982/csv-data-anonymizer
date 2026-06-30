@@ -99,9 +99,7 @@ export function usePersistentSettings({ onError, onAcceptedSettings }: Persisten
   async function refreshSettings() {
     try {
       const loaded = await loadSettings()
-      const current = latestSettingsRef.current
-      const seed = current.deterministicDefault && loaded.deterministicDefault ? current.seed : ''
-      applyAuthoritativeSettings({ ...loaded, seed })
+      applyAuthoritativeSettings(loaded)
     } catch (caught) {
       callbacksRef.current.onError(messageFrom(caught))
     }

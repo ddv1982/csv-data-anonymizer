@@ -9,7 +9,6 @@ use crate::types::{
     PasteTransformParams, PiiRisk, PreviewData, PrivacyFindingKind,
 };
 
-const SEED: &str = "seed";
 const SCALAR_WARNING: &str = "may change scalar value types";
 
 fn analyze(content: &str, format: PasteDataFormat) -> PasteAnalyzeData {
@@ -40,8 +39,6 @@ fn preview(
         format,
         columns,
         controls,
-        deterministic: true,
-        seed: SEED.to_string(),
         sample_count: 3,
     })
     .unwrap()
@@ -58,8 +55,6 @@ fn transform(
         format,
         columns,
         controls,
-        deterministic: true,
-        seed: SEED.to_string(),
         preview_smart_replacements: Vec::new(),
     })
     .unwrap()

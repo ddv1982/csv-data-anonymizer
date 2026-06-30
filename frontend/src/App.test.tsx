@@ -313,8 +313,6 @@ describe('App input mode tabs', () => {
       'json',
       [0],
       [],
-      false,
-      '',
       [{ columnIndex: 0, original: 'ada@example.com', replacement: 'masked@example.com' }],
       { enabled: false, model: 'gemma3:4b' },
     )
@@ -378,7 +376,7 @@ describe('App input mode tabs', () => {
     await user.click(screen.getByRole('tab', { name: /quick by data type/i }))
     await user.click(screen.getByRole('button', { name: /generate values/i }))
 
-    expect(tauriMocks.generateQuickValues).toHaveBeenCalledWith('email', 'auto', 1, false, '', {
+    expect(tauriMocks.generateQuickValues).toHaveBeenCalledWith('email', 'auto', 1, {
       enabled: false,
       model: 'gemma3:4b',
     })

@@ -127,8 +127,6 @@ describe('useAnonymizerWorkflow', () => {
       '/data/input.csv',
       [0, 1],
       [{ columnIndex: 1, typeOverride: null, strategy: 'mask' }],
-      false,
-      '',
       5,
       { enabled: false, model: 'gemma3:4b' },
     )
@@ -154,8 +152,6 @@ describe('useAnonymizerWorkflow', () => {
       '/data/input_private_output.csv',
       [0, 1],
       [],
-      false,
-      '',
       false,
       100,
       2,

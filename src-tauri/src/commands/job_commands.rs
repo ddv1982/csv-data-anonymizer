@@ -16,8 +16,6 @@ pub struct StartAnonymizeJobRequest {
     pub columns: Vec<usize>,
     #[serde(default)]
     pub controls: Vec<ColumnControl>,
-    pub deterministic: bool,
-    pub seed: String,
     pub force: bool,
     pub sample_row_count: usize,
     pub total_row_count: Option<usize>,
@@ -49,8 +47,6 @@ pub async fn start_anonymize_job(
                     output_path,
                     columns: request.columns,
                     controls: request.controls,
-                    deterministic: request.deterministic,
-                    seed: request.seed,
                     force: request.force,
                     preview_smart_replacements: request.preview_smart_replacements,
                 },

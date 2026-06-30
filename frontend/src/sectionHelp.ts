@@ -77,9 +77,9 @@ export const sectionHelp = {
         ],
       },
       {
-        label: 'Run and seed',
+        label: 'Run behavior',
         text: [
-          'Show Preview samples selected columns without writing a file. Create protected CSV writes the output. Repeatable seeds are session-only and are not saved to settings or the system keychain.',
+          'Show Preview samples selected columns without writing a file. Create protected CSV writes the output. Repeated source values reuse replacements within the current run.',
         ],
       },
     ],
@@ -163,13 +163,9 @@ export const sectionHelp = {
   appSettings: {
     title: 'App Settings',
     summary: [
-      'These settings control repeatability, output naming, preview size, and whether paths are remembered between runs.',
+      'These settings control output naming, preview size, and whether paths are remembered between runs.',
     ],
     points: [
-      {
-        label: 'Repeatable replacements',
-        text: 'Uses the configured seed so the same source values can receive the same replacements again. Treat the seed as sensitive.',
-      },
       {
         label: 'Samples',
         text: 'Sample rows affect detection and preview speed. More rows can improve detection but may make loading slower on large files.',
@@ -197,7 +193,7 @@ export const sectionHelp = {
       {
         label: 'What it does not prove',
         text: [
-          'Preview is a sample, not a complete privacy review. The final run can still report ',
+          'Preview is a sample, not a complete privacy review. Rule-based preview replacements are examples; the final run generates its own replacements while keeping repeated source values consistent inside that run. Smart replacement preview values are reused when available. The final run can still report ',
           { text: 'model', term: 'model' },
           ' failures, ',
           { text: 'fallbacks', term: 'fallback' },

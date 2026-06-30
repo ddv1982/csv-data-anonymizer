@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { dataTypes, quickGenerateStrategies, strategyLabel } from '../dataOptions'
 import { generateQuickValues } from '../tauri'
 import { useCopyOutput } from '../hooks/useCopyOutput'
-import type { AnonymizationStrategy, AppSettings, DataType, QuickTransformData } from '../types'
+import type { AnonymizationStrategy, DataType, QuickTransformData } from '../types'
 import type { LocalAiState } from '../hooks/useLocalAi'
 import { messageFrom } from '../utils/errors'
 import { formatToken } from '../utils/format'
@@ -16,13 +16,11 @@ const MIN_COUNT = 1
 const MAX_COUNT = 1000
 
 export function QuickDataTypeWorkflowView({
-  settings,
   settingsLoaded,
   localAi,
   onOpenLocalAiSettings,
   onError,
 }: {
-  settings: AppSettings
   settingsLoaded: boolean
   localAi: LocalAiState
   onOpenLocalAiSettings: () => void
@@ -54,8 +52,6 @@ export function QuickDataTypeWorkflowView({
         dataType,
         strategy,
         count,
-        settings.deterministicDefault,
-        settings.seed,
         localAi.request,
       )
       setResult(generated)

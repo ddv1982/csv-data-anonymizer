@@ -374,8 +374,6 @@ mod tests {
                     type_override: Some(DataType::FullName),
                     strategy: AnonymizationStrategy::LocalAi,
                 }],
-                deterministic: true,
-                seed: "smart-covered-seed".to_string(),
                 force: false,
                 preview_smart_replacements: vec![
                     SmartReplacementEntry {
@@ -423,8 +421,6 @@ mod tests {
                 output_path: output_path.clone(),
                 columns: vec![0],
                 controls: vec![],
-                deterministic: true,
-                seed: "standard-seed".to_string(),
                 force: false,
                 preview_smart_replacements: vec![],
             },
@@ -461,8 +457,6 @@ mod tests {
                 output_path: output_path.clone(),
                 columns: vec![0],
                 controls: vec![],
-                deterministic: true,
-                seed: "standard-preview-seed".to_string(),
                 force: false,
                 preview_smart_replacements: vec![SmartReplacementEntry {
                     column_index: 0,
@@ -503,8 +497,6 @@ mod tests {
                     type_override: Some(DataType::FullName),
                     strategy: AnonymizationStrategy::LocalAi,
                 }],
-                deterministic: true,
-                seed: "smart-missing-provider-seed".to_string(),
                 force: false,
                 preview_smart_replacements: vec![],
             },

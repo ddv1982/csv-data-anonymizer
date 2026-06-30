@@ -53,8 +53,6 @@ pub(super) fn preview_text_content_with_smart_provider(
             columns: &input.columns,
             controls: &input.controls,
             sample_count,
-            deterministic: input.deterministic,
-            seed: &input.seed,
             provider,
         },
     )
@@ -82,17 +80,11 @@ pub(super) fn transform_text_with_smart_provider(
     let smart_replacements = prepare_smart_replacements_from_rows(
         &smart_rows,
         &metadata,
-        input.deterministic,
-        &input.seed,
         existing_smart_replacements.as_ref(),
         provider,
     )?;
     let start_time = Instant::now();
-    let mut state = transform_state_for_smart_replacements(
-        input.deterministic,
-        &input.seed,
-        smart_replacements,
-    );
+    let mut state = transform_state_for_smart_replacements(smart_replacements);
     let mut row_indices = HashMap::new();
     let mut output = String::with_capacity(input.content.len());
     let mut last_end = 0;
@@ -105,8 +97,6 @@ pub(super) fn transform_text_with_smart_provider(
                 column_name: &column.name,
                 column_index: column.index,
                 row_index,
-                seed: &input.seed,
-                deterministic: input.deterministic,
                 empty_format: column.empty_format,
             };
             output.push_str(&transform_value_with_state(
@@ -127,7 +117,7 @@ pub(super) fn transform_text_with_smart_provider(
         row_count: analysis.row_count,
         columns_anonymized: count_transforming_selected_columns(&metadata),
         duration_ms: start_time.elapsed().as_millis(),
-        privacy_report: build_privacy_report(&metadata, state.report(), input.deterministic),
+        privacy_report: build_privacy_report(&metadata, state.report()),
     })
 }
 struct TextMatch<'a> {

@@ -67,8 +67,6 @@ export interface ColumnControl {
 export interface AppSettings {
   schemaVersion: number
   themeMode: ThemeMode
-  deterministicDefault: boolean
-  seed: string
   overwriteOutput: boolean
   sampleRowCount: number
   previewSampleCount: number
@@ -227,8 +225,6 @@ export interface PreflightParams {
   outputPath?: string | null
   columns: number[]
   controls: ColumnControl[]
-  deterministic: boolean
-  seed: string
   force: boolean
   sampleRowCount: number
   previewSmartReplacements: SmartReplacementEntry[]

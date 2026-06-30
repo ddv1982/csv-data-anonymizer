@@ -83,7 +83,7 @@ mod tests {
     use crate::settings::model::ThemeMode;
 
     #[test]
-    fn load_settings_defaults_theme_mode_and_clears_legacy_seed() {
+    fn load_settings_defaults_theme_mode_and_drops_legacy_seed_fields() {
         let temp_dir = tempfile::tempdir().unwrap();
         let settings_path = temp_dir.path().join("settings.json");
         fs::write(
@@ -110,45 +110,36 @@ mod tests {
 
         assert_eq!(settings.schema_version, SETTINGS_SCHEMA_VERSION);
         assert_eq!(settings.theme_mode, ThemeMode::System);
-        assert!(settings.deterministic_default);
-        assert!(settings.seed.is_empty());
+        assert_eq!(settings.sample_row_count, 250);
     }
 
     #[test]
-    fn save_settings_to_path_clears_seed_from_persisted_settings() {
+    fn save_settings_to_path_omits_legacy_seed_fields() {
         let temp_dir = tempfile::tempdir().unwrap();
         let settings_path = temp_dir.path().join("settings.json");
-        let settings = AppSettings {
-            deterministic_default: true,
-            seed: "session-only-seed".to_string(),
-            ..AppSettings::default()
-        };
+        let settings = AppSettings::default();
 
         save_settings_to_path(&settings_path, &settings).unwrap();
 
         let saved_content = fs::read_to_string(&settings_path).unwrap();
-        assert!(!saved_content.contains("session-only-seed"));
-        let loaded = load_settings_from_path(&settings_path).unwrap();
-        assert!(loaded.seed.is_empty());
+        assert!(!saved_content.contains("deterministicDefault"));
+        assert!(!saved_content.contains("seed"));
     }
 
     #[test]
-    fn settings_store_save_keeps_session_seed_but_writes_empty_seed() {
+    fn settings_store_save_round_trips_current_settings() {
         let temp_dir = tempfile::tempdir().unwrap();
         let settings_path = temp_dir.path().join("settings.json");
         let store = SettingsStore::new(settings_path.clone());
         let settings = AppSettings {
-            deterministic_default: true,
-            seed: "session-only-seed".to_string(),
+            preview_sample_count: 7,
             ..AppSettings::default()
         };
 
         let returned = store.save_settings(&settings).unwrap();
 
-        assert_eq!(returned.seed, "session-only-seed");
-        let saved_content = fs::read_to_string(&settings_path).unwrap();
-        assert!(!saved_content.contains("session-only-seed"));
+        assert_eq!(returned.preview_sample_count, 7);
         let loaded = store.load_settings().unwrap();
-        assert!(loaded.seed.is_empty());
+        assert_eq!(loaded.preview_sample_count, 7);
     }
 }

@@ -380,13 +380,6 @@
   gap: 1rem;
 }
 
-.seed-control-row {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 0.5rem;
-}
-
 .local-ai-panel {
   display: grid;
   gap: 0.875rem;

@@ -3,7 +3,7 @@ pub mod detection;
 pub mod direct_input;
 pub mod error;
 mod file_ops;
-pub mod hash;
+mod hash;
 pub mod metadata;
 mod preview;
 mod process_control;
