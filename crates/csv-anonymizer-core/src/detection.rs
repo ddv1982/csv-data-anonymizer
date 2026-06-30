@@ -1,608 +1,28 @@
 use crate::types::{
-    Confidence, DataType, DetectionResult, DetectionTrace, DetectionTraceItem, EmptyFormat,
-    PiiRisk, PrivacyEvidenceSummary, PrivacyFinding, PrivacyFindingKind,
+    Confidence, DataType, DetectionResult, DetectionTrace, DetectionTraceItem, EmptyFormat, PiiRisk,
 };
 use regex::Regex;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::OnceLock;
+use validators::{
+    is_dutch_btw_tax_number, is_email, is_formatted_phone_fallback, is_iban, is_phone, is_tax_id,
+    is_unformatted_tax_id, is_url, is_us_ein, is_us_ssn, is_valid_phone_number, is_vat_id,
+};
 
 mod header;
-
-#[derive(Debug, Clone, Copy)]
-pub struct PrivacySpan<'a> {
-    pub field_name: &'static str,
-    pub kind: PrivacyFindingKind,
-    pub data_type: DataType,
-    pub start: usize,
-    pub end: usize,
-    pub value: &'a str,
-    pub confidence: Confidence,
-    pub score: u8,
-    pub detector: &'static str,
-    pub reason: &'static str,
-    pub priority: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ColumnPrivacyAnalysis {
-    pub findings: Vec<PrivacyFinding>,
-    pub evidence: Vec<PrivacyEvidenceSummary>,
-    pub suggested_data_type: Option<DataType>,
-    pub pii_risk: PiiRisk,
-}
+mod privacy;
+mod spans;
+mod validators;
+pub use privacy::{ColumnPrivacyAnalysis, analyze_column_privacy, max_pii_risk};
+pub use spans::{PrivacySpan, collect_privacy_spans};
+#[cfg(test)]
+use validators::is_payment_card_number;
 
 pub fn is_empty_value(value: &str) -> bool {
     value.is_empty() || value.eq_ignore_ascii_case("null")
 }
 
-pub fn collect_privacy_spans(content: &str) -> Vec<PrivacySpan<'_>> {
-    let mut candidates = Vec::new();
-    push_secret_spans(content, &mut candidates);
-    push_account_number_spans(content, &mut candidates);
-    push_pattern_spans(
-        content,
-        &mut candidates,
-        SpanSpec {
-            field_name: "email",
-            kind: PrivacyFindingKind::Contact,
-            data_type: DataType::Email,
-            regex: inline_email_pattern(),
-            confidence: Confidence::High,
-            score: 96,
-            detector: "pattern:email",
-            reason: "Email address pattern.",
-            priority: 20,
-        },
-    );
-    push_pattern_spans(
-        content,
-        &mut candidates,
-        SpanSpec {
-            field_name: "url",
-            kind: PrivacyFindingKind::Url,
-            data_type: DataType::Url,
-            regex: inline_url_pattern(),
-            confidence: Confidence::Medium,
-            score: 78,
-            detector: "pattern:url",
-            reason: "URL pattern.",
-            priority: 30,
-        },
-    );
-    push_pattern_spans(
-        content,
-        &mut candidates,
-        SpanSpec {
-            field_name: "uuid",
-            kind: PrivacyFindingKind::NetworkOrDeviceId,
-            data_type: DataType::Uuid,
-            regex: inline_uuid_pattern(),
-            confidence: Confidence::Medium,
-            score: 76,
-            detector: "pattern:uuid",
-            reason: "UUID-like identifier pattern.",
-            priority: 40,
-        },
-    );
-    push_pattern_spans(
-        content,
-        &mut candidates,
-        SpanSpec {
-            field_name: "date",
-            kind: PrivacyFindingKind::PrivateDate,
-            data_type: DataType::Timestamp,
-            regex: inline_timestamp_pattern(),
-            confidence: Confidence::Low,
-            score: 54,
-            detector: "pattern:date",
-            reason: "Date or timestamp pattern; review context before treating it as private.",
-            priority: 50,
-        },
-    );
-    push_pattern_spans(
-        content,
-        &mut candidates,
-        SpanSpec {
-            field_name: "ipAddress",
-            kind: PrivacyFindingKind::NetworkOrDeviceId,
-            data_type: DataType::IpAddress,
-            regex: inline_ip_address_pattern(),
-            confidence: Confidence::Medium,
-            score: 78,
-            detector: "pattern:ip",
-            reason: "IPv4 address pattern.",
-            priority: 60,
-        },
-    );
-    push_pattern_spans(
-        content,
-        &mut candidates,
-        SpanSpec {
-            field_name: "macAddress",
-            kind: PrivacyFindingKind::NetworkOrDeviceId,
-            data_type: DataType::MacAddress,
-            regex: inline_mac_address_pattern(),
-            confidence: Confidence::Medium,
-            score: 76,
-            detector: "pattern:mac",
-            reason: "MAC address pattern.",
-            priority: 70,
-        },
-    );
-    push_pattern_spans(
-        content,
-        &mut candidates,
-        SpanSpec {
-            field_name: "taxId",
-            kind: PrivacyFindingKind::GovernmentId,
-            data_type: DataType::TaxId,
-            regex: inline_tax_id_pattern(),
-            confidence: Confidence::High,
-            score: 94,
-            detector: "pattern:tax-id",
-            reason: "US SSN or EIN-shaped identifier pattern.",
-            priority: 80,
-        },
-    );
-    push_pattern_spans(
-        content,
-        &mut candidates,
-        SpanSpec {
-            field_name: "phone",
-            kind: PrivacyFindingKind::Contact,
-            data_type: DataType::Phone,
-            regex: inline_phone_pattern(),
-            confidence: Confidence::High,
-            score: 90,
-            detector: "pattern:phone",
-            reason: "Formatted phone number pattern.",
-            priority: 90,
-        },
-    );
-
-    candidates.sort_by(|left, right| {
-        left.start
-            .cmp(&right.start)
-            .then(left.priority.cmp(&right.priority))
-            .then((right.end - right.start).cmp(&(left.end - left.start)))
-    });
-
-    let mut selected = Vec::new();
-    let mut last_end = 0;
-    for candidate in candidates {
-        if candidate.start < last_end {
-            continue;
-        }
-        last_end = candidate.end;
-        selected.push(candidate);
-    }
-    selected
-}
-
-pub fn analyze_column_privacy(
-    column_name: &str,
-    _column_index: usize,
-    values: &[String],
-    detected_type: DataType,
-    detection_confidence: Confidence,
-) -> ColumnPrivacyAnalysis {
-    let mut findings = Vec::new();
-    for (row_index, value) in values.iter().enumerate() {
-        if is_empty_value(value) {
-            continue;
-        }
-        for span in collect_privacy_spans(value) {
-            findings.push(finding_from_span(row_index, &span, value));
-        }
-    }
-
-    add_full_cell_findings_from_detection(
-        &mut findings,
-        column_name,
-        values,
-        detected_type,
-        detection_confidence,
-    );
-    add_full_cell_findings_from_header(&mut findings, column_name, values);
-
-    let sample_count = values.iter().filter(|value| !is_empty_value(value)).count();
-    let evidence = summarize_privacy_findings(&findings, sample_count);
-    let suggested_data_type = evidence
-        .iter()
-        .max_by_key(|summary| summary.score)
-        .map(|summary| summary.data_type)
-        .filter(|data_type| {
-            matches!(
-                detected_type,
-                DataType::String | DataType::Unknown | DataType::Enum
-            ) && *data_type != DataType::String
-        });
-    let pii_risk = evidence
-        .iter()
-        .filter(|summary| summary.confidence != Confidence::Low)
-        .map(|summary| risk_for_privacy_kind(summary.kind))
-        .fold(PiiRisk::Low, max_pii_risk);
-
-    ColumnPrivacyAnalysis {
-        findings,
-        evidence,
-        suggested_data_type,
-        pii_risk,
-    }
-}
-
-struct SpanSpec {
-    field_name: &'static str,
-    kind: PrivacyFindingKind,
-    data_type: DataType,
-    regex: &'static Regex,
-    confidence: Confidence,
-    score: u8,
-    detector: &'static str,
-    reason: &'static str,
-    priority: usize,
-}
-
-struct FullCellFindingSpec {
-    kind: PrivacyFindingKind,
-    data_type: DataType,
-    confidence: Confidence,
-    score: u8,
-    detector: &'static str,
-    reason: &'static str,
-}
-
-fn push_pattern_spans<'a>(content: &'a str, candidates: &mut Vec<PrivacySpan<'a>>, spec: SpanSpec) {
-    for regex_match in spec.regex.find_iter(content) {
-        candidates.push(PrivacySpan {
-            field_name: spec.field_name,
-            kind: spec.kind,
-            data_type: spec.data_type,
-            start: regex_match.start(),
-            end: regex_match.end(),
-            value: regex_match.as_str(),
-            confidence: spec.confidence,
-            score: spec.score,
-            detector: spec.detector,
-            reason: spec.reason,
-            priority: spec.priority,
-        });
-    }
-}
-
-fn push_secret_spans<'a>(content: &'a str, candidates: &mut Vec<PrivacySpan<'a>>) {
-    for captures in secret_assignment_pattern().captures_iter(content) {
-        if let Some(secret_value) = captures.get(1) {
-            candidates.push(PrivacySpan {
-                field_name: "secret",
-                kind: PrivacyFindingKind::CredentialOrSecret,
-                data_type: DataType::String,
-                start: secret_value.start(),
-                end: secret_value.end(),
-                value: secret_value.as_str(),
-                confidence: Confidence::High,
-                score: 98,
-                detector: "pattern:secret-assignment",
-                reason: "Credential or secret assignment pattern.",
-                priority: 0,
-            });
-        }
-    }
-
-    for captures in bearer_token_pattern().captures_iter(content) {
-        if let Some(secret_value) = captures.get(1) {
-            candidates.push(PrivacySpan {
-                field_name: "secret",
-                kind: PrivacyFindingKind::CredentialOrSecret,
-                data_type: DataType::String,
-                start: secret_value.start(),
-                end: secret_value.end(),
-                value: secret_value.as_str(),
-                confidence: Confidence::High,
-                score: 96,
-                detector: "pattern:bearer-token",
-                reason: "Bearer token pattern.",
-                priority: 1,
-            });
-        }
-    }
-
-    for regex_match in private_key_marker_pattern().find_iter(content) {
-        candidates.push(PrivacySpan {
-            field_name: "secret",
-            kind: PrivacyFindingKind::CredentialOrSecret,
-            data_type: DataType::String,
-            start: regex_match.start(),
-            end: regex_match.end(),
-            value: regex_match.as_str(),
-            confidence: Confidence::High,
-            score: 99,
-            detector: "pattern:private-key",
-            reason: "Private key marker pattern.",
-            priority: 2,
-        });
-    }
-}
-
-fn push_account_number_spans<'a>(content: &'a str, candidates: &mut Vec<PrivacySpan<'a>>) {
-    for regex_match in payment_card_candidate_pattern().find_iter(content) {
-        let digits = regex_match
-            .as_str()
-            .chars()
-            .filter(|character| character.is_ascii_digit())
-            .collect::<String>();
-        if digits.len() < 13 || digits.len() > 19 || !passes_luhn(&digits) {
-            continue;
-        }
-        candidates.push(PrivacySpan {
-            field_name: "accountNumber",
-            kind: PrivacyFindingKind::AccountOrFinancialId,
-            data_type: DataType::NumericId,
-            start: regex_match.start(),
-            end: regex_match.end(),
-            value: regex_match.as_str(),
-            confidence: Confidence::High,
-            score: 94,
-            detector: "validator:luhn",
-            reason: "Payment-card-shaped number with valid Luhn checksum.",
-            priority: 10,
-        });
-    }
-
-    for regex_match in iban_candidate_pattern().find_iter(content) {
-        candidates.push(PrivacySpan {
-            field_name: "accountNumber",
-            kind: PrivacyFindingKind::AccountOrFinancialId,
-            data_type: DataType::String,
-            start: regex_match.start(),
-            end: regex_match.end(),
-            value: regex_match.as_str(),
-            confidence: Confidence::Medium,
-            score: 74,
-            detector: "pattern:iban",
-            reason: "IBAN-shaped account identifier pattern.",
-            priority: 11,
-        });
-    }
-}
-
-fn finding_from_span(
-    row_index: usize,
-    span: &PrivacySpan<'_>,
-    sample_value: &str,
-) -> PrivacyFinding {
-    PrivacyFinding {
-        kind: span.kind,
-        data_type: span.data_type,
-        row_index,
-        start: utf16_index_for_byte(sample_value, span.start),
-        end: utf16_index_for_byte(sample_value, span.end),
-        match_value: span.value.to_string(),
-        sample_value: sample_value.to_string(),
-        confidence: span.confidence,
-        score: span.score,
-        detector: span.detector.to_string(),
-        reason: span.reason.to_string(),
-    }
-}
-
-fn add_full_cell_findings_from_detection(
-    findings: &mut Vec<PrivacyFinding>,
-    column_name: &str,
-    values: &[String],
-    detected_type: DataType,
-    detection_confidence: Confidence,
-) {
-    if detected_type == DataType::Timestamp
-        && (header::infer_private_date(column_name) || header::infer_user_event_date(column_name))
-    {
-        promote_findings(
-            findings,
-            PrivacyFindingKind::PrivateDate,
-            Confidence::Medium,
-            72,
-        );
-    }
-
-    let Some((kind, reason)) = detected_type_privacy_kind(detected_type) else {
-        return;
-    };
-    for (row_index, value) in values.iter().enumerate() {
-        if is_empty_value(value) || has_row_finding(findings, row_index, kind) {
-            continue;
-        }
-        findings.push(full_cell_finding(
-            row_index,
-            value,
-            FullCellFindingSpec {
-                kind,
-                data_type: detected_type,
-                confidence: detection_confidence,
-                score: score_for_confidence(detection_confidence),
-                detector: "detector:column-type",
-                reason,
-            },
-        ));
-    }
-}
-
-fn add_full_cell_findings_from_header(
-    findings: &mut Vec<PrivacyFinding>,
-    column_name: &str,
-    values: &[String],
-) {
-    let header = header::terms(column_name);
-    let header_signal = if header::infer_secret(&header) {
-        Some((
-            PrivacyFindingKind::CredentialOrSecret,
-            DataType::String,
-            Confidence::Medium,
-            82,
-            "header:secret",
-            "Header terms suggest a credential or secret value.",
-        ))
-    } else if header::infer_account_number(&header) {
-        Some((
-            PrivacyFindingKind::AccountOrFinancialId,
-            DataType::NumericId,
-            Confidence::Medium,
-            76,
-            "header:account",
-            "Header terms suggest an account or financial identifier.",
-        ))
-    } else if header::infer_private_date(column_name) {
-        Some((
-            PrivacyFindingKind::PrivateDate,
-            DataType::Timestamp,
-            Confidence::Medium,
-            70,
-            "header:private-date",
-            "Header terms suggest a private date.",
-        ))
-    } else if header::infer_user_event_date(column_name) {
-        Some((
-            PrivacyFindingKind::PrivateDate,
-            DataType::Timestamp,
-            Confidence::Medium,
-            68,
-            "header:user-event-date",
-            "Header terms suggest a user-linked timestamp.",
-        ))
-    } else if header::infer_account_identifier(&header) {
-        Some((
-            PrivacyFindingKind::AccountOrFinancialId,
-            DataType::String,
-            Confidence::Medium,
-            76,
-            "header:account-identifier",
-            "Header terms suggest an account or user identifier.",
-        ))
-    } else {
-        None
-    };
-
-    let Some((kind, data_type, confidence, score, detector, reason)) = header_signal else {
-        return;
-    };
-
-    for (row_index, value) in values.iter().enumerate() {
-        if is_empty_value(value)
-            || has_row_finding(findings, row_index, kind)
-            || !value_matches_header_signal(value, kind)
-        {
-            continue;
-        }
-        findings.push(full_cell_finding(
-            row_index,
-            value,
-            FullCellFindingSpec {
-                kind,
-                data_type,
-                confidence,
-                score,
-                detector,
-                reason,
-            },
-        ));
-    }
-}
-
-fn detected_type_privacy_kind(data_type: DataType) -> Option<(PrivacyFindingKind, &'static str)> {
-    data_type.privacy_finding_kind_and_reason()
-}
-
-fn full_cell_finding(row_index: usize, value: &str, spec: FullCellFindingSpec) -> PrivacyFinding {
-    PrivacyFinding {
-        kind: spec.kind,
-        data_type: spec.data_type,
-        row_index,
-        start: 0,
-        end: utf16_len(value),
-        match_value: value.to_string(),
-        sample_value: value.to_string(),
-        confidence: spec.confidence,
-        score: spec.score,
-        detector: spec.detector.to_string(),
-        reason: spec.reason.to_string(),
-    }
-}
-
-fn has_row_finding(
-    findings: &[PrivacyFinding],
-    row_index: usize,
-    kind: PrivacyFindingKind,
-) -> bool {
-    findings
-        .iter()
-        .any(|finding| finding.row_index == row_index && finding.kind == kind)
-}
-
-fn promote_findings(
-    findings: &mut [PrivacyFinding],
-    kind: PrivacyFindingKind,
-    confidence: Confidence,
-    score: u8,
-) {
-    for finding in findings.iter_mut().filter(|finding| finding.kind == kind) {
-        if confidence_rank(confidence) > confidence_rank(finding.confidence) {
-            finding.confidence = confidence;
-        }
-        finding.score = finding.score.max(score);
-    }
-}
-
-fn summarize_privacy_findings(
-    findings: &[PrivacyFinding],
-    sample_count: usize,
-) -> Vec<PrivacyEvidenceSummary> {
-    let mut summaries: HashMap<(PrivacyFindingKind, DataType), PrivacyEvidenceAccumulator> =
-        HashMap::new();
-    for finding in findings {
-        let entry = summaries
-            .entry((finding.kind, finding.data_type))
-            .or_insert_with(|| PrivacyEvidenceAccumulator {
-                summary: PrivacyEvidenceSummary {
-                    kind: finding.kind,
-                    data_type: finding.data_type,
-                    confidence: finding.confidence,
-                    match_count: 0,
-                    sample_count,
-                    score: finding.score,
-                    reason: finding.reason.clone(),
-                },
-                matched_rows: HashSet::new(),
-            });
-        entry.matched_rows.insert(finding.row_index);
-        entry.summary.match_count = entry.matched_rows.len();
-        if finding.score > entry.summary.score {
-            entry.summary.score = finding.score;
-            entry.summary.reason = finding.reason.clone();
-        }
-        if confidence_rank(finding.confidence) > confidence_rank(entry.summary.confidence) {
-            entry.summary.confidence = finding.confidence;
-        }
-    }
-
-    let mut ordered = summaries
-        .into_values()
-        .map(|accumulator| accumulator.summary)
-        .collect::<Vec<_>>();
-    ordered.sort_by(|left, right| {
-        right
-            .score
-            .cmp(&left.score)
-            .then(right.match_count.cmp(&left.match_count))
-            .then(format!("{:?}", left.kind).cmp(&format!("{:?}", right.kind)))
-    });
-    ordered
-}
-
-struct PrivacyEvidenceAccumulator {
-    summary: PrivacyEvidenceSummary,
-    matched_rows: HashSet<usize>,
-}
-
-fn utf16_index_for_byte(value: &str, byte_index: usize) -> usize {
+pub(super) fn utf16_index_for_byte(value: &str, byte_index: usize) -> usize {
     match value.get(..byte_index) {
         Some(prefix) => utf16_len(prefix),
         None => value
@@ -613,103 +33,8 @@ fn utf16_index_for_byte(value: &str, byte_index: usize) -> usize {
     }
 }
 
-fn utf16_len(value: &str) -> usize {
+pub(super) fn utf16_len(value: &str) -> usize {
     value.encode_utf16().count()
-}
-
-fn score_for_confidence(confidence: Confidence) -> u8 {
-    match confidence {
-        Confidence::High => 88,
-        Confidence::Medium => 72,
-        Confidence::Low => 54,
-    }
-}
-
-fn confidence_rank(confidence: Confidence) -> u8 {
-    match confidence {
-        Confidence::High => 3,
-        Confidence::Medium => 2,
-        Confidence::Low => 1,
-    }
-}
-
-fn risk_for_privacy_kind(kind: PrivacyFindingKind) -> PiiRisk {
-    match kind {
-        PrivacyFindingKind::Person
-        | PrivacyFindingKind::Contact
-        | PrivacyFindingKind::PrivateAddress
-        | PrivacyFindingKind::AccountOrFinancialId
-        | PrivacyFindingKind::GovernmentId
-        | PrivacyFindingKind::CredentialOrSecret
-        | PrivacyFindingKind::MixedSensitiveText => PiiRisk::High,
-        PrivacyFindingKind::PrivateDate
-        | PrivacyFindingKind::NetworkOrDeviceId
-        | PrivacyFindingKind::Url => PiiRisk::Medium,
-    }
-}
-
-pub fn max_pii_risk(left: PiiRisk, right: PiiRisk) -> PiiRisk {
-    match (left, right) {
-        (PiiRisk::High, _) | (_, PiiRisk::High) => PiiRisk::High,
-        (PiiRisk::Medium, _) | (_, PiiRisk::Medium) => PiiRisk::Medium,
-        (PiiRisk::Low, PiiRisk::Low) => PiiRisk::Low,
-    }
-}
-
-fn value_matches_header_signal(value: &str, kind: PrivacyFindingKind) -> bool {
-    match kind {
-        PrivacyFindingKind::CredentialOrSecret => {
-            value.len() >= 8
-                && value
-                    .chars()
-                    .any(|character| character.is_ascii_alphabetic())
-        }
-        PrivacyFindingKind::AccountOrFinancialId => {
-            let digit_count = value
-                .chars()
-                .filter(|character| character.is_ascii_digit())
-                .count();
-            digit_count >= 4 || is_account_identifier_value(value)
-        }
-        PrivacyFindingKind::PrivateDate => is_timestamp(value) || value.len() >= 4,
-        PrivacyFindingKind::Person
-        | PrivacyFindingKind::Contact
-        | PrivacyFindingKind::PrivateAddress
-        | PrivacyFindingKind::GovernmentId
-        | PrivacyFindingKind::NetworkOrDeviceId
-        | PrivacyFindingKind::Url
-        | PrivacyFindingKind::MixedSensitiveText => true,
-    }
-}
-
-fn is_account_identifier_value(value: &str) -> bool {
-    let trimmed = value.trim();
-    (3..=64).contains(&trimmed.len())
-        && trimmed
-            .chars()
-            .any(|character| character.is_ascii_alphabetic())
-        && trimmed.chars().all(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.')
-        })
-}
-
-fn passes_luhn(digits: &str) -> bool {
-    let mut sum = 0;
-    let mut double = false;
-    for character in digits.chars().rev() {
-        let Some(mut digit) = character.to_digit(10) else {
-            return false;
-        };
-        if double {
-            digit *= 2;
-            if digit > 9 {
-                digit -= 9;
-            }
-        }
-        sum += digit;
-        double = !double;
-    }
-    sum > 0 && sum % 10 == 0
 }
 
 pub fn detect_column_type(values: &[String]) -> DetectionResult {
@@ -742,6 +67,14 @@ pub fn detect_column_type_with_name(column_name: &str, values: &[String]) -> Det
         total_non_empty,
         &early_header_detection_rules(),
     ) {
+        return result;
+    }
+
+    if let Some(result) = detect_vat_value_type(values, total_non_empty) {
+        return result;
+    }
+
+    if let Some(result) = detect_iban_value_type(values, total_non_empty) {
         return result;
     }
 
@@ -817,7 +150,12 @@ pub fn detect_column_type_with_name(column_name: &str, values: &[String]) -> Det
     )
 }
 
-type HeaderDetector = fn(&str, &[&String], usize) -> Option<DetectionResult>;
+type HeaderDetector = fn(&str, &[&String], usize) -> Option<HeaderDetection>;
+
+struct HeaderDetection {
+    result: DetectionResult,
+    signal: header::HeaderSignal,
+}
 
 #[derive(Clone, Copy)]
 struct HeaderDetectionRule {
@@ -859,12 +197,18 @@ fn first_header_detection(
     rules: &[HeaderDetectionRule],
 ) -> Option<DetectionResult> {
     rules.iter().find_map(|rule| {
-        (rule.detect)(column_name, non_empty_values, total_samples).map(|result| {
+        (rule.detect)(column_name, non_empty_values, total_samples).map(|detection| {
             attach_single_trace(
-                result,
+                detection.result,
                 total_non_empty,
-                rule.selected_reason,
-                rule.trace_reason,
+                format!("{} {}", detection.signal.reason, rule.selected_reason),
+                format!(
+                    "{}: {} ({:?}, {:?} confidence)",
+                    rule.trace_reason,
+                    detection.signal.concept,
+                    detection.signal.data_type,
+                    detection.signal.confidence
+                ),
             )
         })
     })
@@ -1082,37 +426,12 @@ fn detection_priority() -> [(DataType, DetectionPredicate); 13] {
     ]
 }
 
-fn is_email(value: &str) -> bool {
-    email_pattern().is_match(value)
-}
-
 fn is_uuid(value: &str) -> bool {
     uuid_pattern().is_match(value)
 }
 
 fn is_timestamp(value: &str) -> bool {
     timestamp_pattern().is_match(value)
-}
-
-fn is_phone(value: &str) -> bool {
-    let trimmed = value.trim();
-    if !phone_pattern().is_match(trimmed) {
-        return false;
-    }
-
-    let digit_count = trimmed
-        .chars()
-        .filter(|character| character.is_ascii_digit())
-        .count();
-    if !(10..=15).contains(&digit_count) {
-        return false;
-    }
-
-    trimmed.starts_with('+') || trimmed.chars().any(is_phone_separator)
-}
-
-fn is_phone_separator(character: char) -> bool {
-    matches!(character, ' ' | '-' | '(' | ')' | '.')
 }
 
 fn is_numeric_id(value: &str) -> bool {
@@ -1142,14 +461,6 @@ fn is_mac_address(value: &str) -> bool {
     mac_address_pattern().is_match(value)
 }
 
-fn is_url(value: &str) -> bool {
-    url_pattern().is_match(value)
-}
-
-fn is_tax_id(value: &str) -> bool {
-    tax_id_pattern().is_match(value)
-}
-
 fn is_boolean(value: &str) -> bool {
     matches!(
         value.to_ascii_lowercase().as_str(),
@@ -1169,11 +480,6 @@ fn is_country_code(value: &str) -> bool {
     country_code_pattern().is_match(value)
 }
 
-fn email_pattern() -> &'static Regex {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| Regex::new(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$").unwrap())
-}
-
 fn uuid_pattern() -> &'static Regex {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
     PATTERN.get_or_init(|| {
@@ -1186,11 +492,6 @@ fn timestamp_pattern() -> &'static Regex {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
     PATTERN
         .get_or_init(|| Regex::new(r"^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}:\d{2}(\.\d+)?)?$").unwrap())
-}
-
-fn phone_pattern() -> &'static Regex {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| Regex::new(r"^\+?[\d\s\-().]{10,}$").unwrap())
 }
 
 fn numeric_id_pattern() -> &'static Regex {
@@ -1213,16 +514,6 @@ fn mac_address_pattern() -> &'static Regex {
     PATTERN.get_or_init(|| Regex::new(r"^(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$").unwrap())
 }
 
-fn url_pattern() -> &'static Regex {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| Regex::new(r"^(https?://|www\.)[^\s/$.?#].[^\s]*$").unwrap())
-}
-
-fn tax_id_pattern() -> &'static Regex {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| Regex::new(r"^(\d{3}-\d{2}-\d{4}|\d{2}-\d{7})$").unwrap())
-}
-
 fn currency_pattern() -> &'static Regex {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
     PATTERN.get_or_init(|| Regex::new(r"^\$\s?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{2})?$").unwrap())
@@ -1238,96 +529,13 @@ fn country_code_pattern() -> &'static Regex {
     PATTERN.get_or_init(|| Regex::new(r"^[A-Z]{2}$").unwrap())
 }
 
-fn inline_email_pattern() -> &'static Regex {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| Regex::new(r"(?i)\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b").unwrap())
-}
-
-fn inline_url_pattern() -> &'static Regex {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| Regex::new(r#"\b(?:https?://|www\.)[^\s<>'"]+"#).unwrap())
-}
-
-fn inline_uuid_pattern() -> &'static Regex {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| {
-        Regex::new(
-            r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b",
-        )
-        .unwrap()
-    })
-}
-
-fn inline_timestamp_pattern() -> &'static Regex {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| {
-        Regex::new(r"\b\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?)?\b").unwrap()
-    })
-}
-
-fn inline_ip_address_pattern() -> &'static Regex {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| {
-        Regex::new(r"\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b")
-            .unwrap()
-    })
-}
-
-fn inline_mac_address_pattern() -> &'static Regex {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| Regex::new(r"\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b").unwrap())
-}
-
-fn inline_tax_id_pattern() -> &'static Regex {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| Regex::new(r"\b(?:\d{3}-\d{2}-\d{4}|\d{2}-\d{7})\b").unwrap())
-}
-
-fn inline_phone_pattern() -> &'static Regex {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| {
-        Regex::new(r"(?:\+\d{1,3}[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}\b").unwrap()
-    })
-}
-
-fn secret_assignment_pattern() -> &'static Regex {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| {
-        Regex::new(
-            r#"(?i)\b(?:api[_-]?key|access[_-]?token|auth[_-]?token|secret|password|passwd|pwd|private[_-]?key)\b\s*[:=]\s*["']?([A-Za-z0-9][A-Za-z0-9_\-./+=]{7,})"#,
-        )
-        .unwrap()
-    })
-}
-
-fn bearer_token_pattern() -> &'static Regex {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| Regex::new(r"(?i)\bbearer\s+([A-Za-z0-9._~+/\-]{12,}=*)").unwrap())
-}
-
-fn private_key_marker_pattern() -> &'static Regex {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| Regex::new(r"-----BEGIN [A-Z ]*PRIVATE KEY-----").unwrap())
-}
-
-fn payment_card_candidate_pattern() -> &'static Regex {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| Regex::new(r"\b\d(?:[ -]?\d){12,18}\b").unwrap())
-}
-
-fn iban_candidate_pattern() -> &'static Regex {
-    static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| Regex::new(r"\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b").unwrap())
-}
-
 fn detect_header_numeric_id(
     column_name: &str,
     non_empty_values: &[&String],
     total_samples: usize,
-) -> Option<DetectionResult> {
-    if !header::infer_numeric_id(column_name) {
-        return None;
-    }
+) -> Option<HeaderDetection> {
+    let header_terms = header::terms(column_name);
+    let signal = header::best_signal_for_kinds(&header_terms, &["numeric_id", "account_number"])?;
 
     let match_count = non_empty_values
         .iter()
@@ -1339,12 +547,15 @@ fn detect_header_numeric_id(
         return None;
     }
 
-    Some(DetectionResult {
-        data_type: DataType::NumericId,
-        confidence,
-        sample_matches: match_count,
-        total_samples,
-        trace: None,
+    Some(HeaderDetection {
+        result: DetectionResult {
+            data_type: DataType::NumericId,
+            confidence,
+            sample_matches: match_count,
+            total_samples,
+            trace: None,
+        },
+        signal,
     })
 }
 
@@ -1352,10 +563,9 @@ fn detect_header_phone(
     column_name: &str,
     non_empty_values: &[&String],
     total_samples: usize,
-) -> Option<DetectionResult> {
-    if !header::infer_phone(column_name) {
-        return None;
-    }
+) -> Option<HeaderDetection> {
+    let header_terms = header::terms(column_name);
+    let signal = header::best_signal_for_kinds(&header_terms, &["phone"])?;
 
     let match_count = non_empty_values
         .iter()
@@ -1366,12 +576,15 @@ fn detect_header_phone(
         return None;
     }
 
-    Some(DetectionResult {
-        data_type: DataType::Phone,
-        confidence,
-        sample_matches: match_count,
-        total_samples,
-        trace: None,
+    Some(HeaderDetection {
+        result: DetectionResult {
+            data_type: DataType::Phone,
+            confidence,
+            sample_matches: match_count,
+            total_samples,
+            trace: None,
+        },
+        signal,
     })
 }
 
@@ -1395,14 +608,71 @@ fn detect_numeric_value_type(values: &[String], total_non_empty: usize) -> Optio
     })
 }
 
+fn detect_vat_value_type(values: &[String], total_non_empty: usize) -> Option<DetectionResult> {
+    let match_count = values
+        .iter()
+        .filter(|value| !is_empty_value(value) && is_vat_id(value))
+        .count();
+    let confidence = calculate_confidence(match_count, total_non_empty);
+
+    if confidence == Confidence::Low {
+        return None;
+    }
+
+    Some(detection_result(
+        DataType::TaxId,
+        confidence,
+        match_count,
+        values.len(),
+        total_non_empty,
+        "Sample values matched the VAT country-specific validator.",
+        vec![trace_item(
+            DataType::TaxId,
+            "validator:vat",
+            match_count,
+            total_non_empty,
+            confidence,
+            true,
+        )],
+    ))
+}
+
+fn detect_iban_value_type(values: &[String], total_non_empty: usize) -> Option<DetectionResult> {
+    let match_count = values
+        .iter()
+        .filter(|value| !is_empty_value(value) && is_iban(value))
+        .count();
+    let confidence = calculate_confidence(match_count, total_non_empty);
+
+    if confidence == Confidence::Low {
+        return None;
+    }
+
+    Some(detection_result(
+        DataType::String,
+        confidence,
+        match_count,
+        values.len(),
+        total_non_empty,
+        "Sample values matched the IBAN checksum validator.",
+        vec![trace_item(
+            DataType::String,
+            "validator:iban",
+            match_count,
+            total_non_empty,
+            confidence,
+            true,
+        )],
+    ))
+}
+
 fn detect_header_postal_code(
     column_name: &str,
     non_empty_values: &[&String],
     total_samples: usize,
-) -> Option<DetectionResult> {
-    if !header::infer_postal_code(column_name) {
-        return None;
-    }
+) -> Option<HeaderDetection> {
+    let header_terms = header::terms(column_name);
+    let signal = header::best_signal_for_kinds(&header_terms, &["postal_code"])?;
 
     let match_count = non_empty_values
         .iter()
@@ -1413,12 +683,15 @@ fn detect_header_postal_code(
         return None;
     }
 
-    Some(DetectionResult {
-        data_type: DataType::PostalCode,
-        confidence,
-        sample_matches: match_count,
-        total_samples,
-        trace: None,
+    Some(HeaderDetection {
+        result: DetectionResult {
+            data_type: DataType::PostalCode,
+            confidence,
+            sample_matches: match_count,
+            total_samples,
+            trace: None,
+        },
+        signal,
     })
 }
 
@@ -1426,10 +699,9 @@ fn detect_header_address(
     column_name: &str,
     non_empty_values: &[&String],
     total_samples: usize,
-) -> Option<DetectionResult> {
-    if !header::infer_address(column_name) {
-        return None;
-    }
+) -> Option<HeaderDetection> {
+    let header_terms = header::terms(column_name);
+    let signal = header::best_signal_for_kinds(&header_terms, &["address"])?;
 
     let match_count = non_empty_values
         .iter()
@@ -1440,12 +712,15 @@ fn detect_header_address(
         return None;
     }
 
-    Some(DetectionResult {
-        data_type: DataType::Address,
-        confidence,
-        sample_matches: match_count,
-        total_samples,
-        trace: None,
+    Some(HeaderDetection {
+        result: DetectionResult {
+            data_type: DataType::Address,
+            confidence,
+            sample_matches: match_count,
+            total_samples,
+            trace: None,
+        },
+        signal,
     })
 }
 
@@ -1453,40 +728,41 @@ fn detect_header_tax_id(
     column_name: &str,
     non_empty_values: &[&String],
     total_samples: usize,
-) -> Option<DetectionResult> {
-    if !header::infer_tax_id(column_name) {
-        return None;
-    }
+) -> Option<HeaderDetection> {
+    let header_terms = header::terms(column_name);
+    let signal = header::best_signal_for_kinds(&header_terms, &["tax_id"])?;
+    let allow_dutch_btw_number = has_dutch_btw_context(&header_terms);
+    let tax_id_context = tax_id_header_context(&header_terms);
 
     let match_count = non_empty_values
         .iter()
-        .filter(|value| is_tax_id(value) || is_unformatted_tax_id(value))
+        .filter(|value| {
+            is_tax_id(value)
+                || is_contextual_unformatted_us_tax_id(value, tax_id_context)
+                || is_vat_id(value)
+                || (allow_dutch_btw_number && is_dutch_btw_tax_number(value))
+        })
         .count();
     let confidence = calculate_confidence(match_count, non_empty_values.len());
     if confidence == Confidence::Low {
         return None;
     }
 
-    Some(DetectionResult {
-        data_type: DataType::TaxId,
-        confidence,
-        sample_matches: match_count,
-        total_samples,
-        trace: None,
+    Some(HeaderDetection {
+        result: DetectionResult {
+            data_type: DataType::TaxId,
+            confidence,
+            sample_matches: match_count,
+            total_samples,
+            trace: None,
+        },
+        signal,
     })
 }
 
 fn is_header_phone_value(value: &str) -> bool {
     let trimmed = value.trim();
-    let digit_count = trimmed
-        .chars()
-        .filter(|character| character.is_ascii_digit())
-        .count();
-
-    (7..=15).contains(&digit_count)
-        && trimmed.chars().all(|character| {
-            character.is_ascii_digit() || matches!(character, '+' | ' ' | '-' | '(' | ')' | '.')
-        })
+    is_valid_phone_number(trimmed) || is_formatted_phone_fallback(trimmed, 7, true)
 }
 
 fn is_postal_code(value: &str) -> bool {
@@ -1499,39 +775,119 @@ fn is_postal_code(value: &str) -> bool {
 }
 
 fn is_plausible_address(value: &str) -> bool {
-    let trimmed = value.trim().to_ascii_lowercase();
-    trimmed.chars().any(|character| character.is_ascii_digit())
-        && [
-            " st",
-            " street",
-            " ave",
-            " avenue",
-            " rd",
-            " road",
-            " blvd",
-            " boulevard",
-            " dr",
-            " drive",
-            " ln",
-            " lane",
-            " way",
-            " court",
-            " ct",
-        ]
+    let trimmed = value.trim();
+    if !(5..=200).contains(&trimmed.len())
+        || !trimmed.chars().any(|character| character.is_ascii_digit())
+        || !trimmed.chars().any(|character| character.is_alphabetic())
+    {
+        return false;
+    }
+
+    let normalized = trimmed.to_lowercase();
+    if address_keywords()
         .iter()
-        .any(|suffix| trimmed.contains(suffix))
+        .any(|keyword| normalized.contains(keyword))
+    {
+        return true;
+    }
+
+    if trimmed
+        .chars()
+        .any(|character| character.is_alphabetic() && !character.is_ascii())
+        && trimmed.contains('-')
+    {
+        return true;
+    }
+
+    trimmed.contains(',') || trimmed.matches(char::is_whitespace).count() >= 2
 }
 
-fn is_unformatted_tax_id(value: &str) -> bool {
-    value.len() == 9 && value.chars().all(|character| character.is_ascii_digit())
+pub(in crate::detection) fn has_dutch_btw_context(terms: &header::HeaderTerms) -> bool {
+    matches!(
+        terms.compact.as_str(),
+        "btw" | "btwnr" | "btwnummer" | "btwid" | "btwidentificatienummer" | "omzetbelastingnummer"
+    ) || terms.compact.ends_with("btwnummer")
+        || terms.compact.ends_with("omzetbelastingnummer")
+}
+
+#[derive(Clone, Copy)]
+pub(in crate::detection) enum TaxIdHeaderContext {
+    Generic,
+    Ssn,
+    Ein,
+}
+
+pub(in crate::detection) fn tax_id_header_context(
+    terms: &header::HeaderTerms,
+) -> TaxIdHeaderContext {
+    match terms.compact.as_str() {
+        "ssn" | "socialsecuritynumber" => TaxIdHeaderContext::Ssn,
+        "ein" | "employeridentificationnumber" => TaxIdHeaderContext::Ein,
+        _ => TaxIdHeaderContext::Generic,
+    }
+}
+
+pub(in crate::detection) fn is_contextual_unformatted_us_tax_id(
+    value: &str,
+    context: TaxIdHeaderContext,
+) -> bool {
+    match context {
+        TaxIdHeaderContext::Ssn => is_us_ssn(value),
+        TaxIdHeaderContext::Ein => is_us_ein(value),
+        TaxIdHeaderContext::Generic => is_unformatted_tax_id(value),
+    }
+}
+
+fn address_keywords() -> &'static [&'static str] {
+    &[
+        " st",
+        " street",
+        " ave",
+        " avenue",
+        " rd",
+        " road",
+        " blvd",
+        " boulevard",
+        " dr",
+        " drive",
+        " ln",
+        " lane",
+        " way",
+        " court",
+        " ct",
+        "straat",
+        "weg",
+        "laan",
+        "plein",
+        "strasse",
+        "straße",
+        "platz",
+        "allee",
+        "rue",
+        "avenue",
+        "boulevard",
+        "calle",
+        "avenida",
+        "carrera",
+        "rua",
+        "travessa",
+        "via",
+        "viale",
+        "piazza",
+    ]
 }
 
 fn detect_name_type(
     column_name: &str,
     non_empty_values: &[&String],
     total_samples: usize,
-) -> Option<DetectionResult> {
-    let data_type = header::infer_name_type(column_name)?;
+) -> Option<HeaderDetection> {
+    let header_terms = header::terms(column_name);
+    let signal = header::best_signal_for_kinds(
+        &header_terms,
+        &["first_name", "last_name", "full_name", "generic_name"],
+    )?;
+    let data_type = signal.data_type;
     let mut match_count = non_empty_values
         .iter()
         .filter(|value| match data_type {
@@ -1547,17 +903,20 @@ fn detect_name_type(
         if data_type == DataType::FullName && header::infer_generic_name(column_name) {
             match_count = non_empty_values
                 .iter()
-                .filter(|value| is_plausible_name_part(value, 1))
+                .filter(|value| is_plausible_generic_single_name(value))
                 .count();
             let confidence = calculate_confidence(match_count, non_empty_values.len());
 
             if confidence != Confidence::Low {
-                return Some(DetectionResult {
-                    data_type: DataType::FirstName,
-                    confidence,
-                    sample_matches: match_count,
-                    total_samples,
-                    trace: None,
+                return Some(HeaderDetection {
+                    result: DetectionResult {
+                        data_type: DataType::FirstName,
+                        confidence,
+                        sample_matches: match_count,
+                        total_samples,
+                        trace: None,
+                    },
+                    signal,
                 });
             }
         }
@@ -1565,12 +924,15 @@ fn detect_name_type(
         return None;
     }
 
-    Some(DetectionResult {
-        data_type,
-        confidence,
-        sample_matches: match_count,
-        total_samples,
-        trace: None,
+    Some(HeaderDetection {
+        result: DetectionResult {
+            data_type,
+            confidence,
+            sample_matches: match_count,
+            total_samples,
+            trace: None,
+        },
+        signal,
     })
 }
 
@@ -1594,6 +956,15 @@ fn is_plausible_full_name(value: &str) -> bool {
 
     let tokens: Vec<&str> = trimmed.split_whitespace().collect();
     (2..=6).contains(&tokens.len()) && tokens.iter().all(|token| is_plausible_name_token(token))
+}
+
+fn is_plausible_generic_single_name(value: &str) -> bool {
+    let trimmed = value.trim();
+    is_plausible_name_part(trimmed, 1)
+        && trimmed
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_uppercase())
 }
 
 fn is_plausible_name_token(token: &str) -> bool {

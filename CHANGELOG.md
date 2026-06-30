@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.59 - 2026-06-30
+
+- Replace literal English-only header detection with a Unicode-normalized taxonomy that covers multilingual contact, address, date, name, postal code, account, and tax/VAT terms with conservative fuzzy matching.
+- Back sensitive value detection with focused validators for email, URL, phone, payment cards, IBAN, VAT, Dutch BTW/omzetbelastingnummer, US SSN, and EIN while rejecting shape-only false positives.
+- Split detection into validator, span, privacy evidence, taxonomy, and focused test modules, document dependency-audit follow-ups, and reduce the remaining detection-specific complexity warnings.
+
 ## v1.0.58 - 2026-06-30
 
 - Supersede v1.0.57 without moving the failed tag, keeping the frontend type coverage, DataType policy, Tauri command registration, and automation helper cleanup.

@@ -179,7 +179,9 @@ fn redact_uses_typed_placeholders() {
         match_count: 1,
         sample_count: 1,
         score: 76,
+        detector: "header:taxonomy:account-identifier".to_string(),
         reason: "Header terms suggest an account or user identifier.".to_string(),
+        detectors: vec!["header:taxonomy:account-identifier".to_string()],
     }];
     assert_eq!(
         transform_value("johndoe", &username_column, &context("seed")),

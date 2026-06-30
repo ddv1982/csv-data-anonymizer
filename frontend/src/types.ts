@@ -117,7 +117,9 @@ export interface PrivacyEvidenceSummary {
   matchCount: number
   sampleCount: number
   score: number
+  detector: string
   reason: string
+  detectors?: string[]
 }
 
 export interface DetectionTrace {

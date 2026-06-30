@@ -7,6 +7,7 @@ import type {
 import { csvStrategies, strategyLabel } from '../dataOptions'
 import {
   detectorConfidenceLabel,
+  detectorSourceSummary,
   privacyFindingKindLabel,
   visibleEvidence,
 } from '../utils/detectorEvidence'
@@ -206,6 +207,7 @@ function PrivacyEvidenceCell({
               <span>
                 <strong>{privacyFindingKindLabel(item.kind)}</strong>
                 <span className="muted-text text-sm">
+                  {detectorSourceSummary(item)} ·{' '}
                   {item.matchCount.toLocaleString()} of {item.sampleCount.toLocaleString()} samples,
                   {` ${formatToken(item.dataType)}`}
                 </span>
