@@ -324,6 +324,67 @@ describe('App input mode tabs', () => {
     expect(await screen.findByText('Copied')).toBeInTheDocument()
   })
 
+  it('automatically detects pasted fields when the paste input loses focus', async () => {
+    const user = userEvent.setup()
+    tauriMocks.analyzePasteData.mockResolvedValue({
+      format: 'json',
+      rowCount: 1,
+      rowCountIsComplete: true,
+      columns: [columnFixture(0, '[].email', 'email', 'high')],
+    })
+    render(<App />)
+
+    await user.click(screen.getByRole('tab', { name: /paste sample/i }))
+    const pastedData = screen.getByLabelText(/pasted data/i)
+    fireEvent.change(pastedData, {
+      target: { value: '[{"email":"ada@example.com"}]' },
+    })
+    pastedData.focus()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /detect fields/i })).not.toBeDisabled()
+    })
+    await user.tab()
+
+    await waitFor(() => {
+      expect(tauriMocks.analyzePasteData).toHaveBeenCalledWith(
+        '[{"email":"ada@example.com"}]',
+        'auto',
+        defaultSettings.sampleRowCount,
+      )
+    })
+    expect(await screen.findByText('[].email')).toBeInTheDocument()
+    expect(screen.getByText('Detected: JSON')).toBeInTheDocument()
+  })
+
+  it('clears pasted content and detected state', async () => {
+    const user = userEvent.setup()
+    tauriMocks.analyzePasteData.mockResolvedValue({
+      format: 'json',
+      rowCount: 1,
+      rowCountIsComplete: true,
+      columns: [columnFixture(0, '[].email', 'email', 'high')],
+    })
+    render(<App />)
+
+    await user.click(screen.getByRole('tab', { name: /paste sample/i }))
+    const pastedData = screen.getByLabelText(/pasted data/i)
+    fireEvent.change(pastedData, {
+      target: { value: '[{"email":"ada@example.com"}]' },
+    })
+    await user.click(screen.getByRole('button', { name: /detect fields/i }))
+    expect(await screen.findByText('[].email')).toBeInTheDocument()
+
+    await user.click(pastedData)
+    await user.click(screen.getByRole('button', { name: /^clear$/i }))
+
+    expect(pastedData).toHaveValue('')
+    expect(screen.queryByText('[].email')).not.toBeInTheDocument()
+    expect(screen.queryByText('Detected: JSON')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /detect fields/i })).toBeDisabled()
+    expect(tauriMocks.analyzePasteData).toHaveBeenCalledTimes(1)
+  })
+
   it('blocks pasted content that is too large for direct input', async () => {
     const user = userEvent.setup()
     render(<App />)
