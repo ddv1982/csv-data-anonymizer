@@ -78,17 +78,9 @@ export function AppSettingsPanel({
               </button>
             </div>
             <p id="seed-description" className="muted-text text-sm">
-              Useful when multiple files need matching replacements. It stays out of saved settings unless remembered.
+              Useful when multiple files need matching replacements. This seed is kept only for the current app session.
             </p>
           </div>
-          <SwitchRow
-            id="remember-seed"
-            label="Remember seed"
-            description="Store the seed in the local system credential store for future sessions."
-            checked={settings.rememberSeed}
-            disabled={seedDisabled}
-            onChange={(checked) => onUpdateSetting('rememberSeed', checked)}
-          />
           <SwitchRow
             id="overwrite-output"
             label="Overwrite Output"

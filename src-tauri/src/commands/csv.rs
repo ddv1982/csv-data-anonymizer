@@ -6,16 +6,14 @@ use crate::local_ai::{
     LocalAiRequest, local_ai_status, smart_provider_for_request, smart_provider_for_strategy,
 };
 use crate::path_access::PathAccess;
-use crate::settings::DpBudgetLedger;
 use csv_anonymizer_core::{
     AnonymizationStrategy, ColumnControl, HeadersData, PasteAnalyzeData, PasteAnalyzeParams,
     PastePreviewParams, PasteTransformData, PasteTransformParams, PreflightData, PreflightMode,
-    PreflightParams, PreviewData, PreviewParams, PrivacyConfig, QuickGenerateParams,
-    QuickTransformData, ReleaseMode, SmartReplacementEntry, SmartReplacementProvider,
+    PreflightParams, PreviewData, PreviewParams, QuickGenerateParams, QuickTransformData,
+    SmartReplacementEntry, SmartReplacementProvider,
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::Arc;
 use tauri::State;
 
 #[derive(Debug, Clone, Serialize)]
@@ -52,8 +50,6 @@ pub struct PreflightRequest {
     pub seed: String,
     pub force: bool,
     pub sample_row_count: usize,
-    #[serde(default)]
-    pub privacy_config: Option<PrivacyConfig>,
     #[serde(default)]
     pub preview_smart_replacements: Vec<SmartReplacementEntry>,
     pub local_ai: Option<LocalAiRequest>,
@@ -150,7 +146,6 @@ pub async fn preview_anonymization(
 pub async fn preflight_anonymization(
     app: tauri::AppHandle,
     path_access: State<'_, PathAccess>,
-    ledger: State<'_, Arc<DpBudgetLedger>>,
     request: PreflightRequest,
 ) -> Result<PreflightData, String> {
     let mode = request.mode;
@@ -162,20 +157,11 @@ pub async fn preflight_anonymization(
         (_, output_path) => output_path,
     };
 
-    let ledger = ledger.inner().clone();
     run_blocking(move || {
-        let privacy_config = ledger
-            .privacy_config_for_preflight(request.privacy_config)
-            .map_err(|error| error.to_string())?;
-        let release_mode = privacy_config
-            .as_ref()
-            .map(|config| config.release_mode)
-            .unwrap_or(ReleaseMode::Standard);
-        let local_ai_required = release_mode == ReleaseMode::Standard
-            && request.controls.iter().any(|control| {
-                request.columns.contains(&control.column_index)
-                    && control.strategy == AnonymizationStrategy::LocalAi
-            });
+        let local_ai_required = request.controls.iter().any(|control| {
+            request.columns.contains(&control.column_index)
+                && control.strategy == AnonymizationStrategy::LocalAi
+        });
         let (local_ai_ready, local_ai_message) = if local_ai_required {
             match request.local_ai.clone() {
                 Some(local_ai) => match local_ai_status(local_ai) {
@@ -205,7 +191,6 @@ pub async fn preflight_anonymization(
                 seed: request.seed,
                 force: request.force,
                 sample_row_count: request.sample_row_count,
-                privacy_config,
                 preview_smart_replacements: request.preview_smart_replacements,
                 local_ai_ready,
                 local_ai_message,

@@ -69,8 +69,7 @@ fn processes_selected_columns() {
     assert_eq!(result.row_count, 5);
     let output = read_sample(&output_path, 100).unwrap();
     assert_eq!(output.headers, sample.headers);
-    assert!(output.rows[0][1].ends_with("@example.com"));
-    assert_ne!(output.rows[0][1], sample.rows[0][1]);
+    assert_eq!(output.rows[0][1], "[EMAIL]");
     assert_eq!(output.rows[0][0], sample.rows[0][0]);
 }
 

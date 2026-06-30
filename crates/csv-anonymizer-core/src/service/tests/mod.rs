@@ -12,5 +12,4 @@ fn fixture(name: &str) -> PathBuf {
 mod analysis_preview;
 mod anonymize;
 mod preflight;
-mod privacy_releases;
 mod smart_replacement;

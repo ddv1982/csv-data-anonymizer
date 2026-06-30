@@ -1,9 +1,5 @@
 use super::*;
-use crate::types::{
-    ColumnRole, DifferentialPrivacyConfig, DpAggregate, DpBudgetAction, DpBudgetConfig,
-    FormalPrivacyConfig, PreflightMode, PreflightParams, PrivacyColumnRole, PrivacyConfig,
-    ReleaseMode, ReleaseReadinessStatus, SmartReplacementEntry, SyntheticDataConfig,
-};
+use crate::types::{PreflightMode, PreflightParams, ReleaseReadinessStatus, SmartReplacementEntry};
 
 #[test]
 fn preflight_preview_does_not_require_output_path() {
@@ -23,7 +19,6 @@ fn preflight_preview_does_not_require_output_path() {
             seed: "preflight-preview-seed".to_string(),
             force: false,
             sample_row_count: 10,
-            privacy_config: None,
             preview_smart_replacements: vec![],
             local_ai_ready: false,
             local_ai_message: None,
@@ -58,7 +53,6 @@ fn preflight_anonymize_blocks_missing_output_path() {
             seed: "preflight-output-seed".to_string(),
             force: false,
             sample_row_count: 10,
-            privacy_config: None,
             preview_smart_replacements: vec![],
             local_ai_ready: false,
             local_ai_message: None,
@@ -98,7 +92,6 @@ fn preflight_allows_local_ai_anonymize_when_preview_replacements_cover_values() 
             seed: "preflight-smart-covered-seed".to_string(),
             force: false,
             sample_row_count: 10,
-            privacy_config: None,
             preview_smart_replacements: vec![
                 SmartReplacementEntry {
                     column_index: 0,
@@ -155,7 +148,6 @@ fn preflight_blocks_local_ai_anonymize_when_preview_replacements_are_incomplete(
             seed: "preflight-smart-incomplete-seed".to_string(),
             force: false,
             sample_row_count: 10,
-            privacy_config: None,
             preview_smart_replacements: vec![SmartReplacementEntry {
                 column_index: 0,
                 original: "Alice Smith".to_string(),
@@ -174,126 +166,4 @@ fn preflight_blocks_local_ai_anonymize_when_preview_replacements_are_incomplete(
             .iter()
             .any(|item| item.contains("Local AI is unavailable"))
     );
-}
-
-#[test]
-fn preflight_synthetic_release_ignores_smart_replacement_strategy_controls() {
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
-    let input_path = temp_dir.path().join("synthetic-smart.csv");
-    let output_path = temp_dir.path().join("synthetic-smart-output.csv");
-    fs::write(&input_path, "name\nAlice Smith\nBob Stone\n").unwrap();
-
-    let result = service
-        .preflight_anonymization(PreflightParams {
-            file_path: input_path,
-            mode: PreflightMode::Anonymize,
-            output_path: Some(output_path),
-            columns: vec![0],
-            controls: vec![ColumnControl {
-                column_index: 0,
-                type_override: Some(DataType::FullName),
-                strategy: AnonymizationStrategy::LocalAi,
-            }],
-            deterministic: false,
-            seed: String::new(),
-            force: false,
-            sample_row_count: 10,
-            privacy_config: Some(PrivacyConfig {
-                release_mode: ReleaseMode::SyntheticData,
-                synthetic: SyntheticDataConfig::default(),
-                ..PrivacyConfig::default()
-            }),
-            preview_smart_replacements: vec![],
-            local_ai_ready: false,
-            local_ai_message: Some("Local AI is unavailable.".to_string()),
-        })
-        .unwrap();
-
-    assert!(
-        !result
-            .readiness
-            .blockers
-            .iter()
-            .any(|item| item.contains("Local AI"))
-    );
-    assert!(
-        result
-            .readiness
-            .verified_items
-            .iter()
-            .any(|item| item.contains("ignores row-level Strategy controls"))
-    );
-}
-
-#[test]
-fn preflight_blocks_invalid_dp_budget_config() {
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
-    let input_path = temp_dir.path().join("dp-budget.csv");
-    let output_path = temp_dir.path().join("dp-budget-output.csv");
-    fs::write(&input_path, "region,amount\nA,10\nB,20\n").unwrap();
-
-    let result = service
-        .preflight_anonymization(PreflightParams {
-            file_path: input_path,
-            mode: PreflightMode::Anonymize,
-            output_path: Some(output_path),
-            columns: vec![0, 1],
-            controls: vec![],
-            deterministic: false,
-            seed: String::new(),
-            force: false,
-            sample_row_count: 10,
-            privacy_config: Some(dp_config_with_budget(0.8, Some(1.0), DpBudgetAction::Block)),
-            preview_smart_replacements: vec![],
-            local_ai_ready: false,
-            local_ai_message: None,
-        })
-        .unwrap();
-
-    assert_eq!(result.readiness.status, ReleaseReadinessStatus::Blocked);
-    assert!(
-        result
-            .readiness
-            .blockers
-            .iter()
-            .any(|item| item.contains("DP budget would be exceeded"))
-    );
-    assert_eq!(result.column_reports.len(), 2);
-}
-
-fn dp_config_with_budget(
-    spent_epsilon: f64,
-    limit_epsilon: Option<f64>,
-    action: DpBudgetAction,
-) -> PrivacyConfig {
-    PrivacyConfig {
-        release_mode: ReleaseMode::DifferentialPrivacyAggregate,
-        column_roles: vec![PrivacyColumnRole {
-            column_index: 0,
-            role: ColumnRole::Attribute,
-            generalization_level: 0,
-        }],
-        formal: FormalPrivacyConfig::default(),
-        differential_privacy: DifferentialPrivacyConfig {
-            epsilon: 0.3,
-            aggregate: DpAggregate::Count,
-            group_by_column: Some(0),
-            group_labels_public: true,
-            public_group_values: vec!["A".to_string(), "B".to_string()],
-            value_column: None,
-            lower_bound: None,
-            upper_bound: None,
-            privacy_unit_column: None,
-            max_contributions_per_unit: None,
-            budget: DpBudgetConfig {
-                enabled: true,
-                limit_epsilon,
-                spent_epsilon,
-                action,
-            },
-        },
-        synthetic: SyntheticDataConfig::default(),
-    }
 }

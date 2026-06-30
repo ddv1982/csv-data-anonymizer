@@ -44,12 +44,6 @@ export type AnonymizationStrategy =
   | 'mask'
   | 'redact'
   | 'passThrough'
-export type ReleaseMode = 'standard' | 'formalTabular' | 'differentialPrivacyAggregate' | 'syntheticData'
-export type ColumnRole = 'auto' | 'directIdentifier' | 'quasiIdentifier' | 'sensitive' | 'attribute' | 'exclude'
-export type DpAggregate = 'count' | 'sum' | 'mean'
-export type DpBudgetAction = 'warn' | 'block'
-export type DpBudgetStatus = 'withinBudget' | 'atBudget' | 'overBudget'
-export type PrivacyModel = 'kAnonymity' | 'lDiversity' | 'tCloseness' | 'differentialPrivacy' | 'syntheticData'
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type ReleaseReadinessStatus = 'verified' | 'review' | 'blocked'
 export type ReleaseEvidenceStatus = 'verified' | 'review' | 'blocked' | 'info'
@@ -70,91 +64,20 @@ export interface ColumnControl {
   strategy: AnonymizationStrategy
 }
 
-export interface PrivacyColumnRole {
-  columnIndex: number
-  role: ColumnRole
-  generalizationLevel: number
-}
-
-export interface FormalPrivacyConfig {
-  k: number
-  lDiversity: number | null
-  tCloseness: number | null
-  suppressSmallClasses: boolean
-}
-
-export interface DifferentialPrivacyConfig {
-  epsilon: number
-  aggregate: DpAggregate
-  groupByColumn: number | null
-  groupLabelsPublic: boolean
-  publicGroupValues: string[]
-  valueColumn: number | null
-  lowerBound: number | null
-  upperBound: number | null
-  privacyUnitColumn: number | null
-  maxContributionsPerUnit: number | null
-  budget: DpBudgetConfig
-}
-
-export interface DpBudgetConfig {
-  enabled: boolean
-  limitEpsilon: number | null
-  spentEpsilon: number
-  action: DpBudgetAction
-}
-
-export interface SyntheticDataConfig {
-  rowCount: number | null
-  epsilon: number | null
-}
-
-export interface PrivacyConfig {
-  releaseMode: ReleaseMode
-  columnRoles: PrivacyColumnRole[]
-  formal: FormalPrivacyConfig
-  differentialPrivacy: DifferentialPrivacyConfig
-  synthetic: SyntheticDataConfig
-}
-
 export interface AppSettings {
   schemaVersion: number
   themeMode: ThemeMode
   deterministicDefault: boolean
-  rememberSeed: boolean
   seed: string
   overwriteOutput: boolean
   sampleRowCount: number
   previewSampleCount: number
   defaultOutputSuffix: string
-  dpBudgetEnabled: boolean
-  dpBudgetLimitEpsilon: number | null
-  dpBudgetSpentEpsilon: number
-  dpBudgetAction: DpBudgetAction
-  dpReleaseHistory: DpReleaseRecord[]
   rememberLastPaths: boolean
   lastInputDirectory: string | null
   lastOutputDirectory: string | null
   localAiEnabled: boolean
   localAiModel: string
-}
-
-export interface DpReleaseRecord {
-  id: string
-  timestampUnixSeconds: number
-  outputPath: string | null
-  aggregate: DpAggregate
-  grouped: boolean
-  publicGroupCount: number
-  valueColumn: number | null
-  privacyUnitColumn: number | null
-  maxContributionsPerUnit: number | null
-  epsilon: string
-  spentEpsilonBefore: string
-  spentEpsilonAfter: string
-  remainingEpsilon: string
-  status: DpBudgetStatus
-  action: DpBudgetAction
 }
 
 export interface ColumnMetadata {
@@ -306,7 +229,6 @@ export interface PreflightParams {
   seed: string
   force: boolean
   sampleRowCount: number
-  privacyConfig?: PrivacyConfig | null
   previewSmartReplacements: SmartReplacementEntry[]
   localAiReady: boolean
   localAiMessage?: string | null
@@ -320,7 +242,6 @@ export interface PreflightData {
 }
 
 export interface PrivacyReport {
-  releaseMode: ReleaseMode
   directIdentifiers: number
   quasiIdentifiers: number
   sensitiveColumns: number
@@ -329,12 +250,7 @@ export interface PrivacyReport {
   opaqueTokenColumns: number
   maskedColumns: number
   redactedColumns: number
-  generalizedColumns: number
   passThroughColumns: number
-  suppressedRows: number
-  syntheticRows: number
-  dpEpsilon: string | null
-  dpBudget: DpBudgetReport | null
   uniquePseudonymValues: number
   reusedPseudonymValues: number
   collisionsAvoided: number
@@ -344,7 +260,6 @@ export interface PrivacyReport {
   smartReplacementRejections: number
   smartReplacementRejectionReasons: SmartReplacementRejectionCount[]
   smartReplacementFallbacks: number
-  formalModels: PrivacyModelReport[]
   readiness: ReleaseReadiness
   evidence: ReleaseEvidenceItem[]
   columnReports: ColumnReleaseReport[]
@@ -373,7 +288,6 @@ export interface ColumnReleaseReport {
   detectedType: DataType
   piiRisk: PiiRisk
   strategy: AnonymizationStrategy
-  role?: ColumnRole | null
   action: string
   status: ReleaseEvidenceStatus
   detail: string
@@ -384,24 +298,6 @@ export interface UtilityMetric {
   value: string
   status: ReleaseEvidenceStatus
   detail?: string | null
-}
-
-export interface DpBudgetReport {
-  limitEpsilon: string
-  spentEpsilonBefore: string
-  releaseEpsilon: string
-  spentEpsilonAfter: string
-  remainingEpsilon: string
-  status: DpBudgetStatus
-  action: DpBudgetAction
-}
-
-export interface PrivacyModelReport {
-  model: PrivacyModel
-  satisfied: boolean
-  actual: string
-  threshold: string
-  message: string
 }
 
 export type AnonymizeJobState = 'running' | 'succeeded' | 'failed' | 'canceled'

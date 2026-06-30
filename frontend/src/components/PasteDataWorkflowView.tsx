@@ -9,7 +9,6 @@ import type {
   AppSettings,
   ColumnControl,
   ColumnMetadata,
-  DataType,
   PasteAnalyzeData,
   PasteDataFormat,
   PasteTransformData,
@@ -29,12 +28,8 @@ type PasteBusyState = 'idle' | 'analyzing' | 'previewing' | 'transforming' | 'co
 
 const formatOptions: Array<{ value: PasteDataFormat; label: string }> = [
   { value: 'auto', label: 'Auto detect' },
-  { value: 'json', label: 'JSON' },
-  { value: 'xml', label: 'XML' },
-  { value: 'yaml', label: 'YAML' },
   { value: 'csv', label: 'CSV text' },
-  { value: 'plainText', label: 'Plain text' },
-  { value: 'logs', label: 'Logs' },
+  { value: 'json', label: 'JSON' },
 ]
 const EMPTY_COLUMNS: ColumnMetadata[] = []
 
@@ -194,10 +189,6 @@ export function PasteDataWorkflowView({
     setPreview(null)
   }
 
-  function updateColumnType(column: ColumnMetadata, value: DataType | 'auto') {
-    updateColumnControl(column, { typeOverride: value === 'auto' ? null : value })
-  }
-
   function updateColumnStrategy(column: ColumnMetadata, strategy: AnonymizationStrategy) {
     updateColumnControl(column, { strategy })
   }
@@ -225,7 +216,7 @@ export function PasteDataWorkflowView({
   return (
     <div className="workflow-stack">
       <Card
-        title="1. Paste Data"
+        title="1. Paste Sample"
         action={
           <button type="button" className="button button-outline button-sm" disabled={!canAnalyze} onClick={handleAnalyze}>
             {busy === 'analyzing' ? <Loader2 className="spin" aria-hidden="true" /> : null}
@@ -321,10 +312,8 @@ export function PasteDataWorkflowView({
             hiddenColumnCount={hiddenColumnCount}
             onToggleColumn={toggleColumn}
             controls={controls}
-            onTypeChange={updateColumnType}
             onStrategyChange={updateColumnStrategy}
             onToggleShowAll={() => setShowAllColumns((current) => !current)}
-            showRoles={false}
             availableStrategies={directInputStrategies}
           />
 
@@ -362,7 +351,7 @@ export function PasteDataWorkflowView({
       <Card contentClassName="anonymize-card-content">
         <button type="button" className="button button-primary button-lg full-width" disabled={!canTransform} onClick={handleTransform}>
           {busy === 'transforming' ? <Loader2 className="spin" aria-hidden="true" /> : <Wand2 aria-hidden="true" />}
-          Anonymize pasted data
+          Transform pasted sample
         </button>
       </Card>
 

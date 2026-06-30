@@ -199,7 +199,6 @@ pub(crate) fn run_cli(action: CliAction) -> Result<(), String> {
                     seed: "csv-anonymizer-smoke".to_string(),
                     force: true,
                     preview_smart_replacements: preview.smart_replacements,
-                    privacy_config: None,
                 })
                 .map_err(|error| error.to_string())?;
             println!(
@@ -228,7 +227,6 @@ pub(crate) fn run_cli(action: CliAction) -> Result<(), String> {
                     seed,
                     force,
                     preview_smart_replacements: vec![],
-                    privacy_config: None,
                 })
                 .map_err(|error| error.to_string())?;
             println!(

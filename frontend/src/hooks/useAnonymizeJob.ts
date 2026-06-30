@@ -13,12 +13,10 @@ import type {
   ColumnControl,
   HeadersData,
   LocalAiRequest,
-  PrivacyConfig,
   SmartReplacementEntry,
 } from '../types'
 import { messageFrom } from '../utils/errors'
 import { directoryOf } from '../utils/paths'
-import type { PrivacyConfigValidation } from '../utils/privacy'
 import type { BusyState } from './workflowTypes'
 
 type AnonymizeJobOptions = {
@@ -29,9 +27,6 @@ type AnonymizeJobOptions = {
   hasColumns: boolean
   hasSelectedColumns: boolean
   headers: HeadersData | null
-  privacyConfig: PrivacyConfig
-  privacyConfigValid: boolean
-  privacyValidation: PrivacyConfigValidation
   settings: AppSettings
   previewSmartReplacements: SmartReplacementEntry[]
   localAiRequest: LocalAiRequest
@@ -52,9 +47,6 @@ export function useAnonymizeJob({
   hasColumns,
   hasSelectedColumns,
   headers,
-  privacyConfig,
-  privacyConfigValid,
-  privacyValidation,
   settings,
   previewSmartReplacements,
   localAiRequest,
@@ -75,7 +67,6 @@ export function useAnonymizeJob({
       inputPath &&
       outputPath &&
       busy === 'idle' &&
-      privacyConfigValid &&
       !localAiBlocked,
   )
 
@@ -151,9 +142,7 @@ export function useAnonymizeJob({
       setError(
         localAiBlocked
           ? 'Set up Local AI before creating output with Smart replacement columns.'
-          : !privacyConfigValid
-            ? (privacyValidation.reason ?? 'Complete the privacy release settings before running.')
-            : 'Load a CSV, select at least one column, and choose an output path.',
+          : 'Load a CSV, select at least one column, and choose an output path.',
       )
       return
     }
@@ -174,7 +163,6 @@ export function useAnonymizeJob({
         settings.seed,
         settings.overwriteOutput,
         settings.sampleRowCount,
-        privacyConfig,
         previewSmartReplacements,
         localAiRequest,
       )
@@ -193,13 +181,8 @@ export function useAnonymizeJob({
         settings.seed,
         settings.overwriteOutput,
         settings.sampleRowCount,
-        privacyConfig.releaseMode === 'differentialPrivacyAggregate'
-          ? null
-          : headers?.rowCountIsComplete
-            ? headers.rowCount
-            : null,
+        headers?.rowCountIsComplete ? headers.rowCount : null,
         previewSmartReplacements,
-        privacyConfig,
         localAiRequest,
       )
       setActiveJobId(status.jobId)

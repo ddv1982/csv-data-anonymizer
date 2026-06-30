@@ -43,7 +43,6 @@ fn bench_standard_csv_streaming(c: &mut Criterion) {
                     seed: "bench-seed".to_string(),
                     force: true,
                     preview_smart_replacements: vec![],
-                    privacy_config: None,
                 })
                 .expect("standard anonymization should succeed")
         })

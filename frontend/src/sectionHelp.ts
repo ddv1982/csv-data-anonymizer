@@ -30,68 +30,57 @@ export const sectionHelp = {
     ],
   },
   selectColumns: {
-    title: 'Release Mode and Columns',
+    title: 'Review Sensitive Columns',
     summary: [
-      [
-        'Choose the release mode, then decide which columns need protection. Adjust the detected type, ',
-        { text: 'Strategy', term: 'strategy' },
-        ', and ',
-        { text: 'Role', term: 'role' },
-        ' where the automatic guess is not enough.',
-      ],
+      'Choose which detected columns should change. Unchecked columns stay unchanged.',
     ],
     points: [
       {
-        label: 'Synthetic data',
+        label: 'Defaults',
         text: [
-          'Synthetic data is a complete replacement dataset, so every CSV column is included. Column checkboxes and ',
-          { text: 'Strategy', term: 'strategy' },
-          ' controls are locked; Type override and ',
-          { text: 'Role', term: 'role' },
-          ' stay editable because they control the generated placeholder shape.',
+          'CSV File and Paste Sample preselect medium/high-risk columns and set them to ',
+          { text: 'Redact', term: 'redact' },
+          '.',
         ],
       },
       {
-        label: 'Strategy',
+        label: 'Review signals',
         text: [
-          'Used by standard row-level transformation. Auto and ',
-          { text: 'Pseudonymize', term: 'pseudonymize' },
-          ' run type-based replacements; some types such as booleans, country codes, percentages, currency, and enums can stay unchanged. ',
+          { text: 'Risk', term: 'risk' },
+          ' and evidence explain why a column was flagged. If the type looks wrong, choose ',
+          { text: 'Redact', term: 'redact' },
+          ', ',
           { text: 'Mask', term: 'mask' },
-          ' replaces every non-space character with *, ',
+          ', or ',
           { text: 'Tokenize', term: 'tokenize' },
-          ' writes stable tok_ values, ',
+          '.',
+        ],
+      },
+      {
+        label: 'Methods',
+        text: [
+          'Auto and ',
+          { text: 'Pseudonymize', term: 'pseudonymize' },
+          ' create readable fake values. ',
+          { text: 'Redact', term: 'redact' },
+          ', ',
+          { text: 'Mask', term: 'mask' },
+          ', and ',
+          { text: 'Tokenize', term: 'tokenize' },
+          ' are stricter. ',
           { text: 'Smart replacement', term: 'smartReplacement' },
           ' uses ',
           { text: 'Local AI', term: 'localAi' },
-          ', and ',
+          '; ',
           { text: 'Pass through', term: 'passThrough' },
-          ' keeps the original value.',
+          ' keeps originals.',
         ],
       },
       {
-        label: 'Role',
+        label: 'Run and seed',
         text: [
-          'Used by privacy release modes. Auto treats emails, names, phone numbers, tax IDs, and addresses as ',
-          { text: 'Direct ID', term: 'directIdentifier' },
-          '; timestamps, postal codes, IDs, IPs, URLs, MACs, and country codes as ',
-          { text: 'Quasi-ID', term: 'quasiIdentifier' },
-          '; and other columns as Attribute. Auto does not infer ',
-          { text: 'Sensitive', term: 'sensitive' },
-          ', so mark private value columns yourself when ',
-          { text: 'l-diversity', term: 'lDiversity' },
-          ' or ',
-          { text: 't-closeness', term: 'tCloseness' },
-          ' should check them.',
+          'Show Preview samples selected columns without writing a file. Create protected CSV writes the output. Repeatable seeds are session-only and are not saved to settings or the system keychain.',
         ],
-      },
-      {
-        label: 'Type override',
-        text: 'Use this when detection picked the wrong data type. Strategy and Role both become easier to reason about when the type is accurate.',
-      },
-      {
-        label: 'Detector Review',
-        text: 'Use Detector Review to inspect sample-level evidence behind the column risk: highlighted spans, the privacy category, confidence, and a redacted sample output. Balanced mode hides lower-confidence cues; Strict mode includes them for a broader review with more false positives.',
       },
     ],
   },
@@ -99,11 +88,9 @@ export const sectionHelp = {
     title: 'Configuration',
     summary: [
       [
-        'This section decides where the output goes and holds release-specific settings. Standard row-level transformation uses the per-column ',
+        'This section decides where the protected CSV goes. The file is transformed with the per-column ',
         { text: 'Strategy', term: 'strategy' },
-        ' values; formal, DP aggregate, and synthetic releases use the mode selected near the column table plus the ',
-        { text: 'Role', term: 'role' },
-        ' and privacy settings.',
+        ' values from the column review.',
       ],
     ],
     points: [
@@ -123,14 +110,6 @@ export const sectionHelp = {
           ' runs through ',
           { text: 'Ollama', term: 'ollama' },
           ' on this device.',
-        ],
-      },
-      {
-        label: 'Release settings',
-        text: [
-          'After choosing the release mode near the column table, complete any mode-specific settings here: k/l/t thresholds for formal row-level checks such as ',
-          { text: 'k-anonymity', term: 'kAnonymity' },
-          ', DP aggregate bounds for noisy summary statistics, or row count for Synthetic data.',
         ],
       },
     ],
@@ -181,60 +160,10 @@ export const sectionHelp = {
       },
     ],
   },
-  privacyRelease: {
-    title: 'Privacy Release',
-    summary: [
-      [
-        'Release mode controls the shape of the output. It is separate from the ',
-        { text: 'Strategy', term: 'strategy' },
-        ' dropdown used by standard row-level transformation.',
-      ],
-    ],
-    points: [
-      {
-        label: 'Standard CSV transform',
-        text: 'Writes row-level CSV data and transforms selected columns in place. It is local masking and pseudonymization, not a formal anonymity guarantee.',
-      },
-      {
-        label: 'k/l/t tabular',
-        text: [
-          'Writes row-level output, redacts ',
-          { text: 'Direct ID', term: 'directIdentifier' },
-          ' values, generalizes ',
-          { text: 'Quasi-ID', term: 'quasiIdentifier' },
-          ' values, and checks ',
-          { text: 'k-anonymity', term: 'kAnonymity' },
-          ' plus optional ',
-          { text: 'l-diversity', term: 'lDiversity' },
-          ' and ',
-          { text: 't-closeness', term: 'tCloseness' },
-          '. ',
-          { text: 'Sensitive', term: 'sensitive' },
-          ' and Attribute values are kept unless you assign a different role. Suppress small classes drops rows only when that switch is enabled.',
-        ],
-      },
-      {
-        label: 'DP aggregate',
-        text: 'Writes noisy count, sum, or mean results instead of source rows. Sum and mean need a numeric value column plus public lower and upper bounds. Grouped output requires public allowed group values and an Attribute-role group column. Local release history can block or warn when cumulative epsilon exceeds the configured limit. Repeatable deterministic output is not available for DP aggregate releases.',
-      },
-      {
-        label: 'Synthetic data',
-        text: [
-          'Writes a complete replacement dataset from a simple per-column generator. Every CSV column is included, ',
-          { text: 'Strategy', term: 'strategy' },
-          ' choices such as ',
-          { text: 'Smart replacement', term: 'smartReplacement' },
-          ' are ignored, and ',
-          { text: 'Role', term: 'role' },
-          ' plus Type determine the generated placeholder shape. Values are keyed by column so generated columns stay independent unless explicit relationship controls are added later. The same schema, row count, roles, types, and seed produce the same generated output. It does not preserve source relationships between columns and does not provide a DP synthetic guarantee.',
-        ],
-      },
-    ],
-  },
   appSettings: {
     title: 'App Settings',
     summary: [
-      'These settings control repeatability, output naming, DP release history, preview size, and whether paths are remembered between runs.',
+      'These settings control repeatability, output naming, preview size, and whether paths are remembered between runs.',
     ],
     points: [
       {
@@ -272,12 +201,8 @@ export const sectionHelp = {
           { text: 'model', term: 'model' },
           ' failures, ',
           { text: 'fallbacks', term: 'fallback' },
-          ', or suppressed rows.',
+          ', or values that used rule-based replacement.',
         ],
-      },
-      {
-        label: 'Synthetic data',
-        text: 'Synthetic data preview is disabled because the normal preview shows row-level Strategy transformations, while Synthetic data writes a generated replacement dataset.',
       },
     ],
   },
@@ -289,11 +214,7 @@ export const sectionHelp = {
     points: [
       {
         label: 'Counters',
-        text: 'Counts show how many columns were treated as direct identifiers, quasi-identifiers, sensitive columns, masked columns, token columns, generalized columns, pass-through columns, and so on.',
-      },
-      {
-        label: 'Model checks',
-        text: 'Formal privacy rows show thresholds and actual values. A Review status means the output may not meet that selected privacy target.',
+        text: 'Counts show how many columns were treated as direct identifiers, quasi-identifiers, sensitive columns, masked columns, token columns, pass-through columns, and so on.',
       },
       {
         label: 'Notes',
@@ -302,7 +223,7 @@ export const sectionHelp = {
           { text: 'Local AI', term: 'localAi' },
           ' ',
           { text: 'fallbacks', term: 'fallback' },
-          ', DP release history, contribution bounds, or synthetic data limitations.',
+          ' or columns left unchanged.',
         ],
       },
     ],

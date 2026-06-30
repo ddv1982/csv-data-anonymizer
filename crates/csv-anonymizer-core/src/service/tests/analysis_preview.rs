@@ -77,7 +77,11 @@ fn preview_preserves_short_numeric_code_shape() {
         .preview_anonymization(PreviewParams {
             file_path: input_path,
             columns: vec![0],
-            controls: vec![],
+            controls: vec![ColumnControl {
+                column_index: 0,
+                type_override: None,
+                strategy: AnonymizationStrategy::Auto,
+            }],
             deterministic: true,
             seed: "numeric-string-seed".to_string(),
             sample_count: 3,
@@ -162,7 +166,28 @@ fn preview_uses_type_specific_phone_and_name_strategies() {
         .preview_anonymization(PreviewParams {
             file_path: input_path,
             columns: vec![0, 1, 2, 3],
-            controls: vec![],
+            controls: vec![
+                ColumnControl {
+                    column_index: 0,
+                    type_override: None,
+                    strategy: AnonymizationStrategy::Auto,
+                },
+                ColumnControl {
+                    column_index: 1,
+                    type_override: None,
+                    strategy: AnonymizationStrategy::Auto,
+                },
+                ColumnControl {
+                    column_index: 2,
+                    type_override: None,
+                    strategy: AnonymizationStrategy::Auto,
+                },
+                ColumnControl {
+                    column_index: 3,
+                    type_override: None,
+                    strategy: AnonymizationStrategy::Auto,
+                },
+            ],
             deterministic: true,
             seed: "people-seed".to_string(),
             sample_count: 1,
@@ -192,7 +217,11 @@ fn people_names_fixture_previews_name_like_full_names() {
         .preview_anonymization(PreviewParams {
             file_path: fixture("people-names.csv"),
             columns: vec![2],
-            controls: vec![],
+            controls: vec![ColumnControl {
+                column_index: 2,
+                type_override: None,
+                strategy: AnonymizationStrategy::Auto,
+            }],
             deterministic: true,
             seed: "people-name-quality-seed".to_string(),
             sample_count: 5,
@@ -230,7 +259,28 @@ fn people_names_fixture_treats_single_token_name_column_as_name() {
         .preview_anonymization(PreviewParams {
             file_path: fixture("people-names.csv"),
             columns: vec![0, 1, 2, 3],
-            controls: vec![],
+            controls: vec![
+                ColumnControl {
+                    column_index: 0,
+                    type_override: None,
+                    strategy: AnonymizationStrategy::Auto,
+                },
+                ColumnControl {
+                    column_index: 1,
+                    type_override: None,
+                    strategy: AnonymizationStrategy::Auto,
+                },
+                ColumnControl {
+                    column_index: 2,
+                    type_override: None,
+                    strategy: AnonymizationStrategy::Auto,
+                },
+                ColumnControl {
+                    column_index: 3,
+                    type_override: None,
+                    strategy: AnonymizationStrategy::Auto,
+                },
+            ],
             deterministic: true,
             seed: "people-name-quality-seed".to_string(),
             sample_count: 5,
@@ -318,7 +368,6 @@ fn preview_name_mappings_match_full_output_for_previewed_rows() {
             seed: "preview-full-seed".to_string(),
             force: false,
             preview_smart_replacements: vec![],
-            privacy_config: None,
         })
         .unwrap();
 

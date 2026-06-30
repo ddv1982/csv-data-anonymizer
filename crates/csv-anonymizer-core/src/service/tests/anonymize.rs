@@ -16,7 +16,6 @@ fn anonymizes_selected_columns_without_web_runtime() {
             seed: "service-seed".to_string(),
             force: false,
             preview_smart_replacements: vec![],
-            privacy_config: None,
         })
         .unwrap();
 
@@ -41,42 +40,10 @@ fn anonymize_rejects_deterministic_blank_seed() {
             seed: " ".to_string(),
             force: false,
             preview_smart_replacements: vec![],
-            privacy_config: None,
         })
         .unwrap_err();
 
     assert!(error.to_string().contains("non-empty private seed"));
-}
-
-#[test]
-fn standard_privacy_config_uses_streaming_transform_pipeline() {
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
-    let output_path = temp_dir.path().join("sample-standard-config.csv");
-
-    let result = service
-        .anonymize_csv(AnonymizeParams {
-            file_path: fixture("sample.csv"),
-            output_path: output_path.clone(),
-            columns: vec![1],
-            controls: vec![],
-            deterministic: true,
-            seed: "standard-config-seed".to_string(),
-            force: false,
-            preview_smart_replacements: vec![],
-            privacy_config: Some(crate::PrivacyConfig::standard()),
-        })
-        .unwrap();
-
-    let output = read_sample(&output_path, 10).unwrap();
-
-    assert_eq!(
-        result.privacy_report.release_mode,
-        crate::ReleaseMode::Standard
-    );
-    assert_eq!(result.row_count, 5);
-    assert_eq!(output.rows.len(), 5);
-    assert!(!output.rows.iter().any(|row| row[1] == "alice@example.com"));
 }
 
 #[test]
@@ -105,7 +72,6 @@ fn anonymize_csv_with_control_reports_progress() {
                     seed: "service-seed".to_string(),
                     force: false,
                     preview_smart_replacements: vec![],
-                    privacy_config: None,
                 },
                 &mut control,
             )
@@ -135,7 +101,6 @@ fn selected_sample_empty_columns_transform_later_values() {
                 seed: "sparse-seed".to_string(),
                 force: false,
                 preview_smart_replacements: vec![],
-                privacy_config: None,
             },
             2,
         )
@@ -166,12 +131,37 @@ fn anonymize_preserves_numeric_shapes_in_output_file() {
             file_path: input_path,
             output_path: output_path.clone(),
             columns: vec![0, 1, 2, 3, 4],
-            controls: vec![],
+            controls: vec![
+                ColumnControl {
+                    column_index: 0,
+                    type_override: None,
+                    strategy: AnonymizationStrategy::Auto,
+                },
+                ColumnControl {
+                    column_index: 1,
+                    type_override: None,
+                    strategy: AnonymizationStrategy::Auto,
+                },
+                ColumnControl {
+                    column_index: 2,
+                    type_override: None,
+                    strategy: AnonymizationStrategy::Auto,
+                },
+                ColumnControl {
+                    column_index: 3,
+                    type_override: None,
+                    strategy: AnonymizationStrategy::Auto,
+                },
+                ColumnControl {
+                    column_index: 4,
+                    type_override: None,
+                    strategy: AnonymizationStrategy::Auto,
+                },
+            ],
             deterministic: true,
             seed: "numeric-output-seed".to_string(),
             force: false,
             preview_smart_replacements: vec![],
-            privacy_config: None,
         })
         .unwrap();
 
@@ -226,7 +216,6 @@ fn anonymize_reuses_repeated_name_sources_in_random_mode() {
             seed: "random-repeat-seed".to_string(),
             force: false,
             preview_smart_replacements: vec![],
-            privacy_config: None,
         })
         .unwrap();
 
@@ -261,7 +250,6 @@ fn anonymize_random_mode_avoids_duplicate_names_for_distinct_sources() {
             seed: "random-unique-seed".to_string(),
             force: false,
             preview_smart_replacements: vec![],
-            privacy_config: None,
         })
         .unwrap();
 
@@ -314,7 +302,6 @@ fn anonymize_deterministic_output_is_reproducible() {
         seed: "deterministic-output-seed".to_string(),
         force: false,
         preview_smart_replacements: vec![],
-        privacy_config: None,
     };
 
     service
@@ -352,7 +339,6 @@ fn anonymize_applies_pass_through_control() {
             seed: "pass-through-seed".to_string(),
             force: false,
             preview_smart_replacements: vec![],
-            privacy_config: None,
         })
         .unwrap();
 
@@ -399,7 +385,6 @@ fn anonymize_does_not_count_auto_noop_selected_columns() {
             seed: "noop-count-seed".to_string(),
             force: false,
             preview_smart_replacements: vec![],
-            privacy_config: None,
         })
         .unwrap();
 

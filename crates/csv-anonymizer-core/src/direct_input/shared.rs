@@ -1,6 +1,8 @@
 use crate::detection::{classify_pii_risk, max_pii_risk};
 use crate::error::{AnonymizerError, Result};
-use crate::metadata::{apply_column_selection, build_column_metadata};
+use crate::metadata::{
+    apply_column_selection, build_column_metadata, default_strategy_for_pii_risk,
+};
 use crate::preview::generate_column_preview;
 use crate::service::{
     apply_column_controls, build_privacy_report, preview_warning_for_column,
@@ -11,10 +13,7 @@ use crate::smart::{
     prepare_smart_replacements_from_rows,
 };
 use crate::strategies::{TransformState, transform_row_with_state};
-use crate::types::{
-    AnonymizationStrategy, ColumnControl, ColumnMetadata, DataType, PiiRisk, PreviewData,
-    PrivacyReport,
-};
+use crate::types::{ColumnControl, ColumnMetadata, DataType, PreviewData, PrivacyReport};
 use std::collections::HashMap;
 
 pub(super) const PASTE_MAX_CONTENT_BYTES: usize = 5 * 1024 * 1024;
@@ -332,17 +331,7 @@ pub(super) fn metadata_from_fields(
 
 fn apply_direct_input_strategy_defaults(metadata: &mut [ColumnMetadata]) {
     for column in metadata {
-        if direct_input_default_strategy(column) == AnonymizationStrategy::Redact {
-            column.strategy = AnonymizationStrategy::Redact;
-        }
-    }
-}
-
-fn direct_input_default_strategy(column: &ColumnMetadata) -> AnonymizationStrategy {
-    if matches!(column.pii_risk, PiiRisk::High | PiiRisk::Medium) {
-        AnonymizationStrategy::Redact
-    } else {
-        AnonymizationStrategy::Auto
+        column.strategy = default_strategy_for_pii_risk(column.pii_risk);
     }
 }
 

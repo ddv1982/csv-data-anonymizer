@@ -13,7 +13,6 @@ tauri-build.workspace = true
 [dependencies]
 csv-anonymizer-core = { path = "../crates/csv-anonymizer-core" }
 directories.workspace = true
-keyring.workspace = true
 open.workspace = true
 reqwest.workspace = true
 serde.workspace = true

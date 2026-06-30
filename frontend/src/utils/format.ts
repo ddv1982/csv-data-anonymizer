@@ -16,8 +16,5 @@ export function formatResultStats(result: AnonymizeData) {
   const rows = result.rowCount.toLocaleString()
   const colText = result.columnsAnonymized === 1 ? 'column' : 'columns'
   const duration = result.durationMs < 1000 ? `${result.durationMs}ms` : `${(result.durationMs / 1000).toFixed(2)}s`
-  if (result.privacyReport.releaseMode === 'differentialPrivacyAggregate') {
-    return `${rows} aggregate rows released, ${result.columnsAnonymized} input ${colText} used in ${duration}`
-  }
   return `${rows} rows processed, ${result.columnsAnonymized} ${colText} transformed in ${duration}`
 }

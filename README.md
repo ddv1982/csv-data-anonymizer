@@ -10,12 +10,11 @@ All normal CSV processing runs locally in Rust. Optional local LLM replacement a
 - Auto-selects high and medium risk columns while still letting you choose exactly which columns to transform.
 - Shows a preview before writing output.
 - Streams standard masking/pseudonymization runs instead of loading the whole file into memory.
-- Supports direct paste workflows for CSV text, JSON, YAML, XML, plain text, and logs up to 5 MiB; larger CSV inputs should use the streaming file workflow.
+- Supports lightweight paste workflows for small CSV text or JSON snippets up to 5 MiB; larger CSV inputs should use the streaming file workflow.
 - Keeps repeated source values consistent within a run.
 - Supports repeatable replacements with a private seed, useful when multiple files need matching pseudonyms.
 - Offers optional Smart replacement with a local LLM for selected columns.
 - Produces a privacy report with transformed column counts, reused values, token counts, Local AI replacement counts, and fallbacks.
-- Includes opt-in release modes for formal tabular MVP checks, DP aggregate CSVs, and sampled synthetic/test CSV generation.
 
 ## Local LLM Smart Replacement
 
@@ -30,7 +29,7 @@ The first implementation uses:
 Usage:
 
 1. Install or start Ollama.
-2. In CSV Anonymizer, enable Local AI in the configuration panel.
+2. In CSV Anonymizer, open Local AI setup when Smart replacement prompts for it.
 3. Download `gemma3:4b` from the app if it is not already available.
 4. Select `Smart replacement (Local AI)` for the columns that should use the model.
 5. Review the preview, then run the transformation.
@@ -43,15 +42,7 @@ Model weights and local runtime binaries are not bundled in the repository or de
 
 The standard workflow is row-level transformation: it masks, pseudonymizes, tokenizes, or locally replaces selected values in the source rows. It reduces exposure, but the output is still transformed source data, not guaranteed anonymous data.
 
-Opt-in privacy release modes are available for:
-
-- Formal tabular MVP releases: redact direct identifiers, generalize quasi-identifiers, evaluate k-anonymity, optionally evaluate l-diversity and t-closeness, and suppress below-threshold classes when enabled.
-- DP aggregate releases: write noisy count, sum, or mean aggregate CSVs with a configured epsilon and public bounds for numeric sum/mean releases. Lower epsilon means more noise and stronger privacy for that aggregate release; higher epsilon means less noise and weaker privacy. The desktop app owns a local DP release history, can block or warn when a configured epsilon budget would be exceeded, rejects deterministic DP output, supports privacy-unit contribution bounds, and requires allowed group values for grouped output.
-- Synthetic/test data releases: sample simple column distributions and replace direct identifiers with placeholders. This mode is for test data generation and does not provide a differential privacy guarantee.
-
-These modes are local MVP implementations, not substitutes for a privacy review.
-
-Review previews and privacy reports before sharing generated files.
+It does not produce formal anonymity, differential privacy aggregates, or synthetic datasets. Review previews and privacy reports before sharing generated files.
 
 ## Strategies
 

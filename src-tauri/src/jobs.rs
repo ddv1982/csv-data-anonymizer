@@ -1,9 +1,8 @@
 use crate::job_registry::{JobLifecycle, JobRegistry, JobRegistryEntry};
 use crate::local_ai::{LocalAiRequest, smart_provider_for_request};
-use crate::settings::DpBudgetLedger;
 use csv_anonymizer_core::{
     AnonymizeData, AnonymizeParams, AnonymizerError, AnonymizerService, ProcessControl,
-    ProcessProgress, ReleaseMode, SmartReplacementProvider,
+    ProcessProgress, SmartReplacementProvider,
 };
 use serde::Serialize;
 use std::sync::Arc;
@@ -165,7 +164,6 @@ impl AnonymizeJobState {
 
 pub fn run_anonymize_job(
     job: Arc<AnonymizeJob>,
-    ledger: Arc<DpBudgetLedger>,
     input: AnonymizeParams,
     sample_row_count: usize,
     local_ai: Option<LocalAiRequest>,
@@ -181,29 +179,17 @@ pub fn run_anonymize_job(
         should_cancel: Some(&should_cancel),
     };
 
-    let release_mode = input
-        .privacy_config
-        .as_ref()
-        .map(|config| config.release_mode)
-        .unwrap_or_default();
-    let provider_controls = if release_mode == ReleaseMode::Standard {
-        input.controls.as_slice()
-    } else {
-        &[]
-    };
-    let result = match smart_provider_for_request(local_ai, provider_controls) {
+    let result = match smart_provider_for_request(local_ai, &input.controls) {
         Ok(mut provider) => {
             let provider = provider
                 .as_mut()
                 .map(|provider| provider as &mut dyn SmartReplacementProvider);
-            ledger.run_with_budget(input, |input| {
-                service().anonymize_csv_with_sample_rows_and_control_and_smart_provider(
-                    input,
-                    sample_row_count,
-                    Some(&mut control),
-                    provider,
-                )
-            })
+            service().anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+                input,
+                sample_row_count,
+                Some(&mut control),
+                provider,
+            )
         }
         Err(error) => Err(AnonymizerError::SmartReplacement(error)),
     };
@@ -218,14 +204,9 @@ fn service() -> AnonymizerService {
 mod tests {
     use super::*;
     use csv_anonymizer_core::{
-        AnonymizationStrategy, ColumnControl, DataType, PrivacyReport, ReleaseMode,
-        SmartReplacementEntry,
+        AnonymizationStrategy, ColumnControl, DataType, PrivacyReport, SmartReplacementEntry,
     };
     use std::fs;
-
-    fn test_ledger(temp_dir: &tempfile::TempDir) -> Arc<DpBudgetLedger> {
-        Arc::new(DpBudgetLedger::new(temp_dir.path().join("settings.json")))
-    }
 
     fn age_terminal_job(job: &AnonymizeJob) {
         job.lifecycle.set_terminal_at(
@@ -384,7 +365,6 @@ mod tests {
 
         run_anonymize_job(
             job.clone(),
-            test_ledger(&temp_dir),
             AnonymizeParams {
                 file_path: input_path,
                 output_path: output_path.clone(),
@@ -409,7 +389,6 @@ mod tests {
                         replacement: "Preview Bob".to_string(),
                     },
                 ],
-                privacy_config: None,
             },
             10,
             None,
@@ -439,7 +418,6 @@ mod tests {
 
         run_anonymize_job(
             job.clone(),
-            test_ledger(&temp_dir),
             AnonymizeParams {
                 file_path: input_path,
                 output_path: output_path.clone(),
@@ -449,7 +427,6 @@ mod tests {
                 seed: "standard-seed".to_string(),
                 force: false,
                 preview_smart_replacements: vec![],
-                privacy_config: None,
             },
             10,
             None,
@@ -460,7 +437,7 @@ mod tests {
 
         assert_eq!(status.state, AnonymizeJobState::Succeeded);
         assert!(status.result.is_some());
-        assert!(output.contains("example.com"));
+        assert!(output.contains("[EMAIL]"));
         assert!(!output.contains("alice@example.com"));
     }
 
@@ -479,7 +456,6 @@ mod tests {
 
         run_anonymize_job(
             job.clone(),
-            test_ledger(&temp_dir),
             AnonymizeParams {
                 file_path: input_path,
                 output_path: output_path.clone(),
@@ -493,7 +469,6 @@ mod tests {
                     original: "Alice Smith".to_string(),
                     replacement: "Preview Alice".to_string(),
                 }],
-                privacy_config: None,
             },
             10,
             None,
@@ -504,7 +479,7 @@ mod tests {
 
         assert_eq!(status.state, AnonymizeJobState::Succeeded);
         assert!(status.result.is_some());
-        assert!(output.contains("example.com"));
+        assert!(output.contains("[EMAIL]"));
         assert!(!output.contains("alice@example.com"));
     }
 
@@ -519,7 +494,6 @@ mod tests {
 
         run_anonymize_job(
             job.clone(),
-            test_ledger(&temp_dir),
             AnonymizeParams {
                 file_path: input_path,
                 output_path: output_path.clone(),
@@ -533,7 +507,6 @@ mod tests {
                 seed: "smart-missing-provider-seed".to_string(),
                 force: false,
                 preview_smart_replacements: vec![],
-                privacy_config: None,
             },
             10,
             None,
@@ -559,7 +532,6 @@ mod tests {
             columns_anonymized: 1,
             duration_ms: 1,
             privacy_report: PrivacyReport {
-                release_mode: ReleaseMode::Standard,
                 direct_identifiers: 0,
                 quasi_identifiers: 0,
                 sensitive_columns: 0,
@@ -568,12 +540,7 @@ mod tests {
                 opaque_token_columns: 0,
                 masked_columns: 0,
                 redacted_columns: 0,
-                generalized_columns: 0,
                 pass_through_columns: 0,
-                suppressed_rows: 0,
-                synthetic_rows: 0,
-                dp_epsilon: None,
-                dp_budget: None,
                 unique_pseudonym_values: 1,
                 reused_pseudonym_values: 0,
                 collisions_avoided: 0,
@@ -583,7 +550,6 @@ mod tests {
                 smart_replacement_rejections: 0,
                 smart_replacement_rejection_reasons: Vec::new(),
                 smart_replacement_fallbacks: 0,
-                formal_models: Vec::new(),
                 readiness: Default::default(),
                 evidence: Vec::new(),
                 column_reports: Vec::new(),

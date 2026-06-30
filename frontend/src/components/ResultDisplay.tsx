@@ -1,12 +1,11 @@
 import { CheckCircle2, FolderOpen, RefreshCcw } from 'lucide-react'
 import type { GlossaryKey } from '../glossary'
 import { openOutputLocation } from '../tauri'
-import type { AnonymizeData, PrivacyModel, PrivacyReport, ReleaseEvidenceStatus } from '../types'
+import type { AnonymizeData, PrivacyReport, ReleaseEvidenceStatus } from '../types'
 import { messageFrom } from '../utils/errors'
 import { formatResultStats, formatToken } from '../utils/format'
-import { releaseModeGlossaryTerm, releaseModeLabel } from '../utils/privacyDisplay'
 import { Alert } from './Alert'
-import { GlossaryLabel, GlossaryPopover } from './GlossaryPopover'
+import { GlossaryPopover } from './GlossaryPopover'
 import { RiskBadge } from './RiskBadge'
 import { SectionHelp } from './SectionHelp'
 
@@ -32,7 +31,7 @@ export function ResultDisplay({
       <Alert variant="success" icon={<CheckCircle2 aria-hidden="true" />}>
         <h2>Output created</h2>
         <div className="result-description">
-          <p>Selected data was transformed or released according to the configured workflow.</p>
+          <p>Selected data was transformed in the protected CSV.</p>
           <p className="mono muted-text result-path">{result.outputPath}</p>
           <p className="muted-text text-sm">{formatResultStats(result)}</p>
         </div>
@@ -56,11 +55,6 @@ export function ResultDisplay({
 
 export function PrivacyReportSummary({ privacyReport }: { privacyReport: PrivacyReport }) {
   const privacyMetrics: Array<{ label: string; value: string | number; glossaryTerm: GlossaryKey }> = [
-    {
-      label: 'Release mode',
-      value: releaseModeLabel(privacyReport.releaseMode),
-      glossaryTerm: releaseModeGlossaryTerm(privacyReport.releaseMode),
-    },
     { label: 'Direct identifiers', value: privacyReport.directIdentifiers, glossaryTerm: 'directIdentifier' },
     { label: 'Quasi-identifiers', value: privacyReport.quasiIdentifiers, glossaryTerm: 'quasiIdentifier' },
     { label: 'Sensitive columns', value: privacyReport.sensitiveColumns, glossaryTerm: 'sensitive' },
@@ -73,11 +67,7 @@ export function PrivacyReportSummary({ privacyReport }: { privacyReport: Privacy
     { label: 'Opaque token columns', value: privacyReport.opaqueTokenColumns, glossaryTerm: 'opaqueTokenColumns' },
     { label: 'Masked columns', value: privacyReport.maskedColumns, glossaryTerm: 'maskedColumns' },
     { label: 'Redacted columns', value: privacyReport.redactedColumns, glossaryTerm: 'redactedColumns' },
-    { label: 'Generalized columns', value: privacyReport.generalizedColumns, glossaryTerm: 'generalizedColumns' },
     { label: 'Pass-through/no-op', value: privacyReport.passThroughColumns, glossaryTerm: 'passThroughNoOp' },
-    { label: 'Suppressed rows', value: privacyReport.suppressedRows, glossaryTerm: 'suppressedRows' },
-    { label: 'Synthetic rows', value: privacyReport.syntheticRows, glossaryTerm: 'syntheticRows' },
-    { label: 'DP epsilon', value: privacyReport.dpEpsilon ?? 'n/a', glossaryTerm: 'epsilon' },
     { label: 'Unique pseudonyms', value: privacyReport.uniquePseudonymValues, glossaryTerm: 'uniquePseudonyms' },
     { label: 'Opaque token values', value: privacyReport.opaqueTokenValues, glossaryTerm: 'opaqueTokenValues' },
     {
@@ -99,32 +89,6 @@ export function PrivacyReportSummary({ privacyReport }: { privacyReport: Privacy
     },
     { label: 'Smart fallbacks', value: privacyReport.smartReplacementFallbacks, glossaryTerm: 'smartFallbacks' },
   ]
-  if (privacyReport.dpBudget) {
-    privacyMetrics.splice(
-      14,
-      0,
-      {
-        label: 'DP budget status',
-        value: budgetStatusLabel(privacyReport.dpBudget.status),
-        glossaryTerm: 'dpBudgetStatus',
-      },
-      {
-        label: 'DP spent after',
-        value: privacyReport.dpBudget.spentEpsilonAfter,
-        glossaryTerm: 'dpBudgetSpent',
-      },
-      {
-        label: 'DP budget limit',
-        value: privacyReport.dpBudget.limitEpsilon,
-        glossaryTerm: 'dpBudgetLimit',
-      },
-      {
-        label: 'DP remaining',
-        value: privacyReport.dpBudget.remainingEpsilon,
-        glossaryTerm: 'dpBudgetRemaining',
-      },
-    )
-  }
 
   return (
     <div className="preview-group">
@@ -144,27 +108,6 @@ export function PrivacyReportSummary({ privacyReport }: { privacyReport: Privacy
             </div>
           ))}
         </div>
-        {privacyReport.formalModels.length > 0 ? (
-          <div className="privacy-models">
-            {privacyReport.formalModels.map((model) => (
-              <div className="privacy-model-row" key={model.model}>
-                <span>
-                  <strong>
-                    <GlossaryLabel term={privacyModelGlossaryTerm(model.model)}>{formatToken(model.model)}</GlossaryLabel>
-                  </strong>
-                  <span className="muted-text text-sm">
-                    {model.actual} / {model.threshold}
-                  </span>
-                </span>
-                <span className={model.satisfied ? 'status-pill success' : 'status-pill'}>
-                  {model.satisfied ? 'Satisfied' : 'Review'}
-                </span>
-                <p className="muted-text text-sm">{model.message}</p>
-              </div>
-            ))}
-          </div>
-        ) : null}
-        {privacyReport.readiness ? <ReportReadinessSummary privacyReport={privacyReport} /> : null}
         {privacyReport.utilityMetrics.length > 0 ? (
           <div className="report-subsection">
             <h4>Utility</h4>
@@ -232,7 +175,6 @@ export function PrivacyReportSummary({ privacyReport }: { privacyReport: Privacy
                         <strong>{column.columnName}</strong>
                         <span className="muted-text text-sm">
                           #{column.columnIndex} · {formatToken(column.detectedType)}
-                          {column.role ? ` · ${formatToken(column.role)}` : ''}
                         </span>
                       </td>
                       <td>
@@ -268,66 +210,18 @@ export function PrivacyReportSummary({ privacyReport }: { privacyReport: Privacy
   )
 }
 
-function ReportReadinessSummary({ privacyReport }: { privacyReport: PrivacyReport }) {
-  const readiness = privacyReport.readiness
-  return (
-    <div className="report-subsection">
-      <div className="report-subsection-header">
-        <h4>Release Readiness</h4>
-        <span className={statusPillClass(readiness.status)}>{statusLabel(readiness.status)}</span>
-      </div>
-      <div className="report-readiness-grid">
-        <ReportList title="Blocked" items={readiness.blockers} />
-        <ReportList title="Review" items={readiness.reviewItems} />
-        <ReportList title="Verified" items={readiness.verifiedItems} />
-      </div>
-    </div>
-  )
-}
-
-function ReportList({ title, items }: { title: string; items: string[] }) {
-  if (items.length === 0) return null
-
-  return (
-    <div className="report-list">
-      <strong>{title}</strong>
-      <ul>
-        {items.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-
-function statusPillClass(status: ReleaseEvidenceStatus | PrivacyReport['readiness']['status']) {
+function statusPillClass(status: ReleaseEvidenceStatus) {
   if (status === 'verified') return 'status-pill success'
   if (status === 'blocked') return 'status-pill blocked'
   if (status === 'review') return 'status-pill warning'
   return 'status-pill'
 }
 
-function statusLabel(status: ReleaseEvidenceStatus | PrivacyReport['readiness']['status']) {
+function statusLabel(status: ReleaseEvidenceStatus) {
   if (status === 'verified') return 'Verified'
   if (status === 'blocked') return 'Blocked'
   if (status === 'review') return 'Review'
   return 'Info'
-}
-
-function privacyModelGlossaryTerm(model: PrivacyModel): GlossaryKey {
-  if (model === 'kAnonymity') return 'kAnonymity'
-  if (model === 'lDiversity') return 'lDiversity'
-  if (model === 'tCloseness') return 'tCloseness'
-  if (model === 'differentialPrivacy') return 'epsilon'
-  if (model === 'syntheticData') return 'syntheticData'
-  return 'formalModel'
-}
-
-function budgetStatusLabel(status: string) {
-  if (status === 'withinBudget') return 'Within budget'
-  if (status === 'atBudget') return 'At budget'
-  if (status === 'overBudget') return 'Over budget'
-  return formatToken(status)
 }
 
 function smartRejectionReasonLabel(reason: PrivacyReport['smartReplacementRejectionReasons'][number]['reason']) {
