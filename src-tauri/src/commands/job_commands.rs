@@ -2,12 +2,10 @@ use super::shared::authorize_or_confirm_output_file;
 use crate::jobs::{AnonymizeJobState, AnonymizeJobStatus, AnonymizeJobStore, run_anonymize_job};
 use crate::local_ai::LocalAiRequest;
 use crate::path_access::PathAccess;
-use crate::settings::DpBudgetLedger;
-use csv_anonymizer_core::{AnonymizeParams, ColumnControl, PrivacyConfig, SmartReplacementEntry};
+use csv_anonymizer_core::{AnonymizeParams, ColumnControl, SmartReplacementEntry};
 use serde::Deserialize;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
-use std::sync::Arc;
 use tauri::State;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -25,8 +23,6 @@ pub struct StartAnonymizeJobRequest {
     pub total_row_count: Option<usize>,
     #[serde(default)]
     pub preview_smart_replacements: Vec<SmartReplacementEntry>,
-    #[serde(default)]
-    pub privacy_config: Option<PrivacyConfig>,
     pub local_ai: Option<LocalAiRequest>,
 }
 
@@ -35,7 +31,6 @@ pub async fn start_anonymize_job(
     app: tauri::AppHandle,
     path_access: State<'_, PathAccess>,
     jobs: State<'_, AnonymizeJobStore>,
-    ledger: State<'_, Arc<DpBudgetLedger>>,
     request: StartAnonymizeJobRequest,
 ) -> Result<AnonymizeJobStatus, String> {
     let file_path = path_access.authorize_input_file(request.file_path)?;
@@ -44,13 +39,11 @@ pub async fn start_anonymize_job(
     let initial_status = job.snapshot()?;
     let worker_job = job.clone();
     let panic_job = job.clone();
-    let worker_ledger = ledger.inner().clone();
 
     let _job_handle = tauri::async_runtime::spawn_blocking(move || {
         let result = catch_unwind(AssertUnwindSafe(|| {
             run_anonymize_job(
                 worker_job,
-                worker_ledger,
                 AnonymizeParams {
                     file_path,
                     output_path,
@@ -60,7 +53,6 @@ pub async fn start_anonymize_job(
                     seed: request.seed,
                     force: request.force,
                     preview_smart_replacements: request.preview_smart_replacements,
-                    privacy_config: request.privacy_config,
                 },
                 request.sample_row_count,
                 request.local_ai,

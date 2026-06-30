@@ -1,12 +1,10 @@
 import type { Dispatch, SetStateAction } from 'react'
-import { privacyConfigFromSettings } from '../defaults'
 import { analyzeCsv, countCsvRows, pickInputCsv, pickOutputCsv } from '../tauri'
 import type {
   AnalyzeResponse,
   AnonymizeData,
   AppSettings,
   ColumnControl,
-  PrivacyConfig,
 } from '../types'
 import { messageFrom } from '../utils/errors'
 import { defaultOutputPathWithSuffix, directoryOf } from '../utils/paths'
@@ -28,7 +26,6 @@ type CsvAnalysisOptions = {
   setBusy: Dispatch<SetStateAction<BusyState>>
   setError: Dispatch<SetStateAction<string | null>>
   setResult: Dispatch<SetStateAction<AnonymizeData | null>>
-  setPrivacyConfig: Dispatch<SetStateAction<PrivacyConfig>>
   clearArtifacts: () => void
   persistSettings: (settings: AppSettings) => Promise<void>
   onResetData: () => void
@@ -46,7 +43,6 @@ export function useCsvAnalysis({
   setBusy,
   setError,
   setResult,
-  setPrivacyConfig,
   clearArtifacts,
   persistSettings,
   onResetData,
@@ -86,7 +82,6 @@ export function useCsvAnalysis({
     setError(null)
     clearArtifacts()
     selection.setColumnControls({})
-    setPrivacyConfig(privacyConfigFromSettings(settings))
 
     try {
       const response = await analyzeCsv(normalized, settings.sampleRowCount, settings.defaultOutputSuffix)

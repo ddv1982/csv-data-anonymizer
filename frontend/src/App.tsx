@@ -5,7 +5,8 @@ import {
   WorkflowErrorToast,
 } from './components/workflow/AnonymizerWorkflowView'
 import { InputModeTabs, type InputMode } from './components/InputModeTabs'
-import { LocalAiTopbarControl } from './components/LocalAiTopbarControl'
+import { LocalAiSettingsBlock } from './components/LocalAiSettingsBlock'
+import { ModalDialog } from './components/ModalDialog'
 import { PasteDataWorkflowView } from './components/PasteDataWorkflowView'
 import { QuickDataTypeWorkflowView } from './components/QuickDataTypeWorkflowView'
 import { ThemeModeToggle } from './components/ThemeModeToggle'
@@ -26,14 +27,6 @@ function App() {
           <Shield className="brand-icon" aria-hidden="true" />
           <h1>CSV Anonymizer</h1>
           <div className="app-topbar-actions">
-            <LocalAiTopbarControl
-              settings={workflow.settings}
-              localAi={workflow.localAi}
-              disabled={workflow.settingsDisabled}
-              settingsOpen={localAiSettingsOpen}
-              onToggleSettings={setLocalAiSettingsOpen}
-              onUpdateSetting={workflow.updateSetting}
-            />
             <ThemeModeToggle
               themeMode={themeMode}
               disabled={workflow.settingsDisabled}
@@ -102,6 +95,20 @@ function App() {
           <p>CSV Anonymizer - Transform sensitive fields in CSV files</p>
         </div>
       </footer>
+
+      <ModalDialog
+        title="Local AI Settings"
+        open={localAiSettingsOpen}
+        onClose={() => setLocalAiSettingsOpen(false)}
+        closeLabel="Close Local AI settings"
+      >
+        <LocalAiSettingsBlock
+          settings={workflow.settings}
+          localAi={workflow.localAi}
+          disabled={workflow.settingsDisabled}
+          onUpdateSetting={workflow.updateSetting}
+        />
+      </ModalDialog>
     </div>
   )
 }

@@ -13,53 +13,37 @@ test.beforeEach(async ({ page }) => {
   await installTauriMock(page)
 })
 
-test('covers disabled states, privacy scale warnings, and glossary help', async ({ page }) => {
+test('covers disabled states, simplified column review, and glossary help', async ({ page }) => {
   await page.goto('/')
 
   await expect(page.getByLabel('Output Path')).toBeDisabled()
-  await expect(page.getByRole('button', { name: 'Create anonymized CSV' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Create protected CSV' })).toBeDisabled()
 
   await page.getByRole('button', { name: 'Browse for CSV file' }).click()
   await expect(page.getByLabel('Output Path')).toBeEnabled()
   await expect(page.getByRole('checkbox', { name: 'Select column email' })).toBeChecked()
+  await expect(page.getByRole('heading', { name: '2. Review Sensitive Columns' })).toBeVisible()
+  await expect(page.getByLabel('Privacy release mode')).toHaveCount(0)
+  await expect(page.getByText('2 of 3 columns selected, 150,000 rows loaded')).toBeVisible()
 
-  await page.getByLabel('Privacy release mode').selectOption('formalTabular')
-  await expect(page.getByRole('alert').filter({ hasText: 'will materialize 150,000 data rows' })).toBeVisible()
-
-  await page.getByRole('button', { name: 'How privacy release works' }).click()
-  const helpDialog = page.getByRole('dialog', { name: 'Privacy Release' })
+  await page.getByRole('button', { name: 'How does this work?' }).click()
+  const helpDialog = page.getByRole('dialog', { name: 'Review Sensitive Columns' })
   await expect(helpDialog).toBeVisible()
-  await expect(helpDialog).toContainText('Every CSV column is included')
-  await expect(helpDialog).toContainText('same schema, row count, roles, types, and seed')
+  await expect(helpDialog).toContainText('Defaults')
+  await expect(helpDialog).toContainText('Review signals')
+  await expect(helpDialog).toContainText('Methods')
+  await expect(helpDialog).toContainText('Run and seed')
+  await expect(helpDialog).toContainText('system keychain')
 
-  await helpDialog.getByRole('button', { name: 'k-anonymity', exact: true }).click()
-  await expect(page.getByRole('tooltip')).toContainText('k-anonymity')
+  await helpDialog.getByRole('button', { name: 'Pseudonymize', exact: true }).first().click()
+  await expect(page.getByRole('tooltip')).toContainText('Pseudonymize')
 
   await page.keyboard.press('Escape')
   await expect(page.getByRole('tooltip')).toBeHidden()
-  await expect(page.getByRole('dialog', { name: 'Privacy Release' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Review Sensitive Columns' })).toBeVisible()
 
   await page.keyboard.press('Escape')
-  await expect(page.getByRole('dialog', { name: 'Privacy Release' })).toBeHidden()
-})
-
-test('keeps Synthetic data as a global release mode with all CSV columns included', async ({ page }) => {
-  await page.goto('/')
-  await page.getByRole('button', { name: 'Browse for CSV file' }).click()
-
-  await expect(page.getByText('2 of 3 columns selected, 150,000 rows loaded')).toBeVisible()
-
-  await page.getByLabel('Privacy release mode').selectOption('syntheticData')
-
-  await expect(page.getByText(/Synthetic data creates a complete replacement dataset/)).toBeVisible()
-  await expect(page.getByText('3 of 3 columns selected, 150,000 rows loaded')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Deselect All' })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Select High Detector Risk' })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Select Detected Risk' })).toHaveCount(0)
-  await expect(page.getByRole('checkbox', { name: 'Column notes included in synthetic data' })).toBeDisabled()
-  await expect(page.getByLabel('Strategy for email')).toBeDisabled()
-  await expect(page.getByText(/Preview is disabled for Synthetic data/)).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Show Preview' })).toBeDisabled()
+  await expect(page.getByRole('dialog', { name: 'Review Sensitive Columns' })).toBeHidden()
 })
 
 test('recovers from preview errors and cancels a running job', async ({ page }) => {
@@ -73,7 +57,7 @@ test('recovers from preview errors and cancels a running job', async ({ page }) 
   await page.getByRole('button', { name: 'Show Preview' }).click()
   await expect(page.getByText('anon@example.test')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Create anonymized CSV' }).click()
+  await page.getByRole('button', { name: 'Create protected CSV' }).click()
   await expect(page.getByRole('status')).toContainText('Preparing 150,000 rows')
 
   await page.getByRole('button', { name: 'Cancel' }).click()
@@ -85,7 +69,7 @@ test('switches tabs, pastes JSON, copies output, and quick-generates values', as
 
   await expect(page.getByRole('button', { name: 'Browse for CSV file' })).toBeVisible()
 
-  await page.getByRole('tab', { name: 'Paste Data' }).click()
+  await page.getByRole('tab', { name: 'Paste Sample' }).click()
   await expect(page.getByRole('button', { name: 'Browse for CSV file' })).toBeHidden()
   await page.getByLabel('Pasted data').fill('[{"email":"ada@example.com"}]')
   await page.getByRole('button', { name: 'Detect Fields' }).click()
@@ -95,7 +79,7 @@ test('switches tabs, pastes JSON, copies output, and quick-generates values', as
   await page.getByRole('button', { name: 'Show Preview' }).click()
   await expect(page.getByText('anon@example.test')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Anonymize pasted data' }).click()
+  await page.getByRole('button', { name: 'Transform pasted sample' }).click()
   await expect(page.getByLabel('Anonymized pasted data')).toHaveValue('[{"email":"anon@example.test"}]')
   await page.getByRole('button', { name: 'Copy' }).click()
   await expect(page.getByText('Copied')).toBeVisible()
@@ -129,7 +113,7 @@ test('supports keyboard focus for input tabs and help dialogs', async ({ page })
   await page.goto('/')
 
   const csvTab = page.getByRole('tab', { name: 'CSV File' })
-  const pasteTab = page.getByRole('tab', { name: 'Paste Data' })
+  const pasteTab = page.getByRole('tab', { name: 'Paste Sample' })
   const quickTab = page.getByRole('tab', { name: 'Quick by Data Type' })
 
   await csvTab.focus()
@@ -148,6 +132,8 @@ test('supports keyboard focus for input tabs and help dialogs', async ({ page })
   await expect(csvTab).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'input-mode-tab-csv')
 
+  await page.getByRole('button', { name: 'Browse for CSV file' }).click()
+  await page.getByLabel('Strategy for email').selectOption('localAi')
   const localAiSettingsButton = page.getByRole('button', { name: 'Open Local AI settings' })
   await localAiSettingsButton.click()
   const localAiDialog = page.getByRole('dialog', { name: 'Local AI Settings' })
@@ -158,9 +144,9 @@ test('supports keyboard focus for input tabs and help dialogs', async ({ page })
   await expect(localAiDialog).toBeHidden()
   await expect(localAiSettingsButton).toBeFocused()
 
-  const helpButton = page.getByRole('button', { name: 'How privacy release works' })
+  const helpButton = page.getByRole('button', { name: 'How does this work?' })
   await helpButton.click()
-  const dialog = page.getByRole('dialog', { name: 'Privacy Release' })
+  const dialog = page.getByRole('dialog', { name: 'Review Sensitive Columns' })
   await expect(dialog).toBeVisible()
   await expect(dialog.getByRole('button', { name: 'Close help article' })).toBeFocused()
 
@@ -177,7 +163,7 @@ test('has no automated accessibility violations across input modes @a11y', async
   await page.goto('/')
   await expectNoAccessibilityViolations(page)
 
-  await page.getByRole('tab', { name: 'Paste Data' }).click()
+  await page.getByRole('tab', { name: 'Paste Sample' }).click()
   await page.getByLabel('Pasted data').fill('[{"email":"ada@example.com"}]')
   await expectNoAccessibilityViolations(page)
 
@@ -185,15 +171,15 @@ test('has no automated accessibility violations across input modes @a11y', async
   await expectNoAccessibilityViolations(page)
 
   await page.getByRole('tab', { name: 'CSV File' }).click()
-  await page.getByRole('button', { name: 'How privacy release works' }).click()
-  await expect(page.getByRole('dialog', { name: 'Privacy Release' })).toBeVisible()
+  await page.getByRole('button', { name: 'How does this work?' }).click()
+  await expect(page.getByRole('dialog', { name: 'Review Sensitive Columns' })).toBeVisible()
   await expectNoAccessibilityViolations(page)
 })
 
 async function installTauriMock(page: Page) {
   await page.addInitScript(() => {
     let settings = {
-      schemaVersion: 6,
+      schemaVersion: 9,
       themeMode: 'system',
       deterministicDefault: false,
       seed: '',
@@ -201,11 +187,6 @@ async function installTauriMock(page: Page) {
       sampleRowCount: 100,
       previewSampleCount: 5,
       defaultOutputSuffix: '_private_output',
-      dpBudgetEnabled: true,
-      dpBudgetLimitEpsilon: 10,
-      dpBudgetSpentEpsilon: 0,
-      dpBudgetAction: 'block',
-      dpReleaseHistory: [],
       rememberLastPaths: true,
       lastInputDirectory: null,
       lastOutputDirectory: null,
@@ -394,7 +375,6 @@ async function installTauriMock(page: Page) {
 
     function privacyReportFixture() {
       return {
-        releaseMode: 'standard',
         directIdentifiers: 1,
         quasiIdentifiers: 0,
         sensitiveColumns: 0,
@@ -402,12 +382,7 @@ async function installTauriMock(page: Page) {
         smartReplacementColumns: 0,
         opaqueTokenColumns: 0,
         maskedColumns: 0,
-        generalizedColumns: 0,
         passThroughColumns: 0,
-        suppressedRows: 0,
-        syntheticRows: 0,
-        dpEpsilon: null,
-        dpBudget: null,
         uniquePseudonymValues: 1,
         reusedPseudonymValues: 0,
         collisionsAvoided: 0,
@@ -417,7 +392,6 @@ async function installTauriMock(page: Page) {
         smartReplacementRejections: 0,
         smartReplacementRejectionReasons: [],
         smartReplacementFallbacks: 0,
-        formalModels: [],
         readiness: {
           status: 'verified',
           blockers: [],

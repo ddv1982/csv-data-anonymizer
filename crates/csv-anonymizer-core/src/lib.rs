@@ -6,7 +6,6 @@ mod file_ops;
 pub mod hash;
 pub mod metadata;
 mod preview;
-pub mod privacy;
 mod process_control;
 mod release_report;
 mod report_notes;
@@ -22,16 +21,14 @@ pub use smart::{
 };
 pub use types::{
     AnonymizationStrategy, AnonymizeData, AnonymizeParams, ColumnControl, ColumnMetadata,
-    ColumnPreview, ColumnReleaseReport, ColumnRole, Confidence, DataType, DetectionResult,
-    DetectionTrace, DetectionTraceItem, DifferentialPrivacyConfig, DpAggregate, DpBudgetAction,
-    DpBudgetConfig, DpBudgetReport, DpBudgetStatus, EmptyFormat, FormalPrivacyConfig, HeadersData,
-    ParsedSample, PasteAnalyzeData, PasteAnalyzeParams, PasteDataFormat, PastePreviewParams,
-    PasteTransformData, PasteTransformParams, PiiRisk, PreflightData, PreflightMode,
-    PreflightParams, PreviewData, PreviewParams, PreviewWarning, PrivacyColumnRole, PrivacyConfig,
-    PrivacyEvidenceSummary, PrivacyFinding, PrivacyFindingKind, PrivacyModel, PrivacyModelReport,
+    ColumnPreview, ColumnReleaseReport, Confidence, DataType, DetectionResult, DetectionTrace,
+    DetectionTraceItem, EmptyFormat, HeadersData, ParsedSample, PasteAnalyzeData,
+    PasteAnalyzeParams, PasteDataFormat, PastePreviewParams, PasteTransformData,
+    PasteTransformParams, PiiRisk, PreflightData, PreflightMode, PreflightParams, PreviewData,
+    PreviewParams, PreviewWarning, PrivacyEvidenceSummary, PrivacyFinding, PrivacyFindingKind,
     PrivacyReport, ProcessControl, ProcessOptions, ProcessProgress, ProcessResult,
     QuickGenerateParams, QuickTransformData, QuickTransformParams, ReleaseEvidenceItem,
-    ReleaseEvidenceStatus, ReleaseMode, ReleaseReadiness, ReleaseReadinessStatus, SampleTransform,
+    ReleaseEvidenceStatus, ReleaseReadiness, ReleaseReadinessStatus, SampleTransform,
     SmartReplacementEntry, SmartReplacementRejectionCount, SmartReplacementRejectionReason,
-    SyntheticDataConfig, TransformReport, UtilityMetric, WarningSeverity,
+    TransformReport, UtilityMetric, WarningSeverity,
 };

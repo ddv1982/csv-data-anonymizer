@@ -15,12 +15,6 @@ const enumContracts = [
   'AnonymizationStrategy',
   'PasteDataFormat',
   'WarningSeverity',
-  'ReleaseMode',
-  'ColumnRole',
-  'DpAggregate',
-  'DpBudgetAction',
-  'DpBudgetStatus',
-  'PrivacyModel',
   'SmartReplacementRejectionReason',
   'PreflightMode',
   'ReleaseReadinessStatus',
@@ -48,14 +42,6 @@ const structContracts = [
   'ReleaseEvidenceItem',
   'ColumnReleaseReport',
   'UtilityMetric',
-  'PrivacyConfig',
-  'PrivacyColumnRole',
-  'FormalPrivacyConfig',
-  'DifferentialPrivacyConfig',
-  'DpBudgetConfig',
-  'DpBudgetReport',
-  'SyntheticDataConfig',
-  'PrivacyModelReport',
 ]
 
 const errors = []

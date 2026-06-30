@@ -2,7 +2,6 @@ use crate::csv_io::{count_csv_data_rows, process_file_with_control, read_sample}
 use crate::error::{AnonymizerError, Result};
 use crate::metadata::{apply_column_selection, build_column_metadata};
 use crate::preview::generate_column_preview;
-use crate::privacy::{process_privacy_release, validate_privacy_release_config};
 use crate::release_report::{
     ReportContext, build_column_reports, build_evidence, build_readiness, build_utility_metrics,
     standard_notes,
@@ -17,7 +16,7 @@ use crate::types::{
     AnonymizationStrategy, AnonymizeData, AnonymizeParams, ColumnControl, ColumnMetadata, DataType,
     HeadersData, PreflightData, PreflightMode, PreflightParams, PreviewData, PreviewParams,
     PreviewWarning, PrivacyReport, ProcessControl, ProcessOptions, ReleaseEvidenceItem,
-    ReleaseEvidenceStatus, ReleaseMode, ReleaseReadiness, ReleaseReadinessStatus, WarningSeverity,
+    ReleaseEvidenceStatus, ReleaseReadiness, ReleaseReadinessStatus, WarningSeverity,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -86,18 +85,7 @@ impl AnonymizerService {
             verified_items.push(format!("{} column(s) selected.", input.columns.len()));
         }
 
-        let release_mode = input
-            .privacy_config
-            .as_ref()
-            .map(|config| config.release_mode)
-            .unwrap_or_default();
-        let row_level_strategy_controls_ignored = release_mode != ReleaseMode::Standard
-            && input
-                .controls
-                .iter()
-                .any(|control| control.strategy != AnonymizationStrategy::Auto);
-        let effective_controls = controls_for_release_mode(&input.controls, release_mode);
-        let controlled_metadata = match apply_column_controls(&metadata, &effective_controls) {
+        let controlled_metadata = match apply_column_controls(&metadata, &input.controls) {
             Ok(columns) => columns,
             Err(error) => {
                 blockers.push(error.to_string());
@@ -149,7 +137,7 @@ impl AnonymizerService {
             },
         }
 
-        let local_ai_required = if selected_smart_columns && release_mode == ReleaseMode::Standard {
+        let local_ai_required = if selected_smart_columns {
             match input.mode {
                 PreflightMode::Preview => true,
                 PreflightMode::Anonymize => match missing_smart_replacement_values_from_csv(
@@ -191,63 +179,30 @@ impl AnonymizerService {
                     detail: message,
                 });
             }
-        } else {
-            verified_items.push(if selected_smart_columns {
-                if release_mode == ReleaseMode::Standard {
-                    "Preview Smart replacements cover selected Smart columns.".to_string()
-                } else {
-                    "Privacy release mode does not use row-level Smart replacement strategies."
-                        .to_string()
-                }
-            } else {
-                "No selected column requires Local AI.".to_string()
-            });
-        }
-        if row_level_strategy_controls_ignored {
-            verified_items.push(
-                "Privacy release mode uses Type and Role settings and ignores row-level Strategy controls."
-                    .to_string(),
-            );
-        }
-
-        if let Some(config) = input.privacy_config.as_ref() {
-            if let Err(error) = validate_privacy_release_config(
-                &selected_metadata,
-                config,
-                input.deterministic,
-                &input.seed,
-            ) {
-                blockers.push(error.to_string());
-            } else {
-                verified_items
-                    .push("Privacy release settings passed backend validation.".to_string());
-            }
-        } else {
+        } else if selected_smart_columns {
             verified_items
-                .push("Standard transform settings passed backend validation.".to_string());
+                .push("Preview Smart replacements cover selected Smart columns.".to_string());
+        } else {
+            verified_items.push("No selected column requires Local AI.".to_string());
         }
+        verified_items.push("Transform settings passed backend validation.".to_string());
 
         let context = ReportContext {
             deterministic: input.deterministic,
             ..ReportContext::default()
         };
-        let release_readiness = build_readiness(
-            release_mode,
-            &selected_metadata,
-            input.privacy_config.as_ref(),
-            &context,
-        );
+        let release_readiness = build_readiness(&selected_metadata, &context);
         blockers.extend(release_readiness.blockers);
         review_items.extend(release_readiness.review_items);
         verified_items.extend(release_readiness.verified_items);
-        evidence.extend(build_evidence(release_mode, &selected_metadata, &context));
+        evidence.extend(build_evidence(&selected_metadata, &context));
 
         let readiness = finish_readiness(blockers, review_items, verified_items);
         Ok(PreflightData {
             mode: input.mode,
             readiness,
             evidence,
-            column_reports: build_column_reports(release_mode, &selected_metadata, None),
+            column_reports: build_column_reports(&selected_metadata),
         })
     }
 
@@ -387,35 +342,8 @@ impl AnonymizerService {
         let sample = read_sample(&input_path, sample_rows.max(1))?;
         let metadata = build_column_metadata(&sample.headers, &sample.rows);
         validate_column_indices(&metadata, &input.columns)?;
-        let release_mode = input
-            .privacy_config
-            .as_ref()
-            .map(|config| config.release_mode)
-            .unwrap_or_default();
-        let effective_controls = controls_for_release_mode(&input.controls, release_mode);
-        let controlled_metadata = apply_column_controls(&metadata, &effective_controls)?;
+        let controlled_metadata = apply_column_controls(&metadata, &input.controls)?;
         let selected_metadata = apply_column_selection(&controlled_metadata, &input.columns);
-        if let Some(privacy_config) = input.privacy_config.as_ref()
-            && release_mode != ReleaseMode::Standard
-        {
-            let result = process_privacy_release(
-                &input_path,
-                &output_path,
-                &selected_metadata,
-                privacy_config,
-                input.deterministic,
-                &input.seed,
-                control,
-            )?;
-
-            return Ok(AnonymizeData {
-                output_path: result.output_path,
-                row_count: result.row_count,
-                columns_anonymized: result.columns_anonymized,
-                duration_ms: result.duration_ms,
-                privacy_report: result.privacy_report,
-            });
-        }
         let preview_smart_replacements =
             SmartReplacementMap::from_entries(&input.preview_smart_replacements);
         let existing_smart_replacements = (preview_smart_replacements.has_activity()
@@ -549,23 +477,6 @@ pub(crate) fn apply_column_controls(
     Ok(controlled)
 }
 
-fn controls_for_release_mode(
-    controls: &[ColumnControl],
-    release_mode: ReleaseMode,
-) -> Vec<ColumnControl> {
-    if release_mode == ReleaseMode::Standard {
-        return controls.to_vec();
-    }
-
-    controls
-        .iter()
-        .map(|control| ColumnControl {
-            strategy: AnonymizationStrategy::Auto,
-            ..control.clone()
-        })
-        .collect()
-}
-
 pub(crate) fn preview_warning_for_column(column: &ColumnMetadata) -> Option<PreviewWarning> {
     let message = match column.strategy {
         AnonymizationStrategy::PassThrough => {
@@ -657,7 +568,6 @@ pub(crate) fn build_privacy_report(
     deterministic: bool,
 ) -> PrivacyReport {
     let mut report = PrivacyReport {
-        release_mode: ReleaseMode::Standard,
         direct_identifiers: 0,
         quasi_identifiers: 0,
         sensitive_columns: 0,
@@ -666,12 +576,7 @@ pub(crate) fn build_privacy_report(
         opaque_token_columns: 0,
         masked_columns: 0,
         redacted_columns: 0,
-        generalized_columns: 0,
         pass_through_columns: 0,
-        suppressed_rows: 0,
-        synthetic_rows: 0,
-        dp_epsilon: None,
-        dp_budget: None,
         unique_pseudonym_values: transform_report.unique_pseudonym_values,
         reused_pseudonym_values: transform_report.reused_pseudonym_values,
         collisions_avoided: transform_report.collisions_avoided,
@@ -683,7 +588,6 @@ pub(crate) fn build_privacy_report(
             .smart_replacement_rejection_reasons
             .clone(),
         smart_replacement_fallbacks: transform_report.smart_replacement_fallbacks,
-        formal_models: Vec::new(),
         readiness: Default::default(),
         evidence: Vec::new(),
         column_reports: Vec::new(),
@@ -730,12 +634,11 @@ pub(crate) fn build_privacy_report(
     let context = ReportContext {
         transform_report: Some(&transform_report),
         deterministic,
-        ..ReportContext::default()
     };
-    report.readiness = build_readiness(ReleaseMode::Standard, columns, None, &context);
-    report.evidence = build_evidence(ReleaseMode::Standard, columns, &context);
-    report.column_reports = build_column_reports(ReleaseMode::Standard, columns, None);
-    report.utility_metrics = build_utility_metrics(ReleaseMode::Standard, columns, &context);
+    report.readiness = build_readiness(columns, &context);
+    report.evidence = build_evidence(columns, &context);
+    report.column_reports = build_column_reports(columns);
+    report.utility_metrics = build_utility_metrics(columns, &context);
 
     report
 }

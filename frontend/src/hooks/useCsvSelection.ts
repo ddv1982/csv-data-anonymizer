@@ -4,9 +4,7 @@ import type {
   AnonymizationStrategy,
   ColumnControl,
   ColumnMetadata,
-  ColumnRole,
   DataType,
-  PrivacyConfig,
 } from '../types'
 import { isSelectableColumn, maxVisibleColumns } from '../utils/columns'
 
@@ -85,25 +83,6 @@ export function useCsvSelection() {
     updateColumnControl(column, { strategy })
   }
 
-  function updateColumnRole(privacyConfig: PrivacyConfig, column: ColumnMetadata, role: ColumnRole): PrivacyConfig {
-    const existing = privacyConfig.columnRoles.find((candidate) => candidate.columnIndex === column.index)
-    const nextRole = {
-      columnIndex: column.index,
-      role,
-      generalizationLevel: existing?.generalizationLevel ?? 0,
-    }
-    return {
-      ...privacyConfig,
-      columnRoles:
-        role === 'auto' && nextRole.generalizationLevel === 0
-          ? privacyConfig.columnRoles.filter((candidate) => candidate.columnIndex !== column.index)
-          : [
-              ...privacyConfig.columnRoles.filter((candidate) => candidate.columnIndex !== column.index),
-              nextRole,
-            ].sort((left, right) => left.columnIndex - right.columnIndex),
-    }
-  }
-
   function toggleColumn(column: ColumnMetadata) {
     if (!isSelectableColumn(column)) return
 
@@ -139,7 +118,6 @@ export function useCsvSelection() {
     selectionUsesLocalAi,
     updateColumnType,
     updateColumnStrategy,
-    updateColumnRole,
     toggleColumn,
   }
 }

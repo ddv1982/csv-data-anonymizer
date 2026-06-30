@@ -8,7 +8,7 @@ const inputModes: Array<{
   icon: typeof FileSpreadsheet
 }> = [
   { id: 'csv', label: 'CSV File', icon: FileSpreadsheet },
-  { id: 'paste', label: 'Paste Data', icon: ClipboardList },
+  { id: 'paste', label: 'Paste Sample', icon: ClipboardList },
   { id: 'quick', label: 'Quick by Data Type', icon: ListChecks },
 ]
 

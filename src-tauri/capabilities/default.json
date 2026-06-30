@@ -6,7 +6,6 @@
   "permissions": [
     "allow-load-settings",
     "allow-save-settings",
-    "allow-reset-dp-budget-ledger",
     "allow-pick-input-csv",
     "allow-pick-output-csv",
     "allow-analyze-csv",

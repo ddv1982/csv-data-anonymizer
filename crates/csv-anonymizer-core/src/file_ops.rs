@@ -1,5 +1,4 @@
-use crate::error::{Result, csv_error};
-use csv::WriterBuilder;
+use crate::error::Result;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -18,21 +17,6 @@ pub(crate) fn replace_file_atomically<T>(
             Err(error)
         }
     }
-}
-
-pub(crate) fn write_csv_file_atomically(
-    output_path: &Path,
-    write: impl FnOnce(&mut csv::Writer<std::fs::File>) -> Result<()>,
-) -> Result<PathBuf> {
-    replace_file_atomically(output_path, |temporary_output_path| {
-        let mut writer = WriterBuilder::new()
-            .has_headers(false)
-            .from_path(temporary_output_path)
-            .map_err(csv_error)?;
-        write(&mut writer)?;
-        writer.flush()?;
-        Ok(output_path.to_path_buf())
-    })
 }
 
 fn temporary_output_path(output_path: &Path) -> PathBuf {

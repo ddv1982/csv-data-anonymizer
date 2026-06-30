@@ -6,7 +6,6 @@ import type {
   ColumnControl,
   LocalAiRequest,
   PreviewData,
-  ReleaseMode,
 } from '../types'
 import { messageFrom } from '../utils/errors'
 import type { BusyState } from './workflowTypes'
@@ -16,7 +15,6 @@ type PreviewWorkflowOptions = {
   selectedColumns: number[]
   hasColumns: boolean
   hasSelectedColumns: boolean
-  releaseMode: ReleaseMode
   busy: BusyState
   localAiReady: boolean
   localAiBlocked: boolean
@@ -35,7 +33,6 @@ export function usePreviewWorkflow({
   selectedColumns,
   hasColumns,
   hasSelectedColumns,
-  releaseMode,
   busy,
   localAiReady,
   localAiBlocked,
@@ -53,15 +50,10 @@ export function usePreviewWorkflow({
       hasSelectedColumns &&
       inputPath &&
       busy === 'idle' &&
-      !localAiBlocked &&
-      releaseMode !== 'syntheticData',
+      !localAiBlocked,
   )
 
   async function previewCsv(path = inputPath, columnsToPreview = selectedColumns) {
-    if (releaseMode === 'syntheticData') {
-      setPreview(null)
-      return
-    }
     if (!path || columnsToPreview.length === 0) {
       setPreview(null)
       return
@@ -85,7 +77,6 @@ export function usePreviewWorkflow({
         settings.seed,
         false,
         settings.previewSampleCount,
-        null,
         [],
         localAiRequest,
       )

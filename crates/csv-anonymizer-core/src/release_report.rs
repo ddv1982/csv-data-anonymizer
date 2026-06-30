@@ -2,31 +2,22 @@ use crate::report_notes::push_unselected_column_note;
 use crate::service::{preview_warning_for_column, redaction_changes_structured_scalar_type};
 use crate::strategies::STRUCTURED_SCALAR_REDACTION_WARNING;
 use crate::types::{
-    AnonymizationStrategy, ColumnMetadata, ColumnReleaseReport, ColumnRole, DpBudgetReport,
-    DpBudgetStatus, PrivacyConfig, ReleaseEvidenceItem, ReleaseEvidenceStatus, ReleaseMode,
-    ReleaseReadiness, ReleaseReadinessStatus, TransformReport, UtilityMetric,
+    AnonymizationStrategy, ColumnMetadata, ColumnReleaseReport, ReleaseEvidenceItem,
+    ReleaseEvidenceStatus, ReleaseReadiness, ReleaseReadinessStatus, TransformReport,
+    UtilityMetric,
 };
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ReportContext<'a> {
-    pub roles: Option<&'a [ColumnRole]>,
     pub transform_report: Option<&'a TransformReport>,
-    pub formal_min_class_size: Option<usize>,
-    pub formal_suppressed_rows: Option<usize>,
-    pub formal_released_rows: Option<usize>,
-    pub dp_budget: Option<&'a DpBudgetReport>,
-    pub dp_group_count: Option<usize>,
-    pub synthetic_rows: Option<usize>,
     pub deterministic: bool,
 }
 
 pub(crate) fn build_readiness(
-    mode: ReleaseMode,
     columns: &[ColumnMetadata],
-    config: Option<&PrivacyConfig>,
     context: &ReportContext<'_>,
 ) -> ReleaseReadiness {
-    let mut blockers = Vec::new();
+    let blockers = Vec::new();
     let mut review_items = Vec::new();
     let mut verified_items = Vec::new();
 
@@ -50,77 +41,17 @@ pub(crate) fn build_readiness(
         ));
     }
 
-    match mode {
-        ReleaseMode::Standard => {
-            review_items.push(
-                "Standard CSV transform is risk reduction, not a formal anonymity guarantee."
-                    .to_string(),
-            );
-            if let Some(report) = context.transform_report
-                && report.smart_replacement_rejections > 0
-            {
-                review_items.push(format!(
-                    "{} Local AI replacement candidate(s) were rejected before fallback handling: {}.",
-                    report.smart_replacement_rejections,
-                    smart_rejection_summary(report)
-                ));
-            }
-        }
-        ReleaseMode::FormalTabular => {
-            if columns.iter().any(|column| !column.is_selected) {
-                blockers.push(
-                    "Formal tabular releases require every source column to be selected."
-                        .to_string(),
-                );
-            }
-            if let (Some(min_class), Some(config)) = (
-                context.formal_min_class_size,
-                config.map(|config| &config.formal),
-            ) {
-                if min_class >= config.k {
-                    verified_items.push(format!(
-                        "Every released equivalence class met k >= {}.",
-                        config.k
-                    ));
-                } else {
-                    review_items.push(format!(
-                        "Minimum released equivalence class size was {min_class}, below k={}.",
-                        config.k
-                    ));
-                }
-            }
-        }
-        ReleaseMode::DifferentialPrivacyAggregate => {
-            verified_items.push(
-                "DP aggregate mode wrote noisy statistics instead of source rows.".to_string(),
-            );
-            if let Some(report) = context.dp_budget {
-                if report.status == DpBudgetStatus::OverBudget {
-                    review_items.push(
-                        "This DP release exceeded the configured local budget and was allowed by warn mode."
-                            .to_string(),
-                    );
-                } else {
-                    verified_items.push(format!(
-                        "Local DP budget is {} after this release.",
-                        budget_status_label(report.status)
-                    ));
-                }
-            } else {
-                review_items.push(
-                    "No local DP budget history was attached to this release report.".to_string(),
-                );
-            }
-        }
-        ReleaseMode::SyntheticData => {
-            verified_items.push(
-                "Synthetic/test data mode wrote generated rows, not source rows.".to_string(),
-            );
-            review_items.push(
-                "Synthetic rows are generated independently per column and do not provide a DP guarantee."
-                    .to_string(),
-            );
-        }
+    review_items.push(
+        "CSV transforms reduce exposure but are not a formal anonymity guarantee.".to_string(),
+    );
+    if let Some(report) = context.transform_report
+        && report.smart_replacement_rejections > 0
+    {
+        review_items.push(format!(
+            "{} Local AI replacement candidate(s) were rejected before fallback handling: {}.",
+            report.smart_replacement_rejections,
+            smart_rejection_summary(report)
+        ));
     }
 
     let status = if !blockers.is_empty() {
@@ -140,7 +71,6 @@ pub(crate) fn build_readiness(
 }
 
 pub(crate) fn build_evidence(
-    mode: ReleaseMode,
     columns: &[ColumnMetadata],
     context: &ReportContext<'_>,
 ) -> Vec<ReleaseEvidenceItem> {
@@ -207,78 +137,14 @@ pub(crate) fn build_evidence(
         });
     }
 
-    match mode {
-        ReleaseMode::FormalTabular => {
-            if let Some(min_class) = context.formal_min_class_size {
-                evidence.push(ReleaseEvidenceItem {
-                    id: "formal-class-size".to_string(),
-                    label: "Equivalence classes".to_string(),
-                    status: ReleaseEvidenceStatus::Info,
-                    detail: format!("Minimum released equivalence class size: {min_class}."),
-                });
-            }
-            if let Some(suppressed) = context.formal_suppressed_rows {
-                evidence.push(ReleaseEvidenceItem {
-                    id: "formal-suppression".to_string(),
-                    label: "Suppression".to_string(),
-                    status: if suppressed == 0 {
-                        ReleaseEvidenceStatus::Verified
-                    } else {
-                        ReleaseEvidenceStatus::Review
-                    },
-                    detail: format!(
-                        "{suppressed} source row(s) suppressed by formal release settings."
-                    ),
-                });
-            }
-        }
-        ReleaseMode::DifferentialPrivacyAggregate => {
-            if let Some(budget) = context.dp_budget {
-                evidence.push(ReleaseEvidenceItem {
-                    id: "dp-budget".to_string(),
-                    label: "DP budget".to_string(),
-                    status: if budget.status == DpBudgetStatus::OverBudget {
-                        ReleaseEvidenceStatus::Review
-                    } else {
-                        ReleaseEvidenceStatus::Verified
-                    },
-                    detail: format!(
-                        "Spent {} before, {} after, limit {}, remaining {}.",
-                        budget.spent_epsilon_before,
-                        budget.spent_epsilon_after,
-                        budget.limit_epsilon,
-                        budget.remaining_epsilon
-                    ),
-                });
-            }
-        }
-        ReleaseMode::SyntheticData => {
-            evidence.push(ReleaseEvidenceItem {
-                id: "synthetic-rows".to_string(),
-                label: "Generated rows".to_string(),
-                status: ReleaseEvidenceStatus::Info,
-                detail: format!(
-                    "{} generated row(s) written.",
-                    context.synthetic_rows.unwrap_or_default()
-                ),
-            });
-        }
-        ReleaseMode::Standard => {}
-    }
-
     evidence
 }
 
-pub(crate) fn build_column_reports(
-    mode: ReleaseMode,
-    columns: &[ColumnMetadata],
-    roles: Option<&[ColumnRole]>,
-) -> Vec<ColumnReleaseReport> {
+pub(crate) fn build_column_reports(columns: &[ColumnMetadata]) -> Vec<ColumnReleaseReport> {
     columns
         .iter()
         .map(|column| {
-            let role = roles.and_then(|roles| roles.get(column.index)).copied();
-            let (action, status, detail) = column_action(mode, column, role);
+            let (action, status, detail) = column_action(column);
             ColumnReleaseReport {
                 column_index: column.index,
                 column_name: column.name.clone(),
@@ -286,7 +152,6 @@ pub(crate) fn build_column_reports(
                 detected_type: column.detected_type,
                 pii_risk: column.pii_risk,
                 strategy: column.strategy,
-                role,
                 action,
                 status,
                 detail,
@@ -296,7 +161,6 @@ pub(crate) fn build_column_reports(
 }
 
 pub(crate) fn build_utility_metrics(
-    mode: ReleaseMode,
     columns: &[ColumnMetadata],
     context: &ReportContext<'_>,
 ) -> Vec<UtilityMetric> {
@@ -310,82 +174,39 @@ pub(crate) fn build_utility_metrics(
         } else {
             ReleaseEvidenceStatus::Review
         },
-        detail: Some(
-            "Columns outside selection can remain unchanged depending on release mode.".to_string(),
-        ),
+        detail: Some("Columns outside selection are written unchanged.".to_string()),
     });
 
-    match mode {
-        ReleaseMode::Standard => {
-            if let Some(report) = context.transform_report {
-                metrics.push(UtilityMetric {
-                    label: "Repeat reuse".to_string(),
-                    value: report.reused_pseudonym_values.to_string(),
-                    status: ReleaseEvidenceStatus::Info,
-                    detail: Some(
-                        "Repeated source values reused the same pseudonym/token within the run."
-                            .to_string(),
-                    ),
-                });
-                metrics.push(UtilityMetric {
-                    label: "Local AI accepted".to_string(),
-                    value: format!(
-                        "{}/{}",
-                        report.smart_replacement_values, report.smart_replacement_requests
-                    ),
-                    status: if report.smart_replacement_rejections == 0 {
-                        ReleaseEvidenceStatus::Verified
-                    } else {
-                        ReleaseEvidenceStatus::Review
-                    },
-                    detail: Some(
-                        if report.smart_replacement_rejections > 0 {
-                            format!(
-                                "Accepted structured Local AI replacements before rule-based fallback. Rejections: {}.",
-                                smart_rejection_summary(report)
-                            )
-                        } else {
-                            "Accepted structured Local AI replacements before rule-based fallback."
-                                .to_string()
-                        },
-                    ),
-                });
-            }
-        }
-        ReleaseMode::FormalTabular => {
-            if let (Some(suppressed), Some(released)) =
-                (context.formal_suppressed_rows, context.formal_released_rows)
-            {
-                metrics.push(UtilityMetric {
-                    label: "Released rows".to_string(),
-                    value: released.to_string(),
-                    status: ReleaseEvidenceStatus::Info,
-                    detail: Some(format!("{suppressed} row(s) were suppressed.")),
-                });
-            }
-        }
-        ReleaseMode::DifferentialPrivacyAggregate => {
-            if let Some(count) = context.dp_group_count {
-                metrics.push(UtilityMetric {
-                    label: "Aggregate rows".to_string(),
-                    value: count.to_string(),
-                    status: ReleaseEvidenceStatus::Info,
-                    detail: Some(
-                        "DP output row count is aggregate rows, not source rows.".to_string(),
-                    ),
-                });
-            }
-        }
-        ReleaseMode::SyntheticData => {
-            metrics.push(UtilityMetric {
-                label: "Synthetic rows".to_string(),
-                value: context.synthetic_rows.unwrap_or_default().to_string(),
-                status: ReleaseEvidenceStatus::Info,
-                detail: Some(
-                    "Generated independently per column for test-data utility.".to_string(),
-                ),
-            });
-        }
+    if let Some(report) = context.transform_report {
+        metrics.push(UtilityMetric {
+            label: "Repeat reuse".to_string(),
+            value: report.reused_pseudonym_values.to_string(),
+            status: ReleaseEvidenceStatus::Info,
+            detail: Some(
+                "Repeated source values reused the same pseudonym/token within the run."
+                    .to_string(),
+            ),
+        });
+        metrics.push(UtilityMetric {
+            label: "Local AI accepted".to_string(),
+            value: format!(
+                "{}/{}",
+                report.smart_replacement_values, report.smart_replacement_requests
+            ),
+            status: if report.smart_replacement_rejections == 0 {
+                ReleaseEvidenceStatus::Verified
+            } else {
+                ReleaseEvidenceStatus::Review
+            },
+            detail: Some(if report.smart_replacement_rejections > 0 {
+                format!(
+                    "Accepted structured Local AI replacements before rule-based fallback. Rejections: {}.",
+                    smart_rejection_summary(report)
+                )
+            } else {
+                "Accepted structured Local AI replacements before rule-based fallback.".to_string()
+            }),
+        });
     }
 
     metrics
@@ -400,8 +221,6 @@ pub(crate) fn standard_notes(
         "Standard CSV transform changes selected cells in place with local strategies such as masking, redaction, tokenization, pseudonymization, pass-through, and optional Local AI replacement."
             .to_string(),
         "Treat this as risk reduction, not proof of anonymity; review the output against your sharing context and re-identification risk."
-            .to_string(),
-        "For k-anonymity, l-diversity, t-closeness, DP aggregate output, or synthetic/test rows, rerun with the matching Privacy Release mode selected."
             .to_string(),
     ];
     push_unselected_column_note(&mut notes, columns);
@@ -475,11 +294,7 @@ pub(crate) fn standard_notes(
     notes
 }
 
-fn column_action(
-    mode: ReleaseMode,
-    column: &ColumnMetadata,
-    role: Option<ColumnRole>,
-) -> (String, ReleaseEvidenceStatus, String) {
+fn column_action(column: &ColumnMetadata) -> (String, ReleaseEvidenceStatus, String) {
     if !column.is_selected {
         return (
             "Unselected".to_string(),
@@ -495,86 +310,47 @@ fn column_action(
         );
     }
 
-    match mode {
-        ReleaseMode::Standard => match column.strategy {
-            AnonymizationStrategy::Mask => (
-                "Masked".to_string(),
-                ReleaseEvidenceStatus::Verified,
-                "Selected values are replaced with mask characters.".to_string(),
-            ),
-            AnonymizationStrategy::Redact => (
-                "Redacted".to_string(),
-                ReleaseEvidenceStatus::Verified,
-                "Selected values are replaced with typed placeholders.".to_string(),
-            ),
-            AnonymizationStrategy::Tokenize => (
-                "Tokenized".to_string(),
-                ReleaseEvidenceStatus::Verified,
-                "Selected values become stable opaque tokens.".to_string(),
-            ),
-            AnonymizationStrategy::LocalAi => (
-                "Smart replacement".to_string(),
-                ReleaseEvidenceStatus::Review,
-                "Local AI generated realistic replacements with rule-based fallback for rejected values.".to_string(),
-            ),
-            AnonymizationStrategy::PassThrough => (
-                "Pass-through".to_string(),
-                ReleaseEvidenceStatus::Review,
-                "Selected values are intentionally kept unchanged.".to_string(),
-            ),
-            AnonymizationStrategy::Auto | AnonymizationStrategy::Pseudonymize => {
-                if preview_warning_for_column(column).is_some() {
-                    (
-                        "No-op/pass-through".to_string(),
-                        ReleaseEvidenceStatus::Review,
-                        "This detected type currently keeps values unchanged under Auto/Pseudonymize.".to_string(),
-                    )
-                } else {
-                    (
-                        "Pseudonymized".to_string(),
-                        ReleaseEvidenceStatus::Verified,
-                        "Selected values use rule-based replacement.".to_string(),
-                    )
-                }
-            }
-        },
-        ReleaseMode::FormalTabular => match role.unwrap_or(ColumnRole::Attribute) {
-            ColumnRole::DirectIdentifier => (
-                "Redacted".to_string(),
-                ReleaseEvidenceStatus::Verified,
-                "Direct identifiers are replaced with a redaction marker.".to_string(),
-            ),
-            ColumnRole::QuasiIdentifier => (
-                "Generalized".to_string(),
-                ReleaseEvidenceStatus::Verified,
-                "Quasi-identifiers are generalized before formal checks.".to_string(),
-            ),
-            ColumnRole::Sensitive => (
-                "Sensitive retained".to_string(),
-                ReleaseEvidenceStatus::Review,
-                "Sensitive values are retained for l-diversity/t-closeness checks.".to_string(),
-            ),
-            ColumnRole::Exclude => (
-                "Excluded".to_string(),
-                ReleaseEvidenceStatus::Verified,
-                "Values are blanked in the release output.".to_string(),
-            ),
-            ColumnRole::Auto | ColumnRole::Attribute => (
-                "Attribute retained".to_string(),
-                ReleaseEvidenceStatus::Info,
-                "Attribute values are retained in the release output.".to_string(),
-            ),
-        },
-        ReleaseMode::DifferentialPrivacyAggregate => (
-            "Aggregate input".to_string(),
+    match column.strategy {
+        AnonymizationStrategy::Mask => (
+            "Masked".to_string(),
             ReleaseEvidenceStatus::Verified,
-            "Column may contribute to noisy aggregate output; source rows are not written.".to_string(),
+            "Selected values are replaced with mask characters.".to_string(),
         ),
-        ReleaseMode::SyntheticData => (
-            "Generated".to_string(),
-            ReleaseEvidenceStatus::Info,
-            "Column values are generated for test-data output.".to_string(),
+        AnonymizationStrategy::Redact => (
+            "Redacted".to_string(),
+            ReleaseEvidenceStatus::Verified,
+            "Selected values are replaced with typed placeholders.".to_string(),
         ),
+        AnonymizationStrategy::Tokenize => (
+            "Tokenized".to_string(),
+            ReleaseEvidenceStatus::Verified,
+            "Selected values become stable opaque tokens.".to_string(),
+        ),
+        AnonymizationStrategy::LocalAi => (
+            "Smart replacement".to_string(),
+            ReleaseEvidenceStatus::Review,
+            "Local AI generated realistic replacements with rule-based fallback for rejected values.".to_string(),
+        ),
+        AnonymizationStrategy::PassThrough => (
+            "Pass-through".to_string(),
+            ReleaseEvidenceStatus::Review,
+            "Selected values are intentionally kept unchanged.".to_string(),
+        ),
+        AnonymizationStrategy::Auto | AnonymizationStrategy::Pseudonymize => {
+            if preview_warning_for_column(column).is_some() {
+                (
+                    "No-op/pass-through".to_string(),
+                    ReleaseEvidenceStatus::Review,
+                    "This detected type currently keeps values unchanged under Auto/Pseudonymize.".to_string(),
+                )
+            } else {
+                (
+                    "Pseudonymized".to_string(),
+                    ReleaseEvidenceStatus::Verified,
+                    "Selected values use rule-based replacement.".to_string(),
+                )
+            }
+        }
     }
 }
 
@@ -624,12 +400,4 @@ fn unselected_detector_risk_columns(columns: &[ColumnMetadata]) -> Vec<String> {
         })
         .map(|column| column.name.clone())
         .collect()
-}
-
-fn budget_status_label(status: DpBudgetStatus) -> &'static str {
-    match status {
-        DpBudgetStatus::WithinBudget => "within budget",
-        DpBudgetStatus::AtBudget => "at budget",
-        DpBudgetStatus::OverBudget => "over budget",
-    }
 }

@@ -44,6 +44,14 @@ pub fn auto_select_pii_columns(metadata: &[ColumnMetadata]) -> Vec<ColumnMetadat
         .collect()
 }
 
+pub fn default_strategy_for_pii_risk(pii_risk: PiiRisk) -> AnonymizationStrategy {
+    if matches!(pii_risk, PiiRisk::High | PiiRisk::Medium) {
+        AnonymizationStrategy::Redact
+    } else {
+        AnonymizationStrategy::Auto
+    }
+}
+
 fn extract_column_values(rows: &[Vec<String>], column_index: usize) -> Vec<String> {
     rows.iter()
         .map(|row| row.get(column_index).cloned().unwrap_or_default())
@@ -87,7 +95,7 @@ fn build_single_column_metadata(
         sample_values,
         empty_format,
         is_selected: false,
-        strategy: AnonymizationStrategy::Auto,
+        strategy: default_strategy_for_pii_risk(pii_risk),
     }
 }
 

@@ -3,13 +3,9 @@ import type {
   AnonymizationStrategy,
   ColumnControl,
   ColumnMetadata,
-  ColumnRole,
-  DataType,
-  PrivacyColumnRole,
 } from '../types'
-import { csvStrategies, dataTypes, strategyLabel } from '../dataOptions'
+import { csvStrategies, strategyLabel } from '../dataOptions'
 import {
-  type DetectorStrictness,
   detectorConfidenceLabel,
   privacyFindingKindLabel,
   visibleEvidence,
@@ -28,18 +24,11 @@ export function ColumnTable({
   hiddenColumnCount,
   onToggleColumn,
   controls,
-  roles,
-  onTypeChange,
   onStrategyChange,
-  onRoleChange,
   onToggleShowAll,
-  showRoles = true,
   availableStrategies = csvStrategies,
-  selectionLocked = false,
-  selectionLockedReason,
   strategyControlsDisabled = false,
   strategyControlsDisabledReason,
-  detectorStrictness = 'balanced',
 }: {
   columns: ColumnMetadata[]
   allColumnCount: number
@@ -49,20 +38,13 @@ export function ColumnTable({
   hiddenColumnCount: number
   onToggleColumn: (column: ColumnMetadata) => void
   controls: Record<number, ColumnControl>
-  roles?: Record<number, PrivacyColumnRole>
-  onTypeChange: (column: ColumnMetadata, value: DataType | 'auto') => void
   onStrategyChange: (column: ColumnMetadata, value: AnonymizationStrategy) => void
-  onRoleChange?: (column: ColumnMetadata, value: ColumnRole) => void
   onToggleShowAll: () => void
-  showRoles?: boolean
   availableStrategies?: AnonymizationStrategy[]
-  selectionLocked?: boolean
-  selectionLockedReason?: string
   strategyControlsDisabled?: boolean
   strategyControlsDisabledReason?: string
-  detectorStrictness?: DetectorStrictness
 }) {
-  const columnSpan = showRoles ? 9 : 8
+  const columnSpan = 7
 
   return (
     <div className="table-frame">
@@ -72,22 +54,16 @@ export function ColumnTable({
             <th className="checkbox-column" aria-label="Selected"></th>
             <th className="index-column">#</th>
             <th className="column-title-column">Column Name</th>
-            <th>Type</th>
-            <th>Type Override</th>
+            <th>Detected Type</th>
             <th>
               <GlossaryLabel term="strategy">Strategy</GlossaryLabel>
             </th>
-            {showRoles ? (
-              <th>
-                <GlossaryLabel term="role">Role</GlossaryLabel>
-              </th>
-            ) : null}
             <th>Evidence</th>
             <th>Risk</th>
           </tr>
         </thead>
         <tbody>
-          {loading ? <ColumnSkeletonRows showRoles={showRoles} /> : null}
+          {loading ? <ColumnSkeletonRows /> : null}
           {!loading && allColumnCount === 0 ? (
             <tr>
               <td colSpan={columnSpan} className="empty-table-cell">
@@ -100,9 +76,8 @@ export function ColumnTable({
                 const selectable = isSelectableColumn(column)
                 const sampleDataAvailable = hasSampleData(column)
                 const control = controls[column.index]
-                const role = roles?.[column.index]
                 const selected = selectedSet.has(column.index)
-                const canToggleSelection = selectable && !selectionLocked
+                const canToggleSelection = selectable
                 const rowClassName = [canToggleSelection ? 'clickable-row' : '', !selectable ? 'muted-row' : '', selected ? 'selected-row' : '']
                   .filter(Boolean)
                   .join(' ')
@@ -120,17 +95,11 @@ export function ColumnTable({
                           type="checkbox"
                           className="table-checkbox"
                           checked={selected}
-                          disabled={selectionLocked}
-                          title={selectionLockedReason}
                           onChange={() => {
-                            if (!selectionLocked) onToggleColumn(column)
+                            onToggleColumn(column)
                           }}
                           onClick={(event) => event.stopPropagation()}
-                          aria-label={
-                            selectionLocked
-                              ? `Column ${column.name} included in synthetic data`
-                              : `Select column ${column.name}`
-                          }
+                          aria-label={`Select column ${column.name}`}
                         />
                       ) : (
                         <span className="checkbox-placeholder" aria-hidden="true" />
@@ -157,23 +126,6 @@ export function ColumnTable({
                       </span>
                     </td>
                     <td className="control-cell">
-                      <span className="mobile-cell-label">Type Override</span>
-                      <select
-                        value={control?.typeOverride ?? 'auto'}
-                        disabled={!selectable || loading}
-                        aria-label={`Type override for ${column.name}`}
-                        onClick={(event) => event.stopPropagation()}
-                        onChange={(event) => onTypeChange(column, event.target.value as DataType | 'auto')}
-                      >
-                        <option value="auto">Auto</option>
-                        {dataTypes.map((dataType) => (
-                          <option key={dataType} value={dataType}>
-                            {formatToken(dataType)}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="control-cell">
                       <span className="mobile-cell-label">Strategy</span>
                       <select
                         value={strategyControlsDisabled ? 'auto' : (control?.strategy ?? column.strategy ?? 'auto')}
@@ -190,27 +142,9 @@ export function ColumnTable({
                         ))}
                       </select>
                     </td>
-                    {showRoles ? (
-                      <td className="control-cell">
-                        <span className="mobile-cell-label">Role</span>
-                        <select
-                          value={role?.role ?? 'auto'}
-                          disabled={!selectable || loading}
-                          aria-label={`Privacy role for ${column.name}`}
-                          onClick={(event) => event.stopPropagation()}
-                          onChange={(event) => onRoleChange?.(column, event.target.value as ColumnRole)}
-                        >
-                          {rolesList.map((roleValue) => (
-                            <option key={roleValue} value={roleValue}>
-                              {roleLabel(roleValue)}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                    ) : null}
                     <td className="privacy-evidence-column">
                       <span className="mobile-cell-label">Evidence</span>
-                      <PrivacyEvidenceCell column={column} strictness={detectorStrictness} />
+                      <PrivacyEvidenceCell column={column} />
                     </td>
                     <td className="risk-cell">
                       <span className="mobile-cell-label">Risk</span>
@@ -238,12 +172,10 @@ export function ColumnTable({
 
 function PrivacyEvidenceCell({
   column,
-  strictness,
 }: {
   column: ColumnMetadata
-  strictness: DetectorStrictness
 }) {
-  const evidence = visibleEvidence(column.privacyEvidence, strictness)
+  const evidence = visibleEvidence(column.privacyEvidence, 'balanced')
   if (evidence.length === 0) {
     return <span className="muted-text text-sm">None</span>
   }
@@ -322,23 +254,7 @@ function DetectionTracePopover({ column }: { column: ColumnMetadata }) {
   )
 }
 
-const rolesList: ColumnRole[] = [
-  'auto',
-  'directIdentifier',
-  'quasiIdentifier',
-  'sensitive',
-  'attribute',
-  'exclude',
-]
-
-function roleLabel(role: ColumnRole) {
-  if (role === 'auto') return 'Auto'
-  if (role === 'directIdentifier') return 'Direct ID'
-  if (role === 'quasiIdentifier') return 'Quasi-ID'
-  return formatToken(role)
-}
-
-function ColumnSkeletonRows({ showRoles }: { showRoles: boolean }) {
+function ColumnSkeletonRows() {
   return (
     <>
       {Array.from({ length: 5 }, (_, index) => (
@@ -358,14 +274,6 @@ function ColumnSkeletonRows({ showRoles }: { showRoles: boolean }) {
           <td>
             <span className="skeleton skeleton-badge" />
           </td>
-          <td>
-            <span className="skeleton skeleton-badge" />
-          </td>
-          {showRoles ? (
-            <td>
-              <span className="skeleton skeleton-badge" />
-            </td>
-          ) : null}
           <td>
             <span className="skeleton skeleton-badge" />
           </td>

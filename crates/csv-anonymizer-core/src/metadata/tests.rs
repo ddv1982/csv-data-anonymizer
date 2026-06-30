@@ -139,6 +139,47 @@ fn auto_selection_tracks_current_pii_risk_contract() {
 }
 
 #[test]
+fn default_strategy_redacts_medium_and_high_risk_columns() {
+    let headers = vec![
+        "email".to_string(),
+        "date_of_birth".to_string(),
+        "country".to_string(),
+        "status".to_string(),
+    ];
+    let samples = vec![
+        vec![
+            "john@example.com".to_string(),
+            "1980-01-02".to_string(),
+            "US".to_string(),
+            "active".to_string(),
+        ],
+        vec![
+            "jane@example.com".to_string(),
+            "1991-03-04".to_string(),
+            "GB".to_string(),
+            "inactive".to_string(),
+        ],
+        vec![
+            "jo@example.com".to_string(),
+            "1975-05-06".to_string(),
+            "DE".to_string(),
+            "pending".to_string(),
+        ],
+    ];
+
+    let metadata = build_column_metadata(&headers, &samples);
+
+    assert_eq!(metadata[0].pii_risk, PiiRisk::High);
+    assert_eq!(metadata[0].strategy, AnonymizationStrategy::Redact);
+    assert_eq!(metadata[1].pii_risk, PiiRisk::Medium);
+    assert_eq!(metadata[1].strategy, AnonymizationStrategy::Redact);
+    assert_eq!(metadata[2].pii_risk, PiiRisk::Low);
+    assert_eq!(metadata[2].strategy, AnonymizationStrategy::Auto);
+    assert_eq!(metadata[3].pii_risk, PiiRisk::Low);
+    assert_eq!(metadata[3].strategy, AnonymizationStrategy::Auto);
+}
+
+#[test]
 fn auto_selection_includes_sensitive_new_types_only() {
     let headers = vec![
         "ip".to_string(),
@@ -209,6 +250,7 @@ fn metadata_lifts_embedded_span_findings_into_column_evidence() {
 
     assert_eq!(column.detected_type, DataType::String);
     assert_eq!(column.pii_risk, PiiRisk::High);
+    assert_eq!(column.strategy, AnonymizationStrategy::Redact);
     assert_eq!(column.privacy_evidence[0].match_count, 3);
     assert_eq!(column.privacy_findings[0].start, "contact ".len());
 }

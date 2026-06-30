@@ -17,7 +17,6 @@ import type {
   PreflightMode,
   PreflightParams,
   PreviewData,
-  PrivacyConfig,
   QuickTransformData,
   SmartReplacementEntry,
 } from './types'
@@ -41,12 +40,6 @@ export function loadSettings(): Promise<AppSettings> {
 
 export function saveSettings(settings: AppSettings): Promise<AppSettings> {
   return invokeCommand('save_settings', { settings })
-}
-
-export const DP_BUDGET_RESET_CONFIRMATION_PHRASE = 'RESET DP BUDGET'
-
-export function resetDpBudgetLedger(confirmationPhrase: string): Promise<AppSettings> {
-  return invokeCommand('reset_dp_budget_ledger', { confirmationPhrase })
 }
 
 export function pickInputCsv(initialDirectory: string | null): Promise<string | null> {
@@ -183,7 +176,6 @@ export function preflightAnonymization(
   seed: string,
   force: boolean,
   sampleRowCount: number,
-  privacyConfig: PrivacyConfig | null,
   previewSmartReplacements: SmartReplacementEntry[],
   localAi: LocalAiRequest,
 ): Promise<PreflightData> {
@@ -197,7 +189,6 @@ export function preflightAnonymization(
     seed,
     force,
     sampleRowCount,
-    privacyConfig,
     previewSmartReplacements,
     localAi,
   }
@@ -222,7 +213,6 @@ export function startAnonymizeJob(
   sampleRowCount: number,
   totalRowCount: number | null,
   previewSmartReplacements: SmartReplacementEntry[],
-  privacyConfig: PrivacyConfig | null,
   localAi: LocalAiRequest,
 ): Promise<AnonymizeJobStatus> {
   return invokeCommand('start_anonymize_job', {
@@ -237,7 +227,6 @@ export function startAnonymizeJob(
       sampleRowCount,
       totalRowCount,
       previewSmartReplacements,
-      privacyConfig,
       localAi,
     },
   })

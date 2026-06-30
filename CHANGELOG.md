@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.56 - 2026-06-30
+
+- Reduce the product surface to CSV File, Paste Sample, and Quick by Data Type by removing formal tabular, DP aggregate, synthetic data, column roles, DP budget ledger, and permanent release-readiness UI.
+- Simplify Review Sensitive Columns around detected risk, replacement methods, compact help, and focused warnings while keeping Quick by Data Type first-class.
+- Default medium/high-risk CSV and pasted fields to Redact and remove remembered seed/keychain storage so repeatable seeds stay session-only.
+
 ## v1.0.55 - 2026-06-30
 
 - Add Redact as a first-class manual strategy for CSV and pasted-data columns, with typed placeholders, privacy-report accounting, and rendered dropdown coverage.

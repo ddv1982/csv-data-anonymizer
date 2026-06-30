@@ -3,7 +3,6 @@ fn main() {
         tauri_build::AppManifest::new().commands(&[
             "load_settings",
             "save_settings",
-            "reset_dp_budget_ledger",
             "pick_input_csv",
             "pick_output_csv",
             "analyze_csv",

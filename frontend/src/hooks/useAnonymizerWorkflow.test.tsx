@@ -1,7 +1,7 @@
 import { act, render } from '@testing-library/react'
 import { useEffect } from 'react'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
-import { defaultSettings, privacyConfigFromSettings } from '../defaults'
+import { defaultSettings } from '../defaults'
 import type {
   AnonymizeData,
   AnonymizeJobStatus,
@@ -17,7 +17,6 @@ type PreflightLike = { readiness: { blockers: string[] } }
 const tauriMocks = vi.hoisted(() => ({
   loadSettings: vi.fn(),
   saveSettings: vi.fn(),
-  resetDpBudgetLedger: vi.fn(),
   pickInputCsv: vi.fn(),
   pickOutputCsv: vi.fn(),
   analyzeCsv: vi.fn(),
@@ -135,153 +134,6 @@ describe('useAnonymizerWorkflow', () => {
     )
   })
 
-  it('selects every column and prevents partial selection in synthetic data mode', async () => {
-    tauriMocks.analyzeCsv.mockResolvedValue(
-      analyzeResponseFixture({
-        columns: [
-          columnFixture(0, 'email', 'email', 'high'),
-          columnFixture(1, 'country', 'countryCode', 'medium'),
-          columnFixture(2, 'notes', 'string', 'low'),
-        ],
-      }),
-    )
-    const harness = renderWorkflow()
-    await flushPromises()
-
-    await act(async () => {
-      await harness.workflow.handlePickInput()
-    })
-
-    expect(harness.workflow.selectedColumns).toEqual([0, 1])
-
-    act(() => {
-      harness.workflow.updatePrivacyConfig({
-        ...privacyConfigFromSettings(defaultSettings),
-        releaseMode: 'syntheticData',
-      })
-    })
-
-    expect(harness.workflow.syntheticSelectionLocked).toBe(true)
-    expect(harness.workflow.selectedColumns).toEqual([0, 1, 2])
-
-    act(() => {
-      harness.workflow.setColumnSelection([0])
-    })
-    expect(harness.workflow.selectedColumns).toEqual([0, 1, 2])
-
-    act(() => {
-      harness.workflow.toggleColumn(harness.workflow.columns[1])
-    })
-    expect(harness.workflow.selectedColumns).toEqual([0, 1, 2])
-  })
-
-  it('does not run the standard preview path in synthetic data mode', async () => {
-    tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())
-    const harness = renderWorkflow()
-    await flushPromises()
-
-    await act(async () => {
-      await harness.workflow.handlePickInput()
-    })
-    act(() => {
-      harness.workflow.updatePrivacyConfig({
-        ...privacyConfigFromSettings(defaultSettings),
-        releaseMode: 'syntheticData',
-      })
-    })
-    await act(async () => {
-      await harness.workflow.previewCsv()
-    })
-
-    expect(harness.workflow.canPreview).toBe(false)
-    expect(tauriMocks.preflightAnonymization).not.toHaveBeenCalled()
-    expect(tauriMocks.previewAnonymization).not.toHaveBeenCalled()
-  })
-
-  it('ignores stale Smart replacement strategies when running synthetic data mode', async () => {
-    tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())
-    tauriMocks.startAnonymizeJob.mockResolvedValue(succeededJobStatus())
-    const harness = renderWorkflow()
-    await flushPromises()
-
-    await act(async () => {
-      await harness.workflow.handlePickInput()
-    })
-    act(() => {
-      harness.workflow.updateColumnType(harness.workflow.columns[1], 'string')
-      harness.workflow.updateColumnStrategy(harness.workflow.columns[1], 'localAi')
-    })
-
-    expect(harness.workflow.localAiSelected).toBe(true)
-    expect(harness.workflow.localAiBlocked).toBe(true)
-
-    act(() => {
-      harness.workflow.updatePrivacyConfig({
-        ...privacyConfigFromSettings(defaultSettings),
-        releaseMode: 'syntheticData',
-      })
-    })
-
-    expect(harness.workflow.localAiSelected).toBe(false)
-    expect(harness.workflow.localAiBlocked).toBe(false)
-
-    await act(async () => {
-      await harness.workflow.runAnonymization()
-    })
-
-    expect(tauriMocks.preflightAnonymization).toHaveBeenCalledWith(
-      'anonymize',
-      '/data/input.csv',
-      '/data/input_private_output.csv',
-      [0, 1],
-      [{ columnIndex: 1, typeOverride: 'string', strategy: 'auto' }],
-      false,
-      '',
-      false,
-      100,
-      expect.objectContaining({ releaseMode: 'syntheticData' }),
-      [],
-      { enabled: false, model: 'gemma3:4b' },
-    )
-    expect(tauriMocks.startAnonymizeJob).toHaveBeenCalledWith(
-      '/data/input.csv',
-      '/data/input_private_output.csv',
-      [0, 1],
-      [{ columnIndex: 1, typeOverride: 'string', strategy: 'auto' }],
-      false,
-      '',
-      false,
-      100,
-      2,
-      [],
-      expect.objectContaining({ releaseMode: 'syntheticData' }),
-      { enabled: false, model: 'gemma3:4b' },
-    )
-  })
-
-  it('blocks DP aggregate output when repeatable replacements are enabled', async () => {
-    tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())
-    const harness = renderWorkflow()
-    await flushPromises()
-
-    await act(async () => {
-      await harness.workflow.handlePickInput()
-    })
-    await act(async () => {
-      harness.workflow.updateSetting('deterministicDefault', true)
-      harness.workflow.updatePrivacyConfig({
-        ...privacyConfigFromSettings(defaultSettings),
-        releaseMode: 'differentialPrivacyAggregate',
-      })
-    })
-    await act(async () => {
-      await harness.workflow.runAnonymization()
-    })
-
-    expect(tauriMocks.startAnonymizeJob).not.toHaveBeenCalled()
-    expect(harness.workflow.error).toBe('Turn off Repeatable replacements before creating DP aggregate output.')
-  })
-
   it('polls a started job to success and persists the output directory', async () => {
     vi.useFakeTimers()
     tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())
@@ -308,7 +160,6 @@ describe('useAnonymizerWorkflow', () => {
       100,
       2,
       [],
-      expect.objectContaining({ releaseMode: 'standard' }),
       { enabled: false, model: 'gemma3:4b' },
     )
 
@@ -461,7 +312,7 @@ function columnFixture(
     sampleValues: ['sample'],
     emptyFormat: 'emptyString',
     isSelected: true,
-    strategy: 'auto',
+    strategy: piiRisk === 'high' || piiRisk === 'medium' ? 'redact' : 'auto',
   }
 }
 
@@ -498,7 +349,6 @@ function resultFixture(): AnonymizeData {
 
 function privacyReportFixture(overrides: Partial<PrivacyReport> = {}): PrivacyReport {
   return {
-    releaseMode: 'standard',
     directIdentifiers: 1,
     quasiIdentifiers: 1,
     sensitiveColumns: 0,
@@ -507,12 +357,7 @@ function privacyReportFixture(overrides: Partial<PrivacyReport> = {}): PrivacyRe
     opaqueTokenColumns: 0,
     maskedColumns: 0,
     redactedColumns: 0,
-    generalizedColumns: 0,
     passThroughColumns: 0,
-    suppressedRows: 0,
-    syntheticRows: 0,
-    dpEpsilon: null,
-    dpBudget: null,
     uniquePseudonymValues: 2,
     reusedPseudonymValues: 0,
     collisionsAvoided: 0,
@@ -522,7 +367,6 @@ function privacyReportFixture(overrides: Partial<PrivacyReport> = {}): PrivacyRe
     smartReplacementRejections: 0,
     smartReplacementRejectionReasons: [],
     smartReplacementFallbacks: 0,
-    formalModels: [],
     readiness: {
       status: 'verified',
       blockers: [],

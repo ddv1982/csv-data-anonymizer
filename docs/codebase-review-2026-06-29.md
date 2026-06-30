@@ -2,7 +2,7 @@
 
 ## Scope
 
-Reviewed the current CSV Anonymizer repository as a local-first Tauri desktop app with a React/Vite frontend, Rust anonymization core, Tauri command shell, local settings/secret persistence, release/package scripts, and CI metadata.
+Reviewed the current CSV Anonymizer repository as a local-first Tauri desktop app with a React/Vite frontend, Rust anonymization core, Tauri command shell, local settings persistence, release/package scripts, and CI metadata.
 
 Deployment context used for severity: single-user desktop app and local CLI smoke harness, not a shared multi-tenant service. Optional Local AI traffic is intended for local Ollama on loopback.
 
@@ -55,17 +55,17 @@ Why it matters: users who download a Linux installer directly from a release do 
 
 Implemented fix: the release workflow now publishes signed checksum sidecars for direct `.deb`, `.rpm`, and AppImage assets, uploads the archive keyring, and documents verification in `README.md` and `docs/releasing.md`.
 
-### 4. Disabling remembered seeds could silently leave an old seed in the OS keyring if deletion failed
+### 4. Remembered seed persistence was superseded by session-only seeds
 
 Original severity: low/medium
 
-Evidence: when `remember_seed` is false, settings save attempts `seed_vault.delete_seed()` but discards the result in `src-tauri/src/settings/store.rs:87`. The test `save_settings_keeps_saving_when_unremembered_seed_vault_delete_fails` intentionally verifies that a save still succeeds while `old-remembered-seed` remains in the vault in `src-tauri/src/settings/store.rs:305` and `src-tauri/src/settings/store.rs:322`.
+Evidence: the reviewed seed-vault path kept repeatable-replacement seeds in the platform credential store. That was more persistent than the simplified product now needs.
 
-Guards checked: disk settings clear the seed before JSON persistence in `src-tauri/src/settings/store.rs:91`, persistent settings sanitize unremembered seeds, and future loads only read the vault when `remember_seed` is true. Those guards prevent accidental reuse through normal loads, but they do not tell the user that a secret they tried to stop remembering may still exist in the platform keyring.
+Guards checked: disk settings cleared the seed before JSON persistence, but the platform credential-store path still created a long-lived local secret lifecycle.
 
-Why it matters: this is a local-secret cleanup and user-expectation issue. A user who disables remembered seeds likely expects the old persisted seed to be removed or to receive an actionable warning if removal fails.
+Why it matters: repeatable seeds are sensitive enough to avoid durable storage when the product no longer needs cross-session seed recall.
 
-Implemented fix: seed-vault deletion failures now surface as settings-save errors when users disable remembered seeds or blank a remembered seed.
+Implemented fix: remembered seed storage was removed. The app keeps a repeatable seed only in the current session, settings load clears legacy persisted seeds, and settings save always writes an empty seed without touching the OS credential store.
 
 ### 5. Suggested output auto-grant accepted arbitrary suffix text before constructing the output path
 
@@ -108,10 +108,8 @@ Implemented fix: CLI help now shows `--deterministic --seed <seed>` together and
 The previous version of this report contained several valid findings that are now fixed in the current workspace:
 
 - Direct-input previews now include safety warnings: `crates/csv-anonymizer-core/src/direct_input/shared.rs:114` builds warnings, and tests cover selected-column warnings.
-- Formal tabular releases now reject unselected columns: `crates/csv-anonymizer-core/src/privacy/mod.rs:143` enforces full selection, with regression coverage.
 - Deterministic empty seeds are now blocked at CLI and core boundaries: `crates/csv-anonymizer-app/src/cli.rs:110` and `crates/csv-anonymizer-core/src/service.rs:601` enforce the guard.
 - Background job panics now transition to terminal failure states: anonymize and Local AI workers catch panics and call terminal failure handlers.
-- DP budget reset now requires typed frontend confirmation before the workflow passes the backend confirmation phrase.
 - Local AI readiness is now model-specific in the frontend hook.
 - Settings persistence no longer overwrites stored settings with defaults before the initial load resolves.
 - Paste and quick workflows now render privacy report summaries they receive.
@@ -121,7 +119,7 @@ The previous version of this report contained several valid findings that are no
 - Local AI model downloads now use an async streaming client with a bounded per-read timeout so cancellation is observed after the next chunk or timeout instead of waiting on an unbounded blocking read.
 - Paste and quick workflows now keep processing actions disabled until persisted settings have loaded.
 - Direct Linux `.deb`, `.rpm`, and AppImage release downloads now get signed checksum sidecars in the release workflow, with verification guidance in `README.md` and `docs/releasing.md`.
-- Seed-vault deletion failures now surface as settings-save errors when users disable remembered seeds or blank a remembered seed.
+- Remembered seed storage was removed; repeatable seeds are session-only and omitted from settings JSON.
 - Suggested output suffixes are now validated before the backend constructs and auto-grants output paths.
 - CSV output creation is now disabled when selected Smart replacement columns require Local AI setup.
 - CLI help now documents that deterministic anonymization requires a non-empty seed.
@@ -129,13 +127,10 @@ The previous version of this report contained several valid findings that are no
 ## Positive Findings
 
 - Standard CSV-file processing remains streaming and uses atomic replacement paths rather than materializing standard transforms in memory.
-- Privacy release modes that need materialization have explicit row caps and cancellation checks.
 - CSV output neutralizes spreadsheet formula prefixes in headers and cells, including full-width variants.
 - Ragged rows with non-empty fields beyond headers are rejected before committing partial output.
-- DP aggregate releases include important safeguards: deterministic DP output is rejected, grouped output requires public group labels/allowed values, and budget tracking can block or warn on over-budget releases.
 - Tauri file/path access uses in-memory grants, canonicalization, and symlink/leaf checks.
-- DP budget ledger state is backend-owned, serialized, and preserved across normal settings saves.
-- Frontend unit/e2e/a11y coverage exists for key workflows, typed DP reset confirmation, model-specific Local AI readiness, settings-load guards, paste/quick privacy report rendering, keyboard navigation, and axe checks.
+- Frontend unit/e2e/a11y coverage exists for key workflows, model-specific Local AI readiness, settings-load guards, paste/quick privacy report rendering, keyboard navigation, and axe checks.
 - CI and release workflows are broad: frontend/Rust audits, contract checks, dead-code scans, frontend lint/test/e2e/a11y/build, Rust fmt/test/clippy/build, packaging checks, release metadata validation, APT repository checks, and smoke tests.
 - Release metadata scripts validate cross-file versions, Linux desktop/AppStream metadata, icons, changelog tag expectations, and local model/runtime artifact exclusions.
 
@@ -144,7 +139,7 @@ The previous version of this report contained several valid findings that are no
 1. User-facing privacy decision gaps were fixed first: direct workflow settings-load gating and CSV Local AI button disable consistency.
 2. Local AI download cancellation was hardened with bounded per-read timeout behavior.
 3. Direct Linux installer provenance was added with signed checksum sidecars and verification docs.
-4. Keyring seed deletion failures now surface when users disable remembered seeds.
+4. Remembered seed storage was removed in favor of session-only repeatable seeds.
 5. Output suffixes are validated at the Tauri command boundary before suggested output paths are auto-granted.
 6. CLI help now documents that deterministic anonymization requires a non-empty seed.
 7. The resolved-prior-findings list remains for the next review cycle so future work does not chase stale issues.
