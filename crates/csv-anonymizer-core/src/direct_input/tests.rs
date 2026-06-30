@@ -28,8 +28,6 @@ fn transforms_csv_text_with_existing_csv_rules() {
         format: PasteDataFormat::Csv,
         columns: selected,
         controls: Vec::new(),
-        deterministic: true,
-        seed: "seed".to_string(),
         preview_smart_replacements: Vec::new(),
     })
     .unwrap();
@@ -44,8 +42,6 @@ fn transforms_quick_values_with_one_state() {
         input: "ada@example.com\nada@example.com".to_string(),
         data_type: DataType::Email,
         strategy: AnonymizationStrategy::Auto,
-        deterministic: true,
-        seed: "seed".to_string(),
     })
     .unwrap();
     let lines = result.output.lines().collect::<Vec<_>>();
@@ -61,10 +57,10 @@ fn row_helpers_preview_and_anonymize_rows() {
     let headers = vec!["email".to_string()];
     let metadata = build_column_metadata(&headers, &rows);
 
-    let preview = preview_rows(&rows, &metadata, &[0], &[], true, "seed", 3).unwrap();
+    let preview = preview_rows(&rows, &metadata, &[0], &[], 3).unwrap();
     assert_eq!(preview.previews[0].samples[0].original, "ada@example.com");
 
-    let (output, report) = anonymize_rows(&rows, &metadata, &[0], &[], true, "seed").unwrap();
+    let (output, report) = anonymize_rows(&rows, &metadata, &[0], &[]).unwrap();
     assert_eq!(output.len(), 1);
     assert_ne!(output[0][0], "ada@example.com");
     assert_eq!(report.direct_identifiers, 1);
@@ -91,8 +87,6 @@ fn direct_input_preview_includes_selected_column_warnings() {
                 strategy: AnonymizationStrategy::Auto,
             },
         ],
-        true,
-        "seed",
         3,
     )
     .unwrap();
@@ -114,49 +108,13 @@ fn direct_input_preview_includes_selected_column_warnings() {
 }
 
 #[test]
-fn direct_input_rejects_deterministic_blank_seed() {
-    let error = transform_quick_values(QuickTransformParams {
-        input: "ada@example.com".to_string(),
-        data_type: DataType::Email,
-        strategy: AnonymizationStrategy::Auto,
-        deterministic: true,
-        seed: " ".to_string(),
-    })
-    .unwrap_err();
-
-    assert!(error.to_string().contains("non-empty private seed"));
-}
-
-#[test]
-fn paste_transform_rejects_deterministic_blank_seed() {
-    let error = transform_paste_data(PasteTransformParams {
-        content: r#"[{"email":"ada@example.com"}]"#.to_string(),
-        format: PasteDataFormat::Json,
-        columns: vec![0],
-        controls: Vec::new(),
-        deterministic: true,
-        seed: " ".to_string(),
-        preview_smart_replacements: Vec::new(),
-    })
-    .unwrap_err();
-
-    assert!(error.to_string().contains("non-empty private seed"));
-}
-
-#[test]
 fn quick_anonymize_values_wrapper_uses_one_state() {
     let values = vec![
         "550e8400-e29b-41d4-a716-446655440000".to_string(),
         "550e8400-e29b-41d4-a716-446655440000".to_string(),
     ];
-    let result = quick_anonymize_values(
-        &values,
-        DataType::Uuid,
-        AnonymizationStrategy::Tokenize,
-        true,
-        "seed",
-    )
-    .unwrap();
+    let result =
+        quick_anonymize_values(&values, DataType::Uuid, AnonymizationStrategy::Tokenize).unwrap();
     let lines = result.output.lines().collect::<Vec<_>>();
 
     assert_eq!(lines.len(), 2);
@@ -170,8 +128,6 @@ fn generates_quick_values_without_user_input() {
         data_type: DataType::Email,
         strategy: AnonymizationStrategy::Auto,
         count: 2,
-        deterministic: true,
-        seed: "seed".to_string(),
     })
     .unwrap();
     let lines = result.output.lines().collect::<Vec<_>>();
@@ -188,8 +144,6 @@ fn generates_type_shaped_quick_values() {
         data_type: DataType::Uuid,
         strategy: AnonymizationStrategy::Auto,
         count: 1,
-        deterministic: true,
-        seed: "seed".to_string(),
     })
     .unwrap();
     let uuid = uuid_result.output.as_str();
@@ -202,8 +156,6 @@ fn generates_type_shaped_quick_values() {
         data_type: DataType::IpAddress,
         strategy: AnonymizationStrategy::Auto,
         count: 1,
-        deterministic: true,
-        seed: "seed".to_string(),
     })
     .unwrap();
 
@@ -213,8 +165,6 @@ fn generates_type_shaped_quick_values() {
         data_type: DataType::Phone,
         strategy: AnonymizationStrategy::Auto,
         count: 1,
-        deterministic: true,
-        seed: "seed".to_string(),
     })
     .unwrap();
     let phone = phone_result.output.as_str();
@@ -233,8 +183,6 @@ fn generates_type_shaped_quick_values() {
         data_type: DataType::FullName,
         strategy: AnonymizationStrategy::Auto,
         count: 1,
-        deterministic: true,
-        seed: "seed".to_string(),
     })
     .unwrap();
     let name = name_result.output.as_str();
@@ -246,8 +194,6 @@ fn generates_type_shaped_quick_values() {
         data_type: DataType::Timestamp,
         strategy: AnonymizationStrategy::Auto,
         count: 1,
-        deterministic: true,
-        seed: "seed".to_string(),
     })
     .unwrap();
     let timestamp = timestamp_result.output.as_str();
@@ -265,8 +211,6 @@ fn generates_tokenized_quick_values() {
         data_type: DataType::Email,
         strategy: AnonymizationStrategy::Tokenize,
         count: 2,
-        deterministic: true,
-        seed: "seed".to_string(),
     })
     .unwrap();
     let lines = result.output.lines().collect::<Vec<_>>();
@@ -284,8 +228,6 @@ fn quick_generation_rejects_input_only_strategies() {
         data_type: DataType::Email,
         strategy: AnonymizationStrategy::Mask,
         count: 1,
-        deterministic: true,
-        seed: "seed".to_string(),
     })
     .unwrap_err();
 
@@ -317,8 +259,6 @@ fn transforms_xml_attributes_and_text() {
         format: PasteDataFormat::Xml,
         columns: selected,
         controls: Vec::new(),
-        deterministic: true,
-        seed: "seed".to_string(),
         preview_smart_replacements: Vec::new(),
     })
     .unwrap();
@@ -371,8 +311,6 @@ fn json_paths_distinguish_literal_dotted_keys_from_nested_keys() {
         format: PasteDataFormat::Json,
         columns: vec![nested.index, array_value.index],
         controls: Vec::new(),
-        deterministic: true,
-        seed: "seed".to_string(),
         preview_smart_replacements: Vec::new(),
     })
     .unwrap();
@@ -430,8 +368,6 @@ fn json_transform_preserves_scalar_value_types() {
                 strategy: AnonymizationStrategy::Auto,
             },
         ],
-        deterministic: true,
-        seed: "seed".to_string(),
         preview_smart_replacements: Vec::new(),
     })
     .unwrap();
@@ -511,8 +447,6 @@ fn xml_paths_distinguish_dotted_element_names_from_nested_elements() {
         format: PasteDataFormat::Xml,
         columns: vec![nested.index],
         controls: Vec::new(),
-        deterministic: true,
-        seed: "seed".to_string(),
         preview_smart_replacements: Vec::new(),
     })
     .unwrap();
@@ -550,8 +484,6 @@ fn xml_paths_distinguish_dotted_attribute_names_from_nested_paths() {
         format: PasteDataFormat::Xml,
         columns: vec![nested_attribute.index],
         controls: Vec::new(),
-        deterministic: true,
-        seed: "seed".to_string(),
         preview_smart_replacements: Vec::new(),
     })
     .unwrap();
@@ -581,8 +513,6 @@ fn previews_pasted_json_fields() {
         format: PasteDataFormat::Json,
         columns: vec![email.index],
         controls: Vec::new(),
-        deterministic: true,
-        seed: "seed".to_string(),
         sample_count: 5,
     })
     .unwrap();
@@ -619,8 +549,6 @@ fn previews_and_transforms_paste_data_with_smart_replacements() {
             format: PasteDataFormat::Json,
             columns: vec![name.index],
             controls: controls.clone(),
-            deterministic: true,
-            seed: "seed".to_string(),
             sample_count: 5,
         },
         Some(&mut preview_provider),
@@ -642,8 +570,6 @@ fn previews_and_transforms_paste_data_with_smart_replacements() {
         format: PasteDataFormat::Json,
         columns: vec![name.index],
         controls,
-        deterministic: true,
-        seed: "seed".to_string(),
         preview_smart_replacements: preview.smart_replacements,
     })
     .unwrap();
@@ -685,8 +611,6 @@ fn paste_transform_reuses_preview_smart_replacements_and_generates_missing_value
             format: PasteDataFormat::Json,
             columns: vec![name.index],
             controls: controls.clone(),
-            deterministic: true,
-            seed: "seed".to_string(),
             sample_count: 1,
         },
         Some(&mut preview_provider),
@@ -700,8 +624,6 @@ fn paste_transform_reuses_preview_smart_replacements_and_generates_missing_value
             format: PasteDataFormat::Json,
             columns: vec![name.index],
             controls,
-            deterministic: true,
-            seed: "seed".to_string(),
             preview_smart_replacements: preview.smart_replacements,
         },
         Some(&mut transform_provider),
@@ -748,8 +670,6 @@ fn paste_transform_rejects_invalid_preview_smart_replacements() {
             format: PasteDataFormat::Json,
             columns: vec![name.index],
             controls,
-            deterministic: true,
-            seed: "seed".to_string(),
             preview_smart_replacements: vec![SmartReplacementEntry {
                 column_index: name.index,
                 original: "Ada Lovelace".to_string(),
@@ -781,8 +701,6 @@ fn quick_generation_uses_smart_replacements_when_requested() {
             data_type: DataType::FullName,
             strategy: AnonymizationStrategy::LocalAi,
             count: 2,
-            deterministic: true,
-            seed: "seed".to_string(),
         },
         Some(&mut provider),
     )
@@ -803,8 +721,6 @@ fn quick_generation_requires_provider_for_smart_replacement() {
         data_type: DataType::FullName,
         strategy: AnonymizationStrategy::LocalAi,
         count: 1,
-        deterministic: true,
-        seed: "seed".to_string(),
     })
     .unwrap_err();
 
@@ -837,8 +753,6 @@ fn transforms_plain_text_and_preserves_surrounding_text() {
         format: PasteDataFormat::PlainText,
         columns: selected,
         controls: Vec::new(),
-        deterministic: true,
-        seed: "seed".to_string(),
         preview_smart_replacements: Vec::new(),
     })
     .unwrap();
@@ -875,8 +789,6 @@ fn plain_text_detection_keeps_overlapping_tokens_single_pass() {
         format: PasteDataFormat::PlainText,
         columns: vec![url.index],
         controls: Vec::new(),
-        deterministic: true,
-        seed: "seed".to_string(),
         preview_smart_replacements: Vec::new(),
     })
     .unwrap();
@@ -907,8 +819,6 @@ fn auto_detects_logs_and_replaces_inline_values() {
         format: analysis.format,
         columns: selected,
         controls: Vec::new(),
-        deterministic: true,
-        seed: "seed".to_string(),
         preview_smart_replacements: Vec::new(),
     })
     .unwrap();

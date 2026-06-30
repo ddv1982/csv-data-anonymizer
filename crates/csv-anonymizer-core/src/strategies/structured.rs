@@ -1,8 +1,7 @@
 use super::state::{
-    LETTER_CHARSET, PseudonymDomain, TOKEN_CHARSET, TransformState, normalized_identity,
-    random_string,
+    PseudonymDomain, TOKEN_CHARSET, TransformState, normalized_identity, random_string,
 };
-use crate::hash::{deterministic_number, deterministic_string, deterministic_uuid, random_uuid_v4};
+use crate::hash::random_uuid_v4;
 use crate::types::TransformContext;
 use chrono::{Duration, NaiveDate};
 use rand::Rng;
@@ -19,25 +18,14 @@ pub(super) fn transform_opaque_token(
         normalized_identity(value)
     );
     state.assign_generated(PseudonymDomain::OpaqueToken, &source_key, |attempt| {
-        if context.deterministic {
-            format!(
-                "tok_{}",
-                deterministic_string(
-                    &source_key,
-                    &format!("{}:opaque:{attempt}", context.seed),
-                    16,
-                    TOKEN_CHARSET,
-                )
-            )
-        } else {
-            format!("tok_{}", random_string(16, TOKEN_CHARSET))
-        }
+        let _ = attempt;
+        format!("tok_{}", random_string(16, TOKEN_CHARSET))
     })
 }
 
 pub(super) fn transform_email(
     value: &str,
-    context: &TransformContext<'_>,
+    _context: &TransformContext<'_>,
     state: &mut TransformState,
 ) -> String {
     let Some(at_index) = value.rfind('@') else {
@@ -46,40 +34,22 @@ pub(super) fn transform_email(
     let domain = &value[at_index..];
     let source_key = normalized_identity(value);
     let local_part = state.assign_generated(PseudonymDomain::EmailLocal, &source_key, |attempt| {
-        if context.deterministic {
-            let prefix = deterministic_string(
-                value,
-                &format!("{}:email-prefix:{attempt}", context.seed),
-                6,
-                LETTER_CHARSET,
-            );
-            let suffix = deterministic_string(
-                value,
-                &format!("{}:email-suffix:{attempt}", context.seed),
-                3,
-                "0123456789",
-            );
-            format!("{prefix}{suffix}")
-        } else {
-            let mut rng = rand::thread_rng();
-            format!("user{}", rng.gen_range(1..=999_999))
-        }
+        let _ = attempt;
+        let mut rng = rand::thread_rng();
+        format!("user{}", rng.gen_range(1..=999_999))
     });
     format!("{local_part}{domain}")
 }
 
 pub(super) fn transform_uuid(
     value: &str,
-    context: &TransformContext<'_>,
+    _context: &TransformContext<'_>,
     state: &mut TransformState,
 ) -> String {
     let source_key = normalized_identity(value);
     let uuid = state.assign_generated(PseudonymDomain::Uuid, &source_key, |attempt| {
-        if context.deterministic {
-            deterministic_uuid(value, &format!("{}:uuid:{attempt}", context.seed))
-        } else {
-            random_uuid_v4()
-        }
+        let _ = attempt;
+        random_uuid_v4()
     });
     if value == value.to_uppercase() {
         uuid.to_uppercase()
@@ -90,20 +60,16 @@ pub(super) fn transform_uuid(
 
 pub(super) fn transform_timestamp(
     value: &str,
-    context: &TransformContext<'_>,
+    _context: &TransformContext<'_>,
     state: &mut TransformState,
 ) -> String {
     let source_key = normalized_identity(value);
     state.assign_generated(PseudonymDomain::Timestamp, &source_key, |attempt| {
-        transform_timestamp_candidate(value, context, attempt)
+        transform_timestamp_candidate(value, attempt)
     })
 }
 
-fn transform_timestamp_candidate(
-    value: &str,
-    context: &TransformContext<'_>,
-    attempt: usize,
-) -> String {
+fn transform_timestamp_candidate(value: &str, _attempt: usize) -> String {
     if value.len() < 10 {
         return value.to_string();
     }
@@ -112,41 +78,42 @@ fn transform_timestamp_candidate(
         return value.to_string();
     };
 
-    let offset_days = if context.deterministic {
-        deterministic_number(
-            value,
-            &format!("{}:timestamp:{attempt}", context.seed),
-            -365,
-            365,
-        )
-    } else {
-        rand::thread_rng().gen_range(-365..=365)
-    };
-
-    let Some(offset_date) = date.checked_add_signed(Duration::days(offset_days)) else {
+    let Some(offset_date) = shifted_date(date) else {
         return value.to_string();
     };
 
     format!("{}{}", offset_date.format("%Y-%m-%d"), &value[10..])
 }
 
+fn shifted_date(date: NaiveDate) -> Option<NaiveDate> {
+    for _ in 0..16 {
+        let offset_days = random_nonzero_day_offset();
+        if let Some(offset_date) = date.checked_add_signed(Duration::days(offset_days)) {
+            return Some(offset_date);
+        }
+    }
+
+    date.checked_add_signed(Duration::days(1))
+        .or_else(|| date.checked_add_signed(Duration::days(-1)))
+}
+
+fn random_nonzero_day_offset() -> i64 {
+    let offset_days = rand::thread_rng().gen_range(-365..=365);
+    if offset_days == 0 { 1 } else { offset_days }
+}
+
 pub(super) fn transform_phone(
     value: &str,
-    context: &TransformContext<'_>,
+    _context: &TransformContext<'_>,
     state: &mut TransformState,
 ) -> String {
     let source_key = normalized_identity(value);
     state.assign_generated(PseudonymDomain::Phone, &source_key, |attempt| {
-        transform_phone_candidate(value, context, attempt)
+        transform_phone_candidate(value, attempt)
     })
 }
 
-fn transform_phone_candidate(
-    value: &str,
-    context: &TransformContext<'_>,
-    attempt: usize,
-) -> String {
-    let mut digit_index = 0;
+fn transform_phone_candidate(value: &str, _attempt: usize) -> String {
     value
         .chars()
         .map(|character| {
@@ -154,33 +121,23 @@ fn transform_phone_candidate(
                 return character.to_string();
             }
 
-            let seed = format!("{}:phone:{attempt}:{digit_index}", context.seed);
-            digit_index += 1;
-            if context.deterministic {
-                deterministic_string(value, &seed, 1, "0123456789")
-            } else {
-                rand::thread_rng().gen_range(0..=9).to_string()
-            }
+            rand::thread_rng().gen_range(0..=9).to_string()
         })
         .collect()
 }
 
 pub(super) fn transform_generic_string(
     value: &str,
-    context: &TransformContext<'_>,
+    _context: &TransformContext<'_>,
     state: &mut TransformState,
 ) -> String {
     let source_key = format!("{}:{}", value.len(), normalized_identity(value));
     state.assign_generated(PseudonymDomain::GenericString, &source_key, |attempt| {
-        transform_generic_string_candidate(value, context, attempt)
+        transform_generic_string_candidate(value, attempt)
     })
 }
 
-fn transform_generic_string_candidate(
-    value: &str,
-    context: &TransformContext<'_>,
-    attempt: usize,
-) -> String {
+fn transform_generic_string_candidate(value: &str, _attempt: usize) -> String {
     let target_length = value.len();
     if target_length == 0 {
         return value.to_string();
@@ -190,29 +147,10 @@ fn transform_generic_string_candidate(
     let max_length = (target_length as f64 * 1.2).ceil() as usize;
     let charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-";
 
-    let output_length = if context.deterministic {
-        deterministic_number(
-            value,
-            &format!("{}:length:{attempt}", context.seed),
-            min_length as i64,
-            max_length as i64,
-        ) as usize
-    } else {
-        rand::thread_rng().gen_range(min_length..=max_length)
-    };
-
-    if context.deterministic {
-        deterministic_string(
-            value,
-            &format!("{}:content:{attempt}", context.seed),
-            output_length,
-            charset,
-        )
-    } else {
-        let chars: Vec<char> = charset.chars().collect();
-        let mut rng = rand::thread_rng();
-        (0..output_length)
-            .map(|_| chars[rng.gen_range(0..chars.len())])
-            .collect()
-    }
+    let output_length = rand::thread_rng().gen_range(min_length..=max_length);
+    let chars: Vec<char> = charset.chars().collect();
+    let mut rng = rand::thread_rng();
+    (0..output_length)
+        .map(|_| chars[rng.gen_range(0..chars.len())])
+        .collect()
 }

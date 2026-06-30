@@ -1,5 +1,4 @@
-import { ChevronDown, Eye, EyeOff, RefreshCw } from 'lucide-react'
-import { useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 import type { AppSettings } from '../types'
 import { clampNumber } from '../utils/numbers'
 import { SwitchRow } from './SwitchRow'
@@ -17,9 +16,6 @@ export function AppSettingsPanel({
   onToggleOpen: () => void
   onUpdateSetting: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => void
 }) {
-  const [seedVisible, setSeedVisible] = useState(false)
-  const seedDisabled = disabled || !settings.deterministicDefault
-
   return (
     <div className="collapsible">
       <div className="collapsible-header">
@@ -36,51 +32,6 @@ export function AppSettingsPanel({
       </div>
       {open ? (
         <div className="settings-panel">
-          <SwitchRow
-            id="deterministic-mode"
-            label="Repeatable replacements"
-            description="Use the same private seed to get the same replacements again."
-            checked={settings.deterministicDefault}
-            disabled={disabled}
-            onChange={(checked) => onUpdateSetting('deterministicDefault', checked)}
-          />
-          <div className={settings.deterministicDefault ? 'field' : 'field disabled-soft'}>
-            <label htmlFor="seed-input">Seed</label>
-            <div className="seed-control-row">
-              <input
-                id="seed-input"
-                type={seedVisible ? 'text' : 'password'}
-                value={settings.seed}
-                disabled={seedDisabled}
-                placeholder="Enter a private seed"
-                aria-describedby="seed-description"
-                onChange={(event) => onUpdateSetting('seed', event.target.value)}
-              />
-              <button
-                type="button"
-                className="button button-outline button-icon"
-                disabled={seedDisabled || settings.seed.length === 0}
-                aria-label={seedVisible ? 'Hide seed' : 'Show seed'}
-                title={seedVisible ? 'Hide seed' : 'Show seed'}
-                onClick={() => setSeedVisible((current) => !current)}
-              >
-                {seedVisible ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
-              </button>
-              <button
-                type="button"
-                className="button button-outline button-icon"
-                disabled={seedDisabled}
-                aria-label="Generate seed"
-                title="Generate seed"
-                onClick={() => onUpdateSetting('seed', generatePrivateSeed())}
-              >
-                <RefreshCw aria-hidden="true" />
-              </button>
-            </div>
-            <p id="seed-description" className="muted-text text-sm">
-              Useful when multiple files need matching replacements. This seed is kept only for the current app session.
-            </p>
-          </div>
           <SwitchRow
             id="overwrite-output"
             label="Overwrite Output"
@@ -140,15 +91,4 @@ export function AppSettingsPanel({
       ) : null}
     </div>
   )
-}
-
-function generatePrivateSeed() {
-  const cryptoApi = globalThis.crypto
-  if (cryptoApi?.getRandomValues) {
-    const bytes = new Uint8Array(24)
-    cryptoApi.getRandomValues(bytes)
-    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
-  }
-
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`
 }

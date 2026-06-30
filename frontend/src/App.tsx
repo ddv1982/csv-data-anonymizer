@@ -80,7 +80,6 @@ function App() {
         >
           {activeMode === 'quick' ? (
             <QuickDataTypeWorkflowView
-              settings={workflow.settings}
               settingsLoaded={workflow.settingsLoaded}
               localAi={workflow.localAi}
               onOpenLocalAiSettings={() => setLocalAiSettingsOpen(true)}

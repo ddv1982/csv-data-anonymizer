@@ -23,24 +23,18 @@ fn column(detected_type: DataType) -> ColumnMetadata {
     }
 }
 
-fn context<'a>(seed: &'a str) -> TransformContext<'a> {
+fn context() -> TransformContext<'static> {
     TransformContext {
         column_name: "value",
         column_index: 0,
         row_index: 0,
-        seed,
-        deterministic: true,
         empty_format: EmptyFormat::EmptyString,
     }
 }
 
 #[test]
 fn email_preserves_domain() {
-    let result = transform_value(
-        "john.doe@example.com",
-        &column(DataType::Email),
-        &context("seed"),
-    );
+    let result = transform_value("john.doe@example.com", &column(DataType::Email), &context());
     assert!(result.ends_with("@example.com"));
     assert_ne!(result, "john.doe@example.com");
 }
@@ -50,19 +44,17 @@ fn uuid_preserves_uppercase() {
     let result = transform_value(
         "550E8400-E29B-41D4-A716-446655440000",
         &column(DataType::Uuid),
-        &context("seed"),
+        &context(),
     );
     assert_eq!(result, result.to_uppercase());
 }
 
 #[test]
 fn uuid_random_mode_generates_different_valid_uuid() {
-    let mut random_context = context("seed");
-    random_context.deterministic = false;
     let original = "550e8400-e29b-41d4-a716-446655440000";
 
-    let first = transform_value(original, &column(DataType::Uuid), &random_context);
-    let second = transform_value(original, &column(DataType::Uuid), &random_context);
+    let first = transform_value(original, &column(DataType::Uuid), &context());
+    let second = transform_value(original, &column(DataType::Uuid), &context());
 
     assert_ne!(first, original);
     assert_ne!(first, second);
@@ -76,7 +68,7 @@ fn timestamp_preserves_time() {
     let result = transform_value(
         "2024-06-15 10:30:45.123456",
         &column(DataType::Timestamp),
-        &context("seed"),
+        &context(),
     );
     assert!(result.ends_with(" 10:30:45.123456"));
     assert_ne!(result, "2024-06-15 10:30:45.123456");
@@ -84,14 +76,15 @@ fn timestamp_preserves_time() {
 
 #[test]
 fn numeric_id_preserves_leading_zeros() {
-    let result = transform_value("001234", &column(DataType::NumericId), &context("seed"));
+    let result = transform_value("001234", &column(DataType::NumericId), &context());
+    assert_ne!(result, "001234");
     assert!(result.starts_with("00"));
     assert_eq!(result.len(), 6);
 }
 
 #[test]
 fn numeric_id_all_zero_value_is_replaced() {
-    let result = transform_value("0000", &column(DataType::NumericId), &context("seed"));
+    let result = transform_value("0000", &column(DataType::NumericId), &context());
     assert_eq!(result.len(), 4);
     assert_ne!(result, "0000");
     assert!(result.chars().all(|character| character.is_ascii_digit()));
@@ -99,14 +92,15 @@ fn numeric_id_all_zero_value_is_replaced() {
 
 #[test]
 fn numeric_string_fallback_currently_uses_generic_string_strategy() {
-    let result = transform_value("123", &column(DataType::String), &context("seed"));
+    let result = transform_value("123", &column(DataType::String), &context());
     assert_ne!(result, "123");
     assert!(result.chars().any(|character| !character.is_ascii_digit()));
 }
 
 #[test]
 fn numeric_value_preserves_integer_shape() {
-    let result = transform_value("007", &column(DataType::NumericValue), &context("seed"));
+    let result = transform_value("007", &column(DataType::NumericValue), &context());
+    assert_ne!(result, "007");
     assert_eq!(result.len(), 3);
     assert!(result.starts_with("00"));
     assert!(result.chars().all(|character| character.is_ascii_digit()));
@@ -114,7 +108,8 @@ fn numeric_value_preserves_integer_shape() {
 
 #[test]
 fn numeric_value_preserves_signed_decimal_shape() {
-    let result = transform_value("-12.50", &column(DataType::NumericValue), &context("seed"));
+    let result = transform_value("-12.50", &column(DataType::NumericValue), &context());
+    assert_ne!(result, "-12.50");
     assert_eq!(result.len(), 6);
     assert!(result.starts_with('-'));
     assert_eq!(
@@ -132,7 +127,7 @@ fn numeric_value_preserves_signed_decimal_shape() {
 
 #[test]
 fn phone_preserves_punctuation_shape() {
-    let result = transform_value("555-867-5309", &column(DataType::Phone), &context("seed"));
+    let result = transform_value("555-867-5309", &column(DataType::Phone), &context());
     assert_ne!(result, "555-867-5309");
     assert_eq!(result.len(), "555-867-5309".len());
     assert_eq!(
@@ -152,21 +147,18 @@ fn redact_uses_typed_placeholders() {
     let mut email_column = column(DataType::Email);
     email_column.strategy = AnonymizationStrategy::Redact;
     assert_eq!(
-        transform_value("john.doe@example.com", &email_column, &context("seed")),
+        transform_value("john.doe@example.com", &email_column, &context()),
         "[EMAIL]"
     );
 
     let mut name_column = column(DataType::FirstName);
     name_column.strategy = AnonymizationStrategy::Redact;
-    assert_eq!(
-        transform_value("Ada", &name_column, &context("seed")),
-        "[PERSON]"
-    );
+    assert_eq!(transform_value("Ada", &name_column, &context()), "[PERSON]");
 
     let mut date_column = column(DataType::Timestamp);
     date_column.strategy = AnonymizationStrategy::Redact;
     assert_eq!(
-        transform_value("2024-06-15", &date_column, &context("seed")),
+        transform_value("2024-06-15", &date_column, &context()),
         "[DATE]"
     );
 
@@ -184,15 +176,15 @@ fn redact_uses_typed_placeholders() {
         detectors: vec!["header:taxonomy:account-identifier".to_string()],
     }];
     assert_eq!(
-        transform_value("johndoe", &username_column, &context("seed")),
+        transform_value("johndoe", &username_column, &context()),
         "[ACCOUNT_ID]"
     );
 }
 
 #[test]
 fn first_and_last_names_use_plausible_name_values() {
-    let first = transform_value("Alice", &column(DataType::FirstName), &context("seed"));
-    let last = transform_value("Smith", &column(DataType::LastName), &context("seed"));
+    let first = transform_value("Alice", &column(DataType::FirstName), &context());
+    let last = transform_value("Smith", &column(DataType::LastName), &context());
 
     assert_ne!(first, "Alice");
     assert_ne!(last, "Smith");
@@ -202,8 +194,8 @@ fn first_and_last_names_use_plausible_name_values() {
 
 #[test]
 fn name_tokens_do_not_preserve_original_pool_values() {
-    let first = transform_value("Dana", &column(DataType::FirstName), &context("seed"));
-    let full = transform_value("Dana Morgan", &column(DataType::FullName), &context("seed"));
+    let first = transform_value("Dana", &column(DataType::FirstName), &context());
+    let full = transform_value("Dana Morgan", &column(DataType::FullName), &context());
 
     assert_ne!(first, "Dana");
     assert!(!full.split_whitespace().any(|token| {
@@ -212,10 +204,9 @@ fn name_tokens_do_not_preserve_original_pool_values() {
 }
 
 #[test]
-fn full_name_excludes_original_tokens_across_seed_variations() {
-    for index in 0..100 {
-        let seed = format!("seed-{index}");
-        let result = transform_value("Dana Morgan", &column(DataType::FullName), &context(&seed));
+fn full_name_excludes_original_tokens_across_random_draws() {
+    for _ in 0..100 {
+        let result = transform_value("Dana Morgan", &column(DataType::FullName), &context());
 
         assert!(!result.split_whitespace().any(|token| {
             token.eq_ignore_ascii_case("Dana") || token.eq_ignore_ascii_case("Morgan")
@@ -225,7 +216,7 @@ fn full_name_excludes_original_tokens_across_seed_variations() {
 
 #[test]
 fn full_name_preserves_token_shape_with_plausible_names() {
-    let result = transform_value("Alice Smith", &column(DataType::FullName), &context("seed"));
+    let result = transform_value("Alice Smith", &column(DataType::FullName), &context());
     assert_ne!(result, "Alice Smith");
     assert_eq!(result.split_whitespace().count(), 2);
     assert!(
@@ -237,11 +228,7 @@ fn full_name_preserves_token_shape_with_plausible_names() {
 
 #[test]
 fn full_name_uses_alphabetic_name_tokens() {
-    let result = transform_value(
-        "Carol O'Neil",
-        &column(DataType::FullName),
-        &context("name-quality-seed"),
-    );
+    let result = transform_value("Carol O'Neil", &column(DataType::FullName), &context());
 
     assert_ne!(result, "Carol O'Neil");
     assert_eq!(result.split_whitespace().count(), 2);
@@ -259,20 +246,17 @@ fn full_name_uses_alphabetic_name_tokens() {
 
 #[test]
 fn full_name_reuses_first_and_last_token_pseudonyms() {
-    let first = transform_value(
-        "Alice",
-        &column(DataType::FirstName),
-        &context("consistent-name-seed"),
-    );
-    let last = transform_value(
-        "Smith",
-        &column(DataType::LastName),
-        &context("consistent-name-seed"),
-    );
-    let full = transform_value(
+    let mut state = TransformState::new();
+    let context = context();
+    let first =
+        transform_value_with_state("Alice", &column(DataType::FirstName), &context, &mut state);
+    let last =
+        transform_value_with_state("Smith", &column(DataType::LastName), &context, &mut state);
+    let full = transform_value_with_state(
         "Alice Smith",
         &column(DataType::FullName),
-        &context("consistent-name-seed"),
+        &context,
+        &mut state,
     );
 
     assert_eq!(full, format!("{first} {last}"));
@@ -280,9 +264,9 @@ fn full_name_reuses_first_and_last_token_pseudonyms() {
 
 #[test]
 fn stateful_name_mapping_keeps_distinct_sources_unique_while_pool_has_capacity() {
-    let mut state = TransformState::new(true, "unique-name-seed");
+    let mut state = TransformState::new();
     let first_name_column = column(DataType::FirstName);
-    let context = context("unique-name-seed");
+    let context = context();
     let originals = [
         "Alice", "Bianca", "Celine", "Daphne", "Elise", "Freya", "Gemma", "Helena", "Iris",
         "Jenna", "Keira", "Lena", "Mara", "Nadia", "Opal", "Priya", "Rhea", "Selah", "Talia",
@@ -307,17 +291,13 @@ fn stateful_name_mapping_keeps_distinct_sources_unique_while_pool_has_capacity()
 
 #[test]
 fn stateful_name_mapping_reuses_existing_source_mapping() {
-    let mut state = TransformState::new(false, "random-name-seed");
+    let mut state = TransformState::new();
     let first_name_column = column(DataType::FirstName);
-    let mut random_context = context("random-name-seed");
-    random_context.deterministic = false;
+    let context = context();
 
-    let first =
-        transform_value_with_state("Alice", &first_name_column, &random_context, &mut state);
-    let second =
-        transform_value_with_state("Alice", &first_name_column, &random_context, &mut state);
-    let third =
-        transform_value_with_state("Bianca", &first_name_column, &random_context, &mut state);
+    let first = transform_value_with_state("Alice", &first_name_column, &context, &mut state);
+    let second = transform_value_with_state("Alice", &first_name_column, &context, &mut state);
+    let third = transform_value_with_state("Bianca", &first_name_column, &context, &mut state);
 
     assert_eq!(first, second);
     assert_ne!(first, third);
@@ -327,11 +307,11 @@ fn stateful_name_mapping_reuses_existing_source_mapping() {
 
 #[test]
 fn stateful_full_name_reuses_first_and_last_domains() {
-    let mut state = TransformState::new(true, "stateful-full-name-seed");
+    let mut state = TransformState::new();
     let first_name_column = column(DataType::FirstName);
     let last_name_column = column(DataType::LastName);
     let full_name_column = column(DataType::FullName);
-    let context = context("stateful-full-name-seed");
+    let context = context();
 
     let first = transform_value_with_state("Alice", &first_name_column, &context, &mut state);
     let last = transform_value_with_state("Smith", &last_name_column, &context, &mut state);
@@ -343,7 +323,7 @@ fn stateful_full_name_reuses_first_and_last_domains() {
 
 #[test]
 fn full_name_preserves_one_token_outlier_shape() {
-    let result = transform_value("Alice", &column(DataType::FullName), &context("seed"));
+    let result = transform_value("Alice", &column(DataType::FullName), &context());
     assert_eq!(result.split_whitespace().count(), 1);
     assert!(result.chars().all(|character| character.is_alphabetic()));
 }
@@ -351,18 +331,18 @@ fn full_name_preserves_one_token_outlier_shape() {
 #[test]
 fn country_code_and_enum_are_currently_pass_through() {
     assert_eq!(
-        transform_value("US", &column(DataType::CountryCode), &context("seed")),
+        transform_value("US", &column(DataType::CountryCode), &context()),
         "US"
     );
     assert_eq!(
-        transform_value("active", &column(DataType::Enum), &context("seed")),
+        transform_value("active", &column(DataType::Enum), &context()),
         "active"
     );
 }
 
 #[test]
 fn unknown_values_use_generic_string_strategy() {
-    let result = transform_value("mystery", &column(DataType::Unknown), &context("seed"));
+    let result = transform_value("mystery", &column(DataType::Unknown), &context());
     assert_ne!(result, "mystery");
     assert!(
         result
@@ -376,14 +356,14 @@ fn strategy_overrides_can_mask_or_pass_through() {
     let mut masked = column(DataType::Email);
     masked.strategy = AnonymizationStrategy::Mask;
     assert_eq!(
-        transform_value("john@example.com", &masked, &context("seed")),
+        transform_value("john@example.com", &masked, &context()),
         "****************"
     );
 
     let mut pass_through = column(DataType::Email);
     pass_through.strategy = AnonymizationStrategy::PassThrough;
     assert_eq!(
-        transform_value("john@example.com", &pass_through, &context("seed")),
+        transform_value("john@example.com", &pass_through, &context()),
         "john@example.com"
     );
 }
@@ -392,8 +372,8 @@ fn strategy_overrides_can_mask_or_pass_through() {
 fn tokenize_strategy_emits_consistent_opaque_tokens() {
     let mut token_column = column(DataType::Email);
     token_column.strategy = AnonymizationStrategy::Tokenize;
-    let mut state = TransformState::new(true, "token-seed");
-    let context = context("token-seed");
+    let mut state = TransformState::new();
+    let context = context();
 
     let first =
         transform_value_with_state("alice@example.com", &token_column, &context, &mut state);
@@ -413,8 +393,8 @@ fn local_ai_strategy_uses_validated_replacement_map() {
     local_ai_column.strategy = AnonymizationStrategy::LocalAi;
     let mut replacements = SmartReplacementMap::default();
     replacements.insert(0, "Alice Smith", "Maya Carter");
-    let mut state = TransformState::with_smart_replacements(true, "smart-seed", replacements);
-    let context = context("smart-seed");
+    let mut state = TransformState::with_smart_replacements(replacements);
+    let context = context();
 
     let result = transform_value_with_state("Alice Smith", &local_ai_column, &context, &mut state);
 
@@ -427,8 +407,8 @@ fn local_ai_strategy_uses_validated_replacement_map() {
 fn local_ai_strategy_falls_back_when_map_is_missing() {
     let mut local_ai_column = column(DataType::FirstName);
     local_ai_column.strategy = AnonymizationStrategy::LocalAi;
-    let mut state = TransformState::new(true, "smart-fallback-seed");
-    let context = context("smart-fallback-seed");
+    let mut state = TransformState::new();
+    let context = context();
 
     let result = transform_value_with_state("Alice", &local_ai_column, &context, &mut state);
 

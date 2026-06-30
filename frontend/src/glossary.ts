@@ -45,11 +45,11 @@ export const glossaryTerms = {
   },
   pseudonymize: {
     title: 'Pseudonymize',
-    body: 'Use type-based replacement rules to produce consistent fake or shape-preserving values when possible. Some low-risk types may stay unchanged.',
+    body: 'Use type-based replacement rules to produce fake or shape-preserving values when possible. Repeated source values stay consistent within the current run. Some low-risk types may stay unchanged.',
   },
   tokenize: {
     title: 'Tokenize',
-    body: 'Replace values with stable opaque tok_... tokens.',
+    body: 'Replace values with opaque tok_... tokens that stay consistent within the current run.',
   },
   smartReplacement: {
     title: 'Smart replacement',

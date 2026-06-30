@@ -73,8 +73,6 @@ export function usePreviewWorkflow({
         null,
         columnsToPreview,
         controls,
-        settings.deterministicDefault,
-        settings.seed,
         false,
         settings.previewSampleCount,
         [],
@@ -90,8 +88,6 @@ export function usePreviewWorkflow({
         path,
         columnsToPreview,
         controls,
-        settings.deterministicDefault,
-        settings.seed,
         settings.previewSampleCount,
         localAiRequest,
       )

@@ -31,8 +31,6 @@ pub struct PreviewRequest {
     pub columns: Vec<usize>,
     #[serde(default)]
     pub controls: Vec<ColumnControl>,
-    pub deterministic: bool,
-    pub seed: String,
     pub sample_count: usize,
     pub local_ai: Option<LocalAiRequest>,
 }
@@ -46,8 +44,6 @@ pub struct PreflightRequest {
     pub columns: Vec<usize>,
     #[serde(default)]
     pub controls: Vec<ColumnControl>,
-    pub deterministic: bool,
-    pub seed: String,
     pub force: bool,
     pub sample_row_count: usize,
     #[serde(default)]
@@ -131,8 +127,6 @@ pub async fn preview_anonymization(
                     file_path,
                     columns: request.columns,
                     controls: request.controls,
-                    deterministic: request.deterministic,
-                    seed: request.seed,
                     sample_count: request.sample_count,
                 },
                 provider,
@@ -187,8 +181,6 @@ pub async fn preflight_anonymization(
                 output_path,
                 columns: request.columns,
                 controls: request.controls,
-                deterministic: request.deterministic,
-                seed: request.seed,
                 force: request.force,
                 sample_row_count: request.sample_row_count,
                 preview_smart_replacements: request.preview_smart_replacements,

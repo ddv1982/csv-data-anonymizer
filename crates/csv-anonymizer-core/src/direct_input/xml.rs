@@ -45,8 +45,6 @@ pub(super) fn preview_xml_with_smart_provider(
             columns: &input.columns,
             controls: &input.controls,
             sample_count,
-            deterministic: input.deterministic,
-            seed: &input.seed,
             provider,
         },
     )
@@ -61,25 +59,15 @@ pub(super) fn transform_xml_with_smart_provider(
     let selected_by_path = selected_columns_by_source(&metadata);
     let smart_replacements = prepare_xml_smart_replacements(&input, &metadata, provider)?;
     let start_time = Instant::now();
-    let mut state = transform_state_for_smart_replacements(
-        input.deterministic,
-        &input.seed,
-        smart_replacements,
-    );
-    let output = transform_xml_content(
-        &input.content,
-        &selected_by_path,
-        &mut state,
-        &input.seed,
-        input.deterministic,
-    )?;
+    let mut state = transform_state_for_smart_replacements(smart_replacements);
+    let output = transform_xml_content(&input.content, &selected_by_path, &mut state)?;
 
     Ok(PasteTransformData {
         output,
         row_count: analysis.row_count,
         columns_anonymized: count_transforming_selected_columns(&metadata),
         duration_ms: start_time.elapsed().as_millis(),
-        privacy_report: build_privacy_report(&metadata, state.report(), input.deterministic),
+        privacy_report: build_privacy_report(&metadata, state.report()),
     })
 }
 
@@ -94,8 +82,6 @@ fn prepare_xml_smart_replacements(
     prepare_smart_replacements_from_rows(
         &rows,
         metadata,
-        input.deterministic,
-        &input.seed,
         existing_smart_replacements.as_ref(),
         provider,
     )
@@ -194,8 +180,6 @@ fn transform_xml_content(
     content: &str,
     selected_by_path: &HashMap<String, ColumnMetadata>,
     state: &mut TransformState,
-    seed: &str,
-    deterministic: bool,
 ) -> Result<String> {
     let mut reader = Reader::from_str(content);
     reader.config_mut().trim_text(false);
@@ -206,8 +190,6 @@ fn transform_xml_content(
         selected_by_path,
         row_indices: &mut row_indices,
         state,
-        seed,
-        deterministic,
     };
 
     loop {
@@ -248,8 +230,6 @@ fn transform_xml_content(
                             column_name: &column.name,
                             column_index: column.index,
                             row_index,
-                            seed: transform_context.seed,
-                            deterministic: transform_context.deterministic,
                             empty_format: column.empty_format,
                         };
                         let anonymized = transform_value_with_state(
@@ -293,8 +273,6 @@ struct XmlTransformContext<'a> {
     selected_by_path: &'a HashMap<String, ColumnMetadata>,
     row_indices: &'a mut HashMap<String, usize>,
     state: &'a mut TransformState,
-    seed: &'a str,
-    deterministic: bool,
 }
 
 fn transform_xml_attributes(
@@ -323,8 +301,6 @@ fn transform_xml_attributes(
                             column_name: &column.name,
                             column_index: column.index,
                             row_index,
-                            seed: context.seed,
-                            deterministic: context.deterministic,
                             empty_format: column.empty_format,
                         };
                         transform_value_with_state(

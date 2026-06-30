@@ -12,8 +12,6 @@ fn anonymizes_selected_columns_without_web_runtime() {
             output_path: output_path.clone(),
             columns: vec![1],
             controls: vec![],
-            deterministic: true,
-            seed: "service-seed".to_string(),
             force: false,
             preview_smart_replacements: vec![],
         })
@@ -22,28 +20,6 @@ fn anonymizes_selected_columns_without_web_runtime() {
     assert_eq!(result.output_path, output_path);
     assert_eq!(result.row_count, 5);
     assert_eq!(result.columns_anonymized, 1);
-}
-
-#[test]
-fn anonymize_rejects_deterministic_blank_seed() {
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
-    let output_path = temp_dir.path().join("sample-anonymized.csv");
-
-    let error = service
-        .anonymize_csv(AnonymizeParams {
-            file_path: fixture("sample.csv"),
-            output_path,
-            columns: vec![1],
-            controls: vec![],
-            deterministic: true,
-            seed: " ".to_string(),
-            force: false,
-            preview_smart_replacements: vec![],
-        })
-        .unwrap_err();
-
-    assert!(error.to_string().contains("non-empty private seed"));
 }
 
 #[test]
@@ -68,8 +44,6 @@ fn anonymize_csv_with_control_reports_progress() {
                     output_path: output_path.clone(),
                     columns: vec![1],
                     controls: vec![],
-                    deterministic: true,
-                    seed: "service-seed".to_string(),
                     force: false,
                     preview_smart_replacements: vec![],
                 },
@@ -97,8 +71,6 @@ fn selected_sample_empty_columns_transform_later_values() {
                 output_path: output_path.clone(),
                 columns: vec![1],
                 controls: vec![],
-                deterministic: true,
-                seed: "sparse-seed".to_string(),
                 force: false,
                 preview_smart_replacements: vec![],
             },
@@ -158,8 +130,6 @@ fn anonymize_preserves_numeric_shapes_in_output_file() {
                     strategy: AnonymizationStrategy::Auto,
                 },
             ],
-            deterministic: true,
-            seed: "numeric-output-seed".to_string(),
             force: false,
             preview_smart_replacements: vec![],
         })
@@ -212,8 +182,6 @@ fn anonymize_reuses_repeated_name_sources_in_random_mode() {
                 type_override: Some(DataType::FirstName),
                 strategy: AnonymizationStrategy::Auto,
             }],
-            deterministic: false,
-            seed: "random-repeat-seed".to_string(),
             force: false,
             preview_smart_replacements: vec![],
         })
@@ -246,8 +214,6 @@ fn anonymize_random_mode_avoids_duplicate_names_for_distinct_sources() {
                 type_override: Some(DataType::FirstName),
                 strategy: AnonymizationStrategy::Auto,
             }],
-            deterministic: false,
-            seed: "random-unique-seed".to_string(),
             force: false,
             preview_smart_replacements: vec![],
         })
@@ -265,56 +231,51 @@ fn anonymize_random_mode_avoids_duplicate_names_for_distinct_sources() {
 }
 
 #[test]
-fn anonymize_deterministic_output_is_reproducible() {
+fn anonymize_reuses_repeated_values_in_single_output() {
     let service = AnonymizerService::new("test-version");
     let temp_dir = tempfile::tempdir().unwrap();
-    let input_path = temp_dir.path().join("deterministic-names.csv");
-    let first_output_path = temp_dir.path().join("deterministic-names-output-a.csv");
-    let second_output_path = temp_dir.path().join("deterministic-names-output-b.csv");
+    let input_path = temp_dir.path().join("repeated-values.csv");
+    let output_path = temp_dir.path().join("repeated-values-output.csv");
     fs::write(
         &input_path,
         "first_name,last_name,email\nAlice,Smith,alice@example.com\nBianca,Jones,bianca@example.com\nAlice,Smith,alice@example.com\n",
     )
     .unwrap();
 
-    let params = |output_path: PathBuf| AnonymizeParams {
-        file_path: input_path.clone(),
-        output_path,
-        columns: vec![0, 1, 2],
-        controls: vec![
-            ColumnControl {
-                column_index: 0,
-                type_override: Some(DataType::FirstName),
-                strategy: AnonymizationStrategy::Auto,
-            },
-            ColumnControl {
-                column_index: 1,
-                type_override: Some(DataType::LastName),
-                strategy: AnonymizationStrategy::Auto,
-            },
-            ColumnControl {
-                column_index: 2,
-                type_override: Some(DataType::Email),
-                strategy: AnonymizationStrategy::Auto,
-            },
-        ],
-        deterministic: true,
-        seed: "deterministic-output-seed".to_string(),
-        force: false,
-        preview_smart_replacements: vec![],
-    };
-
     service
-        .anonymize_csv(params(first_output_path.clone()))
-        .unwrap();
-    service
-        .anonymize_csv(params(second_output_path.clone()))
+        .anonymize_csv(AnonymizeParams {
+            file_path: input_path.clone(),
+            output_path: output_path.clone(),
+            columns: vec![0, 1, 2],
+            controls: vec![
+                ColumnControl {
+                    column_index: 0,
+                    type_override: Some(DataType::FirstName),
+                    strategy: AnonymizationStrategy::Auto,
+                },
+                ColumnControl {
+                    column_index: 1,
+                    type_override: Some(DataType::LastName),
+                    strategy: AnonymizationStrategy::Auto,
+                },
+                ColumnControl {
+                    column_index: 2,
+                    type_override: Some(DataType::Email),
+                    strategy: AnonymizationStrategy::Auto,
+                },
+            ],
+            force: false,
+            preview_smart_replacements: vec![],
+        })
         .unwrap();
 
-    assert_eq!(
-        fs::read_to_string(first_output_path).unwrap(),
-        fs::read_to_string(second_output_path).unwrap()
-    );
+    let output = read_sample(&output_path, 10).unwrap();
+    assert_eq!(output.rows[0][0], output.rows[2][0]);
+    assert_eq!(output.rows[0][1], output.rows[2][1]);
+    assert_eq!(output.rows[0][2], output.rows[2][2]);
+    assert_ne!(output.rows[0][0], output.rows[1][0]);
+    assert_ne!(output.rows[0][1], output.rows[1][1]);
+    assert_ne!(output.rows[0][2], output.rows[1][2]);
 }
 
 #[test]
@@ -335,8 +296,6 @@ fn anonymize_applies_pass_through_control() {
                 type_override: None,
                 strategy: AnonymizationStrategy::PassThrough,
             }],
-            deterministic: true,
-            seed: "pass-through-seed".to_string(),
             force: false,
             preview_smart_replacements: vec![],
         })
@@ -381,8 +340,6 @@ fn anonymize_does_not_count_auto_noop_selected_columns() {
                     strategy: AnonymizationStrategy::Mask,
                 },
             ],
-            deterministic: true,
-            seed: "noop-count-seed".to_string(),
             force: false,
             preview_smart_replacements: vec![],
         })

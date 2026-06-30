@@ -23,8 +23,6 @@ pub struct SmartReplacement {
 pub struct SmartReplacementRequest<'a> {
     pub column: &'a ColumnMetadata,
     pub values: &'a [String],
-    pub deterministic: bool,
-    pub seed: &'a str,
 }
 
 pub trait SmartReplacementProvider {
@@ -184,27 +182,23 @@ pub fn has_smart_replacement_columns(columns: &[ColumnMetadata]) -> bool {
 pub fn prepare_smart_replacements_from_rows(
     rows: &[Vec<String>],
     columns: &[ColumnMetadata],
-    deterministic: bool,
-    seed: &str,
     existing: Option<&SmartReplacementMap>,
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<SmartReplacementMap> {
     let batches = collect_unique_values_from_rows(rows, columns);
-    build_replacement_map(columns, batches, deterministic, seed, existing, provider)
+    build_replacement_map(columns, batches, existing, provider)
 }
 
 pub fn prepare_smart_replacements_from_csv(
     file_path: &Path,
     columns: &[ColumnMetadata],
-    deterministic: bool,
-    seed: &str,
     control: Option<&mut ProcessControl<'_>>,
     existing: Option<&SmartReplacementMap>,
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<SmartReplacementMap> {
     validate_file(file_path)?;
     let batches = collect_unique_values_from_csv(file_path, columns, control)?;
-    build_replacement_map(columns, batches, deterministic, seed, existing, provider)
+    build_replacement_map(columns, batches, existing, provider)
 }
 
 pub fn missing_smart_replacement_values_from_csv(
@@ -307,8 +301,6 @@ fn collect_unique_values_from_csv(
 fn build_replacement_map(
     columns: &[ColumnMetadata],
     batches: BTreeMap<usize, Vec<String>>,
-    deterministic: bool,
-    seed: &str,
     existing: Option<&SmartReplacementMap>,
     mut provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<SmartReplacementMap> {
@@ -340,8 +332,6 @@ fn build_replacement_map(
             let replacements = provider.generate_replacements(SmartReplacementRequest {
                 column,
                 values: chunk,
-                deterministic,
-                seed,
             })?;
             let validation = validated_replacements(chunk, replacements);
             map.record_request_batch(requested, &validation.rejection_reasons);

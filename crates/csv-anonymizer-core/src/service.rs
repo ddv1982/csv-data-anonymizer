@@ -101,13 +101,10 @@ impl AnonymizerService {
             && preview_smart_replacements.has_activity())
         .then_some(preview_smart_replacements);
 
-        if let Err(error) = validate_deterministic_seed(input.deterministic, &input.seed) {
-            blockers.push(error.to_string());
-        } else if input.deterministic {
-            verified_items.push("Repeatable replacements have a private seed.".to_string());
-        } else {
-            verified_items.push("Repeatable replacements are off.".to_string());
-        }
+        verified_items.push(
+            "Replacements are randomized per run with in-run reuse for repeated source values."
+                .to_string(),
+        );
 
         match input.mode {
             PreflightMode::Preview => {
@@ -188,10 +185,7 @@ impl AnonymizerService {
         }
         verified_items.push("Transform settings passed backend validation.".to_string());
 
-        let context = ReportContext {
-            deterministic: input.deterministic,
-            ..ReportContext::default()
-        };
+        let context = ReportContext::default();
         let release_readiness = build_readiness(&selected_metadata, &context);
         blockers.extend(release_readiness.blockers);
         review_items.extend(release_readiness.review_items);
@@ -242,30 +236,19 @@ impl AnonymizerService {
         input: PreviewParams,
         provider: Option<&mut dyn SmartReplacementProvider>,
     ) -> Result<PreviewData> {
-        validate_deterministic_seed(input.deterministic, &input.seed)?;
         let file_path = normalize_path(&input.file_path)?;
         let sample = read_sample(&file_path, input.sample_count.saturating_mul(2).max(1))?;
         let metadata = build_column_metadata(&sample.headers, &sample.rows);
         validate_column_indices(&metadata, &input.columns)?;
         let controlled_metadata = apply_column_controls(&metadata, &input.controls)?;
         let selected_metadata = apply_column_selection(&controlled_metadata, &input.columns);
-        let smart_replacements = prepare_smart_replacements_from_rows(
-            &sample.rows,
-            &selected_metadata,
-            input.deterministic,
-            &input.seed,
-            None,
-            provider,
-        )?;
+        let smart_replacements =
+            prepare_smart_replacements_from_rows(&sample.rows, &selected_metadata, None, provider)?;
         let smart_replacement_entries = smart_replacements.to_entries();
         let mut transform_state = if smart_replacements.has_activity() {
-            TransformState::with_smart_replacements(
-                input.deterministic,
-                &input.seed,
-                smart_replacements,
-            )
+            TransformState::with_smart_replacements(smart_replacements)
         } else {
-            TransformState::new(input.deterministic, &input.seed)
+            TransformState::new()
         };
         let mut previews = Vec::new();
         for column in selected_metadata.iter().filter(|column| column.is_selected) {
@@ -273,8 +256,6 @@ impl AnonymizerService {
                 column,
                 &sample.rows,
                 input.sample_count,
-                input.deterministic,
-                &input.seed,
                 &mut transform_state,
             ));
         }
@@ -337,7 +318,6 @@ impl AnonymizerService {
         mut control: Option<&mut ProcessControl<'_>>,
         provider: Option<&mut dyn SmartReplacementProvider>,
     ) -> Result<AnonymizeData> {
-        validate_deterministic_seed(input.deterministic, &input.seed)?;
         let input_path = normalize_path(&input.file_path)?;
         let output_path = validate_output_path(&input.output_path, input.force)?;
         let sample = read_sample(&input_path, sample_rows.max(1))?;
@@ -353,8 +333,6 @@ impl AnonymizerService {
         let smart_replacements = prepare_smart_replacements_from_csv(
             &input_path,
             &selected_metadata,
-            input.deterministic,
-            &input.seed,
             control.as_deref_mut(),
             existing_smart_replacements.as_ref(),
             provider,
@@ -367,8 +345,6 @@ impl AnonymizerService {
             &output_path,
             &selected_metadata,
             ProcessOptions {
-                deterministic: input.deterministic,
-                seed: &input.seed,
                 smart_replacements: smart_replacements.as_ref(),
             },
             control,
@@ -379,11 +355,7 @@ impl AnonymizerService {
             row_count: result.row_count,
             columns_anonymized: count_transforming_selected_columns(&selected_metadata),
             duration_ms: result.duration_ms,
-            privacy_report: build_privacy_report(
-                &selected_metadata,
-                result.transform_report,
-                input.deterministic,
-            ),
+            privacy_report: build_privacy_report(&selected_metadata, result.transform_report),
         })
     }
 }
@@ -523,15 +495,6 @@ fn is_json_or_yaml_source(column: &ColumnMetadata) -> bool {
     })
 }
 
-pub(crate) fn validate_deterministic_seed(deterministic: bool, seed: &str) -> Result<()> {
-    if deterministic && seed.trim().is_empty() {
-        return Err(AnonymizerError::Privacy(
-            "repeatable replacements require a non-empty private seed".to_string(),
-        ));
-    }
-    Ok(())
-}
-
 fn finish_readiness(
     blockers: Vec<String>,
     review_items: Vec<String>,
@@ -556,7 +519,6 @@ fn finish_readiness(
 pub(crate) fn build_privacy_report(
     columns: &[ColumnMetadata],
     transform_report: crate::types::TransformReport,
-    deterministic: bool,
 ) -> PrivacyReport {
     let mut report = PrivacyReport {
         direct_identifiers: 0,
@@ -583,7 +545,7 @@ pub(crate) fn build_privacy_report(
         evidence: Vec::new(),
         column_reports: Vec::new(),
         utility_metrics: Vec::new(),
-        notes: standard_notes(columns, transform_report.clone(), deterministic),
+        notes: standard_notes(columns, transform_report.clone()),
     };
 
     for column in columns.iter().filter(|column| column.is_selected) {
@@ -611,7 +573,6 @@ pub(crate) fn build_privacy_report(
 
     let context = ReportContext {
         transform_report: Some(&transform_report),
-        deterministic,
     };
     report.readiness = build_readiness(columns, &context);
     report.evidence = build_evidence(columns, &context);

@@ -255,12 +255,10 @@ fn process_csv_reader_to_writer<R: Read, W: Write>(
     let mut header_len = 0;
     let mut row_count = 0;
     let mut transform_state = match options.smart_replacements {
-        Some(smart_replacements) => TransformState::with_smart_replacements(
-            options.deterministic,
-            options.seed,
-            smart_replacements.clone(),
-        ),
-        None => TransformState::new(options.deterministic, options.seed),
+        Some(smart_replacements) => {
+            TransformState::with_smart_replacements(smart_replacements.clone())
+        }
+        None => TransformState::new(),
     };
 
     check_canceled(&mut control)?;
@@ -287,14 +285,8 @@ fn process_csv_reader_to_writer<R: Read, W: Write>(
         }
 
         check_canceled(&mut control)?;
-        let transformed_row = transform_row_with_state(
-            &row,
-            columns,
-            row_count,
-            options.seed,
-            options.deterministic,
-            &mut transform_state,
-        );
+        let transformed_row =
+            transform_row_with_state(&row, columns, row_count, &mut transform_state);
         write_csv_output_record(writer, transformed_row.iter().map(String::as_str))?;
         row_count += 1;
         report_progress(&mut control, row_count);

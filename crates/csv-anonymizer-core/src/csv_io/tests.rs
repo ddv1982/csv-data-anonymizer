@@ -33,8 +33,6 @@ fn processes_csv_text() {
         input,
         &columns,
         ProcessOptions {
-            deterministic: true,
-            seed: "service-seed",
             smart_replacements: None,
         },
     )
@@ -59,8 +57,6 @@ fn processes_selected_columns() {
         &output_path,
         &columns,
         ProcessOptions {
-            deterministic: true,
-            seed: "service-seed",
             smart_replacements: None,
         },
     )
@@ -125,8 +121,6 @@ fn rejects_non_empty_fields_beyond_headers_without_committing_output() {
         &output_path,
         &columns,
         ProcessOptions {
-            deterministic: true,
-            seed: "ragged-seed",
             smart_replacements: None,
         },
     )
@@ -155,8 +149,6 @@ fn pads_short_rows_and_truncates_empty_extra_cells() {
         &output_path,
         &columns,
         ProcessOptions {
-            deterministic: true,
-            seed: "short-row-seed",
             smart_replacements: None,
         },
     )
@@ -188,8 +180,6 @@ fn neutralizes_formula_like_headers_and_cells_in_standard_output() {
         &output_path,
         &columns,
         ProcessOptions {
-            deterministic: true,
-            seed: "formula-seed",
             smart_replacements: None,
         },
     )
@@ -240,8 +230,6 @@ fn process_row_count_skips_blank_data_rows_but_preserves_them() {
         &output_path,
         &columns,
         ProcessOptions {
-            deterministic: true,
-            seed: "service-seed",
             smart_replacements: None,
         },
     )
@@ -285,8 +273,6 @@ fn process_control_reports_progress_and_cancels_before_next_row() {
             &output_path,
             &columns,
             ProcessOptions {
-                deterministic: true,
-                seed: "service-seed",
                 smart_replacements: None,
             },
             Some(&mut control),

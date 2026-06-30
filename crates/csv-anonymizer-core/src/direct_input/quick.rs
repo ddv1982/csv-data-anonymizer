@@ -1,7 +1,7 @@
 use crate::detection::{classify_pii_risk, detect_column_type_with_name, detect_empty_format};
 use crate::error::{AnonymizerError, Result};
-use crate::hash::{deterministic_number, deterministic_string, deterministic_uuid, random_uuid_v4};
-use crate::service::{build_privacy_report, validate_deterministic_seed};
+use crate::hash::random_uuid_v4;
+use crate::service::build_privacy_report;
 use crate::smart::{SmartReplacementProvider, prepare_smart_replacements_from_rows};
 use crate::strategies::{TransformState, transform_value_with_state};
 use crate::types::{
@@ -16,7 +16,6 @@ const QUICK_GENERATE_MAX_COUNT: usize = 1_000;
 const HEX_CHARSET: &str = "0123456789abcdef";
 
 pub fn transform_quick_values(input: QuickTransformParams) -> Result<QuickTransformData> {
-    validate_deterministic_seed(input.deterministic, &input.seed)?;
     let values = parse_quick_lines(&input.input);
     if values.is_empty() {
         return Err(AnonymizerError::input_parse(
@@ -27,7 +26,7 @@ pub fn transform_quick_values(input: QuickTransformParams) -> Result<QuickTransf
 
     let column = quick_column(input.data_type, input.strategy, &values);
     let selected_columns = vec![column.clone()];
-    let mut state = TransformState::new(input.deterministic, &input.seed);
+    let mut state = TransformState::new();
     let mut transformed = Vec::with_capacity(values.len());
     let mut samples = Vec::with_capacity(values.len());
 
@@ -36,8 +35,6 @@ pub fn transform_quick_values(input: QuickTransformParams) -> Result<QuickTransf
             column_name: &column.name,
             column_index: column.index,
             row_index,
-            seed: &input.seed,
-            deterministic: input.deterministic,
             empty_format: column.empty_format,
         };
         let anonymized = transform_value_with_state(value, &column, &context, &mut state);
@@ -52,11 +49,7 @@ pub fn transform_quick_values(input: QuickTransformParams) -> Result<QuickTransf
         output: transformed.join("\n"),
         row_count: transformed.len(),
         values: samples,
-        privacy_report: build_privacy_report(
-            &selected_columns,
-            state.report(),
-            input.deterministic,
-        ),
+        privacy_report: build_privacy_report(&selected_columns, state.report()),
     })
 }
 
@@ -68,7 +61,6 @@ pub fn generate_quick_values_with_smart_provider(
     input: QuickGenerateParams,
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<QuickTransformData> {
-    validate_deterministic_seed(input.deterministic, &input.seed)?;
     if input.count == 0 {
         return Err(AnonymizerError::input_parse(
             "quick generation",
@@ -89,9 +81,7 @@ pub fn generate_quick_values_with_smart_provider(
     }
 
     let source_values = (0..input.count)
-        .map(|row_index| {
-            generated_quick_value(input.data_type, row_index, input.deterministic, &input.seed)
-        })
+        .map(|row_index| generated_quick_value(input.data_type, row_index))
         .collect::<Vec<_>>();
     let column = quick_column(input.data_type, input.strategy, &source_values);
     let selected_columns = vec![column.clone()];
@@ -99,19 +89,9 @@ pub fn generate_quick_values_with_smart_provider(
         .iter()
         .map(|value| vec![value.clone()])
         .collect::<Vec<_>>();
-    let smart_replacements = prepare_smart_replacements_from_rows(
-        &source_rows,
-        &selected_columns,
-        input.deterministic,
-        &input.seed,
-        None,
-        provider,
-    )?;
-    let mut state = transform_state_for_smart_replacements(
-        input.deterministic,
-        &input.seed,
-        smart_replacements,
-    );
+    let smart_replacements =
+        prepare_smart_replacements_from_rows(&source_rows, &selected_columns, None, provider)?;
+    let mut state = transform_state_for_smart_replacements(smart_replacements);
     let mut output_values = Vec::with_capacity(input.count);
     let mut samples = Vec::with_capacity(input.count);
 
@@ -121,8 +101,6 @@ pub fn generate_quick_values_with_smart_provider(
                 column_name: &column.name,
                 column_index: column.index,
                 row_index,
-                seed: &input.seed,
-                deterministic: input.deterministic,
                 empty_format: column.empty_format,
             };
             transform_value_with_state(source_value, &column, &context, &mut state)
@@ -141,26 +119,18 @@ pub fn generate_quick_values_with_smart_provider(
         output: output_values.join("\n"),
         row_count: output_values.len(),
         values: samples,
-        privacy_report: build_privacy_report(
-            &selected_columns,
-            state.report(),
-            input.deterministic,
-        ),
+        privacy_report: build_privacy_report(&selected_columns, state.report()),
     })
 }
 pub fn quick_anonymize_values(
     values: &[String],
     data_type: DataType,
     strategy: AnonymizationStrategy,
-    deterministic: bool,
-    seed: &str,
 ) -> Result<QuickTransformData> {
     transform_quick_values(QuickTransformParams {
         input: values.join("\n"),
         data_type,
         strategy,
-        deterministic,
-        seed: seed.to_string(),
     })
 }
 fn quick_column(
@@ -216,302 +186,108 @@ fn should_transform_generated_value(data_type: DataType, strategy: Anonymization
         || data_type.transforms_generated_quick_value()
 }
 
-fn generated_quick_value(
-    data_type: DataType,
-    row_index: usize,
-    deterministic: bool,
-    seed: &str,
-) -> String {
+fn generated_quick_value(data_type: DataType, row_index: usize) -> String {
     let ordinal = row_index + 1;
     match data_type {
         DataType::Email => format!("person{ordinal}@example.invalid"),
-        DataType::Uuid => generated_uuid(data_type, row_index, deterministic, seed),
+        DataType::Uuid => generated_uuid(),
         DataType::Timestamp => format!(
             "2024-{month:02}-{day:02}T{hour:02}:{minute:02}:00Z",
-            month =
-                generated_quick_number(data_type, row_index, deterministic, seed, "month", 1, 12),
-            day = generated_quick_number(data_type, row_index, deterministic, seed, "day", 1, 28),
-            hour = generated_quick_number(data_type, row_index, deterministic, seed, "hour", 0, 23),
-            minute =
-                generated_quick_number(data_type, row_index, deterministic, seed, "minute", 0, 59),
+            month = generated_quick_number(1, 12),
+            day = generated_quick_number(1, 28),
+            hour = generated_quick_number(0, 23),
+            minute = generated_quick_number(0, 59),
         ),
-        DataType::NumericId => generated_quick_number(
-            data_type,
-            row_index,
-            deterministic,
-            seed,
-            "numeric-id",
-            100_000,
-            999_999,
-        )
-        .to_string(),
+        DataType::NumericId => generated_quick_number(100_000, 999_999).to_string(),
         DataType::NumericValue => format!(
             "{}.{:02}",
-            generated_quick_number(
-                data_type,
-                row_index,
-                deterministic,
-                seed,
-                "numeric-value",
-                100,
-                9_999
-            ),
-            generated_quick_number(data_type, row_index, deterministic, seed, "fraction", 0, 99),
+            generated_quick_number(100, 9_999),
+            generated_quick_number(0, 99),
         ),
-        DataType::PostalCode => format!(
-            "{:05}",
-            generated_quick_number(
-                data_type,
-                row_index,
-                deterministic,
-                seed,
-                "postal-code",
-                1_000,
-                99_950
-            )
-        ),
+        DataType::PostalCode => format!("{:05}", generated_quick_number(1_000, 99_950)),
         DataType::Address => format!(
             "{} {} {}, {}",
-            generated_quick_number(
-                data_type,
-                row_index,
-                deterministic,
-                seed,
-                "house",
-                10,
-                9_999
-            ),
-            generated_quick_choice(
-                &["Cedar", "Maple", "Oak", "Pine", "River", "Summit"],
-                data_type,
-                row_index,
-                deterministic,
-                seed,
-                "street",
-            ),
-            generated_quick_choice(
-                &["Street", "Avenue", "Lane", "Road", "Way"],
-                data_type,
-                row_index,
-                deterministic,
-                seed,
-                "suffix",
-            ),
-            generated_quick_choice(
-                &[
-                    "Arborfield",
-                    "Brookhaven",
-                    "Fairview",
-                    "Lakeside",
-                    "Riverton"
-                ],
-                data_type,
-                row_index,
-                deterministic,
-                seed,
-                "city",
-            ),
+            generated_quick_number(10, 9_999),
+            generated_quick_choice(&["Cedar", "Maple", "Oak", "Pine", "River", "Summit"]),
+            generated_quick_choice(&["Street", "Avenue", "Lane", "Road", "Way"]),
+            generated_quick_choice(&[
+                "Arborfield",
+                "Brookhaven",
+                "Fairview",
+                "Lakeside",
+                "Riverton"
+            ],),
         ),
-        DataType::IpAddress => format!(
-            "198.51.100.{}",
-            generated_quick_number(data_type, row_index, deterministic, seed, "host", 1, 254)
-        ),
+        DataType::IpAddress => format!("198.51.100.{}", generated_quick_number(1, 254)),
         DataType::Url => format!(
             "https://example.invalid/{}/{}",
-            generated_quick_choice(
-                &["accounts", "orders", "profiles", "reports", "sessions"],
-                data_type,
-                row_index,
-                deterministic,
-                seed,
-                "path",
-            ),
-            generated_quick_number(
-                data_type,
-                row_index,
-                deterministic,
-                seed,
-                "id",
-                1_000,
-                99_999
-            ),
+            generated_quick_choice(&["accounts", "orders", "profiles", "reports", "sessions"]),
+            generated_quick_number(1_000, 99_999),
         ),
         DataType::MacAddress => format!(
             "02:00:{}:{}:{}:{}",
-            generated_quick_hex_pair(data_type, row_index, deterministic, seed, "mac-1"),
-            generated_quick_hex_pair(data_type, row_index, deterministic, seed, "mac-2"),
-            generated_quick_hex_pair(data_type, row_index, deterministic, seed, "mac-3"),
-            generated_quick_hex_pair(data_type, row_index, deterministic, seed, "mac-4"),
+            generated_quick_hex_pair(),
+            generated_quick_hex_pair(),
+            generated_quick_hex_pair(),
+            generated_quick_hex_pair(),
         ),
         DataType::TaxId => format!(
             "900-{:02}-{:04}",
-            generated_quick_number(data_type, row_index, deterministic, seed, "group", 1, 99),
-            generated_quick_number(
-                data_type,
-                row_index,
-                deterministic,
-                seed,
-                "serial",
-                1,
-                9_999
-            ),
+            generated_quick_number(1, 99),
+            generated_quick_number(1, 9_999),
         ),
-        DataType::Boolean => {
-            generated_quick_bool(data_type, row_index, deterministic, seed).to_string()
-        }
+        DataType::Boolean => generated_quick_bool().to_string(),
         DataType::Currency => format!(
             "${}.{:02}",
-            generated_quick_number(
-                data_type,
-                row_index,
-                deterministic,
-                seed,
-                "dollars",
-                10,
-                50_000
-            ),
-            generated_quick_number(data_type, row_index, deterministic, seed, "cents", 0, 99),
+            generated_quick_number(10, 50_000),
+            generated_quick_number(0, 99),
         ),
         DataType::Percentage => format!(
             "{}.{}%",
-            generated_quick_number(data_type, row_index, deterministic, seed, "whole", 0, 100),
-            generated_quick_number(data_type, row_index, deterministic, seed, "decimal", 0, 9),
+            generated_quick_number(0, 100),
+            generated_quick_number(0, 9),
         ),
-        DataType::CountryCode => generated_quick_choice(
-            &["US", "NL", "DE", "FR", "GB", "CA", "AU", "JP"],
-            data_type,
-            row_index,
-            deterministic,
-            seed,
-            "country",
-        )
-        .to_string(),
-        DataType::Phone => format!(
-            "555-020-{:04}",
-            generated_quick_number(data_type, row_index, deterministic, seed, "phone", 0, 9_999)
-        ),
+        DataType::CountryCode => {
+            generated_quick_choice(&["US", "NL", "DE", "FR", "GB", "CA", "AU", "JP"]).to_string()
+        }
+        DataType::Phone => format!("555-020-{:04}", generated_quick_number(0, 9_999)),
         DataType::FirstName => format!("First{ordinal}"),
         DataType::LastName => format!("Last{ordinal}"),
         DataType::FullName => format!("First{ordinal} Last{ordinal}"),
-        DataType::Enum => generated_quick_choice(
-            &["active", "pending", "review", "archived", "closed"],
-            data_type,
-            row_index,
-            deterministic,
-            seed,
-            "enum",
-        )
-        .to_string(),
-        DataType::String => format!(
-            "sample-{}-{}",
-            ordinal,
-            generated_quick_string(data_type, row_index, deterministic, seed, "string", 8)
-        ),
-        DataType::Unknown => format!(
-            "value-{}-{}",
-            ordinal,
-            generated_quick_string(data_type, row_index, deterministic, seed, "unknown", 8)
-        ),
+        DataType::Enum => {
+            generated_quick_choice(&["active", "pending", "review", "archived", "closed"])
+                .to_string()
+        }
+        DataType::String => format!("sample-{}-{}", ordinal, generated_quick_string(8)),
+        DataType::Unknown => format!("value-{}-{}", ordinal, generated_quick_string(8)),
     }
 }
 
-fn generated_quick_number(
-    data_type: DataType,
-    row_index: usize,
-    deterministic: bool,
-    seed: &str,
-    label: &str,
-    min: i64,
-    max: i64,
-) -> i64 {
-    if deterministic {
-        let key = quick_generation_key(data_type, row_index);
-        deterministic_number(&key, &format!("{seed}:quick-generate:{label}"), min, max)
-    } else {
-        rand::thread_rng().gen_range(min..=max)
-    }
+fn generated_quick_number(min: i64, max: i64) -> i64 {
+    rand::thread_rng().gen_range(min..=max)
 }
 
-fn generated_quick_bool(
-    data_type: DataType,
-    row_index: usize,
-    deterministic: bool,
-    seed: &str,
-) -> bool {
-    generated_quick_number(data_type, row_index, deterministic, seed, "bool", 0, 1) == 1
+fn generated_quick_bool() -> bool {
+    generated_quick_number(0, 1) == 1
 }
 
-fn generated_quick_choice<'a>(
-    choices: &'a [&'a str],
-    data_type: DataType,
-    row_index: usize,
-    deterministic: bool,
-    seed: &str,
-    label: &str,
-) -> &'a str {
-    let index = generated_quick_number(
-        data_type,
-        row_index,
-        deterministic,
-        seed,
-        label,
-        0,
-        choices.len().saturating_sub(1) as i64,
-    ) as usize;
+fn generated_quick_choice<'a>(choices: &'a [&'a str]) -> &'a str {
+    let index = generated_quick_number(0, choices.len().saturating_sub(1) as i64) as usize;
     choices[index]
 }
 
-fn generated_quick_hex_pair(
-    data_type: DataType,
-    row_index: usize,
-    deterministic: bool,
-    seed: &str,
-    label: &str,
-) -> String {
-    generated_quick_string(data_type, row_index, deterministic, seed, label, 2)
+fn generated_quick_hex_pair() -> String {
+    generated_quick_string(2)
 }
 
-fn generated_quick_string(
-    data_type: DataType,
-    row_index: usize,
-    deterministic: bool,
-    seed: &str,
-    label: &str,
-    length: usize,
-) -> String {
-    if deterministic {
-        let key = quick_generation_key(data_type, row_index);
-        deterministic_string(
-            &key,
-            &format!("{seed}:quick-generate:{label}"),
-            length,
-            HEX_CHARSET,
-        )
-    } else {
-        let chars = HEX_CHARSET.as_bytes();
-        let mut rng = rand::thread_rng();
-        (0..length)
-            .map(|_| chars[rng.gen_range(0..chars.len())] as char)
-            .collect()
-    }
+fn generated_quick_string(length: usize) -> String {
+    let chars = HEX_CHARSET.as_bytes();
+    let mut rng = rand::thread_rng();
+    (0..length)
+        .map(|_| chars[rng.gen_range(0..chars.len())] as char)
+        .collect()
 }
 
-fn generated_uuid(
-    data_type: DataType,
-    row_index: usize,
-    deterministic: bool,
-    seed: &str,
-) -> String {
-    if deterministic {
-        deterministic_uuid(
-            &quick_generation_key(data_type, row_index),
-            &format!("{seed}:quick-generate:uuid"),
-        )
-    } else {
-        random_uuid_v4()
-    }
-}
-
-fn quick_generation_key(data_type: DataType, row_index: usize) -> String {
-    format!("quick-generate:{data_type:?}:{row_index}")
+fn generated_uuid() -> String {
+    random_uuid_v4()
 }

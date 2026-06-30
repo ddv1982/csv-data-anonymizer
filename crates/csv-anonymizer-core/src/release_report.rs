@@ -10,7 +10,6 @@ use crate::types::{
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ReportContext<'a> {
     pub transform_report: Option<&'a TransformReport>,
-    pub deterministic: bool,
 }
 
 pub(crate) fn build_readiness(
@@ -21,13 +20,10 @@ pub(crate) fn build_readiness(
     let mut review_items = Vec::new();
     let mut verified_items = Vec::new();
 
-    if context.deterministic {
-        verified_items.push("Repeatable replacements used a non-empty private seed.".to_string());
-    } else {
-        verified_items.push(
-            "Randomized replacements do not reuse a persisted deterministic seed.".to_string(),
-        );
-    }
+    verified_items.push(
+        "Replacements are randomized per run; repeated source values stay consistent within the current output."
+            .to_string(),
+    );
 
     let unselected_risky = unselected_detector_risk_columns(columns);
     if unselected_risky.is_empty() {
@@ -215,7 +211,6 @@ pub(crate) fn build_utility_metrics(
 pub(crate) fn standard_notes(
     columns: &[ColumnMetadata],
     transform_report: TransformReport,
-    deterministic: bool,
 ) -> Vec<String> {
     let mut notes = vec![
         "Standard CSV transform changes selected cells in place with local strategies such as masking, redaction, tokenization, pseudonymization, pass-through, and optional Local AI replacement."
@@ -236,17 +231,10 @@ pub(crate) fn standard_notes(
                 && preview_warning_for_column(column).is_none()
         })
     {
-        if deterministic {
-            notes.push(
-                "Deterministic pseudonyms and tokens use keyed HMAC-SHA256 with the configured seed; treat that seed as sensitive."
-                    .to_string(),
-            );
-        } else {
-            notes.push(
-                "Random-mode pseudonyms and tokens are tracked within each run so repeated source values stay consistent while distinct readable names avoid reuse while capacity remains."
-                    .to_string(),
-            );
-        }
+        notes.push(
+            "Pseudonyms and tokens are tracked within each run so repeated source values stay consistent while distinct readable names avoid reuse while capacity remains."
+                .to_string(),
+        );
     }
     if transform_report.collisions_avoided > 0 {
         notes.push(format!(
@@ -324,7 +312,7 @@ fn column_action(column: &ColumnMetadata) -> (String, ReleaseEvidenceStatus, Str
         AnonymizationStrategy::Tokenize => (
             "Tokenized".to_string(),
             ReleaseEvidenceStatus::Verified,
-            "Selected values become stable opaque tokens.".to_string(),
+            "Selected values become opaque tokens that stay consistent within the run.".to_string(),
         ),
         AnonymizationStrategy::LocalAi => (
             "Smart replacement".to_string(),

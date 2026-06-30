@@ -33,8 +33,8 @@ test('covers disabled states, simplified column review, and glossary help', asyn
   await expect(helpDialog).toContainText('Defaults')
   await expect(helpDialog).toContainText('Review signals')
   await expect(helpDialog).toContainText('Methods')
-  await expect(helpDialog).toContainText('Run and seed')
-  await expect(helpDialog).toContainText('system keychain')
+  await expect(helpDialog).toContainText('Run behavior')
+  await expect(helpDialog).toContainText('current run')
 
   await helpDialog.getByRole('button', { name: 'Pseudonymize', exact: true }).first().click()
   await expect(page.getByRole('tooltip')).toContainText('Pseudonymize')
@@ -180,10 +180,8 @@ test('has no automated accessibility violations across input modes @a11y', async
 async function installTauriMock(page: Page) {
   await page.addInitScript(() => {
     let settings: AppSettings = {
-      schemaVersion: 9,
+      schemaVersion: 10,
       themeMode: 'system',
-      deterministicDefault: false,
-      seed: '',
       overwriteOutput: false,
       sampleRowCount: 100,
       previewSampleCount: 5,

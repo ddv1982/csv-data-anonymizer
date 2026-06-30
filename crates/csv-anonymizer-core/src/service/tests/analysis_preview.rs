@@ -31,39 +31,38 @@ fn sampled_analysis_defers_full_row_count() {
 }
 
 #[test]
-fn previews_are_deterministic() {
+fn preview_reuses_repeated_values_within_one_run() {
     let service = AnonymizerService::new("test-version");
-    let params = PreviewParams {
-        file_path: fixture("sample.csv"),
-        columns: vec![1],
-        controls: vec![],
-        deterministic: true,
-        seed: "preview-seed".to_string(),
-        sample_count: 2,
-    };
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("repeated-preview-values.csv");
+    fs::write(
+        &input_path,
+        "email\nada@example.com\nada@example.com\ngrace@example.com\n",
+    )
+    .unwrap();
 
-    let first = service.preview_anonymization(params.clone()).unwrap();
-    let second = service.preview_anonymization(params).unwrap();
-
-    assert_eq!(first, second);
-    assert_eq!(first.previews[0].samples.len(), 2);
-}
-
-#[test]
-fn preview_rejects_deterministic_blank_seed() {
-    let service = AnonymizerService::new("test-version");
-    let error = service
+    let preview = service
         .preview_anonymization(PreviewParams {
-            file_path: fixture("sample.csv"),
-            columns: vec![1],
-            controls: vec![],
-            deterministic: true,
-            seed: " ".to_string(),
-            sample_count: 2,
+            file_path: input_path,
+            columns: vec![0],
+            controls: vec![ColumnControl {
+                column_index: 0,
+                type_override: Some(DataType::Email),
+                strategy: AnonymizationStrategy::Auto,
+            }],
+            sample_count: 3,
         })
-        .unwrap_err();
+        .unwrap();
 
-    assert!(error.to_string().contains("non-empty private seed"));
+    assert_eq!(preview.previews[0].samples.len(), 3);
+    assert_eq!(
+        preview.previews[0].samples[0].anonymized,
+        preview.previews[0].samples[1].anonymized
+    );
+    assert_ne!(
+        preview.previews[0].samples[0].anonymized,
+        preview.previews[0].samples[2].anonymized
+    );
 }
 
 #[test]
@@ -82,8 +81,6 @@ fn preview_preserves_short_numeric_code_shape() {
                 type_override: None,
                 strategy: AnonymizationStrategy::Auto,
             }],
-            deterministic: true,
-            seed: "numeric-string-seed".to_string(),
             sample_count: 3,
         })
         .unwrap();
@@ -109,8 +106,6 @@ fn preview_preserves_decimal_numeric_shape() {
             file_path: input_path,
             columns: vec![0],
             controls: vec![],
-            deterministic: true,
-            seed: "decimal-seed".to_string(),
             sample_count: 3,
         })
         .unwrap();
@@ -141,8 +136,6 @@ fn preview_skips_empty_and_null_samples() {
             file_path: input_path,
             columns: vec![0],
             controls: vec![],
-            deterministic: true,
-            seed: "empty-seed".to_string(),
             sample_count: 3,
         })
         .unwrap();
@@ -188,8 +181,6 @@ fn preview_uses_type_specific_phone_and_name_strategies() {
                     strategy: AnonymizationStrategy::Auto,
                 },
             ],
-            deterministic: true,
-            seed: "people-seed".to_string(),
             sample_count: 1,
         })
         .unwrap();
@@ -222,8 +213,6 @@ fn people_names_fixture_previews_name_like_full_names() {
                 type_override: None,
                 strategy: AnonymizationStrategy::Auto,
             }],
-            deterministic: true,
-            seed: "people-name-quality-seed".to_string(),
             sample_count: 5,
         })
         .unwrap();
@@ -281,8 +270,6 @@ fn people_names_fixture_treats_single_token_name_column_as_name() {
                     strategy: AnonymizationStrategy::Auto,
                 },
             ],
-            deterministic: true,
-            seed: "people-name-quality-seed".to_string(),
             sample_count: 5,
         })
         .unwrap();
@@ -320,11 +307,10 @@ fn people_names_fixture_treats_single_token_name_column_as_name() {
 }
 
 #[test]
-fn preview_name_mappings_match_full_output_for_previewed_rows() {
+fn preview_name_mappings_are_consistent_within_previewed_rows() {
     let service = AnonymizerService::new("test-version");
     let temp_dir = tempfile::tempdir().unwrap();
     let input_path = temp_dir.path().join("preview-full-names.csv");
-    let output_path = temp_dir.path().join("preview-full-names-output.csv");
     fs::write(
         &input_path,
         "first_name,last_name,full_name\nAlice,Smith,Alice Smith\nBianca,Jones,Bianca Jones\n",
@@ -353,37 +339,18 @@ fn preview_name_mappings_match_full_output_for_previewed_rows() {
             file_path: input_path.clone(),
             columns: vec![0, 1, 2],
             controls: controls.clone(),
-            deterministic: true,
-            seed: "preview-full-seed".to_string(),
             sample_count: 2,
         })
         .unwrap();
-    service
-        .anonymize_csv(AnonymizeParams {
-            file_path: input_path,
-            output_path: output_path.clone(),
-            columns: vec![0, 1, 2],
-            controls,
-            deterministic: true,
-            seed: "preview-full-seed".to_string(),
-            force: false,
-            preview_smart_replacements: vec![],
-        })
-        .unwrap();
 
-    let output = read_sample(&output_path, 10).unwrap();
     for row_index in 0..2 {
         assert_eq!(
-            preview.previews[0].samples[row_index].anonymized,
-            output.rows[row_index][0]
-        );
-        assert_eq!(
-            preview.previews[1].samples[row_index].anonymized,
-            output.rows[row_index][1]
-        );
-        assert_eq!(
             preview.previews[2].samples[row_index].anonymized,
-            output.rows[row_index][2]
+            format!(
+                "{} {}",
+                preview.previews[0].samples[row_index].anonymized,
+                preview.previews[1].samples[row_index].anonymized
+            )
         );
     }
 }
@@ -404,8 +371,6 @@ fn preview_applies_per_column_type_and_strategy_controls() {
                 type_override: Some(DataType::Email),
                 strategy: AnonymizationStrategy::Mask,
             }],
-            deterministic: true,
-            seed: "control-seed".to_string(),
             sample_count: 1,
         })
         .unwrap();
@@ -430,8 +395,6 @@ fn preview_warns_for_pass_through_and_no_op_columns() {
                 type_override: None,
                 strategy: AnonymizationStrategy::PassThrough,
             }],
-            deterministic: true,
-            seed: "warning-seed".to_string(),
             sample_count: 1,
         })
         .unwrap();

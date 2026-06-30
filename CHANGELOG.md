@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.60 - 2026-06-30
+
+- Remove repeatable replacements and private seed settings end-to-end so rule-based pseudonyms are randomized per run without storing or accepting a seed.
+- Preserve in-run replacement reuse for repeated source values across CSV, pasted data, quick generation, Tokenize, and Smart replacement while simplifying CLI, Tauri, settings, and frontend contracts.
+- Clarify preview behavior for randomized rule-based replacements and ensure timestamp pseudonymization never leaves a selected timestamp unchanged.
+
 ## v1.0.59 - 2026-06-30
 
 - Replace literal English-only header detection with a Unicode-normalized taxonomy that covers multilingual contact, address, date, name, postal code, account, and tax/VAT terms with conservative fuzzy matching.

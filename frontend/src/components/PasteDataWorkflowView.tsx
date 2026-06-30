@@ -108,8 +108,6 @@ export function PasteDataWorkflowView({
         analysis.format,
         selection.selectedColumns,
         selection.columnControlList,
-        settings.deterministicDefault,
-        settings.seed,
         settings.previewSampleCount,
         localAi.request,
       )
@@ -136,8 +134,6 @@ export function PasteDataWorkflowView({
         analysis.format,
         selection.selectedColumns,
         selection.columnControlList,
-        settings.deterministicDefault,
-        settings.seed,
         preview?.smartReplacements ?? [],
         localAi.request,
       )

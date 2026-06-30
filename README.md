@@ -12,7 +12,6 @@ All normal CSV processing runs locally in Rust. Optional local LLM replacement a
 - Streams standard masking/pseudonymization runs instead of loading the whole file into memory.
 - Supports lightweight paste workflows for small CSV text or JSON snippets up to 5 MiB; larger CSV inputs should use the streaming file workflow.
 - Keeps repeated source values consistent within a run.
-- Supports repeatable replacements with a private seed, useful when multiple files need matching pseudonyms.
 - Offers optional Smart replacement with a local LLM for selected columns.
 - Produces a privacy report with transformed column counts, reused values, token counts, Local AI replacement counts, and fallbacks.
 
@@ -44,7 +43,7 @@ Usage:
 4. Select `Smart replacement (Local AI)` for the columns that should use the model.
 5. Review the preview, then run the transformation.
 
-The app batches unique values per selected column, asks the local model for realistic fake replacements, validates the response, reuses accepted replacements for repeated source values, and falls back to rule-based pseudonymization when the model output is missing or unsafe.
+The app batches unique values per selected column, asks the local model for realistic fake replacements, validates the response, reuses accepted replacements for repeated source values within the current run, and falls back to rule-based pseudonymization when the model output is missing or unsafe.
 
 Model weights and local runtime binaries are not bundled in the repository or desktop release. The first model download uses network access through Ollama. CSV values selected for Smart replacement are sent only to the configured local Ollama endpoint.
 
@@ -60,7 +59,7 @@ It does not produce formal anonymity, differential privacy aggregates, or synthe
 | --- | --- |
 | Mask | Replace values with simple masked output. |
 | Pseudonymize | Generate readable or shape-preserving fake values. |
-| Tokenize | Replace values with stable opaque `tok_...` tokens. |
+| Tokenize | Replace values with opaque `tok_...` tokens that stay consistent within the current run. |
 | Smart replacement (Local AI) | Use a local LLM through Ollama for more realistic fake replacements. |
 | Pass-through | Leave values unchanged. |
 

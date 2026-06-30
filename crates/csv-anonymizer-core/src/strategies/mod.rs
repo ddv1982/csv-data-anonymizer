@@ -15,7 +15,7 @@ pub fn transform_value(
     column: &ColumnMetadata,
     context: &TransformContext<'_>,
 ) -> String {
-    let mut state = TransformState::new(context.deterministic, context.seed);
+    let mut state = TransformState::new();
     transform_value_with_state(value, column, context, &mut state)
 }
 
@@ -83,23 +83,15 @@ fn mask_value(value: &str) -> String {
         .collect()
 }
 
-pub fn transform_row(
-    row: &[String],
-    columns: &[ColumnMetadata],
-    row_index: usize,
-    seed: &str,
-    deterministic: bool,
-) -> Vec<String> {
-    let mut state = TransformState::new(deterministic, seed);
-    transform_row_with_state(row, columns, row_index, seed, deterministic, &mut state)
+pub fn transform_row(row: &[String], columns: &[ColumnMetadata], row_index: usize) -> Vec<String> {
+    let mut state = TransformState::new();
+    transform_row_with_state(row, columns, row_index, &mut state)
 }
 
 pub fn transform_row_with_state(
     row: &[String],
     columns: &[ColumnMetadata],
     row_index: usize,
-    seed: &str,
-    deterministic: bool,
     state: &mut TransformState,
 ) -> Vec<String> {
     row.iter()
@@ -117,8 +109,6 @@ pub fn transform_row_with_state(
                 column_name: &column.name,
                 column_index: column.index,
                 row_index,
-                seed,
-                deterministic,
                 empty_format: column.empty_format,
             };
             transform_value_with_state(value, column, &context, state)

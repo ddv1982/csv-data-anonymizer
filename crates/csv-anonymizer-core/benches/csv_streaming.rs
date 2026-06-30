@@ -39,8 +39,6 @@ fn bench_standard_csv_streaming(c: &mut Criterion) {
                             strategy: AnonymizationStrategy::Auto,
                         },
                     ],
-                    deterministic: true,
-                    seed: "bench-seed".to_string(),
                     force: true,
                     preview_smart_replacements: vec![],
                 })

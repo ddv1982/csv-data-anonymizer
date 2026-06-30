@@ -6,8 +6,6 @@ pub(crate) fn generate_column_preview(
     column: &ColumnMetadata,
     rows: &[Vec<String>],
     sample_count: usize,
-    deterministic: bool,
-    seed: &str,
     transform_state: &mut TransformState,
 ) -> ColumnPreview {
     let mut samples = Vec::new();
@@ -28,8 +26,6 @@ pub(crate) fn generate_column_preview(
             column_name: &column.name,
             column_index: column.index,
             row_index,
-            seed,
-            deterministic,
             empty_format: column.empty_format,
         };
         samples.push(SampleTransform {

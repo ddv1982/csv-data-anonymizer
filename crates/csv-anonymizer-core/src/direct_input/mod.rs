@@ -10,7 +10,6 @@ mod xml;
 mod tests;
 
 use crate::error::Result;
-use crate::service::validate_deterministic_seed;
 use crate::smart::SmartReplacementProvider;
 use crate::types::{
     AnonymizationStrategy, ColumnControl, ColumnMetadata, DataType, PasteAnalyzeData,
@@ -89,7 +88,6 @@ pub fn transform_paste_data_with_smart_provider(
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<PasteTransformData> {
     shared::validate_paste_content(&input.content)?;
-    validate_deterministic_seed(input.deterministic, &input.seed)?;
     let format = format_detection::resolve_format(input.format, &input.content);
 
     match format {
@@ -124,19 +122,9 @@ pub fn preview_rows(
     metadata: &[ColumnMetadata],
     columns: &[usize],
     controls: &[ColumnControl],
-    deterministic: bool,
-    seed: &str,
     sample_count: usize,
 ) -> Result<PreviewData> {
-    shared::preview_rows(
-        rows,
-        metadata,
-        columns,
-        controls,
-        deterministic,
-        seed,
-        sample_count,
-    )
+    shared::preview_rows(rows, metadata, columns, controls, sample_count)
 }
 
 pub fn anonymize_rows(
@@ -144,10 +132,8 @@ pub fn anonymize_rows(
     metadata: &[ColumnMetadata],
     columns: &[usize],
     controls: &[ColumnControl],
-    deterministic: bool,
-    seed: &str,
 ) -> Result<(Vec<Vec<String>>, PrivacyReport)> {
-    shared::anonymize_rows(rows, metadata, columns, controls, deterministic, seed)
+    shared::anonymize_rows(rows, metadata, columns, controls)
 }
 
 pub fn anonymize_rows_with_smart_provider(
@@ -155,27 +141,15 @@ pub fn anonymize_rows_with_smart_provider(
     metadata: &[ColumnMetadata],
     columns: &[usize],
     controls: &[ColumnControl],
-    deterministic: bool,
-    seed: &str,
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<(Vec<Vec<String>>, PrivacyReport)> {
-    shared::anonymize_rows_with_smart_provider(
-        rows,
-        metadata,
-        columns,
-        controls,
-        deterministic,
-        seed,
-        provider,
-    )
+    shared::anonymize_rows_with_smart_provider(rows, metadata, columns, controls, provider)
 }
 
 pub fn quick_anonymize_values(
     values: &[String],
     data_type: DataType,
     strategy: AnonymizationStrategy,
-    deterministic: bool,
-    seed: &str,
 ) -> Result<QuickTransformData> {
-    quick::quick_anonymize_values(values, data_type, strategy, deterministic, seed)
+    quick::quick_anonymize_values(values, data_type, strategy)
 }

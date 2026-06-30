@@ -6,7 +6,7 @@ use reqwest::blocking::Client;
 use serde::Deserialize;
 use serde_json::json;
 
-use super::prompt::{replacement_schema, smart_replacement_prompt, stable_seed};
+use super::prompt::{replacement_schema, smart_replacement_prompt};
 use super::types::LocalAiRequest;
 use super::{DEFAULT_OLLAMA_ENDPOINT, client};
 
@@ -49,16 +49,9 @@ impl SmartReplacementProvider for OllamaSmartReplacementProvider {
         request: SmartReplacementRequest<'_>,
     ) -> CoreResult<Vec<SmartReplacement>> {
         let prompt = smart_replacement_prompt(request);
-        let options = if request.deterministic {
-            json!({
-                "temperature": 0.0,
-                "seed": stable_seed(request.seed, request.column.index)
-            })
-        } else {
-            json!({
-                "temperature": 0.35
-            })
-        };
+        let options = json!({
+            "temperature": 0.35
+        });
         let body = json!({
             "model": self.model,
             "prompt": prompt,

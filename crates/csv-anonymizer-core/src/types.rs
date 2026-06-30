@@ -339,8 +339,6 @@ pub struct ParsedSample {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProcessOptions<'a> {
-    pub deterministic: bool,
-    pub seed: &'a str,
     pub smart_replacements: Option<&'a crate::smart::SmartReplacementMap>,
 }
 
@@ -393,8 +391,6 @@ pub struct TransformContext<'a> {
     pub column_name: &'a str,
     pub column_index: usize,
     pub row_index: usize,
-    pub seed: &'a str,
-    pub deterministic: bool,
     pub empty_format: EmptyFormat,
 }
 
@@ -445,8 +441,6 @@ pub struct PasteTransformParams {
     pub columns: Vec<usize>,
     #[serde(default)]
     pub controls: Vec<ColumnControl>,
-    pub deterministic: bool,
-    pub seed: String,
     #[serde(default)]
     pub preview_smart_replacements: Vec<SmartReplacementEntry>,
 }
@@ -459,8 +453,6 @@ pub struct PastePreviewParams {
     pub columns: Vec<usize>,
     #[serde(default)]
     pub controls: Vec<ColumnControl>,
-    pub deterministic: bool,
-    pub seed: String,
     pub sample_count: usize,
 }
 
@@ -480,8 +472,6 @@ pub struct QuickTransformParams {
     pub input: String,
     pub data_type: DataType,
     pub strategy: AnonymizationStrategy,
-    pub deterministic: bool,
-    pub seed: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -490,8 +480,6 @@ pub struct QuickGenerateParams {
     pub data_type: DataType,
     pub strategy: AnonymizationStrategy,
     pub count: usize,
-    pub deterministic: bool,
-    pub seed: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -577,8 +565,6 @@ pub struct PreviewParams {
     pub columns: Vec<usize>,
     #[serde(default)]
     pub controls: Vec<ColumnControl>,
-    pub deterministic: bool,
-    pub seed: String,
     pub sample_count: usize,
 }
 
@@ -590,8 +576,6 @@ pub struct AnonymizeParams {
     pub columns: Vec<usize>,
     #[serde(default)]
     pub controls: Vec<ColumnControl>,
-    pub deterministic: bool,
-    pub seed: String,
     pub force: bool,
     #[serde(default)]
     pub preview_smart_replacements: Vec<SmartReplacementEntry>,
@@ -624,8 +608,6 @@ pub struct PreflightParams {
     pub columns: Vec<usize>,
     #[serde(default)]
     pub controls: Vec<ColumnControl>,
-    pub deterministic: bool,
-    pub seed: String,
     pub force: bool,
     pub sample_row_count: usize,
     #[serde(default)]
