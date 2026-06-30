@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.62 - 2026-07-01
+
+- Refresh the stable dependency line with current Tauri 2, Vite, ESLint, Knip, TypeScript ESLint, `open`, `unicode-segmentation`, and Criterion updates while keeping Tauri 3 and GTK4/WebKitGTK 6 migration work out of this release.
+- Clear frontend outdated drift by moving to `lucide-react` 1.x and Node 26 typings, then align CI, release, and scheduled dependency scans on Node 26.
+- Add scheduled RustSec audit coverage to the maintenance workflow and document the remaining transitive GTK3/GLib, `unic-*`, and `atomic-polyfill` warnings with their upstream paths.
+
 ## v1.0.61 - 2026-07-01
 
 - Preserve the Rust PII library benchmark conclusion in docs while removing the dev-only external detector comparison dependencies and keeping the production detector local, deterministic, and table-aware.
