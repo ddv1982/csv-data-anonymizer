@@ -1,21 +1,18 @@
 import { AlertCircle, Check, Clipboard, Loader2, Wand2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { directInputStrategies } from '../dataOptions'
+import { useColumnSelection } from '../hooks/useColumnSelection'
 import { byteLength, formatByteLimit, MAX_PASTE_CONTENT_BYTES } from '../limits'
 import { analyzePasteData, previewPasteData, transformPasteData } from '../tauri'
 import { useCopyOutput } from '../hooks/useCopyOutput'
 import type {
-  AnonymizationStrategy,
   AppSettings,
-  ColumnControl,
-  ColumnMetadata,
   PasteAnalyzeData,
   PasteDataFormat,
   PasteTransformData,
   PreviewData,
 } from '../types'
 import type { LocalAiState } from '../hooks/useLocalAi'
-import { maxVisibleColumns } from '../utils/columns'
 import { messageFrom } from '../utils/errors'
 import { formatRowCount } from '../utils/format'
 import { Alert } from './Alert'
@@ -31,7 +28,6 @@ const formatOptions: Array<{ value: PasteDataFormat; label: string }> = [
   { value: 'csv', label: 'CSV text' },
   { value: 'json', label: 'JSON' },
 ]
-const EMPTY_COLUMNS: ColumnMetadata[] = []
 
 export function PasteDataWorkflowView({
   settings,
@@ -49,47 +45,28 @@ export function PasteDataWorkflowView({
   const [format, setFormat] = useState<PasteDataFormat>('auto')
   const [content, setContent] = useState('')
   const [analysis, setAnalysis] = useState<PasteAnalyzeData | null>(null)
-  const [selectedColumns, setSelectedColumns] = useState<number[]>([])
-  const [controls, setControls] = useState<Record<number, ColumnControl>>({})
-  const [showAllColumns, setShowAllColumns] = useState(false)
   const [preview, setPreview] = useState<PreviewData | null>(null)
   const [result, setResult] = useState<PasteTransformData | null>(null)
   const [busy, setBusy] = useState<PasteBusyState>('idle')
+  const selection = useColumnSelection(analysis?.columns, { pruneDefaultControls: true })
 
   const isBusy = busy !== 'idle'
   const { copyOutput, copyStatus, setCopyStatus } = useCopyOutput({ isBusy, onError, setBusy })
-  const selectedSet = useMemo(() => new Set(selectedColumns), [selectedColumns])
-  const columns = analysis?.columns ?? EMPTY_COLUMNS
-  const visibleColumns = showAllColumns ? columns : columns.slice(0, maxVisibleColumns)
-  const hiddenColumnCount = Math.max(0, columns.length - visibleColumns.length)
   const contentByteLength = useMemo(() => byteLength(content), [content])
   const contentLimitLabel = formatByteLimit(MAX_PASTE_CONTENT_BYTES)
   const isContentTooLarge = contentByteLength > MAX_PASTE_CONTENT_BYTES
-  const controlList = useMemo(
-    () => Object.values(controls).sort((left, right) => left.columnIndex - right.columnIndex),
-    [controls],
-  )
-  const selectedUsesLocalAi = useMemo(
-    () =>
-      selectedColumns.some((index) => {
-        const column = columns.find((candidate) => candidate.index === index)
-        return (controls[index]?.strategy ?? column?.strategy ?? 'auto') === 'localAi'
-      }),
-    [columns, controls, selectedColumns],
-  )
+  const selectedUsesLocalAi = selection.selectionUsesLocalAi(selection.selectedColumns)
   const localAiBlocked = selectedUsesLocalAi && (!localAi.ready || localAi.downloadRunning)
   const canAnalyze = settingsLoaded && content.trim().length > 0 && !isBusy && !isContentTooLarge
-  const canPreview = settingsLoaded && Boolean(analysis) && selectedColumns.length > 0 && !isBusy && !localAiBlocked
-  const canTransform = settingsLoaded && Boolean(analysis) && selectedColumns.length > 0 && !isBusy && !localAiBlocked
+  const canPreview = settingsLoaded && Boolean(analysis) && selection.selectedColumns.length > 0 && !isBusy && !localAiBlocked
+  const canTransform = settingsLoaded && Boolean(analysis) && selection.selectedColumns.length > 0 && !isBusy && !localAiBlocked
 
   function resetDerivedState() {
     setAnalysis(null)
-    setSelectedColumns([])
-    setControls({})
+    selection.resetColumnSelection()
     setPreview(null)
     setResult(null)
     setCopyStatus(null)
-    setShowAllColumns(false)
   }
 
   async function handleAnalyze() {
@@ -102,9 +79,12 @@ export function PasteDataWorkflowView({
     try {
       const nextAnalysis = await analyzePasteData(content, format, settings.sampleRowCount)
       setAnalysis(nextAnalysis)
-      setSelectedColumns(autoSelectedColumns(nextAnalysis.columns))
-      setControls({})
-      setShowAllColumns(false)
+      selection.setSelectedColumns(
+        nextAnalysis.columns
+          .filter((column) => column.piiRisk === 'high' || column.piiRisk === 'medium')
+          .map((column) => column.index),
+      )
+      selection.resetColumnControls()
     } catch (caught) {
       onError(messageFrom(caught))
     } finally {
@@ -113,7 +93,7 @@ export function PasteDataWorkflowView({
   }
 
   async function handlePreview() {
-    if (!settingsLoaded || !analysis || selectedColumns.length === 0 || isBusy) return
+    if (!settingsLoaded || !analysis || selection.selectedColumns.length === 0 || isBusy) return
     if (localAiBlocked) {
       onError('Set up Local AI before previewing Smart replacement fields.')
       return
@@ -126,8 +106,8 @@ export function PasteDataWorkflowView({
       const nextPreview = await previewPasteData(
         content,
         analysis.format,
-        selectedColumns,
-        controlList,
+        selection.selectedColumns,
+        selection.columnControlList,
         settings.deterministicDefault,
         settings.seed,
         settings.previewSampleCount,
@@ -142,7 +122,7 @@ export function PasteDataWorkflowView({
   }
 
   async function handleTransform() {
-    if (!settingsLoaded || !analysis || selectedColumns.length === 0 || isBusy) return
+    if (!settingsLoaded || !analysis || selection.selectedColumns.length === 0 || isBusy) return
     if (localAiBlocked) {
       onError('Set up Local AI before anonymizing Smart replacement fields.')
       return
@@ -154,8 +134,8 @@ export function PasteDataWorkflowView({
       const transformed = await transformPasteData(
         content,
         analysis.format,
-        selectedColumns,
-        controlList,
+        selection.selectedColumns,
+        selection.columnControlList,
         settings.deterministicDefault,
         settings.seed,
         preview?.smartReplacements ?? [],
@@ -173,42 +153,22 @@ export function PasteDataWorkflowView({
     await copyOutput(result?.output)
   }
 
-  function toggleColumn(column: ColumnMetadata) {
-    setSelectedColumns((current) =>
-      current.includes(column.index)
-        ? current.filter((index) => index !== column.index)
-        : [...current, column.index].sort((left, right) => left - right),
-    )
-    setResult(null)
-    setPreview(null)
-  }
-
   function setColumnSelection(nextColumns: number[]) {
-    setSelectedColumns([...new Set(nextColumns)].sort((left, right) => left - right))
-    setResult(null)
-    setPreview(null)
+    selection.setSelectedColumns(nextColumns)
+    clearPreviewAndResult()
   }
 
-  function updateColumnStrategy(column: ColumnMetadata, strategy: AnonymizationStrategy) {
-    updateColumnControl(column, { strategy })
+  function toggleColumn(column: Parameters<typeof selection.toggleColumn>[0]) {
+    selection.toggleColumn(column)
+    clearPreviewAndResult()
   }
 
-  function updateColumnControl(column: ColumnMetadata, patch: Partial<ColumnControl>) {
-    setControls((current) => {
-      const existing = current[column.index] ?? {
-        columnIndex: column.index,
-        typeOverride: null,
-        strategy: column.strategy ?? 'auto',
-      }
-      const next = { ...existing, ...patch }
-      const nextControls = { ...current }
-      if (next.typeOverride === null && next.strategy === (column.strategy ?? 'auto')) {
-        delete nextControls[column.index]
-      } else {
-        nextControls[column.index] = next
-      }
-      return nextControls
-    })
+  function updateColumnStrategy(column: Parameters<typeof selection.updateColumnStrategy>[0], strategy: Parameters<typeof selection.updateColumnStrategy>[1]) {
+    selection.updateColumnStrategy(column, strategy)
+    clearPreviewAndResult()
+  }
+
+  function clearPreviewAndResult() {
     setResult(null)
     setPreview(null)
   }
@@ -280,15 +240,15 @@ export function PasteDataWorkflowView({
             <button
               type="button"
               className="button button-outline button-sm"
-              disabled={isBusy || columns.length === 0 || selectedColumns.length === columns.length}
-              onClick={() => setColumnSelection(columns.map((column) => column.index))}
+              disabled={isBusy || selection.columns.length === 0 || selection.allSelected}
+              onClick={() => setColumnSelection(selection.selectableColumns.map((column) => column.index))}
             >
               Select All
             </button>
             <button
               type="button"
               className="button button-outline button-sm"
-              disabled={isBusy || selectedColumns.length === 0}
+              disabled={isBusy || selection.selectedColumns.length === 0}
               onClick={() => setColumnSelection([])}
             >
               Deselect All
@@ -296,24 +256,24 @@ export function PasteDataWorkflowView({
             <button
               type="button"
               className="button button-outline button-sm"
-              disabled={isBusy || columns.length === 0}
-              onClick={() => setColumnSelection(autoSelectedColumns(columns))}
+              disabled={isBusy || selection.detectedRiskColumns.length === 0}
+              onClick={() => setColumnSelection(selection.detectedRiskColumns)}
             >
               Select Detected Risk
             </button>
           </div>
 
           <ColumnTable
-            columns={visibleColumns}
-            allColumnCount={columns.length}
-            selectedSet={selectedSet}
+            columns={selection.visibleColumns}
+            allColumnCount={selection.columns.length}
+            selectedSet={selection.selectedSet}
             loading={busy === 'analyzing'}
-            showAllColumns={showAllColumns}
-            hiddenColumnCount={hiddenColumnCount}
+            showAllColumns={selection.showAllColumns}
+            hiddenColumnCount={selection.hiddenColumnCount}
             onToggleColumn={toggleColumn}
-            controls={controls}
+            controls={selection.columnControls}
             onStrategyChange={updateColumnStrategy}
-            onToggleShowAll={() => setShowAllColumns((current) => !current)}
+            onToggleShowAll={() => selection.setShowAllColumns((current) => !current)}
             availableStrategies={directInputStrategies}
           />
 
@@ -329,7 +289,7 @@ export function PasteDataWorkflowView({
           ) : null}
 
           <p className="muted-text text-sm">
-            {selectedColumns.length} of {columns.length} fields selected
+            {selection.selectedColumns.length} of {selection.columns.length} fields selected
             {analysis ? `, ${formatRowCount(analysis)} detected` : ''}
           </p>
         </div>
@@ -337,7 +297,7 @@ export function PasteDataWorkflowView({
 
       <Card
         title="3. Preview (Optional)"
-        disabled={!analysis || selectedColumns.length === 0}
+        disabled={!analysis || selection.selectedColumns.length === 0}
         action={
           <button type="button" className="button button-outline button-sm" disabled={!canPreview} onClick={handlePreview}>
             {busy === 'previewing' ? <Loader2 className="spin" aria-hidden="true" /> : null}
@@ -382,17 +342,11 @@ export function PasteDataWorkflowView({
 
       {result ? <PrivacyReportSummary privacyReport={result.privacyReport} /> : null}
 
-      {analysis && columns.length === 0 ? (
+      {analysis && selection.columns.length === 0 ? (
         <Alert icon={<AlertCircle aria-hidden="true" />}>No fields detected for this input.</Alert>
       ) : null}
     </div>
   )
-}
-
-function autoSelectedColumns(columns: ColumnMetadata[]) {
-  return columns
-    .filter((column) => column.piiRisk === 'high' || column.piiRisk === 'medium')
-    .map((column) => column.index)
 }
 
 function formatPasteStats(result: PasteTransformData) {

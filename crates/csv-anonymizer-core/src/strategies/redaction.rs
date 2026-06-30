@@ -1,4 +1,4 @@
-use crate::types::{ColumnMetadata, DataType, PrivacyFindingKind};
+use crate::types::{ColumnMetadata, DataType, PrivacyFindingKind, RedactionPlaceholder};
 
 pub(crate) const REDACTED: &str = "[REDACTED]";
 pub(crate) const EMAIL: &str = "[EMAIL]";
@@ -17,22 +17,24 @@ pub(crate) const STRUCTURED_SCALAR_REDACTION_WARNING: &str =
     "Redact uses string placeholders and may change scalar value types.";
 
 pub(super) fn placeholder_for_column(column: &ColumnMetadata) -> &'static str {
-    match column.detected_type {
-        DataType::Email => EMAIL,
-        DataType::Phone => PHONE,
-        DataType::FirstName | DataType::LastName | DataType::FullName => PERSON,
-        DataType::Address | DataType::PostalCode => ADDRESS,
-        DataType::Timestamp => DATE,
-        DataType::NumericId | DataType::Uuid => ACCOUNT_ID,
-        DataType::TaxId => GOVERNMENT_ID,
-        DataType::Url => URL,
-        DataType::IpAddress | DataType::MacAddress => NETWORK_ID,
-        DataType::String | DataType::Unknown | DataType::Enum => placeholder_from_evidence(column),
-        DataType::NumericValue
-        | DataType::Boolean
-        | DataType::Currency
-        | DataType::Percentage
-        | DataType::CountryCode => placeholder_from_evidence(column),
+    column
+        .detected_type
+        .redaction_placeholder()
+        .map(placeholder_text)
+        .unwrap_or_else(|| placeholder_from_evidence(column))
+}
+
+fn placeholder_text(placeholder: RedactionPlaceholder) -> &'static str {
+    match placeholder {
+        RedactionPlaceholder::Email => EMAIL,
+        RedactionPlaceholder::Phone => PHONE,
+        RedactionPlaceholder::Person => PERSON,
+        RedactionPlaceholder::Address => ADDRESS,
+        RedactionPlaceholder::Date => DATE,
+        RedactionPlaceholder::AccountId => ACCOUNT_ID,
+        RedactionPlaceholder::GovernmentId => GOVERNMENT_ID,
+        RedactionPlaceholder::Url => URL,
+        RedactionPlaceholder::NetworkId => NETWORK_ID,
     }
 }
 

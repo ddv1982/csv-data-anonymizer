@@ -37,14 +37,8 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --prefix frontend
 
-      - name: Scan frontend unused files, exports, and dependencies
-        run: npm run frontend:deadcode
-
-      - name: Scan production frontend surface
-        run: npm run frontend:deadcode:production
-
       - name: Install cargo-machete
         run: cargo install cargo-machete --locked --version 0.9.2
 
-      - name: Scan Rust unused dependencies
-        run: npm run cargo:machete:required
+      - name: Check required dead-code gates
+        run: npm run deadcode:required

@@ -1,16 +1,16 @@
 {
   "name": "csv-anonymizer-frontend",
   "private": true,
-  "version": "1.0.56",
+  "version": "1.0.57",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "npm run typecheck && vite build",
     "lint": "eslint .",
     "test": "vitest run",
     "e2e": "playwright test --grep-invert @a11y",
     "a11y": "playwright test --grep @a11y",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --project tsconfig.e2e.json --noEmit",
     "deadcode": "knip",
     "deadcode:production": "knip --production --include exports,types,dependencies,unlisted,unresolved,binaries",
     "preview": "vite preview"

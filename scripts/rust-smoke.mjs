@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
+import { run } from './command-utils.mjs'
 
 const projectRoot = process.cwd()
 const binary = findOrBuildBinary()
@@ -48,15 +48,4 @@ function findOrBuildBinary() {
     throw new Error(`Rust smoke binary was not built at ${relative(projectRoot, built)}`)
   }
   return built
-}
-
-function run(command, args) {
-  const result = spawnSync(command, args, {
-    cwd: projectRoot,
-    stdio: 'inherit',
-    encoding: 'utf8'
-  })
-  if (result.status !== 0) {
-    throw new Error(`${command} ${args.join(' ')} failed with exit code ${result.status ?? 'unknown'}`)
-  }
 }

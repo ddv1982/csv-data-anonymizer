@@ -5,6 +5,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { readOption } from './command-utils.mjs'
 
 const fingerprintVariable = 'CSV_ANONYMIZER_REPOSITORY_SETUP_SIGNING_KEY_FINGERPRINT'
 const placeholder = '__CSV_ANONYMIZER_APT_SIGNING_KEY_FINGERPRINT__'
@@ -14,8 +15,8 @@ const normalizationLine =
   'expected_signing_fingerprint="$(printf \'%s\' "$expected_signing_fingerprint" | tr -d \'[:space:]\' | tr \'[:lower:]\' \'[:upper:]\')"'
 
 const args = process.argv.slice(2)
-const renderedInstallerPath = readOption('--rendered-installer')
-const expectedFingerprint = normalizeFingerprint(readOption('--expected-fingerprint') ?? sampleFingerprint)
+const renderedInstallerPath = readOption(args, '--rendered-installer')
+const expectedFingerprint = normalizeFingerprint(readOption(args, '--expected-fingerprint') ?? sampleFingerprint)
 
 if (!isFingerprint(expectedFingerprint)) {
   throw new Error(`Expected signing fingerprint must be a 40-character hex fingerprint, got ${expectedFingerprint}`)
@@ -31,20 +32,6 @@ const renderedInstaller = renderedInstallerPath
 await validateRenderedInstaller(renderedInstaller, expectedFingerprint)
 await validateAptInstallStaging(renderedInstaller)
 console.log('APT installer check passed.')
-
-function readOption(name) {
-  const index = args.indexOf(name)
-  if (index === -1) {
-    return undefined
-  }
-
-  const value = args[index + 1]
-  if (!value || value.startsWith('--')) {
-    throw new Error(`${name} requires a value`)
-  }
-
-  return value
-}
 
 async function validateTemplate(script) {
   if (!script.includes(placeholder)) {

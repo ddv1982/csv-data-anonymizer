@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.57 - 2026-06-30
+
+- Add frontend type coverage for E2E/config files and share CSV/Paste column-selection controls so fixture and selection drift are caught earlier.
+- Centralize Rust DataType policy and Tauri command registration so report categories, redaction defaults, quick-generation support, permissions, and invoke handlers stay in sync.
+- Align automation and docs around canonical root gates with shared script helpers, desktop artifact matching, and reusable macOS notarization retries.
+
 ## v1.0.56 - 2026-06-30
 
 - Reduce the product surface to CSV File, Paste Sample, and Quick by Data Type by removing formal tabular, DP aggregate, synthetic data, column roles, DP budget ledger, and permanent release-readiness UI.

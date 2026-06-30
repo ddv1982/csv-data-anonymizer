@@ -213,20 +213,7 @@ fn supports_quick_generate_strategy(strategy: AnonymizationStrategy) -> bool {
 fn should_transform_generated_value(data_type: DataType, strategy: AnonymizationStrategy) -> bool {
     strategy == AnonymizationStrategy::Tokenize
         || strategy == AnonymizationStrategy::LocalAi
-        || matches!(
-            data_type,
-            DataType::Email
-                | DataType::Uuid
-                | DataType::Timestamp
-                | DataType::NumericId
-                | DataType::NumericValue
-                | DataType::Phone
-                | DataType::FirstName
-                | DataType::LastName
-                | DataType::FullName
-                | DataType::String
-                | DataType::Unknown
-        )
+        || data_type.transforms_generated_quick_value()
 }
 
 fn generated_quick_value(

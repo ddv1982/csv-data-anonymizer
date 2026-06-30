@@ -1,9 +1,16 @@
 #!/usr/bin/env node
 import { readFile } from 'node:fs/promises'
 import { basename, join, relative } from 'node:path'
+import {
+  isAuxiliaryArtifactName,
+  isCurrentVersionDesktopArtifactName,
+  isDesktopArtifactName,
+  readOption,
+} from './command-utils.mjs'
 
 const args = new Set(process.argv.slice(2))
-const platform = readOption('--platform') ?? process.platform
+const optionArgs = process.argv.slice(2)
+const platform = readOption(optionArgs, '--platform') ?? process.platform
 const requireRpm = args.has('--require-rpm')
 const requireAppImage = args.has('--require-appimage')
 const requireDmg = args.has('--require-dmg')
@@ -59,16 +66,6 @@ for (const artifact of artifacts) {
   console.log(`- ${relative(process.cwd(), artifact)}`)
 }
 
-function readOption(name) {
-  const index = process.argv.indexOf(name)
-  if (index === -1) return undefined
-  const value = process.argv[index + 1]
-  if (!value || value.startsWith('--')) {
-    throw new Error(`${name} requires a value`)
-  }
-  return value
-}
-
 function requireArtifact(predicate, message) {
   if (!artifacts.some(predicate)) {
     throw new Error(message)
@@ -106,34 +103,6 @@ async function collectFiles(directory) {
   return files.sort()
 }
 
-function isDesktopArtifactName(name) {
-  return /\.(?:deb|rpm|AppImage|dmg)$/i.test(name) || name.endsWith('.tar.gz')
-}
-
-function isAuxiliaryArtifactName(name) {
-  return name.startsWith('csv-anonymizer-repository-setup_')
-}
-
 function isCurrentVersionArtifact(file) {
-  const name = basename(file)
-  if (name.endsWith('.deb')) {
-    return new RegExp(`^csv-anonymizer_${escapeRegExp(version)}_[A-Za-z0-9_]+\\.deb$`).test(name)
-  }
-  if (name.endsWith('.rpm')) {
-    return new RegExp(`^csv-anonymizer-${escapeRegExp(version)}-[A-Za-z0-9_.+-]+\\.rpm$`).test(name)
-  }
-  if (name.endsWith('.AppImage')) {
-    return new RegExp(`(^|[_ .-])${escapeRegExp(version)}([_ .-]|$)`).test(name)
-  }
-  if (name.endsWith('.dmg')) {
-    return new RegExp(`^CSV\\.Anonymizer_${escapeRegExp(version)}_[A-Za-z0-9_]+\\.dmg$`).test(name)
-  }
-  if (name.endsWith('.tar.gz')) {
-    return new RegExp(`^csv-anonymizer-${escapeRegExp(version)}-(?:linux|macos)-[A-Za-z0-9_+-]+(?:\\.app)?\\.tar\\.gz$`).test(name)
-  }
-  return false
-}
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return isCurrentVersionDesktopArtifactName(basename(file), version)
 }
