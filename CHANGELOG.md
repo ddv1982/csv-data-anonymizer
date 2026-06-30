@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.58 - 2026-06-30
+
+- Supersede v1.0.57 without moving the failed tag, keeping the frontend type coverage, DataType policy, Tauri command registration, and automation helper cleanup.
+- Add a direct Node 24 type dependency for frontend E2E/config typechecking so clean CI installs can build without relying on transitive types.
+- Ship the v1.0.57 cleanup release with a clean-install frontend build, release metadata validation, and root quality gates passing.
+
 ## v1.0.57 - 2026-06-30
 
 - Add frontend type coverage for E2E/config files and share CSV/Paste column-selection controls so fixture and selection drift are caught earlier.
