@@ -1,5 +1,5 @@
-import { AlertCircle, Check, Clipboard, Loader2, Wand2 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { AlertCircle, Check, Clipboard, Eraser, Loader2, Wand2 } from 'lucide-react'
+import { type FocusEvent, useMemo, useState } from 'react'
 import { directInputStrategies } from '../dataOptions'
 import { useColumnSelection } from '../hooks/useColumnSelection'
 import { byteLength, formatByteLimit, MAX_PASTE_CONTENT_BYTES } from '../limits'
@@ -58,6 +58,7 @@ export function PasteDataWorkflowView({
   const selectedUsesLocalAi = selection.selectionUsesLocalAi(selection.selectedColumns)
   const localAiBlocked = selectedUsesLocalAi && (!localAi.ready || localAi.downloadRunning)
   const canAnalyze = settingsLoaded && content.trim().length > 0 && !isBusy && !isContentTooLarge
+  const canClear = !isBusy && (content.length > 0 || analysis !== null || preview !== null || result !== null || copyStatus !== null)
   const canPreview = settingsLoaded && Boolean(analysis) && selection.selectedColumns.length > 0 && !isBusy && !localAiBlocked
   const canTransform = settingsLoaded && Boolean(analysis) && selection.selectedColumns.length > 0 && !isBusy && !localAiBlocked
 
@@ -90,6 +91,18 @@ export function PasteDataWorkflowView({
     } finally {
       setBusy('idle')
     }
+  }
+
+  async function handlePasteInputBlur(event: FocusEvent<HTMLTextAreaElement>) {
+    if (analysis || isPasteActionTarget(event.relatedTarget)) return
+    await handleAnalyze()
+  }
+
+  function handleClearPaste() {
+    if (!canClear) return
+    onError(null)
+    setContent('')
+    resetDerivedState()
   }
 
   async function handlePreview() {
@@ -174,10 +187,28 @@ export function PasteDataWorkflowView({
       <Card
         title="1. Paste Sample"
         action={
-          <button type="button" className="button button-outline button-sm" disabled={!canAnalyze} onClick={handleAnalyze}>
-            {busy === 'analyzing' ? <Loader2 className="spin" aria-hidden="true" /> : null}
-            Detect Fields
-          </button>
+          <div className="bulk-actions">
+            <button
+              type="button"
+              className="button button-outline button-sm"
+              data-paste-action
+              disabled={!canClear}
+              onClick={handleClearPaste}
+            >
+              <Eraser aria-hidden="true" />
+              Clear
+            </button>
+            <button
+              type="button"
+              className="button button-outline button-sm"
+              data-paste-action
+              disabled={!canAnalyze}
+              onClick={handleAnalyze}
+            >
+              {busy === 'analyzing' ? <Loader2 className="spin" aria-hidden="true" /> : null}
+              Detect Fields
+            </button>
+          </div>
         }
       >
         <div className="direct-input-stack">
@@ -216,6 +247,7 @@ export function PasteDataWorkflowView({
               setContent(event.target.value)
               resetDerivedState()
             }}
+            onBlur={handlePasteInputBlur}
           />
           <div className="direct-input-meta">
             <span className={`muted-text text-sm${isContentTooLarge ? ' danger-text' : ''}`}>
@@ -354,4 +386,8 @@ function formatPasteStats(result: PasteTransformData) {
 
 function formatLabel(format: PasteDataFormat) {
   return formatOptions.find((option) => option.value === format)?.label ?? format
+}
+
+function isPasteActionTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement && Boolean(target.closest('[data-paste-action]'))
 }

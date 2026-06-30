@@ -73,7 +73,7 @@ test('switches tabs, pastes JSON, copies output, and quick-generates values', as
   await page.getByRole('tab', { name: 'Paste Sample' }).click()
   await expect(page.getByRole('button', { name: 'Browse for CSV file' })).toBeHidden()
   await page.getByLabel('Pasted data').fill('[{"email":"ada@example.com"}]')
-  await page.getByRole('button', { name: 'Detect Fields' }).click()
+  await page.keyboard.press('Tab')
   await expect(page.getByText('Detected: JSON')).toBeVisible()
   await expect(page.getByText('[].email')).toBeVisible()
 
@@ -85,6 +85,9 @@ test('switches tabs, pastes JSON, copies output, and quick-generates values', as
   await page.getByRole('button', { name: 'Copy' }).click()
   await expect(page.getByText('Copied')).toBeVisible()
   await expect.poll(() => page.evaluate(() => window.__CSV_ANONYMIZER_COPIED_TEXT__)).toBe('[{"email":"anon@example.test"}]')
+  await page.getByRole('button', { name: 'Clear' }).click()
+  await expect(page.getByLabel('Pasted data')).toHaveValue('')
+  await expect(page.getByText('[].email')).toBeHidden()
 
   await page.getByRole('tab', { name: 'Quick by Data Type' }).click()
   await expect(page.getByRole('button', { name: 'Detect Fields' })).toBeHidden()

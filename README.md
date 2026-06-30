@@ -1,29 +1,28 @@
 # CSV Anonymizer
 
-CSV Anonymizer is a local-first desktop app for reducing sensitive CSV exposure before sharing, testing, demos, or support work. It detects likely personal data, previews transformations, and writes a new CSV while preserving the original structure.
+CSV Anonymizer is a local-first desktop app for reducing sensitive CSV and pasted-data exposure before sharing, testing, demos, or support work. It detects likely personal data, previews transformations, and writes protected output while preserving the original structure where possible.
 
-All normal CSV processing runs locally in Rust. Optional local LLM replacement also runs on your machine through Ollama.
+All non-LLM detection and transformation runs locally in Rust. Optional local LLM replacement also runs on your machine through Ollama.
 
 ## What It Does
 
-- Detects common sensitive columns: emails, names, phone numbers, UUIDs, timestamps, numeric IDs, addresses, postal codes, IPs, URLs, MAC addresses, tax IDs, and more.
+- Detects common sensitive fields: emails, names, phone numbers, UUIDs, timestamps, numeric IDs, addresses, postal codes, IPs, URLs, MAC addresses, tax IDs, VAT/BTW numbers, and more.
 - Auto-selects high and medium risk columns while still letting you choose exactly which columns to transform.
-- Shows a preview before writing output.
-- Streams standard masking/pseudonymization runs instead of loading the whole file into memory.
-- Supports lightweight paste workflows for small CSV text or JSON snippets up to 5 MiB; larger CSV inputs should use the streaming file workflow.
-- Keeps repeated source values consistent within a run.
+- Shows a preview before writing output. Rule-based preview replacements are examples; final output gets its own randomized run.
+- Streams CSV file transformations instead of loading the whole file into memory.
+- Supports lightweight paste workflows for CSV, JSON, XML, YAML, plain text, and logs up to 5 MiB; larger CSV inputs should use the streaming file workflow.
+- Includes Quick by Data Type generation for creating protected sample values without first providing input data.
+- Keeps repeated source values consistent within each run.
 - Offers optional Smart replacement with a local LLM for selected columns.
-- Produces a privacy report with transformed column counts, reused values, token counts, Local AI replacement counts, and fallbacks.
+- Produces a privacy report with transformed column counts, redaction counts, reused values, token counts, Local AI replacement counts, and fallbacks.
 
 ## Language Support
 
-The app UI is currently English. CSV values are read as UTF-8, and detector rules are Unicode-aware.
+The app UI is currently English. CSV and pasted values are read as UTF-8, and detector rules are Unicode-aware.
 
-Header-based sensitive-column detection includes a maintained taxonomy for English, Dutch, German, French, Spanish, Portuguese, and Italian, plus a small Japanese pilot for unambiguous phone, address, name, and date headers. Header matching uses Unicode normalization, Unicode word segmentation, accent folding for Latin terms, camelCase splitting, compact aliases such as `apikey`, `homephone`, and `person_id`, and conservative fuzzy matching for longer taxonomy terms with sample-value confirmation.
+Header-based sensitive-field detection includes a maintained taxonomy for English, Dutch, German, French, Spanish, Portuguese, and Italian, plus a small Japanese pilot for unambiguous phone, address, name, and date headers. Header matching handles Unicode normalization, word segmentation, accent folding for Latin terms, camelCase splitting, compact aliases such as `apikey`, `homephone`, and `person_id`, and conservative fuzzy matching for longer taxonomy terms with sample-value confirmation.
 
-Value validators run independently of header language for structured values such as email, UUID, IP address, URL, MAC address, IBAN, VAT IDs, and formatted phone numbers. Phone validation uses libphonenumber-style metadata through the Rust `phonenumber` crate, IBAN validation uses the `iban_validate` crate, and prefixed VAT IDs use country-specific checksum validation. Dutch `BTW` / `omzetbelastingnummer` values without an `NL` prefix are detected only under Dutch BTW header context.
-
-Semantic embeddings, GLiNER/NER, cloud DLP, and Local AI classifier assistance are not part of the default detector path. They should only be added behind explicit opt-in and measured against the multilingual detector fixtures.
+Value validators run independently of header language for structured values such as email, UUID, IP address, URL, MAC address, IBAN, payment cards, VAT IDs, Dutch BTW/omzetbelastingnummer, US SSN/EIN, and formatted phone numbers. Dutch BTW values without an `NL` prefix are detected only under Dutch BTW header context.
 
 ## Local LLM Smart Replacement
 
@@ -49,7 +48,7 @@ Model weights and local runtime binaries are not bundled in the repository or de
 
 ## Privacy Boundary
 
-The standard workflow is row-level transformation: it masks, pseudonymizes, tokenizes, or locally replaces selected values in the source rows. It reduces exposure, but the output is still transformed source data, not guaranteed anonymous data.
+The standard workflow transforms selected values in place: CSV file output keeps the source rows and columns, while pasted structured or text workflows keep the original shape where possible. It redacts, masks, pseudonymizes, tokenizes, or locally replaces selected values. It reduces exposure, but the output is still transformed source data, not guaranteed anonymous data.
 
 It does not produce formal anonymity, differential privacy aggregates, or synthetic datasets. Review previews and privacy reports before sharing generated files.
 
@@ -57,11 +56,12 @@ It does not produce formal anonymity, differential privacy aggregates, or synthe
 
 | Strategy | Use |
 | --- | --- |
+| Redact | Replace values with typed placeholders such as `[EMAIL]`, `[PERSON]`, or `[DATE]`. |
 | Mask | Replace values with simple masked output. |
 | Pseudonymize | Generate readable or shape-preserving fake values. |
 | Tokenize | Replace values with opaque `tok_...` tokens that stay consistent within the current run. |
 | Smart replacement (Local AI) | Use a local LLM through Ollama for more realistic fake replacements. |
-| Pass-through | Leave values unchanged. |
+| Pass through | Leave values unchanged. |
 
 Examples of format preservation include email domains, UUID shape, timestamp precision, numeric width and decimals, phone separators, and full-name token count.
 
