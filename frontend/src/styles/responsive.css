@@ -142,9 +142,19 @@
     border: 0;
   }
 
+  .release-column-frame {
+    overflow: auto;
+    border: 1px solid hsl(var(--border-subtle));
+    border-radius: calc(var(--radius) - 2px);
+  }
+
   .column-table {
     display: grid;
     min-width: 0;
+  }
+
+  .column-table colgroup {
+    display: none;
   }
 
   .column-table thead {
@@ -215,6 +225,7 @@
 
   .detected-type-cell,
   .control-cell,
+  .privacy-evidence-column,
   .risk-cell {
     display: grid;
     grid-column: 1 / -1;
@@ -224,6 +235,7 @@
 
   .risk-cell {
     justify-items: start;
+    text-align: left;
   }
 
   .mobile-cell-label {

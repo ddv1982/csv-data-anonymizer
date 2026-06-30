@@ -16,9 +16,9 @@ All non-LLM detection and transformation runs locally in Rust. Optional local LL
 - Offers optional Smart replacement with a local LLM for selected columns.
 - Produces a privacy report with transformed column counts, redaction counts, reused values, token counts, Local AI replacement counts, and fallbacks.
 
-## Language Support
+## Detection Language Coverage
 
-The app UI is currently English. CSV and pasted values are read as UTF-8, and detector rules are Unicode-aware.
+The app UI is currently English. CSV and pasted values are read as UTF-8, and detector rules are Unicode-aware. Detection coverage is fixture-backed, but it is not a claim of full multilingual parity.
 
 Header-based sensitive-field detection includes a maintained taxonomy for English, Dutch, German, French, Spanish, Portuguese, and Italian, plus a small Japanese pilot for unambiguous phone, address, name, and date headers. Header matching handles Unicode normalization, word segmentation, accent folding for Latin terms, camelCase splitting, compact aliases such as `apikey`, `homephone`, and `person_id`, and conservative fuzzy matching for longer taxonomy terms with sample-value confirmation.
 
@@ -126,10 +126,11 @@ npm run frontend:a11y
 npm run frontend:audit
 npm run cargo:audit
 cargo bench -p csv-anonymizer-core --bench csv_streaming
+cargo bench -p csv-anonymizer-core --bench detector_matrix -- --sample-size 10
 node scripts/rust-smoke.mjs
 ```
 
-The root `lint`, `test`, `typecheck`, `fmt`, and `deadcode:required` scripts are the canonical local gates. The dead-code scans use Knip for the frontend and cargo-machete for Rust dependency drift, and the weekly GitHub Actions maintenance workflow runs the same required dead-code gate.
+The root `lint`, `test`, `typecheck`, `fmt`, and `deadcode:required` scripts are the canonical local gates. The dead-code scans use Knip for the frontend and cargo-machete for Rust dependency drift, and the weekly GitHub Actions maintenance workflow runs the same required dead-code gate. The detector matrix benchmark measures the built-in detector only; the external PII library comparison is archived in `docs/detector-library-evaluation.md`.
 
 ## Project Layout
 

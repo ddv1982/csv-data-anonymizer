@@ -40,3 +40,7 @@ harness = false
 [[bench]]
 name = "direct_input_paste"
 harness = false
+
+[[bench]]
+name = "detector_matrix"
+harness = false
