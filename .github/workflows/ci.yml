@@ -15,10 +15,9 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   RUST_LINUX_ARTIFACT_NAME: csv-anonymizer-rust-linux-x64-release-bundle
   TAURI_TARGET: x86_64-unknown-linux-gnu
-  TAURI_CLI_VERSION: 2.11.3
+  TAURI_CLI_VERSION: 2.11.4
 
 jobs:
   changes:
@@ -84,7 +83,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '24'
+          node-version: '26'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
@@ -232,7 +231,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '24'
+          node-version: '26'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
