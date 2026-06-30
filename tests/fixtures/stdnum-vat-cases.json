@@ -1,0 +1,20 @@
+{
+  "validVatIds": [
+    { "country": "NL", "value": "NL000099998B57" },
+    { "country": "NL", "value": "NL004495445B01" },
+    { "country": "DE", "value": "DE111111125" },
+    { "country": "FR", "value": "FR61954506077" }
+  ],
+  "invalidVatIds": [
+    { "country": "NL", "value": "NL123456789B01" },
+    { "country": "NL", "value": "NL000099998B58" },
+    { "country": "DE", "value": "DE123456789" },
+    { "country": "FR", "value": "FR2024Q2" },
+    { "country": "DE", "value": "DEMO1234" }
+  ],
+  "validDutchBtwTaxNumbers": [
+    "123456789B01",
+    "111234567B01",
+    "004495445B01"
+  ]
+}

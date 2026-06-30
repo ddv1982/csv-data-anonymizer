@@ -16,6 +16,16 @@ All normal CSV processing runs locally in Rust. Optional local LLM replacement a
 - Offers optional Smart replacement with a local LLM for selected columns.
 - Produces a privacy report with transformed column counts, reused values, token counts, Local AI replacement counts, and fallbacks.
 
+## Language Support
+
+The app UI is currently English. CSV values are read as UTF-8, and detector rules are Unicode-aware.
+
+Header-based sensitive-column detection includes a maintained taxonomy for English, Dutch, German, French, Spanish, Portuguese, and Italian, plus a small Japanese pilot for unambiguous phone, address, name, and date headers. Header matching uses Unicode normalization, Unicode word segmentation, accent folding for Latin terms, camelCase splitting, compact aliases such as `apikey`, `homephone`, and `person_id`, and conservative fuzzy matching for longer taxonomy terms with sample-value confirmation.
+
+Value validators run independently of header language for structured values such as email, UUID, IP address, URL, MAC address, IBAN, VAT IDs, and formatted phone numbers. Phone validation uses libphonenumber-style metadata through the Rust `phonenumber` crate, IBAN validation uses the `iban_validate` crate, and prefixed VAT IDs use country-specific checksum validation. Dutch `BTW` / `omzetbelastingnummer` values without an `NL` prefix are detected only under Dutch BTW header context.
+
+Semantic embeddings, GLiNER/NER, cloud DLP, and Local AI classifier assistance are not part of the default detector path. They should only be added behind explicit opt-in and measured against the multilingual detector fixtures.
+
 ## Local LLM Smart Replacement
 
 Smart replacement is optional and off by default. It is designed for columns where rule-based masking is too mechanical and you want more realistic fake values.

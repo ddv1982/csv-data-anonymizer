@@ -286,6 +286,112 @@ fn metadata_adds_header_evidence_for_private_dates_and_secrets() {
 }
 
 #[test]
+fn metadata_auto_selects_multilingual_pii_columns() {
+    let headers = vec![
+        "voornaam".to_string(),
+        "achternaam".to_string(),
+        "teléfono".to_string(),
+        "adresse".to_string(),
+        "geboortedatum".to_string(),
+        "status".to_string(),
+    ];
+    let samples = vec![
+        vec![
+            "Renée".to_string(),
+            "Jansen".to_string(),
+            "+34 612 345 678".to_string(),
+            "12 Rue de Rivoli".to_string(),
+            "1980-01-02".to_string(),
+            "active".to_string(),
+        ],
+        vec![
+            "Søren".to_string(),
+            "Müller".to_string(),
+            "+34 611 111 111".to_string(),
+            "5 Avenue Victor Hugo".to_string(),
+            "1991-03-04".to_string(),
+            "inactive".to_string(),
+        ],
+    ];
+
+    let metadata = auto_select_pii_columns(&build_column_metadata(&headers, &samples));
+
+    assert_eq!(metadata[0].detected_type, DataType::FirstName);
+    assert_eq!(metadata[1].detected_type, DataType::LastName);
+    assert_eq!(metadata[2].detected_type, DataType::Phone);
+    assert_eq!(metadata[3].detected_type, DataType::Address);
+    assert_eq!(metadata[4].detected_type, DataType::Timestamp);
+    assert_eq!(metadata[5].detected_type, DataType::String);
+
+    for column in metadata.iter().take(5) {
+        assert!(
+            column.is_selected,
+            "column {} should be selected",
+            column.name
+        );
+    }
+    assert!(!metadata[5].is_selected);
+
+    assert!(
+        metadata[2]
+            .detection_trace
+            .as_ref()
+            .is_some_and(|trace| trace.selected_reason.contains("Header taxonomy term"))
+    );
+    assert!(metadata[4].privacy_evidence.iter().any(|evidence| {
+        evidence
+            .detectors
+            .contains(&"header:taxonomy:private-date".to_string())
+    }));
+}
+
+#[test]
+fn metadata_uses_iban_validator_without_english_header_context() {
+    let headers = vec!["rekening".to_string()];
+    let samples = vec![
+        vec!["GB82 WEST 1234 5698 7654 32".to_string()],
+        vec!["NL91ABNA0417164300".to_string()],
+    ];
+
+    let metadata = auto_select_pii_columns(&build_column_metadata(&headers, &samples));
+    let column = &metadata[0];
+
+    assert_eq!(column.detected_type, DataType::String);
+    assert_eq!(column.pii_risk, PiiRisk::High);
+    assert_eq!(column.strategy, AnonymizationStrategy::Redact);
+    assert!(column.is_selected);
+    assert!(column.privacy_evidence.iter().any(|evidence| {
+        evidence
+            .reason
+            .contains("IBAN account identifier passed checksum validation")
+    }));
+}
+
+#[test]
+fn metadata_promotes_headerless_vat_values_to_tax_id() {
+    let headers = vec!["business_number".to_string()];
+    let samples = vec![
+        vec!["NL000099998B57".to_string()],
+        vec!["DE111111125".to_string()],
+        vec!["FR61954506077".to_string()],
+    ];
+
+    let metadata = auto_select_pii_columns(&build_column_metadata(&headers, &samples));
+    let column = &metadata[0];
+
+    assert_eq!(column.detected_type, DataType::TaxId);
+    assert_eq!(column.pii_risk, PiiRisk::High);
+    assert_eq!(column.strategy, AnonymizationStrategy::Redact);
+    assert!(column.is_selected);
+    assert!(
+        column
+            .privacy_evidence
+            .iter()
+            .any(|evidence| evidence.detectors.contains(&"validator:vat".to_string()))
+    );
+}
+
+#[test]
 fn low_confidence_date_evidence_does_not_auto_select_column() {
     let headers = vec!["event_notes".to_string()];
     let samples = vec![vec!["created 2026-06-29".to_string()]];

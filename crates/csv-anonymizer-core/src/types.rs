@@ -279,7 +279,12 @@ pub struct PrivacyEvidenceSummary {
     pub match_count: usize,
     pub sample_count: usize,
     pub score: u8,
+    #[serde(default)]
+    pub detector: String,
+    #[serde(default)]
     pub reason: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub detectors: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
