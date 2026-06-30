@@ -2,6 +2,7 @@ use super::*;
 use serde::Deserialize;
 
 mod column_type;
+mod multilingual_matrix;
 mod privacy;
 mod taxonomy;
 mod validators;

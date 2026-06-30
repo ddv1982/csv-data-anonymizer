@@ -19,7 +19,7 @@ import { Alert } from './Alert'
 import { Card } from './Card'
 import { ColumnTable } from './ColumnTable'
 import { PreviewTable } from './PreviewTable'
-import { PrivacyReportSummary } from './ResultDisplay'
+import { PrivacyReportSummary } from './PrivacyReportSummary'
 
 type PasteBusyState = 'idle' | 'analyzing' | 'previewing' | 'transforming' | 'copying'
 

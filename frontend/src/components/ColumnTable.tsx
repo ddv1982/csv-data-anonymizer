@@ -50,17 +50,26 @@ export function ColumnTable({
   return (
     <div className="table-frame">
       <table className="column-table">
+        <colgroup>
+          <col className="column-select-col" />
+          <col className="column-index-col" />
+          <col className="column-name-col" />
+          <col className="column-detected-type-col" />
+          <col className="column-strategy-col" />
+          <col className="column-evidence-col" />
+          <col className="column-risk-col" />
+        </colgroup>
         <thead>
           <tr>
             <th className="checkbox-column" aria-label="Selected"></th>
             <th className="index-column">#</th>
             <th className="column-title-column">Column Name</th>
-            <th>Detected Type</th>
-            <th>
+            <th className="detected-type-heading">Detected Type</th>
+            <th className="strategy-heading">
               <GlossaryLabel term="strategy">Strategy</GlossaryLabel>
             </th>
-            <th>Evidence</th>
-            <th>Risk</th>
+            <th className="privacy-evidence-heading">Evidence</th>
+            <th className="risk-heading">Risk</th>
           </tr>
         </thead>
         <tbody>
@@ -108,16 +117,18 @@ export function ColumnTable({
                     </td>
                     <td className="index-column mono muted-text">{column.index}</td>
                     <td className="column-title-cell">
-                      <span className={sampleDataAvailable ? 'column-name' : 'column-name no-data'}>
-                        {column.name}
-                      </span>
-                      {!sampleDataAvailable ? (
-                        <span className="column-note">(no sample data)</span>
-                      ) : column.piiRisk === 'low' ? (
-                        <span className="column-note">
-                          (no obvious sensitive fields detected)
+                      <span className="column-title-content">
+                        <span className={sampleDataAvailable ? 'column-name' : 'column-name no-data'}>
+                          {column.name}
                         </span>
-                      ) : null}
+                        {!sampleDataAvailable ? (
+                          <span className="column-note">No sample data</span>
+                        ) : column.piiRisk === 'low' ? (
+                          <span className="column-note">
+                            No obvious sensitive fields detected
+                          </span>
+                        ) : null}
+                      </span>
                     </td>
                     <td className="detected-type-cell">
                       <span className="mobile-cell-label">Detected type</span>

@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.61 - 2026-07-01
+
+- Preserve the Rust PII library benchmark conclusion in docs while removing the dev-only external detector comparison dependencies and keeping the production detector local, deterministic, and table-aware.
+- Keep the detector module split, explicit candidate/decision scoring, multilingual fixture matrix, and internal detector quality/performance gate so multilingual VAT/BTW and sensitive-field behavior stays measurable without dead benchmark weight.
+- Polish review-table alignment and simplify the Privacy Report into a compact overview with collapsible details, shared report components, and frontend regression coverage.
+
 ## v1.0.60 - 2026-06-30
 
 - Remove repeatable replacements and private seed settings end-to-end so rule-based pseudonyms are randomized per run without storing or accepting a seed.
