@@ -104,25 +104,23 @@ npm run tauri:dev
 Useful checks:
 
 ```bash
-npm run frontend:typecheck
-npm run frontend:lint
-npm run frontend:test
+npm run typecheck
+npm run lint
+npm run test
+npm run fmt
+npm run deadcode:required
+npm run release:check
+npm run artifacts:rust:check
+npm run linux:package-manager:check
 npm run frontend:e2e
-npm run frontend:build
+npm run frontend:a11y
 npm run frontend:audit
-npm run frontend:deadcode
-npm run frontend:deadcode:production
 npm run cargo:audit
-npm run cargo:machete
-cargo fmt --all --check
-cargo test --workspace
-cargo clippy --workspace --all-targets -- -D warnings
 cargo bench -p csv-anonymizer-core --bench csv_streaming
 node scripts/rust-smoke.mjs
-node scripts/check-release-metadata.mjs
 ```
 
-The dead-code scans use Knip for the frontend and cargo-machete for Rust dependency drift. A weekly GitHub Actions maintenance workflow also runs the required variants.
+The root `lint`, `test`, `typecheck`, `fmt`, and `deadcode:required` scripts are the canonical local gates. The dead-code scans use Knip for the frontend and cargo-machete for Rust dependency drift, and the weekly GitHub Actions maintenance workflow runs the same required dead-code gate.
 
 ## Project Layout
 

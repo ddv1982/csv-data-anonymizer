@@ -28,6 +28,162 @@ pub enum DataType {
     Unknown,
 }
 
+impl DataType {
+    pub(crate) fn privacy_finding_kind_and_reason(
+        self,
+    ) -> Option<(PrivacyFindingKind, &'static str)> {
+        match self {
+            DataType::Email | DataType::Phone => Some((
+                PrivacyFindingKind::Contact,
+                "Column type indicates contact information.",
+            )),
+            DataType::FirstName | DataType::LastName | DataType::FullName => Some((
+                PrivacyFindingKind::Person,
+                "Column type indicates person names.",
+            )),
+            DataType::Address => Some((
+                PrivacyFindingKind::PrivateAddress,
+                "Column type indicates private address data.",
+            )),
+            DataType::PostalCode => Some((
+                PrivacyFindingKind::PrivateAddress,
+                "Column type indicates postal address context.",
+            )),
+            DataType::TaxId => Some((
+                PrivacyFindingKind::GovernmentId,
+                "Column type indicates government or tax identifier data.",
+            )),
+            DataType::NumericId => Some((
+                PrivacyFindingKind::AccountOrFinancialId,
+                "Column type indicates identifier-shaped values; review context.",
+            )),
+            DataType::Uuid | DataType::IpAddress | DataType::MacAddress => Some((
+                PrivacyFindingKind::NetworkOrDeviceId,
+                "Column type indicates network, device, or persistent identifiers.",
+            )),
+            DataType::Url => Some((PrivacyFindingKind::Url, "Column type indicates URLs.")),
+            DataType::NumericValue
+            | DataType::Timestamp
+            | DataType::Boolean
+            | DataType::Currency
+            | DataType::Percentage
+            | DataType::CountryCode
+            | DataType::Enum
+            | DataType::String
+            | DataType::Unknown => None,
+        }
+    }
+
+    pub(crate) fn report_identifier_class(self) -> Option<ReportIdentifierClass> {
+        match self {
+            DataType::Email
+            | DataType::Phone
+            | DataType::FullName
+            | DataType::FirstName
+            | DataType::LastName
+            | DataType::TaxId
+            | DataType::Address => Some(ReportIdentifierClass::Direct),
+            DataType::Uuid
+            | DataType::NumericId
+            | DataType::PostalCode
+            | DataType::IpAddress
+            | DataType::Url
+            | DataType::MacAddress
+            | DataType::Timestamp
+            | DataType::CountryCode => Some(ReportIdentifierClass::Quasi),
+            DataType::NumericValue
+            | DataType::Boolean
+            | DataType::Currency
+            | DataType::Percentage
+            | DataType::Enum
+            | DataType::String
+            | DataType::Unknown => None,
+        }
+    }
+
+    pub(crate) fn uses_default_pass_through(self) -> bool {
+        matches!(
+            self,
+            DataType::CountryCode
+                | DataType::Enum
+                | DataType::Boolean
+                | DataType::Currency
+                | DataType::Percentage
+        )
+    }
+
+    pub(crate) fn transforms_generated_quick_value(self) -> bool {
+        matches!(
+            self,
+            DataType::Email
+                | DataType::Uuid
+                | DataType::Timestamp
+                | DataType::NumericId
+                | DataType::NumericValue
+                | DataType::Phone
+                | DataType::FirstName
+                | DataType::LastName
+                | DataType::FullName
+                | DataType::String
+                | DataType::Unknown
+        )
+    }
+
+    pub(crate) fn redaction_changes_structured_scalar_type(self) -> bool {
+        matches!(
+            self,
+            DataType::NumericId
+                | DataType::NumericValue
+                | DataType::Boolean
+                | DataType::Currency
+                | DataType::Percentage
+        )
+    }
+
+    pub(crate) fn redaction_placeholder(self) -> Option<RedactionPlaceholder> {
+        match self {
+            DataType::Email => Some(RedactionPlaceholder::Email),
+            DataType::Phone => Some(RedactionPlaceholder::Phone),
+            DataType::FirstName | DataType::LastName | DataType::FullName => {
+                Some(RedactionPlaceholder::Person)
+            }
+            DataType::Address | DataType::PostalCode => Some(RedactionPlaceholder::Address),
+            DataType::Timestamp => Some(RedactionPlaceholder::Date),
+            DataType::NumericId | DataType::Uuid => Some(RedactionPlaceholder::AccountId),
+            DataType::TaxId => Some(RedactionPlaceholder::GovernmentId),
+            DataType::Url => Some(RedactionPlaceholder::Url),
+            DataType::IpAddress | DataType::MacAddress => Some(RedactionPlaceholder::NetworkId),
+            DataType::String
+            | DataType::Unknown
+            | DataType::Enum
+            | DataType::NumericValue
+            | DataType::Boolean
+            | DataType::Currency
+            | DataType::Percentage
+            | DataType::CountryCode => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReportIdentifierClass {
+    Direct,
+    Quasi,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RedactionPlaceholder {
+    Email,
+    Phone,
+    Person,
+    Address,
+    Date,
+    AccountId,
+    GovernmentId,
+    Url,
+    NetworkId,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Confidence {

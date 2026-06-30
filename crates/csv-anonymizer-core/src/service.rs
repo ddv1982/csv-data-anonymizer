@@ -13,10 +13,11 @@ use crate::smart::{
 };
 use crate::strategies::{STRUCTURED_SCALAR_REDACTION_WARNING, TransformState};
 use crate::types::{
-    AnonymizationStrategy, AnonymizeData, AnonymizeParams, ColumnControl, ColumnMetadata, DataType,
+    AnonymizationStrategy, AnonymizeData, AnonymizeParams, ColumnControl, ColumnMetadata,
     HeadersData, PreflightData, PreflightMode, PreflightParams, PreviewData, PreviewParams,
     PreviewWarning, PrivacyReport, ProcessControl, ProcessOptions, ReleaseEvidenceItem,
-    ReleaseEvidenceStatus, ReleaseReadiness, ReleaseReadinessStatus, WarningSeverity,
+    ReleaseEvidenceStatus, ReleaseReadiness, ReleaseReadinessStatus, ReportIdentifierClass,
+    WarningSeverity,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -492,15 +493,10 @@ pub(crate) fn preview_warning_for_column(column: &ColumnMetadata) -> Option<Prev
         AnonymizationStrategy::Redact => return None,
         AnonymizationStrategy::Mask | AnonymizationStrategy::Tokenize => return None,
         AnonymizationStrategy::Auto | AnonymizationStrategy::Pseudonymize => {
-            match column.detected_type {
-                DataType::CountryCode
-                | DataType::Enum
-                | DataType::Boolean
-                | DataType::Currency
-                | DataType::Percentage => {
-                    format!("{} currently uses pass-through behavior.", column.name)
-                }
-                _ => return None,
+            if column.detected_type.uses_default_pass_through() {
+                format!("{} currently uses pass-through behavior.", column.name)
+            } else {
+                return None;
             }
         }
     };
@@ -516,14 +512,9 @@ pub(crate) fn preview_warning_for_column(column: &ColumnMetadata) -> Option<Prev
 pub(crate) fn redaction_changes_structured_scalar_type(column: &ColumnMetadata) -> bool {
     column.strategy == AnonymizationStrategy::Redact
         && is_json_or_yaml_source(column)
-        && matches!(
-            column.detected_type,
-            DataType::NumericId
-                | DataType::NumericValue
-                | DataType::Boolean
-                | DataType::Currency
-                | DataType::Percentage
-        )
+        && column
+            .detected_type
+            .redaction_changes_structured_scalar_type()
 }
 
 fn is_json_or_yaml_source(column: &ColumnMetadata) -> bool {
@@ -596,23 +587,10 @@ pub(crate) fn build_privacy_report(
     };
 
     for column in columns.iter().filter(|column| column.is_selected) {
-        match column.detected_type {
-            DataType::Email
-            | DataType::Phone
-            | DataType::FullName
-            | DataType::FirstName
-            | DataType::LastName
-            | DataType::TaxId
-            | DataType::Address => report.direct_identifiers += 1,
-            DataType::Uuid
-            | DataType::NumericId
-            | DataType::PostalCode
-            | DataType::IpAddress
-            | DataType::Url
-            | DataType::MacAddress
-            | DataType::Timestamp
-            | DataType::CountryCode => report.quasi_identifiers += 1,
-            _ => {}
+        match column.detected_type.report_identifier_class() {
+            Some(ReportIdentifierClass::Direct) => report.direct_identifiers += 1,
+            Some(ReportIdentifierClass::Quasi) => report.quasi_identifiers += 1,
+            None => {}
         }
 
         match column.strategy {
@@ -657,14 +635,9 @@ fn strategy_changes_output(column: &ColumnMetadata) -> bool {
         | AnonymizationStrategy::Tokenize
         | AnonymizationStrategy::LocalAi => true,
         AnonymizationStrategy::PassThrough => false,
-        AnonymizationStrategy::Auto | AnonymizationStrategy::Pseudonymize => !matches!(
-            column.detected_type,
-            DataType::CountryCode
-                | DataType::Enum
-                | DataType::Boolean
-                | DataType::Currency
-                | DataType::Percentage
-        ),
+        AnonymizationStrategy::Auto | AnonymizationStrategy::Pseudonymize => {
+            !column.detected_type.uses_default_pass_through()
+        }
     }
 }
 

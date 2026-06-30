@@ -2,27 +2,10 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { escapeRegExp, readOption } from './command-utils.mjs';
 
 const args = process.argv.slice(2);
 const execFileAsync = promisify(execFile);
-
-function readOption(name) {
-  const index = args.indexOf(name);
-  if (index === -1) {
-    return undefined;
-  }
-
-  const value = args[index + 1];
-  if (!value || value.startsWith('--')) {
-    throw new Error(`${name} requires a value`);
-  }
-
-  return value;
-}
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 function findChangelogRelease(changelog, tag) {
   const headingPattern = new RegExp(`^## ${escapeRegExp(tag)} - \\d{4}-\\d{2}-\\d{2}$`);
@@ -90,8 +73,8 @@ async function readTrackedFiles() {
   return stdout.split(/\r?\n/).filter(Boolean);
 }
 
-const expectedTag = readOption('--expected-tag');
-const releaseNotesPath = readOption('--write-notes');
+const expectedTag = readOption(args, '--expected-tag');
+const releaseNotesPath = readOption(args, '--write-notes');
 const packageJson = JSON.parse(await readFile('package.json', 'utf-8'));
 const frontendPackageJson = JSON.parse(await readFile('frontend/package.json', 'utf-8'));
 const frontendPackageLock = JSON.parse(await readFile('frontend/package-lock.json', 'utf-8'));

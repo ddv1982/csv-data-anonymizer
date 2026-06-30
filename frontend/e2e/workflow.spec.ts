@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
+import type { AppSettings, ColumnMetadata, PrivacyReport } from '../src/types'
 
 declare global {
   interface Window {
@@ -178,7 +179,7 @@ test('has no automated accessibility violations across input modes @a11y', async
 
 async function installTauriMock(page: Page) {
   await page.addInitScript(() => {
-    let settings = {
+    let settings: AppSettings = {
       schemaVersion: 9,
       themeMode: 'system',
       deterministicDefault: false,
@@ -359,7 +360,12 @@ async function installTauriMock(page: Page) {
       throw new Error(`Unhandled invoke: ${command}`)
     }
 
-    function columnFixture(index: number, name: string, detectedType: string, piiRisk: string) {
+    function columnFixture(
+      index: number,
+      name: string,
+      detectedType: ColumnMetadata['detectedType'],
+      piiRisk: ColumnMetadata['piiRisk'],
+    ): ColumnMetadata {
       return {
         name,
         index,
@@ -373,7 +379,7 @@ async function installTauriMock(page: Page) {
       }
     }
 
-    function privacyReportFixture() {
+    function privacyReportFixture(): PrivacyReport {
       return {
         directIdentifiers: 1,
         quasiIdentifiers: 0,
@@ -382,6 +388,7 @@ async function installTauriMock(page: Page) {
         smartReplacementColumns: 0,
         opaqueTokenColumns: 0,
         maskedColumns: 0,
+        redactedColumns: 0,
         passThroughColumns: 0,
         uniquePseudonymValues: 1,
         reusedPseudonymValues: 0,

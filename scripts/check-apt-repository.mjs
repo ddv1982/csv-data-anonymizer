@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { spawnSync } from 'node:child_process'
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { run, runWithOutput } from './command-utils.mjs'
 
 const workDir = mkdtempSync(join(tmpdir(), 'csvapt-'))
 const gnupgHome = mkdtempSync(join(tmpdir(), 'csvag-'))
@@ -29,13 +29,13 @@ Expire-Date: 0
     'utf8'
   )
 
-  run('gpgconf', ['--launch', 'gpg-agent'], { GNUPGHOME: gnupgHome })
-  run('gpg-connect-agent', ['/bye'], { GNUPGHOME: gnupgHome })
+  run('gpgconf', ['--launch', 'gpg-agent'], { env: { GNUPGHOME: gnupgHome } })
+  run('gpg-connect-agent', ['/bye'], { env: { GNUPGHOME: gnupgHome } })
   run('gpg', ['--quiet', '--batch', '--homedir', gnupgHome, '--pinentry-mode', 'loopback', '--generate-key', keyParametersPath], {
-    GNUPGHOME: gnupgHome
+    env: { GNUPGHOME: gnupgHome }
   })
   const fingerprint = readFirstFingerprint(
-    runWithOutput('gpg', ['--batch', '--homedir', gnupgHome, '--with-colons', '--list-secret-keys'], { GNUPGHOME: gnupgHome })
+    runWithOutput('gpg', ['--batch', '--homedir', gnupgHome, '--with-colons', '--list-secret-keys'], { env: { GNUPGHOME: gnupgHome } })
   )
 
   run('python3', [
@@ -54,9 +54,9 @@ Expire-Date: 0
     '--clean'
   ])
 
-  run('gpgconf', ['--launch', 'gpg-agent'], { GNUPGHOME: verificationHome })
-  run('gpg-connect-agent', ['/bye'], { GNUPGHOME: verificationHome })
-  run('gpg', ['--quiet', '--batch', '--homedir', verificationHome, '--import', publicKeyPath], { GNUPGHOME: verificationHome })
+  run('gpgconf', ['--launch', 'gpg-agent'], { env: { GNUPGHOME: verificationHome } })
+  run('gpg-connect-agent', ['/bye'], { env: { GNUPGHOME: verificationHome } })
+  run('gpg', ['--quiet', '--batch', '--homedir', verificationHome, '--import', publicKeyPath], { env: { GNUPGHOME: verificationHome } })
   run('gpg', [
     '--quiet',
     '--batch',
@@ -67,35 +67,19 @@ Expire-Date: 0
     '--verify',
     join(outputDir, 'dists', 'stable', 'Release.gpg'),
     join(outputDir, 'dists', 'stable', 'Release')
-  ], { GNUPGHOME: verificationHome })
+  ], { env: { GNUPGHOME: verificationHome } })
   run(
     'gpg',
     ['--quiet', '--batch', '--homedir', verificationHome, '--trust-model', 'always', '--verify', join(outputDir, 'dists', 'stable', 'InRelease')],
-    { GNUPGHOME: verificationHome }
+    { env: { GNUPGHOME: verificationHome } }
   )
   console.log('Signed APT repository check passed.')
 } finally {
-  spawnSync('gpgconf', ['--kill', 'gpg-agent'], { stdio: 'ignore', env: { ...process.env, GNUPGHOME: gnupgHome } })
-  spawnSync('gpgconf', ['--kill', 'gpg-agent'], { stdio: 'ignore', env: { ...process.env, GNUPGHOME: verificationHome } })
+  run('gpgconf', ['--kill', 'gpg-agent'], { stdio: 'ignore', env: { GNUPGHOME: gnupgHome }, allowFailure: true })
+  run('gpgconf', ['--kill', 'gpg-agent'], { stdio: 'ignore', env: { GNUPGHOME: verificationHome }, allowFailure: true })
   rmSync(workDir, { recursive: true, force: true })
   rmSync(gnupgHome, { recursive: true, force: true })
   rmSync(verificationHome, { recursive: true, force: true })
-}
-
-function run(command, args, env = {}) {
-  const result = spawnSync(command, args, { stdio: 'inherit', env: { ...process.env, ...env } })
-  if (result.status === 0) return
-  throw new Error(`${command} ${args.join(' ')} failed with exit code ${result.status ?? 'null'}`)
-}
-
-function runWithOutput(command, args, env = {}) {
-  const result = spawnSync(command, args, { encoding: 'utf8', env: { ...process.env, ...env } })
-  if (result.status !== 0) {
-    if (result.stdout) process.stdout.write(result.stdout)
-    if (result.stderr) process.stderr.write(result.stderr)
-    throw new Error(`${command} ${args.join(' ')} failed with exit code ${result.status ?? 'null'}`)
-  }
-  return result.stdout
 }
 
 function readFirstFingerprint(output) {

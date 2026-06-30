@@ -508,46 +508,7 @@ fn add_full_cell_findings_from_header(
 }
 
 fn detected_type_privacy_kind(data_type: DataType) -> Option<(PrivacyFindingKind, &'static str)> {
-    match data_type {
-        DataType::Email | DataType::Phone => Some((
-            PrivacyFindingKind::Contact,
-            "Column type indicates contact information.",
-        )),
-        DataType::FirstName | DataType::LastName | DataType::FullName => Some((
-            PrivacyFindingKind::Person,
-            "Column type indicates person names.",
-        )),
-        DataType::Address => Some((
-            PrivacyFindingKind::PrivateAddress,
-            "Column type indicates private address data.",
-        )),
-        DataType::PostalCode => Some((
-            PrivacyFindingKind::PrivateAddress,
-            "Column type indicates postal address context.",
-        )),
-        DataType::TaxId => Some((
-            PrivacyFindingKind::GovernmentId,
-            "Column type indicates government or tax identifier data.",
-        )),
-        DataType::NumericId => Some((
-            PrivacyFindingKind::AccountOrFinancialId,
-            "Column type indicates identifier-shaped values; review context.",
-        )),
-        DataType::Uuid | DataType::IpAddress | DataType::MacAddress => Some((
-            PrivacyFindingKind::NetworkOrDeviceId,
-            "Column type indicates network, device, or persistent identifiers.",
-        )),
-        DataType::Url => Some((PrivacyFindingKind::Url, "Column type indicates URLs.")),
-        DataType::NumericValue
-        | DataType::Timestamp
-        | DataType::Boolean
-        | DataType::Currency
-        | DataType::Percentage
-        | DataType::CountryCode
-        | DataType::Enum
-        | DataType::String
-        | DataType::Unknown => None,
-    }
+    data_type.privacy_finding_kind_and_reason()
 }
 
 fn full_cell_finding(row_index: usize, value: &str, spec: FullCellFindingSpec) -> PrivacyFinding {

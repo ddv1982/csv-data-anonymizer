@@ -14,6 +14,7 @@ import {
 } from 'node:fs'
 import { basename, dirname, join, relative } from 'node:path'
 import { tmpdir } from 'node:os'
+import { run } from './command-utils.mjs'
 
 const projectRoot = process.cwd()
 const args = new Set(process.argv.slice(2))
@@ -206,18 +207,6 @@ function resolveTool(tool) {
   if (tool.includes('/') && existsSync(tool)) return tool
   const result = spawnSync('sh', ['-c', `command -v ${shellQuote(tool)}`], { encoding: 'utf8' })
   return result.status === 0 ? result.stdout.trim() : ''
-}
-
-function run(command, runArgs, options = {}) {
-  const result = spawnSync(command, runArgs, {
-    cwd: options.cwd ?? projectRoot,
-    env: options.env ?? process.env,
-    stdio: options.stdio ?? 'inherit',
-    encoding: 'utf8'
-  })
-  if (result.status !== 0) {
-    throw new Error(`${command} ${runArgs.join(' ')} failed with exit code ${result.status ?? 'unknown'}`)
-  }
 }
 
 function copyTree(source, target) {
