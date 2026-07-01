@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.66 - 2026-07-02
+
+- Harden the release workflow follow-up by queueing tag builds instead of canceling in-progress releases, keeping macOS identity values scoped to the signing step, and removing the remaining third-party GitHub release upload action from platform build jobs.
+- Build and sign the Linux APT repository/checksums inside one first-party shell step, clean temporary GPG material before Pages actions run, and upload release assets with explicit `gh release upload` asset lists that fail on empty outputs.
+- Verify the Fable 5 CI findings with the root local gate, release metadata checks, Linux release helper dry-runs, workflow YAML parsing, and CI/release invariant assertions.
+
 ## v1.0.65 - 2026-07-02
 
 - Make Email, Timestamp, and Phone transforms total: values that do not match the detected column format now become generic pseudonyms instead of passing through unchanged, with a Format fallbacks counter surfaced in the privacy report, readiness review items, and notes; fix a crash on multibyte timestamp values; align preview and final-run type detection on one sample basis; and trim cell values consistently between detection and processing.

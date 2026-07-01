@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: release-${{ github.ref_name }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -113,12 +113,6 @@ jobs:
           - arch: x64
             runner: macos-26-intel
 
-    # Signing secrets (CSC_LINK, CSC_KEY_PASSWORD, APPLE_API_KEY*) are scoped to
-    # the individual steps that need them so third-party actions never see them.
-    env:
-      MACOS_DEVELOPER_ID: ${{ secrets.MACOS_DEVELOPER_ID || secrets.ELECTROBUN_DEVELOPER_ID }}
-      MACOS_TEAM_ID: ${{ secrets.MACOS_TEAM_ID || secrets.ELECTROBUN_TEAMID }}
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -173,6 +167,8 @@ jobs:
           APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          MACOS_DEVELOPER_ID_INPUT: ${{ secrets.MACOS_DEVELOPER_ID || secrets.ELECTROBUN_DEVELOPER_ID }}
+          MACOS_TEAM_ID_INPUT: ${{ secrets.MACOS_TEAM_ID || secrets.ELECTROBUN_TEAMID }}
         run: |
           set -euo pipefail
 
@@ -192,6 +188,8 @@ jobs:
           keychain_path="${RUNNER_TEMP}/csv-anonymizer-signing.keychain-db"
           keychain_password="$(uuidgen)"
           api_key_path="${RUNNER_TEMP}/AuthKey_${APPLE_API_KEY_ID}.p8"
+          MACOS_DEVELOPER_ID="${MACOS_DEVELOPER_ID_INPUT}"
+          MACOS_TEAM_ID="${MACOS_TEAM_ID_INPUT}"
 
           printf '%s' "$CSC_LINK" | base64 --decode > "$certificate_path"
           printf '%s' "$APPLE_API_KEY_BASE64" | base64 --decode > "$api_key_path"
@@ -279,13 +277,21 @@ jobs:
         run: node scripts/check-rust-artifacts.mjs --platform macos --require-dmg
 
       - name: Upload macOS release assets
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
-        with:
-          tag_name: ${{ github.ref_name }}
-          draft: true
-          files: dist/rust/artifacts/*.dmg
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          assets=(dist/rust/artifacts/*.dmg)
+          if [ ${#assets[@]} -eq 0 ]; then
+            echo "No macOS DMG assets found to upload." >&2
+            exit 1
+          fi
+
+          gh release upload "${{ github.ref_name }}" "${assets[@]}" \
+            --repo "${{ github.repository }}" \
+            --clobber
 
   build-linux-release:
     name: Build Linux x64
@@ -296,8 +302,8 @@ jobs:
       pages: write
       id-token: write
 
-    # DEB signing inputs are scoped to the "Prepare Linux signing environment"
-    # step (the only step that reads them) so third-party actions never see them.
+    # DEB signing inputs are scoped to the signing shell step and removed before
+    # third-party Pages actions run.
 
     steps:
       - name: Checkout repository
@@ -376,7 +382,7 @@ jobs:
           fi
           exit "${validator_status}"
 
-      - name: Prepare Linux signing environment
+      - name: Build signed APT repository and checksums
         env:
           DEB_SIGNING_PRIVATE_KEY: ${{ secrets.DEB_SIGNING_PRIVATE_KEY }}
           DEB_SIGNING_KEY_FINGERPRINT: ${{ secrets.DEB_SIGNING_KEY_FINGERPRINT }}
@@ -425,32 +431,42 @@ jobs:
 
           GNUPGHOME="${verification_home}" gpg --batch --import "${public_key_file}"
 
-          echo "LINUX_GNUPGHOME=${gnupg_home}" >> "$GITHUB_ENV"
-          echo "LINUX_VERIFICATION_GNUPGHOME=${verification_home}" >> "$GITHUB_ENV"
-          echo "LINUX_GPG_FINGERPRINT=${expected_fingerprint}" >> "$GITHUB_ENV"
-          echo "LINUX_GPG_PASSPHRASE_FILE=${passphrase_file}" >> "$GITHUB_ENV"
-
-      - name: Build signed APT repository
-        run: |
-          set -euo pipefail
-
           python3 scripts/build_apt_repository.py "dist/rust/artifacts/*.deb" \
             --output dist/rust/apt-pages/apt \
             --repository-url "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/apt/" \
-            --gpg-key "${LINUX_GPG_FINGERPRINT}" \
-            --gpg-homedir "${LINUX_GNUPGHOME}" \
-            --gpg-passphrase-file "${LINUX_GPG_PASSPHRASE_FILE}" \
+            --gpg-key "${expected_fingerprint}" \
+            --gpg-homedir "${gnupg_home}" \
+            --gpg-passphrase-file "${passphrase_file}" \
             --public-key-out dist/rust/artifacts/csv-anonymizer-archive-keyring.pgp \
             --setup-package-out dist/rust/artifacts/csv-anonymizer-repository-setup_1.0_all.deb \
             --clean
           cp dist/rust/artifacts/csv-anonymizer-archive-keyring.pgp \
             dist/rust/apt-pages/apt/csv-anonymizer-archive-keyring.pgp
 
-      - name: Sign repository setup checksum
-        run: bash scripts/sign-linux-checksums.sh --setup-package
+          LINUX_GNUPGHOME="${gnupg_home}" \
+            LINUX_VERIFICATION_GNUPGHOME="${verification_home}" \
+            LINUX_GPG_FINGERPRINT="${expected_fingerprint}" \
+            LINUX_GPG_PASSPHRASE_FILE="${passphrase_file}" \
+            bash scripts/sign-linux-checksums.sh --setup-package
+          LINUX_GNUPGHOME="${gnupg_home}" \
+            LINUX_VERIFICATION_GNUPGHOME="${verification_home}" \
+            LINUX_GPG_FINGERPRINT="${expected_fingerprint}" \
+            LINUX_GPG_PASSPHRASE_FILE="${passphrase_file}" \
+            bash scripts/sign-linux-checksums.sh --direct-installers
 
-      - name: Sign direct Linux installer checksums
-        run: bash scripts/sign-linux-checksums.sh --direct-installers
+      - name: Clean up Linux signing environment
+        if: always()
+        run: |
+          set -euo pipefail
+
+          GNUPGHOME="${RUNNER_TEMP}/linux-signing-gnupg" gpgconf --kill gpg-agent || true
+
+          rm -rf \
+            "${RUNNER_TEMP}/linux-signing-gnupg" \
+            "${RUNNER_TEMP}/linux-signing-verify-gnupg" \
+            "${RUNNER_TEMP}/linux-signing-private-key.asc" \
+            "${RUNNER_TEMP}/linux-signing-public-key.asc" \
+            "${RUNNER_TEMP}/linux-signing-passphrase"
 
       - name: Stage APT repository installer
         run: bash scripts/stage-apt-installer-assets.sh
@@ -459,11 +475,13 @@ jobs:
         run: bash scripts/stage-apt-installer-assets.sh --stage-public
 
       - name: Upload Linux release assets
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
-        with:
-          tag_name: ${{ github.ref_name }}
-          draft: true
-          files: |
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          assets=(
             dist/rust/artifacts/csv-anonymizer-*.rpm
             dist/rust/artifacts/csv-anonymizer-*.rpm.sha256
             dist/rust/artifacts/csv-anonymizer-*.rpm.sha256.asc
@@ -478,8 +496,15 @@ jobs:
             dist/rust/artifacts/csv-anonymizer-repository-setup_*.deb.sha256.asc
             dist/rust/artifacts/csv-anonymizer-archive-keyring.pgp
             dist/rust/artifacts/install-apt-repo.sh
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          )
+          if [ ${#assets[@]} -eq 0 ]; then
+            echo "No Linux release assets found to upload." >&2
+            exit 1
+          fi
+
+          gh release upload "${{ github.ref_name }}" "${assets[@]}" \
+            --repo "${{ github.repository }}" \
+            --clobber
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
