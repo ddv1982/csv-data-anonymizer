@@ -1,6 +1,6 @@
 use super::model::{
     AppSettings, DEFAULT_OUTPUT_SUFFIX, LEGACY_OUTPUT_SUFFIX, SETTINGS_SCHEMA_VERSION,
-    sanitize_persistent_settings, sanitize_session_settings, sanitize_settings,
+    sanitize_settings,
 };
 use directories::ProjectDirs;
 use std::fs;
@@ -29,7 +29,7 @@ impl SettingsStore {
 
     pub fn save_settings(&self, settings: &AppSettings) -> io::Result<AppSettings> {
         let mut session_settings = settings.clone();
-        sanitize_session_settings(&mut session_settings);
+        sanitize_settings(&mut session_settings);
         save_settings_to_path(&self.path, &session_settings)?;
         Ok(session_settings)
     }
@@ -62,7 +62,7 @@ pub(super) fn save_settings_to_path(path: &Path, settings: &AppSettings) -> io::
 
     let mut settings = settings.clone();
     settings.schema_version = SETTINGS_SCHEMA_VERSION;
-    sanitize_persistent_settings(&mut settings);
+    sanitize_settings(&mut settings);
 
     let content = serde_json::to_string_pretty(&settings)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;

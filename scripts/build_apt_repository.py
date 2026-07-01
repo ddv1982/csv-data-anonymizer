@@ -20,6 +20,17 @@ from dataclasses import dataclass
 from email.parser import Parser
 from email.utils import format_datetime
 
+from deb_common import (
+    child_text,
+    decompress_deb_tar_member,
+    descendant_text,
+    first_release,
+    launchable_desktop_id,
+    parse_desktop_file,
+    read_ar_entries,
+    strip_ns,
+)
+
 
 DEFAULT_SUITE = "stable"
 DEFAULT_COMPONENT = "main"
@@ -50,53 +61,8 @@ class DebPackage:
     desktop_fields: dict[str, str]
 
 
-def read_ar_entries(deb_path: pathlib.Path) -> dict[str, bytes]:
-    entries: dict[str, bytes] = {}
-    with deb_path.open("rb") as handle:
-        if handle.read(8) != b"!<arch>\n":
-            raise ValueError(f"{deb_path} is not a Debian ar archive")
-
-        while True:
-            header = handle.read(60)
-            if not header:
-                break
-            if len(header) != 60 or header[58:60] != b"`\n":
-                raise ValueError(f"{deb_path} has an invalid ar member header")
-
-            name = header[:16].decode("utf-8", errors="replace").strip().rstrip("/")
-            try:
-                size = int(header[48:58].decode("ascii").strip())
-            except ValueError as error:
-                raise ValueError(f"{deb_path} has an invalid ar member size") from error
-
-            data = handle.read(size)
-            if len(data) != size:
-                raise ValueError(f"{deb_path} has a truncated ar member")
-            if size % 2 == 1:
-                handle.read(1)
-            entries[name] = data
-    return entries
-
-
 def extract_tar_member(archive_name: str, data: bytes, predicate) -> dict[str, bytes]:
-    if archive_name.endswith(".tar.zst"):
-        zstd = shutil.which("zstd")
-        if not zstd:
-            raise ValueError(".deb uses zstd-compressed tar members; zstd is required")
-        completed = subprocess.run(
-            [zstd, "-dc"],
-            input=data,
-            check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        if completed.returncode != 0:
-            raise ValueError(completed.stderr.decode("utf-8", errors="replace"))
-        data = completed.stdout
-        mode = "r:"
-    else:
-        mode = "r:*"
-
+    data, mode = decompress_deb_tar_member(archive_name, data)
     found: dict[str, bytes] = {}
     with tarfile.open(fileobj=io.BytesIO(data), mode=mode) as tar:
         for member in tar.getmembers():
@@ -112,22 +78,6 @@ def extract_tar_member(archive_name: str, data: bytes, predicate) -> dict[str, b
 def parse_control(control_bytes: bytes) -> dict[str, str]:
     message = Parser().parsestr(control_bytes.decode("utf-8", errors="replace"))
     return {key: value for key, value in message.items()}
-
-
-def parse_desktop_file(data: bytes) -> dict[str, str]:
-    fields: dict[str, str] = {}
-    in_desktop_entry = False
-    for raw_line in data.decode("utf-8", errors="replace").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("[") and line.endswith("]"):
-            in_desktop_entry = line == "[Desktop Entry]"
-            continue
-        if in_desktop_entry and "=" in line:
-            key, value = line.split("=", 1)
-            fields[key] = value
-    return fields
 
 
 def deb_control_metainfo_and_desktop(deb_path: pathlib.Path) -> tuple[dict[str, str], bytes, dict[str, str]]:
@@ -205,43 +155,11 @@ def package_stanza(package: DebPackage) -> str:
     return "\n".join(lines) + "\n"
 
 
-def strip_ns(name: str) -> str:
-    return name.rsplit("}", 1)[-1]
-
-
-def child_text(element: ET.Element, tag: str) -> str:
-    for child in element:
-        if strip_ns(child.tag) == tag and child.text:
-            return child.text.strip()
-    return ""
-
-
-def descendant_text(element: ET.Element, tag: str) -> str:
-    for child in element.iter():
-        if strip_ns(child.tag) == tag and child.text:
-            return child.text.strip()
-    return ""
-
-
-def launchable_desktop_id(element: ET.Element) -> str:
-    for child in element.iter():
-        if strip_ns(child.tag) == "launchable" and child.attrib.get("type") == "desktop-id":
-            return (child.text or "").strip()
-    return ""
-
-
 def homepage_url(element: ET.Element) -> str:
     for child in element.iter():
         if strip_ns(child.tag) == "url" and child.attrib.get("type") == "homepage":
             return (child.text or "").strip()
     return ""
-
-
-def first_release(element: ET.Element) -> tuple[str, str]:
-    for child in element.iter():
-        if strip_ns(child.tag) == "release":
-            return child.attrib.get("version", ""), child.attrib.get("date", "")
-    return "", ""
 
 
 def description_markup(element: ET.Element) -> str:

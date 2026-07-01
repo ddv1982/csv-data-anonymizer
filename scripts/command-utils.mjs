@@ -81,6 +81,16 @@ export function runWithOutput(command, args, options = {}) {
   return result.stdout
 }
 
+const MACOS_DMG_BASENAME = 'CSV.Anonymizer'
+
+export function macosArtifactArch(macArch) {
+  return macArch === 'arm64' ? 'aarch64' : macArch
+}
+
+export function macosDmgName(version, macArch) {
+  return `${MACOS_DMG_BASENAME}_${version}_${macosArtifactArch(macArch)}.dmg`
+}
+
 export function isDesktopArtifactName(name) {
   return /\.(?:deb|rpm|AppImage|dmg)$/i.test(name) || name.endsWith('.tar.gz')
 }
@@ -100,7 +110,7 @@ export function isCurrentVersionDesktopArtifactName(name, version) {
     return new RegExp(`(^|[_ .-])${escapeRegExp(version)}([_ .-]|$)`).test(name)
   }
   if (name.endsWith('.dmg')) {
-    return new RegExp(`^CSV\\.Anonymizer_${escapeRegExp(version)}_[A-Za-z0-9_]+\\.dmg$`).test(name)
+    return new RegExp(`^${escapeRegExp(MACOS_DMG_BASENAME)}_${escapeRegExp(version)}_[A-Za-z0-9_]+\\.dmg$`).test(name)
   }
   if (name.endsWith('.tar.gz')) {
     return new RegExp(`^csv-anonymizer-${escapeRegExp(version)}-(?:linux|macos)-[A-Za-z0-9_+-]+(?:\\.app)?\\.tar\\.gz$`).test(name)

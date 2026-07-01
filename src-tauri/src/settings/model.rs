@@ -53,18 +53,6 @@ impl Default for AppSettings {
 }
 
 pub fn sanitize_settings(settings: &mut AppSettings) {
-    sanitize_common_settings(settings);
-}
-
-pub fn sanitize_persistent_settings(settings: &mut AppSettings) {
-    sanitize_common_settings(settings);
-}
-
-pub fn sanitize_session_settings(settings: &mut AppSettings) {
-    sanitize_common_settings(settings);
-}
-
-fn sanitize_common_settings(settings: &mut AppSettings) {
     settings.schema_version = SETTINGS_SCHEMA_VERSION;
     settings.sample_row_count = settings.sample_row_count.clamp(1, 10_000);
     settings.preview_sample_count = settings.preview_sample_count.clamp(1, 100);

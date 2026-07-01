@@ -1,138 +1,62 @@
 #!/usr/bin/env node
+// Wrap the Tauri-built "CSV Anonymizer.app" (staged at dist/rust/build) as a
+// distributable DMG under dist/rust/artifacts. The .app itself is produced by
+// `cargo tauri build --bundles app`; this script never builds or assembles it.
 import { spawnSync } from 'node:child_process'
 import {
   chmodSync,
   copyFileSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   rmSync,
-  symlinkSync,
-  statSync,
-  writeFileSync
+  symlinkSync
 } from 'node:fs'
-import { basename, dirname, join, relative } from 'node:path'
+import { basename, join, relative } from 'node:path'
 import { tmpdir } from 'node:os'
-import { run } from './command-utils.mjs'
+import { macosDmgName, run } from './command-utils.mjs'
 
 const projectRoot = process.cwd()
-const args = new Set(process.argv.slice(2))
-const skipBuild = args.has('--skip-build')
-const skipDmg = args.has('--skip-dmg')
-const appOnly = args.has('--app-only')
-const dmgOnly = args.has('--dmg-only')
-const skipMissingTools = args.has('--skip-missing-tools')
-
-if (!dmgOnly && process.env.CSV_ANONYMIZER_ALLOW_LEGACY_NATIVE_PACKAGING !== '1') {
-  console.error('scripts/package-rust-macos.mjs may only wrap the Tauri .app as a DMG by default.')
-  console.error('Build the app with cargo tauri build and call this script with --skip-build --dmg-only.')
-  console.error('Set CSV_ANONYMIZER_ALLOW_LEGACY_NATIVE_PACKAGING=1 only for explicit legacy native app investigations.')
+// --skip-build and --dmg-only are accepted for backwards compatibility with
+// existing callers (e.g. release.yml); DMG wrapping is the only behaviour now.
+const knownFlags = new Set(['--skip-build', '--dmg-only', '--skip-missing-tools'])
+const args = process.argv.slice(2)
+const unknownFlags = args.filter((arg) => !knownFlags.has(arg))
+if (unknownFlags.length > 0) {
+  console.error(`Unknown argument(s): ${unknownFlags.join(', ')}`)
+  console.error(`Supported arguments: ${[...knownFlags].join(', ')}`)
   process.exit(1)
 }
+const skipMissingTools = args.includes('--skip-missing-tools')
 
 const packageJson = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8'))
 const packageName = 'csv-anonymizer'
-const binaryName = 'csv-anonymizer'
 const appName = 'CSV Anonymizer'
-const bundleIdentifier = 'io.github.ddv1982.csv-data-anonymizer'
 const version = packageJson.version
 const macArch = process.env.MACOS_ARCH || (process.arch === 'arm64' ? 'arm64' : 'x64')
-const artifactArch = macArch === 'arm64' ? 'aarch64' : macArch
 const artifactsDir = join(projectRoot, 'dist', 'rust', 'artifacts')
 const buildDir = join(projectRoot, 'dist', 'rust', 'build')
 const appDir = join(buildDir, `${appName}.app`)
+const dmgPath = join(artifactsDir, macosDmgName(version, macArch))
 
 mkdirSync(artifactsDir, { recursive: true })
-mkdirSync(buildDir, { recursive: true })
 
-if (!dmgOnly) {
-  const binaryPath = findOrBuildBinary()
-  createAppBundle(binaryPath)
-  buildAppArchive()
-}
-
-if (!skipDmg && !appOnly) {
-  buildDmg()
-}
+buildDmg()
 
 console.log('Rust macOS artifacts:')
-for (const artifact of listArtifacts()) {
-  console.log(`- ${relative(projectRoot, artifact)}`)
-}
-
-function findOrBuildBinary() {
-  if (!skipBuild) {
-    const cargoArgs = ['build', '--release', '-p', 'csv-anonymizer-app']
-    if (process.env.CARGO_BUILD_TARGET) {
-      cargoArgs.push('--target', process.env.CARGO_BUILD_TARGET)
-    }
-    run('cargo', cargoArgs)
-  }
-
-  const candidates = []
-  if (process.env.CSV_ANONYMIZER_BINARY) {
-    candidates.push(process.env.CSV_ANONYMIZER_BINARY)
-  }
-  if (process.env.CARGO_BUILD_TARGET) {
-    candidates.push(join(projectRoot, 'target', process.env.CARGO_BUILD_TARGET, 'release', binaryName))
-  }
-  candidates.push(join(projectRoot, 'target', 'release', binaryName))
-
-  const binary = candidates.find((candidate) => existsSync(candidate))
-  if (!binary) {
-    throw new Error(`Rust binary not found. Checked: ${candidates.map((candidate) => relative(projectRoot, candidate)).join(', ')}`)
-  }
-  return binary
-}
-
-function createAppBundle(binaryPath) {
-  rmSync(appDir, { recursive: true, force: true })
-  const contentsDir = join(appDir, 'Contents')
-  const macosDir = join(contentsDir, 'MacOS')
-  const resourcesDir = join(contentsDir, 'Resources')
-  mkdirSync(macosDir, { recursive: true })
-  mkdirSync(resourcesDir, { recursive: true })
-
-  const installedBinary = join(macosDir, binaryName)
-  copyFileSync(binaryPath, installedBinary)
-  chmodSync(installedBinary, 0o755)
-  writeFileSync(join(contentsDir, 'Info.plist'), infoPlist())
-  writeFileSync(join(contentsDir, 'PkgInfo'), 'APPL????')
-  createIcon(resourcesDir)
-}
-
-function createIcon(resourcesDir) {
-  const iconset = join(projectRoot, 'build', 'macos', 'AppIcon.iconset')
-  const output = join(resourcesDir, 'AppIcon.icns')
-  const iconutil = resolveTool('iconutil')
-  if (iconutil && existsSync(iconset)) {
-    run(iconutil, ['-c', 'icns', iconset, '-o', output])
-    return
-  }
-
-  const png = join(projectRoot, 'build', 'icons', '1024x1024.png')
-  if (existsSync(png)) {
-    copyFileSync(png, join(resourcesDir, 'AppIcon.png'))
-    return
-  }
-
-  if (!skipMissingTools) {
-    throw new Error('Could not create macOS icon: iconutil is missing and no fallback PNG exists.')
-  }
-}
-
-function buildAppArchive() {
-  const archivePath = join(artifactsDir, `${packageName}-${version}-macos-${artifactArch}.app.tar.gz`)
-  rmSync(archivePath, { force: true })
-  run('tar', ['-czf', archivePath, '-C', buildDir, basename(appDir)], {
-    env: { ...process.env, COPYFILE_DISABLE: '1' }
-  })
+if (existsSync(dmgPath)) {
+  console.log(`- ${relative(projectRoot, dmgPath)}`)
 }
 
 function buildDmg() {
   if (!existsSync(appDir)) {
-    throw new Error(`App bundle not found at ${relative(projectRoot, appDir)}.`)
+    throw new Error(
+      `App bundle not found at ${relative(projectRoot, appDir)}. ` +
+        'Build it with `cargo tauri build --bundles app` and stage it there first.'
+    )
   }
 
   const hdiutil = resolveTool('hdiutil')
@@ -145,7 +69,6 @@ function buildDmg() {
   }
 
   const dmgRoot = join(tmpdir(), `${packageName}-dmg-${Date.now()}`)
-  const dmgPath = join(artifactsDir, `CSV.Anonymizer_${version}_${artifactArch}.dmg`)
   rmSync(dmgRoot, { recursive: true, force: true })
   rmSync(dmgPath, { force: true })
   mkdirSync(dmgRoot, { recursive: true })
@@ -156,50 +79,6 @@ function buildDmg() {
   } finally {
     rmSync(dmgRoot, { recursive: true, force: true })
   }
-}
-
-function infoPlist() {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>CFBundleDevelopmentRegion</key>
-  <string>en</string>
-  <key>CFBundleDisplayName</key>
-  <string>${appName}</string>
-  <key>CFBundleExecutable</key>
-  <string>${binaryName}</string>
-  <key>CFBundleIconFile</key>
-  <string>AppIcon</string>
-  <key>CFBundleIdentifier</key>
-  <string>${bundleIdentifier}</string>
-  <key>CFBundleInfoDictionaryVersion</key>
-  <string>6.0</string>
-  <key>CFBundleName</key>
-  <string>${appName}</string>
-  <key>CFBundlePackageType</key>
-  <string>APPL</string>
-  <key>CFBundleShortVersionString</key>
-  <string>${version}</string>
-  <key>CFBundleVersion</key>
-  <string>${version}</string>
-  <key>LSMinimumSystemVersion</key>
-  <string>12.0</string>
-  <key>NSHighResolutionCapable</key>
-  <true/>
-  <key>NSHumanReadableCopyright</key>
-  <string>Copyright © 2026 Douwe de Vries</string>
-</dict>
-</plist>
-`
-}
-
-function listArtifacts() {
-  const candidates = [
-    join(artifactsDir, `${packageName}-${version}-macos-${artifactArch}.app.tar.gz`),
-    join(artifactsDir, `CSV.Anonymizer_${version}_${artifactArch}.dmg`)
-  ]
-  return candidates.filter((candidate) => existsSync(candidate))
 }
 
 function resolveTool(tool) {
@@ -214,11 +93,17 @@ function copyTree(source, target) {
   for (const entry of readdirSync(source, { withFileTypes: true })) {
     const sourcePath = join(source, entry.name)
     const targetPath = join(target, entry.name)
-    if (entry.isDirectory()) {
+    if (entry.isSymbolicLink()) {
+      // Signed .app bundles (frameworks in particular) rely on symlinks;
+      // preserve them instead of silently dropping or dereferencing them.
+      symlinkSync(readlinkSync(sourcePath), targetPath)
+    } else if (entry.isDirectory()) {
       copyTree(sourcePath, targetPath)
     } else if (entry.isFile()) {
       copyFileSync(sourcePath, targetPath)
-      chmodSync(targetPath, statSync(sourcePath).mode & 0o777)
+      chmodSync(targetPath, lstatSync(sourcePath).mode & 0o777)
+    } else {
+      throw new Error(`Refusing to stage unsupported file type into the DMG: ${sourcePath}`)
     }
   }
 }

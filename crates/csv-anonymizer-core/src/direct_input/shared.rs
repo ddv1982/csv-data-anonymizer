@@ -21,7 +21,6 @@ pub(super) const PASTE_MAX_FIELDS: usize = 512;
 pub(super) const PASTE_MAX_SAMPLE_ROWS: usize = 1_000;
 pub(super) const PASTE_MAX_PREVIEW_SAMPLES: usize = 100;
 pub(super) const PASTE_MAX_TEXT_MATCHES: usize = 10_000;
-pub(super) const PASTE_MAX_TEXT_CANDIDATES: usize = PASTE_MAX_TEXT_MATCHES * 4;
 
 pub(super) struct PreviewSelection<'a, 'provider> {
     pub(super) columns: &'a [usize],
