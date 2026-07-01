@@ -542,6 +542,7 @@ mod tests {
                 smart_replacement_rejections: 0,
                 smart_replacement_rejection_reasons: Vec::new(),
                 smart_replacement_fallbacks: 0,
+                shape_fallback_values: 0,
                 readiness: Default::default(),
                 evidence: Vec::new(),
                 column_reports: Vec::new(),

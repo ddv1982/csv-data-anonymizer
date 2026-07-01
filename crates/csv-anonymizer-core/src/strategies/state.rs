@@ -202,6 +202,10 @@ impl TransformState {
     pub(super) fn record_smart_fallback(&mut self) {
         self.report.smart_replacement_fallbacks += 1;
     }
+
+    pub(super) fn record_shape_fallback(&mut self) {
+        self.report.shape_fallback_values += 1;
+    }
 }
 
 #[derive(Debug, Clone, Default)]

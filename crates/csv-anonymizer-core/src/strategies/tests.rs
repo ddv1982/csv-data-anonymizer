@@ -416,3 +416,126 @@ fn local_ai_strategy_falls_back_when_map_is_missing() {
     assert!(result.chars().all(|character| character.is_alphabetic()));
     assert_eq!(state.report().smart_replacement_fallbacks, 1);
 }
+
+#[test]
+fn email_without_at_sign_falls_back_to_generic_pseudonym() {
+    let mut state = TransformState::new();
+    let result = transform_value_with_state(
+        "jane.doe at gmail",
+        &column(DataType::Email),
+        &context(),
+        &mut state,
+    );
+    assert_ne!(result, "jane.doe at gmail");
+    assert!(!result.contains("jane"));
+    assert_eq!(state.report().shape_fallback_values, 1);
+}
+
+#[test]
+fn timestamp_multibyte_value_does_not_panic_and_falls_back() {
+    let mut state = TransformState::new();
+    let result = transform_value_with_state(
+        "2024年3月4日",
+        &column(DataType::Timestamp),
+        &context(),
+        &mut state,
+    );
+    assert_ne!(result, "2024年3月4日");
+    assert_eq!(state.report().shape_fallback_values, 1);
+}
+
+#[test]
+fn timestamp_non_iso_value_falls_back_instead_of_passing_through() {
+    let mut state = TransformState::new();
+    let result = transform_value_with_state(
+        "06/15/2024",
+        &column(DataType::Timestamp),
+        &context(),
+        &mut state,
+    );
+    assert_ne!(result, "06/15/2024");
+    assert_eq!(state.report().shape_fallback_values, 1);
+}
+
+#[test]
+fn phone_with_surrounding_text_falls_back_instead_of_leaking_text() {
+    let mut state = TransformState::new();
+    let result = transform_value_with_state(
+        "John Doe (555) 123-4567",
+        &column(DataType::Phone),
+        &context(),
+        &mut state,
+    );
+    assert!(!result.contains("John"));
+    assert!(!result.contains("Doe"));
+    assert_eq!(state.report().shape_fallback_values, 1);
+}
+
+#[test]
+fn phone_without_enough_digits_falls_back() {
+    let mut state = TransformState::new();
+    let result = transform_value_with_state(
+        "call after 5",
+        &column(DataType::Phone),
+        &context(),
+        &mut state,
+    );
+    assert!(!result.contains("call"));
+    assert_eq!(state.report().shape_fallback_values, 1);
+}
+
+#[test]
+fn phone_with_extension_marker_keeps_phone_shape() {
+    let mut state = TransformState::new();
+    let result = transform_value_with_state(
+        "555-867-5309 ext 22",
+        &column(DataType::Phone),
+        &context(),
+        &mut state,
+    );
+    assert!(result.contains("ext"));
+    assert_eq!(state.report().shape_fallback_values, 0);
+}
+
+#[test]
+fn padded_duplicate_row_values_map_to_the_same_pseudonym() {
+    let columns = vec![column(DataType::Email)];
+    let mut state = TransformState::new();
+    let first = transform_row_with_state(
+        &["john.doe@example.com".to_string()],
+        &columns,
+        0,
+        &mut state,
+    );
+    let second = transform_row_with_state(
+        &["  john.doe@example.com  ".to_string()],
+        &columns,
+        1,
+        &mut state,
+    );
+    assert_eq!(first[0], second[0]);
+}
+
+#[test]
+fn padded_null_cell_is_preserved_not_transformed() {
+    let columns = vec![column(DataType::String)];
+    let mut state = TransformState::new();
+    let row = transform_row_with_state(&[" null ".to_string()], &columns, 0, &mut state);
+    assert_eq!(row[0], " null ");
+}
+
+#[test]
+fn padded_timestamp_cell_is_transformed_from_trimmed_value() {
+    let columns = vec![column(DataType::Timestamp)];
+    let mut state = TransformState::new();
+    let row = transform_row_with_state(&[" 2024-06-15".to_string()], &columns, 0, &mut state);
+    assert_ne!(row[0], " 2024-06-15");
+    // The trimmed value is a valid ISO date, so the transform must keep the
+    // ISO shape rather than corrupting it through byte-offset math.
+    assert!(
+        chrono::NaiveDate::parse_from_str(&row[0], "%Y-%m-%d").is_ok(),
+        "expected ISO date, got {}",
+        row[0]
+    );
+    assert_eq!(state.report().shape_fallback_values, 0);
+}

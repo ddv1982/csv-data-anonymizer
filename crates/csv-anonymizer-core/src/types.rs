@@ -384,6 +384,7 @@ pub struct TransformReport {
     pub smart_replacement_rejections: usize,
     pub smart_replacement_rejection_reasons: Vec<SmartReplacementRejectionCount>,
     pub smart_replacement_fallbacks: usize,
+    pub shape_fallback_values: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -651,6 +652,8 @@ pub struct PrivacyReport {
     pub smart_replacement_rejection_reasons: Vec<SmartReplacementRejectionCount>,
     pub smart_replacement_fallbacks: usize,
     #[serde(default)]
+    pub shape_fallback_values: usize,
+    #[serde(default)]
     pub readiness: ReleaseReadiness,
     #[serde(default)]
     pub evidence: Vec<ReleaseEvidenceItem>,
@@ -852,6 +855,7 @@ mod tests {
                 count: 1,
             }],
             smart_replacement_fallbacks: 1,
+            shape_fallback_values: 2,
             readiness: ReleaseReadiness {
                 status: ReleaseReadinessStatus::Review,
                 blockers: Vec::new(),

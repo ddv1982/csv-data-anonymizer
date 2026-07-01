@@ -43,6 +43,7 @@ export function PrivacyReportSummary({ privacyReport }: { privacyReport: Privacy
     },
     { label: 'Collisions avoided', value: privacyReport.collisionsAvoided, glossaryTerm: 'collisionsAvoided' },
     { label: 'Pool exhaustions', value: privacyReport.exhaustedPseudonymPools, glossaryTerm: 'poolExhaustions' },
+    { label: 'Format fallbacks', value: privacyReport.shapeFallbackValues, glossaryTerm: 'formatFallbacks' },
   ])
   const smartMetrics = nonZeroMetrics([
     {

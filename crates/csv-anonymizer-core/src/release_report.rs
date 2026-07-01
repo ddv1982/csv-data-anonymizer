@@ -49,6 +49,14 @@ pub(crate) fn build_readiness(
             smart_rejection_summary(report)
         ));
     }
+    if let Some(report) = context.transform_report
+        && report.shape_fallback_values > 0
+    {
+        review_items.push(format!(
+            "{} value(s) did not match their column's detected format and were replaced with generic pseudonyms instead of format-preserving ones.",
+            report.shape_fallback_values
+        ));
+    }
 
     let status = if !blockers.is_empty() {
         ReleaseReadinessStatus::Blocked
@@ -276,6 +284,12 @@ pub(crate) fn standard_notes(
         notes.push(format!(
             "{} smart replacement value(s) fell back to rule-based pseudonymization after missing or invalid AI output.",
             transform_report.smart_replacement_fallbacks
+        ));
+    }
+    if transform_report.shape_fallback_values > 0 {
+        notes.push(format!(
+            "{} value(s) did not match their column's detected format and were replaced with generic pseudonyms.",
+            transform_report.shape_fallback_values
         ));
     }
 
