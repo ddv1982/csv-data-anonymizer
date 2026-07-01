@@ -17,7 +17,8 @@ import { messageFrom } from '../utils/errors'
 import { formatRowCount } from '../utils/format'
 import { Alert } from './Alert'
 import { Card } from './Card'
-import { ColumnTable } from './ColumnTable'
+import { ColumnSelectionPanel } from './ColumnSelectionPanel'
+import { LocalAiBlockedAlert } from './LocalAiBlockedAlert'
 import { PreviewTable } from './PreviewTable'
 import { PrivacyReportSummary } from './PrivacyReportSummary'
 
@@ -263,64 +264,50 @@ export function PasteDataWorkflowView({
       </Card>
 
       <Card title="2. Select Data to Transform" disabled={!analysis}>
-        <div className="columns-stack">
-          <div className="bulk-actions">
-            <button
-              type="button"
-              className="button button-outline button-sm"
-              disabled={isBusy || selection.columns.length === 0 || selection.allSelected}
-              onClick={() => setColumnSelection(selection.selectableColumns.map((column) => column.index))}
-            >
-              Select All
-            </button>
-            <button
-              type="button"
-              className="button button-outline button-sm"
-              disabled={isBusy || selection.selectedColumns.length === 0}
-              onClick={() => setColumnSelection([])}
-            >
-              Deselect All
-            </button>
-            <button
-              type="button"
-              className="button button-outline button-sm"
-              disabled={isBusy || selection.detectedRiskColumns.length === 0}
-              onClick={() => setColumnSelection(selection.detectedRiskColumns)}
-            >
-              Select Detected Risk
-            </button>
-          </div>
-
-          <ColumnTable
-            columns={selection.visibleColumns}
-            allColumnCount={selection.columns.length}
-            selectedSet={selection.selectedSet}
-            loading={busy === 'analyzing'}
-            showAllColumns={selection.showAllColumns}
-            hiddenColumnCount={selection.hiddenColumnCount}
-            onToggleColumn={toggleColumn}
-            controls={selection.columnControls}
-            onStrategyChange={updateColumnStrategy}
-            onToggleShowAll={() => selection.setShowAllColumns((current) => !current)}
-            availableStrategies={directInputStrategies}
-          />
-
-          {selectedUsesLocalAi && localAiBlocked ? (
-            <Alert icon={<AlertCircle aria-hidden="true" />}>
-              <div className="alert-line">
-                <span>Set up Local AI before previewing or anonymizing Smart replacement fields.</span>
-                <button type="button" className="button button-outline button-sm" onClick={onOpenLocalAiSettings}>
-                  Open Local AI settings
-                </button>
-              </div>
-            </Alert>
-          ) : null}
-
-          <p className="muted-text text-sm">
-            {selection.selectedColumns.length} of {selection.columns.length} fields selected
-            {analysis ? `, ${formatRowCount(analysis)} detected` : ''}
-          </p>
-        </div>
+        <ColumnSelectionPanel
+          actions={[
+            {
+              label: 'Select All',
+              disabled: isBusy || selection.columns.length === 0 || selection.allSelected,
+              onClick: () => setColumnSelection(selection.selectableColumns.map((column) => column.index)),
+            },
+            {
+              label: 'Deselect All',
+              disabled: isBusy || selection.selectedColumns.length === 0,
+              onClick: () => setColumnSelection([]),
+            },
+            {
+              label: 'Select Detected Risk',
+              disabled: isBusy || selection.detectedRiskColumns.length === 0,
+              onClick: () => setColumnSelection(selection.detectedRiskColumns),
+            },
+          ]}
+          columns={selection.visibleColumns}
+          allColumnCount={selection.columns.length}
+          selectedSet={selection.selectedSet}
+          loading={busy === 'analyzing'}
+          showAllColumns={selection.showAllColumns}
+          hiddenColumnCount={selection.hiddenColumnCount}
+          onToggleColumn={toggleColumn}
+          controls={selection.columnControls}
+          onStrategyChange={updateColumnStrategy}
+          onToggleShowAll={() => selection.setShowAllColumns((current) => !current)}
+          availableStrategies={directInputStrategies}
+          footer={(
+            <>
+              {selectedUsesLocalAi && localAiBlocked ? (
+                <LocalAiBlockedAlert
+                  message="Set up Local AI before previewing or anonymizing Smart replacement fields."
+                  onOpenSettings={onOpenLocalAiSettings}
+                />
+              ) : null}
+              <p className="muted-text text-sm">
+                {selection.selectedColumns.length} of {selection.columns.length} fields selected
+                {analysis ? `, ${formatRowCount(analysis)} detected` : ''}
+              </p>
+            </>
+          )}
+        />
       </Card>
 
       <Card

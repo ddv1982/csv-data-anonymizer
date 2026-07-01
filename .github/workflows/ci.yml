@@ -24,6 +24,7 @@ jobs:
     name: Detect changed files
     runs-on: ubuntu-24.04
     outputs:
+      run_docs_ci: ${{ steps.filter.outputs.run_docs_ci }}
       run_package_ci: ${{ steps.filter.outputs.run_package_ci }}
       run_rust_ci: ${{ steps.filter.outputs.run_rust_ci }}
 
@@ -50,7 +51,14 @@ jobs:
               - 'package.json'
               - 'scripts/rust-smoke.mjs'
               - 'scripts/check-release-metadata.mjs'
+              - 'scripts/check-tauri-prebuilt-frontend.sh'
               - 'scripts/build_frontend_for_tauri.sh'
+            run_docs_ci:
+              - '.github/workflows/**'
+              - 'README.md'
+              - 'docs/**'
+              - 'package.json'
+              - 'scripts/check-docs.mjs'
             run_package_ci:
               - '.github/workflows/**'
               - 'Cargo.toml'
@@ -65,6 +73,24 @@ jobs:
               - 'LICENSE'
               - 'CHANGELOG.md'
               - 'package.json'
+
+  docs:
+    name: Docs
+    needs: changes
+    if: needs.changes.outputs.run_docs_ci == 'true'
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '26'
+
+      - name: Validate documented commands
+        run: npm run docs:check
 
   rust:
     name: Rust ${{ matrix.os }}
@@ -160,45 +186,7 @@ jobs:
         run: npm run frontend:build
 
       - name: Validate Tauri prebuilt frontend contract
-        run: |
-          set -euo pipefail
-          temp_dir="$(mktemp -d)"
-          cleanup() {
-            if [ -n "${css_file:-}" ] && [ -n "${css_name:-}" ] && [ -f "${temp_dir}/css/${css_name}" ]; then
-              mkdir -p "$(dirname "${css_file}")"
-              mv "${temp_dir}/css/${css_name}" "${css_file}"
-            fi
-            if [ -d "${temp_dir}/dist" ]; then
-              rm -rf frontend/dist
-              mv "${temp_dir}/dist" frontend/dist
-            fi
-            rm -rf "${temp_dir}"
-          }
-          trap cleanup EXIT
-
-          mv frontend/dist "${temp_dir}/dist"
-          if CSV_ANONYMIZER_USE_PREBUILT_FRONTEND=1 scripts/build_frontend_for_tauri.sh; then
-            echo "Expected prebuilt frontend mode to fail without frontend/dist/index.html." >&2
-            exit 1
-          fi
-
-          mv "${temp_dir}/dist" frontend/dist
-          css_file="$(find frontend/dist/assets -maxdepth 1 -type f -name '*.css' | head -n 1)"
-          if [ -z "${css_file}" ]; then
-            echo "Expected frontend build to emit a CSS asset under frontend/dist/assets." >&2
-            exit 1
-          fi
-
-          mkdir -p "${temp_dir}/css"
-          css_name="$(basename "${css_file}")"
-          mv "${css_file}" "${temp_dir}/css/${css_name}"
-          if CSV_ANONYMIZER_USE_PREBUILT_FRONTEND=1 scripts/build_frontend_for_tauri.sh; then
-            echo "Expected prebuilt frontend mode to fail without a built CSS asset." >&2
-            exit 1
-          fi
-
-          mv "${temp_dir}/css/${css_name}" "${css_file}"
-          CSV_ANONYMIZER_USE_PREBUILT_FRONTEND=1 scripts/build_frontend_for_tauri.sh
+        run: bash scripts/check-tauri-prebuilt-frontend.sh
 
       - name: Check Rust formatting
         run: cargo fmt --all --check

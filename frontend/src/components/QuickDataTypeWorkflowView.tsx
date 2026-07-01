@@ -1,4 +1,4 @@
-import { AlertCircle, Check, Clipboard, Loader2, Wand2 } from 'lucide-react'
+import { Check, Clipboard, Loader2, Wand2 } from 'lucide-react'
 import { useState } from 'react'
 import { dataTypes, quickGenerateStrategies, strategyLabel } from '../dataOptions'
 import { generateQuickValues } from '../tauri'
@@ -7,8 +7,8 @@ import type { AnonymizationStrategy, DataType, QuickTransformData } from '../typ
 import type { LocalAiState } from '../hooks/useLocalAi'
 import { messageFrom } from '../utils/errors'
 import { formatToken } from '../utils/format'
-import { Alert } from './Alert'
 import { Card } from './Card'
+import { LocalAiBlockedAlert } from './LocalAiBlockedAlert'
 import { PrivacyReportSummary } from './PrivacyReportSummary'
 
 type QuickBusyState = 'idle' | 'generating' | 'copying'
@@ -132,14 +132,10 @@ export function QuickDataTypeWorkflowView({
 
           {usesLocalAi && localAiBlocked ? (
             <div className="quick-local-ai">
-              <Alert icon={<AlertCircle aria-hidden="true" />}>
-                <div className="alert-line">
-                  <span>Set up Local AI before generating Smart replacement values.</span>
-                  <button type="button" className="button button-outline button-sm" onClick={onOpenLocalAiSettings}>
-                    Open Local AI settings
-                  </button>
-                </div>
-              </Alert>
+              <LocalAiBlockedAlert
+                message="Set up Local AI before generating Smart replacement values."
+                onOpenSettings={onOpenLocalAiSettings}
+              />
             </div>
           ) : null}
 

@@ -12,7 +12,7 @@ import {
   visibleEvidence,
 } from '../utils/detectorEvidence'
 import { formatToken } from '../utils/format'
-import { hasSampleData, isSelectableColumn, maxVisibleColumns } from '../utils/columns'
+import { hasSampleData, maxVisibleColumns } from '../utils/columns'
 import { GlossaryLabel, HelpPopover } from './GlossaryPopover'
 import { RiskBadge } from './RiskBadge'
 
@@ -83,12 +83,10 @@ export function ColumnTable({
           ) : null}
           {!loading
             ? columns.map((column) => {
-                const selectable = isSelectableColumn(column)
                 const sampleDataAvailable = hasSampleData(column)
                 const control = controls[column.index]
                 const selected = selectedSet.has(column.index)
-                const canToggleSelection = selectable
-                const rowClassName = [canToggleSelection ? 'clickable-row' : '', !selectable ? 'muted-row' : '', selected ? 'selected-row' : '']
+                const rowClassName = ['clickable-row', selected ? 'selected-row' : '']
                   .filter(Boolean)
                   .join(' ')
                 return (
@@ -96,24 +94,20 @@ export function ColumnTable({
                     key={`${column.index}-${column.name}`}
                     className={rowClassName}
                     onClick={() => {
-                      if (canToggleSelection) onToggleColumn(column)
+                      onToggleColumn(column)
                     }}
                   >
                     <td className="checkbox-column">
-                      {selectable ? (
-                        <input
-                          type="checkbox"
-                          className="table-checkbox"
-                          checked={selected}
-                          onChange={() => {
-                            onToggleColumn(column)
-                          }}
-                          onClick={(event) => event.stopPropagation()}
-                          aria-label={`Select column ${column.name}`}
-                        />
-                      ) : (
-                        <span className="checkbox-placeholder" aria-hidden="true" />
-                      )}
+                      <input
+                        type="checkbox"
+                        className="table-checkbox"
+                        checked={selected}
+                        onChange={() => {
+                          onToggleColumn(column)
+                        }}
+                        onClick={(event) => event.stopPropagation()}
+                        aria-label={`Select column ${column.name}`}
+                      />
                     </td>
                     <td className="index-column mono muted-text">{column.index}</td>
                     <td className="column-title-cell">
@@ -141,7 +135,7 @@ export function ColumnTable({
                       <span className="mobile-cell-label">Strategy</span>
                       <select
                         value={strategyControlsDisabled ? 'auto' : (control?.strategy ?? column.strategy ?? 'auto')}
-                        disabled={!selectable || loading || strategyControlsDisabled}
+                        disabled={loading || strategyControlsDisabled}
                         title={strategyControlsDisabled ? strategyControlsDisabledReason : undefined}
                         aria-label={`Strategy for ${column.name}`}
                         onClick={(event) => event.stopPropagation()}

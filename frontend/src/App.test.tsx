@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { defaultSettings } from './defaults'
 import { MAX_PASTE_CONTENT_BYTES } from './limits'
+import { columnMetadataFixture, privacyReportFixture as basePrivacyReportFixture, verifiedPreflightFixture } from './test-utils/builders'
 import type { AppSettings, ColumnMetadata, PrivacyReport } from './types'
 
 type PreflightLike = { readiness: { blockers: string[] } }
@@ -214,6 +215,8 @@ describe('App input mode tabs', () => {
     await user.selectOptions(await screen.findByLabelText('Strategy for email'), 'localAi')
 
     expect(screen.getByText(/Set up Local AI before previewing or creating output/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /open local ai settings/i }))
+    expect(await screen.findByRole('dialog', { name: /local ai settings/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /create protected csv/i })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: /create protected csv/i }))
     expect(tauriMocks.preflightAnonymization).not.toHaveBeenCalled()
@@ -478,63 +481,19 @@ function columnFixture(
   detectedType: ColumnMetadata['detectedType'],
   piiRisk: ColumnMetadata['piiRisk'],
 ): ColumnMetadata {
-  return {
+  return columnMetadataFixture({
     name,
     index,
     detectedType,
-    confidence: 'high',
     piiRisk,
-    sampleValues: ['sample'],
-    emptyFormat: 'emptyString',
-    isSelected: false,
-    strategy: piiRisk === 'high' || piiRisk === 'medium' ? 'redact' : 'auto',
-  }
+  })
 }
 
 function privacyReportFixture(overrides: Partial<PrivacyReport> = {}): PrivacyReport {
-  return {
+  return basePrivacyReportFixture({
     directIdentifiers: 1,
-    quasiIdentifiers: 0,
-    sensitiveColumns: 0,
     pseudonymizedColumns: 1,
-    smartReplacementColumns: 0,
-    opaqueTokenColumns: 0,
-    maskedColumns: 0,
-    redactedColumns: 0,
-    passThroughColumns: 0,
     uniquePseudonymValues: 1,
-    reusedPseudonymValues: 0,
-    collisionsAvoided: 0,
-    exhaustedPseudonymPools: 0,
-    opaqueTokenValues: 0,
-    smartReplacementValues: 0,
-    smartReplacementRejections: 0,
-    smartReplacementRejectionReasons: [],
-    smartReplacementFallbacks: 0,
-    readiness: {
-      status: 'verified',
-      blockers: [],
-      reviewItems: [],
-      verifiedItems: [],
-    },
-    evidence: [],
-    columnReports: [],
-    utilityMetrics: [],
-    notes: [],
     ...overrides,
-  }
-}
-
-function verifiedPreflightFixture() {
-  return {
-    mode: 'anonymize',
-    readiness: {
-      status: 'verified',
-      blockers: [],
-      reviewItems: [],
-      verifiedItems: [],
-    },
-    evidence: [],
-    columnReports: [],
-  }
+  })
 }

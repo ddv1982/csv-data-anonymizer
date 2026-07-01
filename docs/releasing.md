@@ -113,11 +113,12 @@ npm run frontend:lint
 npm run frontend:test
 npm run frontend:e2e
 npm run frontend:build
+npm run docs:check
 npm run frontend:deadcode
 npm run frontend:deadcode:production
 npm run cargo:audit
 npm run cargo:machete
-CSV_ANONYMIZER_USE_PREBUILT_FRONTEND=1 scripts/build_frontend_for_tauri.sh
+npm run tauri:prebuilt:check
 npm run test
 npm run lint
 cargo bench -p csv-anonymizer-core --bench csv_streaming
@@ -132,6 +133,23 @@ cd frontend && npx playwright install chromium
 ```
 
 `npm run cargo:machete` is local-optional when cargo-machete is not installed; the scheduled maintenance workflow installs cargo-machete and runs the required variant.
+
+Before a public release, use the full quality gate rather than only the fast local checks:
+
+```bash
+npm run fmt
+npm run lint
+npm run test
+npm run typecheck
+npm run deadcode:required
+npm run docs:check
+npm run release:check
+npm run tauri:prebuilt:check
+npm run frontend:e2e
+npm run frontend:a11y
+npm run frontend:audit
+npm run cargo:audit:required
+```
 
 On macOS, validate app packaging:
 

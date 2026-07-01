@@ -11,7 +11,8 @@ import { formatRowCount } from '../../utils/format'
 import { Alert } from '../Alert'
 import { AppSettingsPanel } from '../AppSettingsPanel'
 import { Card } from '../Card'
-import { ColumnTable } from '../ColumnTable'
+import { ColumnSelectionPanel } from '../ColumnSelectionPanel'
+import { LocalAiBlockedAlert } from '../LocalAiBlockedAlert'
 import { PreviewTable } from '../PreviewTable'
 import { ProcessingStatus } from '../ProcessingStatus'
 import { ResultDisplay } from '../ResultDisplay'
@@ -127,75 +128,63 @@ function ColumnSelectionStep({ workflow }: { workflow: AnonymizerWorkflowState }
       title="2. Review Sensitive Columns"
       disabled={!workflow.hasFile}
     >
-      <div className="columns-stack">
-        <div className="bulk-actions">
-          <button
-            type="button"
-            className="button button-outline button-sm"
-            disabled={workflow.busy === 'loading' || workflow.allSelected || workflow.selectableColumns.length === 0}
-            onClick={() => workflow.setColumnSelection(workflow.selectableColumns.map((column) => column.index))}
-          >
-            Select All
-          </button>
-          <button
-            type="button"
-            className="button button-outline button-sm"
-            disabled={workflow.busy === 'loading' || workflow.selectedColumns.length === 0}
-            onClick={() => workflow.setColumnSelection([])}
-          >
-            Deselect All
-          </button>
-          <button
-            type="button"
-            className="button button-outline button-sm"
-            disabled={workflow.busy === 'loading' || workflow.highRiskColumns.length === 0}
-            onClick={() => workflow.setColumnSelection(workflow.highRiskColumns)}
-          >
-            Select High Risk
-          </button>
-          <button
-            type="button"
-            className="button button-outline button-sm"
-            disabled={workflow.busy === 'loading' || workflow.selectableColumns.length === 0}
-            onClick={() =>
+      <ColumnSelectionPanel
+        actions={[
+          {
+            label: 'Select All',
+            disabled: workflow.busy === 'loading' || workflow.allSelected || workflow.selectableColumns.length === 0,
+            onClick: () => workflow.setColumnSelection(workflow.selectableColumns.map((column) => column.index)),
+          },
+          {
+            label: 'Deselect All',
+            disabled: workflow.busy === 'loading' || workflow.selectedColumns.length === 0,
+            onClick: () => workflow.setColumnSelection([]),
+          },
+          {
+            label: 'Select High Risk',
+            disabled: workflow.busy === 'loading' || workflow.highRiskColumns.length === 0,
+            onClick: () => workflow.setColumnSelection(workflow.highRiskColumns),
+          },
+          {
+            label: 'Select Detected Risk',
+            disabled: workflow.busy === 'loading' || workflow.selectableColumns.length === 0,
+            onClick: () =>
               workflow.setColumnSelection(
                 workflow.selectableColumns
                   .filter((column) => column.piiRisk === 'high' || column.piiRisk === 'medium')
                   .map((column) => column.index),
-              )
-            }
-          >
-            Select Detected Risk
-          </button>
-        </div>
-
-        <div className="table-help-row">
-          <SectionHelp topic="selectColumns" />
-        </div>
-        {unselectedRiskMessage ? (
-          <Alert icon={<AlertTriangle aria-hidden="true" />}>
-            <strong>Detector-flagged columns are unselected.</strong> {unselectedRiskMessage}
-          </Alert>
-        ) : null}
-
-        <ColumnTable
-          columns={workflow.visibleColumns}
-          allColumnCount={workflow.columns.length}
-          selectedSet={workflow.selectedSet}
-          loading={workflow.isLoading}
-          showAllColumns={workflow.showAllColumns}
-          hiddenColumnCount={workflow.hiddenColumnCount}
-          onToggleColumn={workflow.toggleColumn}
-          controls={workflow.columnControls}
-          onStrategyChange={workflow.updateColumnStrategy}
-          onToggleShowAll={() => workflow.setShowAllColumns((current) => !current)}
-        />
-
-        <p className="muted-text text-sm">
-          {workflow.selectedColumns.length} of {workflow.columns.length} columns selected
-          {workflow.headers ? `, ${formatRowCount(workflow.headers)} loaded` : ''}
-        </p>
-      </div>
+              ),
+          },
+        ]}
+        notice={(
+          <>
+            <div className="table-help-row">
+              <SectionHelp topic="selectColumns" />
+            </div>
+            {unselectedRiskMessage ? (
+              <Alert icon={<AlertTriangle aria-hidden="true" />}>
+                <strong>Detector-flagged columns are unselected.</strong> {unselectedRiskMessage}
+              </Alert>
+            ) : null}
+          </>
+        )}
+        columns={workflow.visibleColumns}
+        allColumnCount={workflow.columns.length}
+        selectedSet={workflow.selectedSet}
+        loading={workflow.isLoading}
+        showAllColumns={workflow.showAllColumns}
+        hiddenColumnCount={workflow.hiddenColumnCount}
+        onToggleColumn={workflow.toggleColumn}
+        controls={workflow.columnControls}
+        onStrategyChange={workflow.updateColumnStrategy}
+        onToggleShowAll={() => workflow.setShowAllColumns((current) => !current)}
+        footer={(
+          <p className="muted-text text-sm">
+            {workflow.selectedColumns.length} of {workflow.columns.length} columns selected
+            {workflow.headers ? `, ${formatRowCount(workflow.headers)} loaded` : ''}
+          </p>
+        )}
+      />
     </Card>
   )
 }
@@ -239,14 +228,10 @@ function ConfigurationStep({
         </div>
 
         {workflow.localAiBlocked ? (
-          <Alert icon={<AlertCircle aria-hidden="true" />}>
-            <div className="alert-line">
-              <span>Set up Local AI before previewing or creating output with Smart replacement columns.</span>
-              <button type="button" className="button button-outline button-sm" onClick={onOpenLocalAiSettings}>
-                Open Local AI settings
-              </button>
-            </div>
-          </Alert>
+          <LocalAiBlockedAlert
+            message="Set up Local AI before previewing or creating output with Smart replacement columns."
+            onOpenSettings={onOpenLocalAiSettings}
+          />
         ) : null}
 
         <AppSettingsPanel

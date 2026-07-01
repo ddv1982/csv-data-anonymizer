@@ -1,5 +1,5 @@
 use crate::path_access::PathAccess;
-use csv_anonymizer_core::{AnonymizerService, ColumnMetadata, PiiRisk};
+use csv_anonymizer_core::AnonymizerService;
 use std::path::{Path, PathBuf};
 use tauri_plugin_dialog::{DialogExt, FilePath, MessageDialogButtons, MessageDialogKind};
 
@@ -78,10 +78,6 @@ where
 
 pub(super) fn service() -> AnonymizerService {
     AnonymizerService::new(env!("CARGO_PKG_VERSION"))
-}
-
-pub(super) fn should_auto_select(column: &ColumnMetadata) -> bool {
-    !column.sample_values.is_empty() && matches!(column.pii_risk, PiiRisk::High | PiiRisk::Medium)
 }
 
 pub(super) fn default_output_path_with_suffix(

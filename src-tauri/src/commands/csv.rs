@@ -1,6 +1,6 @@
 use super::shared::{
     authorize_or_confirm_input_file, authorize_or_confirm_output_file,
-    default_output_path_with_suffix, run_blocking, service, should_auto_select,
+    default_output_path_with_suffix, run_blocking, service,
 };
 use crate::local_ai::{
     LocalAiRequest, local_ai_status, smart_provider_for_request, smart_provider_for_strategy,
@@ -10,7 +10,7 @@ use csv_anonymizer_core::{
     AnonymizationStrategy, ColumnControl, HeadersData, PasteAnalyzeData, PasteAnalyzeParams,
     PastePreviewParams, PasteTransformData, PasteTransformParams, PreflightData, PreflightMode,
     PreflightParams, PreviewData, PreviewParams, QuickGenerateParams, QuickTransformData,
-    SmartReplacementEntry, SmartReplacementProvider,
+    SmartReplacementEntry, SmartReplacementProvider, should_auto_select_column,
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -92,7 +92,7 @@ pub async fn analyze_csv(
         let selected_columns = headers
             .columns
             .iter()
-            .filter(|column| should_auto_select(column))
+            .filter(|column| should_auto_select_column(column))
             .map(|column| column.index)
             .collect::<Vec<_>>();
         let suggested_output_path =
