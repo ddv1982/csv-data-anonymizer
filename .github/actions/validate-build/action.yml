@@ -1,0 +1,113 @@
+name: Validate build
+description: >-
+  Shared frontend and Rust validation gate used by both the CI rust job and the
+  release validate-release job, so the release gate cannot drift from CI.
+  Expects checkout, Node.js, the Rust toolchain, and (on Linux) the Tauri
+  desktop dependencies to be set up by the calling workflow. Linux-only steps
+  are skipped automatically on other runners.
+
+inputs:
+  expected-tag:
+    description: >-
+      Release tag to validate metadata against (for example v1.0.64). Leave
+      empty to validate metadata without tag matching, as CI does.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Install frontend dependencies
+      shell: bash
+      run: npm ci --prefix frontend
+
+    - name: Audit frontend dependencies
+      shell: bash
+      run: npm run frontend:audit
+
+    - name: Install cargo-audit
+      if: runner.os == 'Linux'
+      shell: bash
+      run: cargo install cargo-audit --locked --version 0.22.2
+
+    - name: Audit Rust dependencies
+      if: runner.os == 'Linux'
+      shell: bash
+      run: npm run cargo:audit:required
+
+    - name: Validate release metadata
+      shell: bash
+      env:
+        EXPECTED_TAG: ${{ inputs.expected-tag }}
+      run: |
+        if [ -n "${EXPECTED_TAG}" ]; then
+          node scripts/check-release-metadata.mjs --expected-tag "${EXPECTED_TAG}"
+        else
+          node scripts/check-release-metadata.mjs
+        fi
+
+    - name: Validate frontend/backend contracts
+      shell: bash
+      run: npm run contracts:check
+
+    - name: Install cargo-machete
+      if: runner.os == 'Linux'
+      shell: bash
+      run: cargo install cargo-machete --locked --version 0.9.2
+
+    - name: Check dead code
+      if: runner.os == 'Linux'
+      shell: bash
+      run: npm run deadcode:required
+
+    - name: Lint frontend
+      shell: bash
+      run: npm run frontend:lint
+
+    - name: Test frontend
+      shell: bash
+      run: npm run frontend:test
+
+    - name: Install Playwright Chromium
+      if: runner.os == 'Linux'
+      shell: bash
+      working-directory: frontend
+      run: npx playwright install --with-deps chromium
+
+    - name: Test frontend e2e
+      if: runner.os == 'Linux'
+      shell: bash
+      run: npm run frontend:e2e
+
+    - name: Test frontend accessibility
+      if: runner.os == 'Linux'
+      shell: bash
+      run: npm run frontend:a11y
+
+    - name: Build frontend
+      shell: bash
+      run: npm run frontend:build
+
+    - name: Validate Tauri prebuilt frontend contract
+      shell: bash
+      run: bash scripts/check-tauri-prebuilt-frontend.sh
+
+    - name: Check Rust formatting
+      shell: bash
+      run: cargo fmt --all --check
+
+    - name: Run Rust tests
+      shell: bash
+      run: cargo test --workspace
+
+    - name: Run Rust clippy
+      shell: bash
+      run: cargo clippy --workspace --all-targets -- -D warnings
+
+    - name: Build Rust workspace
+      shell: bash
+      run: cargo build --workspace
+
+    - name: Smoke test Rust binary
+      shell: bash
+      run: node scripts/rust-smoke.mjs

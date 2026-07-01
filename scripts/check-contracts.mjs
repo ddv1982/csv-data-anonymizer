@@ -52,12 +52,14 @@ const structContracts = [
 const errors = []
 
 for (const enumName of enumContracts) {
+  assertSerdeCamelCase('enum', enumName)
   const rustValues = rustEnumValues(enumName)
   const tsValues = tsUnionValues(enumName)
   compareSets(`${enumName} variants`, rustValues, tsValues)
 }
 
 for (const structName of structContracts) {
+  assertSerdeCamelCase('struct', structName)
   const rustFields = rustStructFields(structName)
   const tsFields = tsInterfaceFields(structName)
   compareSets(`${structName} fields`, rustFields, tsFields)
@@ -97,9 +99,37 @@ function rustStructFields(name) {
   return body
     .split('\n')
     .map((line) => line.replace(/\/\/.*$/, '').trim())
-    .map((line) => line.match(/^pub ([a-z][a-z0-9_]*)\s*:/)?.[1])
+    .map((line) => line.match(/^pub (?:r#)?([a-z][a-z0-9_]*)\s*:/)?.[1])
     .filter(Boolean)
     .map(camelCase)
+}
+
+function assertSerdeCamelCase(kind, name) {
+  const declaration = rustTypes.match(new RegExp(`^pub ${kind} ${name} [\\{(]`, 'm'))
+  if (!declaration) {
+    // The missing declaration itself is reported by matchBody with a clearer label.
+    return
+  }
+  const precedingLines = rustTypes.slice(0, declaration.index).split('\n')
+  precedingLines.pop() // drop the empty remainder after the final newline
+  const attributeLines = []
+  for (let index = precedingLines.length - 1; index >= 0; index -= 1) {
+    const line = precedingLines[index].trim()
+    if (line.startsWith('#[') || line.startsWith('//')) {
+      attributeLines.push(line)
+      continue
+    }
+    break
+  }
+  const hasCamelCaseRename = attributeLines.some((line) =>
+    /#\[serde\(.*rename_all\s*=\s*"camelCase"/.test(line),
+  )
+  if (!hasCamelCaseRename) {
+    errors.push(
+      `Rust ${kind} ${name} is missing #[serde(rename_all = "camelCase")]; ` +
+        'the contract comparison assumes camelCase serialization, so without the attribute it would silently pass while the wire format stays snake_case',
+    )
+  }
 }
 
 function tsInterfaceFields(name) {
