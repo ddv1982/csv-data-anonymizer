@@ -147,6 +147,10 @@ export const glossaryTerms = {
     title: 'Smart rejections',
     body: 'Local AI replacement candidates rejected during validation before rule-based fallback handling.',
   },
+  formatFallbacks: {
+    title: 'Format fallbacks',
+    body: 'Values that did not match their column’s detected format and were replaced with generic pseudonyms instead of format-preserving ones.',
+  },
 } as const
 
 export type GlossaryKey = keyof typeof glossaryTerms

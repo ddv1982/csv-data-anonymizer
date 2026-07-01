@@ -36,6 +36,7 @@ export function privacyReportFixture(overrides: Partial<PrivacyReport> = {}): Pr
     smartReplacementRejections: 0,
     smartReplacementRejectionReasons: [],
     smartReplacementFallbacks: 0,
+    shapeFallbackValues: 0,
     readiness: {
       status: 'verified',
       blockers: [],

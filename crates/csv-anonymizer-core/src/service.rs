@@ -139,13 +139,22 @@ impl AnonymizerService {
         provider: Option<&mut dyn SmartReplacementProvider>,
     ) -> Result<PreviewData> {
         let file_path = normalize_path(&input.file_path)?;
-        let sample = read_sample(&file_path, input.sample_count.saturating_mul(2).max(1))?;
+        // Detect on the same sample basis as analyze/anonymize (DEFAULT_SAMPLE_ROWS)
+        // so the preview cannot show a different detected type than the final run.
+        let sample = read_sample(
+            &file_path,
+            DEFAULT_SAMPLE_ROWS.max(input.sample_count).max(1),
+        )?;
         let metadata = build_column_metadata(&sample.headers, &sample.rows);
         validate_column_indices(&metadata, &input.columns)?;
         let controlled_metadata = apply_column_controls(&metadata, &input.controls)?;
         let selected_metadata = apply_column_selection(&controlled_metadata, &input.columns);
+        // Smart replacement and preview samples stay limited to the display
+        // window; only type detection above uses the larger sample.
+        let display_row_count = input.sample_count.saturating_mul(2).max(1);
+        let display_rows = &sample.rows[..sample.rows.len().min(display_row_count)];
         let smart_replacements =
-            prepare_smart_replacements_from_rows(&sample.rows, &selected_metadata, None, provider)?;
+            prepare_smart_replacements_from_rows(display_rows, &selected_metadata, None, provider)?;
         let smart_replacement_entries = smart_replacements.to_entries();
         let mut transform_state = if smart_replacements.has_activity() {
             TransformState::with_smart_replacements(smart_replacements)
@@ -156,7 +165,7 @@ impl AnonymizerService {
         for column in selected_metadata.iter().filter(|column| column.is_selected) {
             previews.push(generate_column_preview(
                 column,
-                &sample.rows,
+                display_rows,
                 input.sample_count,
                 &mut transform_state,
             ));
@@ -636,6 +645,7 @@ pub(crate) fn build_privacy_report(
             .smart_replacement_rejection_reasons
             .clone(),
         smart_replacement_fallbacks: transform_report.smart_replacement_fallbacks,
+        shape_fallback_values: transform_report.shape_fallback_values,
         readiness: Default::default(),
         evidence: Vec::new(),
         column_reports: Vec::new(),

@@ -47,6 +47,12 @@ pub fn transform_value_with_state(
         AnonymizationStrategy::Auto | AnonymizationStrategy::Pseudonymize => {}
     }
 
+    // Single source of truth for pass-through behavior: the same predicate the
+    // report, preview warnings, and readiness builders consult.
+    if column.detected_type.uses_default_pass_through() {
+        return value.to_string();
+    }
+
     match column.detected_type {
         DataType::Email => structured::transform_email(value, context, state),
         DataType::Uuid => structured::transform_uuid(value, context, state),
@@ -57,16 +63,7 @@ pub fn transform_value_with_state(
         DataType::FirstName => names::transform_first_name(value, state),
         DataType::LastName => names::transform_last_name(value, state),
         DataType::FullName => names::transform_full_name(value, state),
-        DataType::PostalCode
-        | DataType::Address
-        | DataType::IpAddress
-        | DataType::Url
-        | DataType::MacAddress
-        | DataType::TaxId
-        | DataType::String
-        | DataType::Unknown => structured::transform_generic_string(value, context, state),
-        DataType::Boolean | DataType::Currency | DataType::Percentage => value.to_string(),
-        DataType::CountryCode | DataType::Enum => value.to_string(),
+        _ => structured::transform_generic_string(value, context, state),
     }
 }
 
@@ -105,13 +102,21 @@ pub fn transform_row_with_state(
                 return value.clone();
             }
 
+            // Detection sampled trimmed values; transform the trimmed value too so
+            // padded duplicates stay consistent and cells detection treated as
+            // empty are preserved rather than transformed.
+            let trimmed = value.trim();
+            if is_empty_value(trimmed) {
+                return value.clone();
+            }
+
             let context = TransformContext {
                 column_name: &column.name,
                 column_index: column.index,
                 row_index,
                 empty_format: column.empty_format,
             };
-            transform_value_with_state(value, column, &context, state)
+            transform_value_with_state(trimmed, column, &context, state)
         })
         .collect()
 }

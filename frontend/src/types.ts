@@ -258,6 +258,7 @@ export interface PrivacyReport {
   smartReplacementRejections: number
   smartReplacementRejectionReasons: SmartReplacementRejectionCount[]
   smartReplacementFallbacks: number
+  shapeFallbackValues: number
   readiness: ReleaseReadiness
   evidence: ReleaseEvidenceItem[]
   columnReports: ColumnReleaseReport[]

@@ -400,6 +400,7 @@ async function installTauriMock(page: Page) {
         smartReplacementRejections: 0,
         smartReplacementRejectionReasons: [],
         smartReplacementFallbacks: 0,
+        shapeFallbackValues: 0,
         readiness: {
           status: 'verified',
           blockers: [],

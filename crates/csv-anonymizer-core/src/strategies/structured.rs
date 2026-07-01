@@ -25,11 +25,11 @@ pub(super) fn transform_opaque_token(
 
 pub(super) fn transform_email(
     value: &str,
-    _context: &TransformContext<'_>,
+    context: &TransformContext<'_>,
     state: &mut TransformState,
 ) -> String {
     let Some(at_index) = value.rfind('@') else {
-        return value.to_string();
+        return shape_fallback(value, context, state);
     };
     let domain = &value[at_index..];
     let source_key = normalized_identity(value);
@@ -60,29 +60,30 @@ pub(super) fn transform_uuid(
 
 pub(super) fn transform_timestamp(
     value: &str,
-    _context: &TransformContext<'_>,
+    context: &TransformContext<'_>,
     state: &mut TransformState,
 ) -> String {
+    let Some((date, suffix)) = iso_date_prefix(value) else {
+        return shape_fallback(value, context, state);
+    };
     let source_key = normalized_identity(value);
     state.assign_generated(PseudonymDomain::Timestamp, &source_key, |attempt| {
-        transform_timestamp_candidate(value, attempt)
+        transform_timestamp_candidate(date, suffix, attempt)
     })
 }
 
-fn transform_timestamp_candidate(value: &str, _attempt: usize) -> String {
-    if value.len() < 10 {
-        return value.to_string();
-    }
+fn iso_date_prefix(value: &str) -> Option<(NaiveDate, &str)> {
+    let prefix = value.get(..10)?;
+    let date = NaiveDate::parse_from_str(prefix, "%Y-%m-%d").ok()?;
+    Some((date, &value[10..]))
+}
 
-    let Ok(date) = NaiveDate::parse_from_str(&value[..10], "%Y-%m-%d") else {
-        return value.to_string();
-    };
-
+fn transform_timestamp_candidate(date: NaiveDate, suffix: &str, _attempt: usize) -> String {
     let Some(offset_date) = shifted_date(date) else {
-        return value.to_string();
+        return format!("{}{}", date.format("%Y-%m-%d"), suffix);
     };
 
-    format!("{}{}", offset_date.format("%Y-%m-%d"), &value[10..])
+    format!("{}{}", offset_date.format("%Y-%m-%d"), suffix)
 }
 
 fn shifted_date(date: NaiveDate) -> Option<NaiveDate> {
@@ -104,12 +105,34 @@ fn random_nonzero_day_offset() -> i64 {
 
 pub(super) fn transform_phone(
     value: &str,
-    _context: &TransformContext<'_>,
+    context: &TransformContext<'_>,
     state: &mut TransformState,
 ) -> String {
+    if !is_phone_shaped(value) {
+        return shape_fallback(value, context, state);
+    }
     let source_key = normalized_identity(value);
     state.assign_generated(PseudonymDomain::Phone, &source_key, |attempt| {
         transform_phone_candidate(value, attempt)
+    })
+}
+
+// Digit randomization only anonymizes the digits; any other text in the value
+// (names, notes) would survive verbatim. Restrict format preservation to values
+// made of digits plus common phone separators and extension markers ("x"/"ext").
+fn is_phone_shaped(value: &str) -> bool {
+    let digit_count = value.chars().filter(char::is_ascii_digit).count();
+    if digit_count < 7 {
+        return false;
+    }
+    value.chars().all(|character| {
+        character.is_ascii_digit()
+            || character.is_whitespace()
+            || matches!(
+                character,
+                '(' | ')' | '+' | '-' | '.' | '/' | '#' | '*' | ',' | ';'
+            )
+            || matches!(character.to_ascii_lowercase(), 'x' | 'e' | 't')
     })
 }
 
@@ -124,6 +147,18 @@ fn transform_phone_candidate(value: &str, _attempt: usize) -> String {
             rand::thread_rng().gen_range(0..=9).to_string()
         })
         .collect()
+}
+
+// A value that does not match the detected column shape must never survive
+// unchanged: replace it with a generic pseudonym and count the fallback so the
+// privacy report can disclose it.
+fn shape_fallback(
+    value: &str,
+    context: &TransformContext<'_>,
+    state: &mut TransformState,
+) -> String {
+    state.record_shape_fallback();
+    transform_generic_string(value, context, state)
 }
 
 pub(super) fn transform_generic_string(
