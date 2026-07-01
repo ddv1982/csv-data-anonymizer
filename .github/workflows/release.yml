@@ -25,17 +25,17 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: '26'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable branch (2026-06-30)
 
       - name: Install Linux Tauri desktop dependencies
         run: |
@@ -47,53 +47,10 @@ jobs:
             libssl-dev \
             libwebkit2gtk-4.1-dev
 
-      - name: Install frontend dependencies
-        run: npm ci --prefix frontend
-
-      - name: Audit frontend dependencies
-        run: npm run frontend:audit
-
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --locked --version 0.22.2
-
-      - name: Audit Rust dependencies
-        run: npm run cargo:audit:required
-
-      - name: Validate release metadata
-        run: node scripts/check-release-metadata.mjs --expected-tag "${{ github.ref_name }}"
-
-      - name: Validate frontend/backend contracts
-        run: npm run contracts:check
-
-      - name: Install cargo-machete
-        run: cargo install cargo-machete --locked --version 0.9.2
-
-      - name: Check dead code
-        run: npm run deadcode:required
-
-      - name: Lint and test frontend
-        run: |
-          npm run frontend:lint
-          npm run frontend:test
-
-      - name: Install Playwright Chromium
-        working-directory: frontend
-        run: npx playwright install --with-deps chromium
-
-      - name: Test frontend e2e
-        run: npm run frontend:e2e
-
-      - name: Test frontend accessibility
-        run: npm run frontend:a11y
-
-      - name: Build frontend
-        run: npm run frontend:build
-
-      - name: Validate Rust workspace
-        run: |
-          cargo fmt --all --check
-          cargo test --workspace
-          cargo clippy --workspace --all-targets -- -D warnings
+      - name: Validate frontend and Rust build
+        uses: ./.github/actions/validate-build
+        with:
+          expected-tag: ${{ github.ref_name }}
 
   create-release:
     name: Create Draft Release
@@ -104,10 +61,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: '26'
 
@@ -119,6 +76,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            is_draft="$(gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}" --json isDraft --jq '.isDraft')"
+            if [ "${is_draft}" != "true" ]; then
+              echo "Release ${{ github.ref_name }} is already published; refusing to flip it back to draft." >&2
+              echo "If you really need to rebuild this release, delete it (or move the tag to a new version) and re-run the workflow." >&2
+              exit 1
+            fi
             gh release edit "${{ github.ref_name }}" \
               --repo "${{ github.repository }}" \
               --title "CSV Anonymizer ${{ github.ref_name }}" \
@@ -150,31 +113,28 @@ jobs:
           - arch: x64
             runner: macos-26-intel
 
+    # Signing secrets (CSC_LINK, CSC_KEY_PASSWORD, APPLE_API_KEY*) are scoped to
+    # the individual steps that need them so third-party actions never see them.
     env:
-      CSC_LINK: ${{ secrets.CSC_LINK }}
-      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
       MACOS_DEVELOPER_ID: ${{ secrets.MACOS_DEVELOPER_ID || secrets.ELECTROBUN_DEVELOPER_ID }}
       MACOS_TEAM_ID: ${{ secrets.MACOS_TEAM_ID || secrets.ELECTROBUN_TEAMID }}
-      APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY }}
-      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: '26'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable branch (2026-06-30)
 
       - name: Setup Rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2 (post-v2.9.1, 2026-03-12)
         with:
           workspaces: |
             . -> target
@@ -207,6 +167,12 @@ jobs:
           cp -R "target/release/bundle/macos/CSV Anonymizer.app" "dist/rust/build/CSV Anonymizer.app"
 
       - name: Prepare Apple signing environment
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
           set -euo pipefail
 
@@ -264,6 +230,9 @@ jobs:
           echo "APPLE_API_KEY_PATH=${api_key_path}" >> "$GITHUB_ENV"
 
       - name: Sign and notarize macOS app bundle
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
           set -euo pipefail
 
@@ -283,6 +252,9 @@ jobs:
           spctl --assess --verbose --type exec "${app_path}"
 
       - name: Build, sign, and notarize macOS DMG
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
           set -euo pipefail
 
@@ -306,7 +278,7 @@ jobs:
         run: node scripts/check-rust-artifacts.mjs --platform macos --require-dmg
 
       - name: Upload macOS release assets
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
           tag_name: ${{ github.ref_name }}
           draft: true
@@ -323,30 +295,27 @@ jobs:
       pages: write
       id-token: write
 
-    env:
-      DEB_SIGNING_PRIVATE_KEY: ${{ secrets.DEB_SIGNING_PRIVATE_KEY }}
-      DEB_SIGNING_KEY_FINGERPRINT: ${{ secrets.DEB_SIGNING_KEY_FINGERPRINT }}
-      DEB_SIGNING_KEY_PASSPHRASE: ${{ secrets.DEB_SIGNING_KEY_PASSPHRASE }}
-      DEB_SIGNING_PUBLIC_KEY: ${{ vars.DEB_SIGNING_PUBLIC_KEY }}
+    # DEB signing inputs are scoped to the "Prepare Linux signing environment"
+    # step (the only step that reads them) so third-party actions never see them.
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: '26'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable branch (2026-06-30)
         with:
           targets: x86_64-unknown-linux-gnu
 
       - name: Setup Rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2 (post-v2.9.1, 2026-03-12)
         with:
           workspaces: |
             . -> target
@@ -407,6 +376,11 @@ jobs:
           exit "${validator_status}"
 
       - name: Prepare Linux signing environment
+        env:
+          DEB_SIGNING_PRIVATE_KEY: ${{ secrets.DEB_SIGNING_PRIVATE_KEY }}
+          DEB_SIGNING_KEY_FINGERPRINT: ${{ secrets.DEB_SIGNING_KEY_FINGERPRINT }}
+          DEB_SIGNING_KEY_PASSPHRASE: ${{ secrets.DEB_SIGNING_KEY_PASSPHRASE }}
+          DEB_SIGNING_PUBLIC_KEY: ${{ vars.DEB_SIGNING_PUBLIC_KEY }}
         run: |
           set -euo pipefail
 
@@ -484,7 +458,7 @@ jobs:
         run: bash scripts/stage-apt-installer-assets.sh --stage-public
 
       - name: Upload Linux release assets
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
           tag_name: ${{ github.ref_name }}
           draft: true
@@ -507,16 +481,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
 
       - name: Upload APT repository pages artifact
-        uses: actions/upload-pages-artifact@v5
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: dist/rust/apt-pages
 
   publish-apt-repository:
     name: Publish APT Repository
-    needs: build-linux-release
+    # Gate APT publication on every build job so a failed macOS build (which
+    # leaves the GitHub release as an unpublishable draft) cannot let the APT
+    # channel ship a .deb that the release itself never publishes.
+    needs: [build-macos-release, build-linux-release]
     runs-on: ubuntu-24.04
     permissions:
       pages: write
@@ -528,7 +505,7 @@ jobs:
     steps:
       - name: Deploy APT repository to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
 
   publish-release:
     name: Publish Release
