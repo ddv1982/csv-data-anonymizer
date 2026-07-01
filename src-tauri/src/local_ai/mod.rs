@@ -21,7 +21,7 @@ const OLLAMA_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 const OLLAMA_DOWNLOAD_READ_TIMEOUT: Duration = Duration::from_secs(15);
 
 pub fn open_setup_url() -> Result<(), String> {
-    open::that(OLLAMA_DOWNLOAD_URL)
+    open::that_detached(OLLAMA_DOWNLOAD_URL)
         .map_err(|error| format!("Could not open Ollama download page: {error}"))
 }
 

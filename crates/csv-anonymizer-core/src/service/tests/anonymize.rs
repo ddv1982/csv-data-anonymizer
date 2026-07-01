@@ -151,8 +151,9 @@ fn anonymize_preserves_numeric_shapes_in_output_file() {
     );
     assert_eq!(output.rows[0][2].len(), 4);
     assert!(output.rows[0][2].starts_with("000"));
-    assert_eq!(output.rows[0][3].len(), "'-12.50".len());
-    assert!(output.rows[0][3].starts_with("'-"));
+    assert_eq!(output.rows[0][3].len(), "-12.50".len());
+    assert!(output.rows[0][3].starts_with('-'));
+    assert!(!output.rows[0][3].starts_with("'"));
     assert_eq!(output.rows[0][3].split_once('.').unwrap().1.len(), 2);
     assert_eq!(output.rows[0][4], "");
     assert_eq!(output.rows[1][4], "null");
@@ -351,4 +352,30 @@ fn anonymize_does_not_count_auto_noop_selected_columns() {
     assert_eq!(output.rows[0][0], "user@example.com");
     assert_eq!(output.rows[0][1], "US");
     assert_ne!(output.rows[0][2], "active");
+}
+
+#[test]
+fn anonymize_rejects_output_path_equal_to_input_even_with_force() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("data.csv");
+    fs::write(&input_path, "email\nada@example.com\n").unwrap();
+
+    let error = service
+        .anonymize_csv(AnonymizeParams {
+            file_path: input_path.clone(),
+            output_path: input_path.clone(),
+            columns: vec![0],
+            controls: vec![],
+            force: true,
+            preview_smart_replacements: vec![],
+        })
+        .unwrap_err();
+
+    assert!(
+        error.to_string().contains("must differ from the input"),
+        "unexpected error: {error}"
+    );
+    let original = fs::read_to_string(&input_path).unwrap();
+    assert_eq!(original, "email\nada@example.com\n");
 }

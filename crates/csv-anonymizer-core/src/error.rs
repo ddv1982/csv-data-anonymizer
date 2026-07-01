@@ -24,6 +24,9 @@ pub enum AnonymizerError {
     #[error("Output file already exists: {0}")]
     OutputExists(PathBuf),
 
+    #[error("Output path must differ from the input file: {0}")]
+    OutputSameAsInput(PathBuf),
+
     #[error("Output directory is not writable: {0}")]
     OutputDirectoryNotWritable(PathBuf),
 
