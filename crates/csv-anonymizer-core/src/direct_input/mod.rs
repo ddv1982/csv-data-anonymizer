@@ -10,6 +10,7 @@ mod xml;
 mod tests;
 
 use crate::error::Result;
+use crate::metadata::should_auto_select_column;
 use crate::smart::SmartReplacementProvider;
 use crate::types::{
     AnonymizationStrategy, ColumnControl, ColumnMetadata, DataType, PasteAnalyzeData,
@@ -22,7 +23,7 @@ pub fn analyze_paste_data(input: PasteAnalyzeParams) -> Result<PasteAnalyzeData>
     shared::validate_paste_content(&input.content)?;
     let format = format_detection::resolve_format(input.format, &input.content);
 
-    match format {
+    let mut analysis = match format {
         PasteDataFormat::Csv => csv_text::analyze_csv_text(&input.content, input.sample_row_count),
         PasteDataFormat::Json => {
             let value = documents::parse_json(&input.content)?;
@@ -37,7 +38,13 @@ pub fn analyze_paste_data(input: PasteAnalyzeParams) -> Result<PasteAnalyzeData>
             text::analyze_text_content(&input.content, format, input.sample_row_count)
         }
         PasteDataFormat::Auto => unreachable!("auto format must resolve before analysis"),
+    }?;
+
+    for column in &mut analysis.columns {
+        column.is_selected = should_auto_select_column(column);
     }
+
+    Ok(analysis)
 }
 
 pub fn preview_paste_data(input: PastePreviewParams) -> Result<PreviewData> {

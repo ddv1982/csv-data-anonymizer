@@ -61,6 +61,7 @@ export function useAnonymizeJob({
   const [activeJobId, setActiveJobId] = useState<string | null>(null)
   const [jobStatus, setJobStatus] = useState<AnonymizeJobStatus | null>(null)
   const handleJobStatusRef = useRef(handleJobStatus)
+  const consecutivePollFailuresRef = useRef(0)
   const canAnonymize = Boolean(
     hasColumns &&
       hasSelectedColumns &&
@@ -80,17 +81,25 @@ export function useAnonymizeJob({
     const jobId = activeJobId
     let isMounted = true
     let timeoutId: number | undefined
+    consecutivePollFailuresRef.current = 0
 
     async function pollJob() {
       try {
         const status = await getAnonymizeJobStatus(jobId)
         if (!isMounted) return
+        consecutivePollFailuresRef.current = 0
         const finished = handleJobStatusRef.current(status)
         if (!finished) {
           timeoutId = window.setTimeout(pollJob, 300)
         }
       } catch (caught) {
         if (!isMounted) return
+        consecutivePollFailuresRef.current += 1
+        if (consecutivePollFailuresRef.current < 2) {
+          timeoutId = window.setTimeout(pollJob, 300)
+          return
+        }
+        void cancelAnonymizeJob(jobId).catch(() => undefined)
         setActiveJobId(null)
         setJobStatus(null)
         setBusy('idle')

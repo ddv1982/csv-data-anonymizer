@@ -37,6 +37,42 @@ fn transforms_csv_text_with_existing_csv_rules() {
 }
 
 #[test]
+fn analyze_paste_data_auto_selects_columns_with_core_policy() {
+    let input = "email,notes\nada@example.com,\n";
+    let analysis = analyze_paste_data(PasteAnalyzeParams {
+        content: input.to_string(),
+        format: PasteDataFormat::Csv,
+        sample_row_count: 10,
+    })
+    .unwrap();
+
+    let email = analysis
+        .columns
+        .iter()
+        .find(|column| column.name == "email")
+        .unwrap();
+    assert!(matches!(email.pii_risk, PiiRisk::High | PiiRisk::Medium));
+    assert!(!email.sample_values.is_empty());
+    assert!(email.is_selected);
+
+    let notes = analysis
+        .columns
+        .iter()
+        .find(|column| column.name == "notes")
+        .unwrap();
+    assert!(notes.sample_values.is_empty());
+    assert!(!notes.is_selected);
+
+    // The shared policy also rejects high-risk columns without sample values:
+    // analyze_paste_data applies should_auto_select_column verbatim.
+    let mut empty_high_risk = email.clone();
+    empty_high_risk.sample_values.clear();
+    assert!(!crate::metadata::should_auto_select_column(
+        &empty_high_risk
+    ));
+}
+
+#[test]
 fn transforms_quick_values_with_one_state() {
     let result = transform_quick_values(QuickTransformParams {
         input: "ada@example.com\nada@example.com".to_string(),
