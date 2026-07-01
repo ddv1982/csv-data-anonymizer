@@ -48,9 +48,7 @@ function App() {
           hidden={activeMode !== 'csv'}
           className="mode-panel"
         >
-          {activeMode === 'csv' ? (
-            <AnonymizerWorkflowView workflow={workflow} onOpenLocalAiSettings={() => setLocalAiSettingsOpen(true)} />
-          ) : null}
+          <AnonymizerWorkflowView workflow={workflow} onOpenLocalAiSettings={() => setLocalAiSettingsOpen(true)} />
         </section>
 
         <section
@@ -60,15 +58,13 @@ function App() {
           hidden={activeMode !== 'paste'}
           className="mode-panel"
         >
-          {activeMode === 'paste' ? (
-            <PasteDataWorkflowView
-              settings={workflow.settings}
-              settingsLoaded={workflow.settingsLoaded}
-              localAi={workflow.localAi}
-              onOpenLocalAiSettings={() => setLocalAiSettingsOpen(true)}
-              onError={workflow.setError}
-            />
-          ) : null}
+          <PasteDataWorkflowView
+            settings={workflow.settings}
+            settingsLoaded={workflow.settingsLoaded}
+            localAi={workflow.localAi}
+            onOpenLocalAiSettings={() => setLocalAiSettingsOpen(true)}
+            onError={workflow.setError}
+          />
         </section>
 
         <section
@@ -78,14 +74,12 @@ function App() {
           hidden={activeMode !== 'quick'}
           className="mode-panel"
         >
-          {activeMode === 'quick' ? (
-            <QuickDataTypeWorkflowView
-              settingsLoaded={workflow.settingsLoaded}
-              localAi={workflow.localAi}
-              onOpenLocalAiSettings={() => setLocalAiSettingsOpen(true)}
-              onError={workflow.setError}
-            />
-          ) : null}
+          <QuickDataTypeWorkflowView
+            settingsLoaded={workflow.settingsLoaded}
+            localAi={workflow.localAi}
+            onOpenLocalAiSettings={() => setLocalAiSettingsOpen(true)}
+            onError={workflow.setError}
+          />
         </section>
       </main>
 

@@ -104,6 +104,7 @@ export function useLocalAi(settings: AppSettings, onError: (message: string) => 
       } catch (caught) {
         if (!isMounted) return
         setDownloadJobId(null)
+        setDownloadStatus(null)
         onError(messageFrom(caught))
       }
     }

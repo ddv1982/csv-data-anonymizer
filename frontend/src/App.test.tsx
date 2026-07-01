@@ -67,18 +67,69 @@ describe('App input mode tabs', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    expect(screen.getByRole('button', { name: /browse for csv file/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /browse for csv file/i })).toBeVisible()
 
     await user.click(screen.getByRole('tab', { name: /paste sample/i }))
-    expect(screen.getByLabelText(/format/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /detect fields/i })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /browse for csv file/i })).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/format/i)).toBeVisible()
+    expect(screen.getByRole('button', { name: /detect fields/i })).toBeVisible()
+    expect(screen.getByRole('button', { name: /browse for csv file/i, hidden: true })).not.toBeVisible()
 
     await user.click(screen.getByRole('tab', { name: /quick by data type/i }))
-    expect(screen.getByRole('combobox', { name: 'Data Type' })).toBeInTheDocument()
-    expect(screen.getByRole('spinbutton', { name: /quantity/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /generate values/i })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /detect fields/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Data Type' })).toBeVisible()
+    expect(screen.getByRole('spinbutton', { name: /quantity/i })).toBeVisible()
+    expect(screen.getByRole('button', { name: /generate values/i })).toBeVisible()
+    expect(screen.getByRole('button', { name: /detect fields/i, hidden: true })).not.toBeVisible()
+  })
+
+  it('keeps paste workflow state when switching tabs', async () => {
+    const user = userEvent.setup()
+    tauriMocks.analyzePasteData.mockResolvedValue({
+      format: 'json',
+      rowCount: 1,
+      rowCountIsComplete: true,
+      columns: [columnFixture(0, '[].email', 'email', 'high')],
+    })
+    render(<App />)
+
+    await user.click(screen.getByRole('tab', { name: /paste sample/i }))
+    fireEvent.change(screen.getByLabelText(/pasted data/i), {
+      target: { value: '[{"email":"ada@example.com"}]' },
+    })
+    await user.click(screen.getByRole('button', { name: /detect fields/i }))
+    expect(await screen.findByText('[].email')).toBeVisible()
+
+    await user.click(screen.getByRole('tab', { name: /csv file/i }))
+    expect(screen.getByRole('button', { name: /browse for csv file/i })).toBeVisible()
+    expect(screen.getByLabelText(/pasted data/i)).not.toBeVisible()
+
+    await user.click(screen.getByRole('tab', { name: /paste sample/i }))
+    expect(screen.getByLabelText(/pasted data/i)).toHaveValue('[{"email":"ada@example.com"}]')
+    expect(screen.getByText('[].email')).toBeVisible()
+    expect(screen.getByText('Detected: JSON')).toBeVisible()
+    expect(tauriMocks.analyzePasteData).toHaveBeenCalledTimes(1)
+  })
+
+  it('disables Select Detected Risk in the CSV workflow when no risky columns are detected', async () => {
+    const user = userEvent.setup()
+    tauriMocks.pickInputCsv.mockResolvedValue('/data/input.csv')
+    tauriMocks.analyzeCsv.mockResolvedValue({
+      headers: {
+        filePath: '/data/input.csv',
+        rowCount: 1,
+        rowCountIsComplete: true,
+        defaultOutputPath: '/data/input_private_output.csv',
+        columns: [columnFixture(0, 'notes', 'string', 'low')],
+      },
+      selectedColumns: [],
+      suggestedOutputPath: '/data/input_private_output.csv',
+    })
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: /browse for csv file/i }))
+
+    expect(await screen.findByText('notes')).toBeVisible()
+    expect(screen.getByRole('button', { name: /select detected risk/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Select All' })).toBeEnabled()
   })
 
   it('supports keyboard navigation for input mode tabs', async () => {
@@ -478,6 +529,7 @@ function columnFixture(
     index,
     detectedType,
     piiRisk,
+    isSelected: piiRisk === 'high' || piiRisk === 'medium',
   })
 }
 

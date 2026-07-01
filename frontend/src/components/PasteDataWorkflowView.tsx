@@ -82,9 +82,7 @@ export function PasteDataWorkflowView({
       const nextAnalysis = await analyzePasteData(content, format, settings.sampleRowCount)
       setAnalysis(nextAnalysis)
       selection.setSelectedColumns(
-        nextAnalysis.columns
-          .filter((column) => column.piiRisk === 'high' || column.piiRisk === 'medium')
-          .map((column) => column.index),
+        nextAnalysis.columns.filter((column) => column.isSelected).map((column) => column.index),
       )
       selection.resetColumnControls()
     } catch (caught) {

@@ -147,7 +147,7 @@ function ColumnSelectionStep({ workflow }: { workflow: AnonymizerWorkflowState }
           },
           {
             label: 'Select Detected Risk',
-            disabled: workflow.busy === 'loading' || workflow.selectableColumns.length === 0,
+            disabled: workflow.busy === 'loading' || workflow.detectedRiskColumns.length === 0,
             onClick: () => workflow.setColumnSelection(workflow.detectedRiskColumns),
           },
         ]}

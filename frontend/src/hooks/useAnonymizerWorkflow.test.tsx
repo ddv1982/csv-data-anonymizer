@@ -202,6 +202,126 @@ describe('useAnonymizerWorkflow', () => {
     expect(harness.workflow.busy).toBe('idle')
   })
 
+  it('surfaces the failure message when a job reaches the failed state', async () => {
+    vi.useFakeTimers()
+    tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())
+    tauriMocks.startAnonymizeJob.mockResolvedValue(runningJobStatus())
+    tauriMocks.getAnonymizeJobStatus.mockResolvedValue({
+      ...runningJobStatus(),
+      state: 'failed',
+      error: 'Simulated backend failure',
+    })
+    const harness = renderWorkflow()
+    await flushPromises()
+
+    await act(async () => {
+      await harness.workflow.handlePickInput()
+    })
+    await act(async () => {
+      await harness.workflow.runAnonymization()
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300)
+    })
+
+    expect(harness.workflow.error).toBe('Simulated backend failure')
+    expect(harness.workflow.busy).toBe('idle')
+    expect(harness.workflow.result).toBeNull()
+    expect(harness.workflow.jobStatus).toBeNull()
+  })
+
+  it('aborts the run and surfaces the blocker when preflight reports blockers', async () => {
+    tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())
+    tauriMocks.preflightAnonymization.mockResolvedValue(
+      verifiedPreflightFixture({
+        readiness: {
+          status: 'blocked',
+          blockers: ['Output path matches the input file.'],
+          reviewItems: [],
+          verifiedItems: [],
+        },
+      }),
+    )
+    const harness = renderWorkflow()
+    await flushPromises()
+
+    await act(async () => {
+      await harness.workflow.handlePickInput()
+    })
+    await act(async () => {
+      await harness.workflow.runAnonymization()
+    })
+
+    expect(tauriMocks.startAnonymizeJob).not.toHaveBeenCalled()
+    expect(harness.workflow.error).toBe('Output path matches the input file.')
+    expect(harness.workflow.busy).toBe('idle')
+  })
+
+  it('retries a failed job poll once before completing on the next tick', async () => {
+    vi.useFakeTimers()
+    tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())
+    tauriMocks.startAnonymizeJob.mockResolvedValue(runningJobStatus())
+    tauriMocks.getAnonymizeJobStatus
+      .mockRejectedValueOnce(new Error('Transient poll failure'))
+      .mockResolvedValueOnce(succeededJobStatus())
+    const harness = renderWorkflow()
+    await flushPromises()
+
+    await act(async () => {
+      await harness.workflow.handlePickInput()
+    })
+    await act(async () => {
+      await harness.workflow.runAnonymization()
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300)
+    })
+
+    expect(harness.workflow.busy).toBe('running')
+    expect(harness.workflow.error).toBeNull()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300)
+    })
+
+    expect(tauriMocks.getAnonymizeJobStatus).toHaveBeenCalledTimes(2)
+    expect(harness.workflow.result?.outputPath).toBe('/out/final.csv')
+    expect(harness.workflow.busy).toBe('idle')
+    expect(tauriMocks.cancelAnonymizeJob).not.toHaveBeenCalled()
+  })
+
+  it('gives up after consecutive poll failures and attempts a best-effort cancel', async () => {
+    vi.useFakeTimers()
+    tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())
+    tauriMocks.startAnonymizeJob.mockResolvedValue(runningJobStatus())
+    tauriMocks.getAnonymizeJobStatus.mockRejectedValue(new Error('Simulated poll failure'))
+    tauriMocks.cancelAnonymizeJob.mockResolvedValue({
+      ...runningJobStatus(),
+      state: 'canceled',
+      cancelRequested: true,
+    })
+    const harness = renderWorkflow()
+    await flushPromises()
+
+    await act(async () => {
+      await harness.workflow.handlePickInput()
+    })
+    await act(async () => {
+      await harness.workflow.runAnonymization()
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300)
+    })
+
+    expect(tauriMocks.getAnonymizeJobStatus).toHaveBeenCalledTimes(2)
+    expect(tauriMocks.cancelAnonymizeJob).toHaveBeenCalledWith('job-1')
+    expect(harness.workflow.error).toBe('Simulated poll failure')
+    expect(harness.workflow.busy).toBe('idle')
+  })
+
   it('recomputes the suggested output path when the suffix setting changes', async () => {
     tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())
     const harness = renderWorkflow()
