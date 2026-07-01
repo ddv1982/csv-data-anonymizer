@@ -146,13 +146,17 @@ export function useAnonymizeJob({
     return true
   }
 
+  function anonymizeBlockedMessage() {
+    if (localAiBlocked) return 'Set up Local AI before creating output with Smart replacement columns.'
+    if (!inputPath || !hasColumns) return 'Load a CSV file first.'
+    if (!hasSelectedColumns) return 'Select at least one column to anonymize.'
+    if (!outputPath) return 'Choose an output path.'
+    return 'Wait for the current operation to finish.'
+  }
+
   async function runAnonymization() {
     if (!canAnonymize) {
-      setError(
-        localAiBlocked
-          ? 'Set up Local AI before creating output with Smart replacement columns.'
-          : 'Load a CSV, select at least one column, and choose an output path.',
-      )
+      setError(anonymizeBlockedMessage())
       return
     }
 

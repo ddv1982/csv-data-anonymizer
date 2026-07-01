@@ -17,6 +17,10 @@ export function LocalAiSettingsBlock({
     <LocalAiPanel
       enabled={settings.localAiEnabled}
       model={settings.localAiModel}
+      selectedModel={localAi.selectedModel}
+      statusMatchesModel={localAi.statusMatchesModel}
+      ready={localAi.ready}
+      downloading={localAi.downloadRunning}
       status={localAi.status}
       downloadStatus={localAi.downloadStatus}
       disabled={disabled}

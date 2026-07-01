@@ -23,6 +23,7 @@ export function useCopyOutput({
       await copyTextToClipboard(output)
       setCopyStatus('Copied')
     } catch (caught) {
+      setCopyStatus(null)
       onError(messageFrom(caught))
     } finally {
       setBusy('idle')

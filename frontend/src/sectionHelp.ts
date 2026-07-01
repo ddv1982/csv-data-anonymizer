@@ -210,7 +210,7 @@ export const sectionHelp = {
     points: [
       {
         label: 'Counters',
-        text: 'Counts show how many columns were treated as direct identifiers, quasi-identifiers, sensitive columns, masked columns, token columns, pass-through columns, and so on.',
+        text: 'Counts show how many columns were treated as direct identifiers, quasi-identifiers, masked columns, token columns, pass-through columns, and so on.',
       },
       {
         label: 'Notes',

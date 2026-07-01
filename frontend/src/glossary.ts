@@ -31,10 +31,6 @@ export const glossaryTerms = {
     title: 'Quasi-ID',
     body: 'A value that may identify someone when combined with other columns, such as timestamp, postal code, country, IP, or UUID.',
   },
-  sensitive: {
-    title: 'Sensitive',
-    body: 'Private information to protect, such as income, health, status, or other confidential attributes.',
-  },
   attribute: {
     title: 'Attribute',
     body: 'Regular data kept for utility and not treated as an identifier.',

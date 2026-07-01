@@ -242,7 +242,6 @@ export interface PreflightData {
 export interface PrivacyReport {
   directIdentifiers: number
   quasiIdentifiers: number
-  sensitiveColumns: number
   pseudonymizedColumns: number
   smartReplacementColumns: number
   opaqueTokenColumns: number

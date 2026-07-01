@@ -26,7 +26,6 @@ export function sensitiveSummary(privacyReport: PrivacyReport) {
   const parts = [
     metricPart(privacyReport.directIdentifiers, 'direct'),
     metricPart(privacyReport.quasiIdentifiers, 'quasi'),
-    metricPart(privacyReport.sensitiveColumns, 'sensitive'),
   ].filter(Boolean)
 
   return parts.length > 0 ? parts.join(', ') : 'No sensitive columns detected'

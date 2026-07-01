@@ -649,7 +649,6 @@ pub(crate) fn build_privacy_report(
     let mut report = PrivacyReport {
         direct_identifiers: 0,
         quasi_identifiers: 0,
-        sensitive_columns: 0,
         pseudonymized_columns: 0,
         smart_replacement_columns: 0,
         opaque_token_columns: 0,

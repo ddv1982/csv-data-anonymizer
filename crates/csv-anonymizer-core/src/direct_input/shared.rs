@@ -4,16 +4,13 @@ use crate::metadata::{
     apply_column_selection, build_column_metadata, default_strategy_for_pii_risk,
 };
 use crate::preview::generate_column_preview;
-use crate::service::{
-    apply_column_controls, build_privacy_report, preview_warning_for_column,
-    validate_column_indices,
-};
+use crate::service::{apply_column_controls, preview_warning_for_column, validate_column_indices};
 use crate::smart::{
     SmartReplacementMap, SmartReplacementProvider, has_smart_replacement_columns,
     prepare_smart_replacements_from_rows,
 };
-use crate::strategies::{TransformState, transform_row_with_state};
-use crate::types::{ColumnControl, ColumnMetadata, DataType, PreviewData, PrivacyReport};
+use crate::strategies::TransformState;
+use crate::types::{ColumnControl, ColumnMetadata, DataType, PreviewData};
 use std::collections::HashMap;
 
 pub(super) const PASTE_MAX_CONTENT_BYTES: usize = 5 * 1024 * 1024;
@@ -27,25 +24,6 @@ pub(super) struct PreviewSelection<'a, 'provider> {
     pub(super) controls: &'a [ColumnControl],
     pub(super) sample_count: usize,
     pub(super) provider: Option<&'provider mut dyn SmartReplacementProvider>,
-}
-
-pub(super) fn preview_rows(
-    rows: &[Vec<String>],
-    metadata: &[ColumnMetadata],
-    columns: &[usize],
-    controls: &[ColumnControl],
-    sample_count: usize,
-) -> Result<PreviewData> {
-    preview_rows_with_smart_provider(
-        rows,
-        metadata,
-        PreviewSelection {
-            columns,
-            controls,
-            sample_count,
-            provider: None,
-        },
-    )
 }
 
 pub(super) fn preview_rows_with_smart_provider(
@@ -106,38 +84,6 @@ pub(super) fn preview_from_rows_with_smart_provider(
         warnings,
         smart_replacements: smart_replacement_entries,
     })
-}
-
-pub(super) fn anonymize_rows(
-    rows: &[Vec<String>],
-    metadata: &[ColumnMetadata],
-    columns: &[usize],
-    controls: &[ColumnControl],
-) -> Result<(Vec<Vec<String>>, PrivacyReport)> {
-    anonymize_rows_with_smart_provider(rows, metadata, columns, controls, None)
-}
-
-pub(super) fn anonymize_rows_with_smart_provider(
-    rows: &[Vec<String>],
-    metadata: &[ColumnMetadata],
-    columns: &[usize],
-    controls: &[ColumnControl],
-    provider: Option<&mut dyn SmartReplacementProvider>,
-) -> Result<(Vec<Vec<String>>, PrivacyReport)> {
-    let selected_metadata = prepare_selected_metadata(metadata, columns, controls)?;
-    let smart_replacements =
-        prepare_smart_replacements_from_rows(rows, &selected_metadata, None, provider)?;
-    let mut state = transform_state_for_smart_replacements(smart_replacements);
-    let transformed = rows
-        .iter()
-        .enumerate()
-        .map(|(row_index, row)| {
-            transform_row_with_state(row, &selected_metadata, row_index, &mut state)
-        })
-        .collect();
-    let privacy_report = build_privacy_report(&selected_metadata, state.report());
-
-    Ok((transformed, privacy_report))
 }
 
 pub(super) fn transform_state_for_smart_replacements(

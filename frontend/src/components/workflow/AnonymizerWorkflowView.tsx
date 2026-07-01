@@ -62,13 +62,21 @@ export function AnonymizerWorkflowView({
     )
   }
 
+  const unselectedRiskColumns = workflow.columns.filter(
+    (column) => (column.piiRisk === 'high' || column.piiRisk === 'medium') && !workflow.selectedSet.has(column.index),
+  )
+  const unselectedRiskMessage =
+    unselectedRiskColumns.length > 0
+      ? formatUnselectedRiskMessage(unselectedRiskColumns.map((column) => column.name))
+      : null
+
   return (
     <div className="workflow-stack">
       <FileStep workflow={workflow} />
-      <ColumnSelectionStep workflow={workflow} />
+      <ColumnSelectionStep workflow={workflow} unselectedRiskMessage={unselectedRiskMessage} />
       <ConfigurationStep workflow={workflow} onOpenLocalAiSettings={onOpenLocalAiSettings} />
       <PreviewStep workflow={workflow} />
-      <RunStep workflow={workflow} />
+      <RunStep workflow={workflow} unselectedRiskMessage={unselectedRiskMessage} />
     </div>
   )
 }
@@ -114,15 +122,13 @@ function FileStep({ workflow }: { workflow: AnonymizerWorkflowState }) {
   )
 }
 
-function ColumnSelectionStep({ workflow }: { workflow: AnonymizerWorkflowState }) {
-  const unselectedRiskColumns = workflow.selectableColumns.filter(
-    (column) => (column.piiRisk === 'high' || column.piiRisk === 'medium') && !workflow.selectedSet.has(column.index),
-  )
-  const unselectedRiskMessage =
-    unselectedRiskColumns.length > 0
-      ? formatUnselectedRiskMessage(unselectedRiskColumns.map((column) => column.name))
-      : null
-
+function ColumnSelectionStep({
+  workflow,
+  unselectedRiskMessage,
+}: {
+  workflow: AnonymizerWorkflowState
+  unselectedRiskMessage: string | null
+}) {
   return (
     <Card
       title="2. Review Sensitive Columns"
@@ -132,8 +138,8 @@ function ColumnSelectionStep({ workflow }: { workflow: AnonymizerWorkflowState }
         actions={[
           {
             label: 'Select All',
-            disabled: workflow.busy === 'loading' || workflow.allSelected || workflow.selectableColumns.length === 0,
-            onClick: () => workflow.setColumnSelection(workflow.selectableColumns.map((column) => column.index)),
+            disabled: workflow.busy === 'loading' || workflow.allSelected || workflow.columns.length === 0,
+            onClick: () => workflow.setColumnSelection(workflow.columns.map((column) => column.index)),
           },
           {
             label: 'Deselect All',
@@ -263,15 +269,13 @@ function PreviewStep({ workflow }: { workflow: AnonymizerWorkflowState }) {
   )
 }
 
-function RunStep({ workflow }: { workflow: AnonymizerWorkflowState }) {
-  const unselectedRiskColumns = workflow.columns.filter(
-    (column) => (column.piiRisk === 'high' || column.piiRisk === 'medium') && !workflow.selectedSet.has(column.index),
-  )
-  const unselectedRiskMessage =
-    unselectedRiskColumns.length > 0
-      ? formatUnselectedRiskMessage(unselectedRiskColumns.map((column) => column.name))
-      : null
-
+function RunStep({
+  workflow,
+  unselectedRiskMessage,
+}: {
+  workflow: AnonymizerWorkflowState
+  unselectedRiskMessage: string | null
+}) {
   return (
     <Card contentClassName="anonymize-card-content">
       {unselectedRiskMessage ? (

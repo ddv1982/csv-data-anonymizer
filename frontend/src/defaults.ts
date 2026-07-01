@@ -1,5 +1,7 @@
 import type { AppSettings } from './types'
 
+export const defaultLocalAiModel = 'gemma3:4b'
+
 export const defaultSettings: AppSettings = {
   schemaVersion: 10,
   themeMode: 'system',
@@ -11,5 +13,5 @@ export const defaultSettings: AppSettings = {
   lastInputDirectory: null,
   lastOutputDirectory: null,
   localAiEnabled: false,
-  localAiModel: 'gemma3:4b',
+  localAiModel: defaultLocalAiModel,
 }

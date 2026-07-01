@@ -138,6 +138,7 @@ export function useCsvAnalysis({
         current?.filePath === path ? { ...current, rowCount, rowCountIsComplete: true } : current,
       )
     } catch {
+      // Intentional: keep the approximate count from analysis and only mark it incomplete.
       selection.setHeaders((current) =>
         current?.filePath === path ? { ...current, rowCountIsComplete: false } : current,
       )

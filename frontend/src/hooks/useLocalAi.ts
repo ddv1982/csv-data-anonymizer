@@ -6,6 +6,7 @@ import {
   openLocalAiSetupUrl,
   startLocalAiModelDownload,
 } from '../tauri'
+import { defaultLocalAiModel } from '../defaults'
 import type { AppSettings, LocalAiDownloadStatus, LocalAiStatus } from '../types'
 import { messageFrom } from '../utils/errors'
 
@@ -20,7 +21,7 @@ export function useLocalAi(settings: AppSettings, onError: (message: string) => 
     }),
     [settings.localAiEnabled, settings.localAiModel],
   )
-  const selectedModel = request.model.trim() || 'gemma3:4b'
+  const selectedModel = request.model.trim() || defaultLocalAiModel
   const statusMatchesModel = status?.model === selectedModel
   const downloadMatchesModel = downloadStatus?.model === selectedModel
 
@@ -66,22 +67,8 @@ export function useLocalAi(settings: AppSettings, onError: (message: string) => 
   }, [onError])
 
   useEffect(() => {
-    let isMounted = true
-    getLocalAiStatus(request)
-      .then((nextStatus) => {
-        if (isMounted) setStatus(nextStatus)
-      })
-      .catch((caught: unknown) => {
-        if (isMounted) {
-          setStatus(null)
-          onError(messageFrom(caught))
-        }
-      })
-
-    return () => {
-      isMounted = false
-    }
-  }, [onError, request])
+    void Promise.resolve().then(refresh)
+  }, [refresh])
 
   useEffect(() => {
     if (!downloadJobId) return
@@ -121,6 +108,8 @@ export function useLocalAi(settings: AppSettings, onError: (message: string) => 
     request,
     status,
     downloadStatus,
+    selectedModel,
+    statusMatchesModel,
     ready: Boolean(settings.localAiEnabled && statusMatchesModel && status?.ready),
     downloadRunning: Boolean(downloadMatchesModel && downloadStatus?.state === 'running'),
     refresh,

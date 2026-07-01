@@ -20,7 +20,6 @@ export function privacyReportFixture(overrides: Partial<PrivacyReport> = {}): Pr
   return {
     directIdentifiers: 0,
     quasiIdentifiers: 0,
-    sensitiveColumns: 0,
     pseudonymizedColumns: 0,
     smartReplacementColumns: 0,
     opaqueTokenColumns: 0,

@@ -22,14 +22,10 @@ export function PrivacyReportSummary({ privacyReport }: { privacyReport: Privacy
     privacyReport.opaqueTokenColumns +
     privacyReport.maskedColumns +
     privacyReport.redactedColumns
-  const sensitiveColumnTotal =
-    privacyReport.directIdentifiers +
-    privacyReport.quasiIdentifiers +
-    privacyReport.sensitiveColumns
+  const sensitiveColumnTotal = privacyReport.directIdentifiers + privacyReport.quasiIdentifiers
   const advancedMetrics = nonZeroMetrics([
     { label: 'Direct identifiers', value: privacyReport.directIdentifiers, glossaryTerm: 'directIdentifier' },
     { label: 'Quasi-identifiers', value: privacyReport.quasiIdentifiers, glossaryTerm: 'quasiIdentifier' },
-    { label: 'Sensitive columns', value: privacyReport.sensitiveColumns, glossaryTerm: 'sensitive' },
     { label: 'Pseudonymized columns', value: privacyReport.pseudonymizedColumns, glossaryTerm: 'pseudonymizedColumns' },
     { label: 'Opaque token columns', value: privacyReport.opaqueTokenColumns, glossaryTerm: 'opaqueTokenColumns' },
     { label: 'Masked columns', value: privacyReport.maskedColumns, glossaryTerm: 'maskedColumns' },

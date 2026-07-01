@@ -1,8 +1,8 @@
 use super::*;
-use crate::metadata::build_column_metadata;
 use crate::smart::{SmartReplacement, SmartReplacementProvider, SmartReplacementRequest};
 use crate::types::{
-    PiiRisk, SmartReplacementEntry, SmartReplacementRejectionCount, SmartReplacementRejectionReason,
+    AnonymizationStrategy, ColumnControl, DataType, PiiRisk, SmartReplacementEntry,
+    SmartReplacementRejectionCount, SmartReplacementRejectionReason,
 };
 
 mod redaction;
@@ -73,45 +73,12 @@ fn analyze_paste_data_auto_selects_columns_with_core_policy() {
 }
 
 #[test]
-fn transforms_quick_values_with_one_state() {
-    let result = transform_quick_values(QuickTransformParams {
-        input: "ada@example.com\nada@example.com".to_string(),
-        data_type: DataType::Email,
-        strategy: AnonymizationStrategy::Auto,
-    })
-    .unwrap();
-    let lines = result.output.lines().collect::<Vec<_>>();
-
-    assert_eq!(lines.len(), 2);
-    assert_eq!(lines[0], lines[1]);
-    assert_ne!(lines[0], "ada@example.com");
-}
-
-#[test]
-fn row_helpers_preview_and_anonymize_rows() {
-    let rows = vec![vec!["ada@example.com".to_string()]];
-    let headers = vec!["email".to_string()];
-    let metadata = build_column_metadata(&headers, &rows);
-
-    let preview = preview_rows(&rows, &metadata, &[0], &[], 3).unwrap();
-    assert_eq!(preview.previews[0].samples[0].original, "ada@example.com");
-
-    let (output, report) = anonymize_rows(&rows, &metadata, &[0], &[]).unwrap();
-    assert_eq!(output.len(), 1);
-    assert_ne!(output[0][0], "ada@example.com");
-    assert_eq!(report.direct_identifiers, 1);
-}
-
-#[test]
 fn direct_input_preview_includes_selected_column_warnings() {
-    let rows = vec![vec!["ada@example.com".to_string(), "US".to_string()]];
-    let headers = vec!["email".to_string(), "country".to_string()];
-    let metadata = build_column_metadata(&headers, &rows);
-    let preview = preview_rows(
-        &rows,
-        &metadata,
-        &[0, 1],
-        &[
+    let preview = preview_paste_data(PastePreviewParams {
+        content: "email,country\nada@example.com,US\n".to_string(),
+        format: PasteDataFormat::Csv,
+        columns: vec![0, 1],
+        controls: vec![
             ColumnControl {
                 column_index: 0,
                 type_override: None,
@@ -123,8 +90,8 @@ fn direct_input_preview_includes_selected_column_warnings() {
                 strategy: AnonymizationStrategy::Auto,
             },
         ],
-        3,
-    )
+        sample_count: 3,
+    })
     .unwrap();
 
     assert_eq!(preview.warnings.len(), 2);
@@ -141,21 +108,6 @@ fn direct_input_preview_includes_selected_column_warnings() {
             .any(|warning| warning.column_name == "country"
                 && warning.message.contains("pass-through behavior"))
     );
-}
-
-#[test]
-fn quick_anonymize_values_wrapper_uses_one_state() {
-    let values = vec![
-        "550e8400-e29b-41d4-a716-446655440000".to_string(),
-        "550e8400-e29b-41d4-a716-446655440000".to_string(),
-    ];
-    let result =
-        quick_anonymize_values(&values, DataType::Uuid, AnonymizationStrategy::Tokenize).unwrap();
-    let lines = result.output.lines().collect::<Vec<_>>();
-
-    assert_eq!(lines.len(), 2);
-    assert_eq!(lines[0], lines[1]);
-    assert_ne!(lines[0], values[0]);
 }
 
 #[test]

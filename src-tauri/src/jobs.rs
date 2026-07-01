@@ -296,18 +296,20 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_job_removes_terminal_job_after_status_retrieval() {
+    fn snapshot_job_keeps_terminal_job_readable_for_repeat_polls() {
         let store = AnonymizeJobStore::default();
         let job = store.create_job(None).unwrap();
         let job_id = job.snapshot().unwrap().job_id;
         job.finish(Ok(result_fixture()));
 
         let status = store.snapshot_job(&job_id).unwrap();
+        let repeat_status = store.snapshot_job(&job_id).unwrap();
 
         assert_eq!(status.state, AnonymizeJobState::Succeeded);
         assert!(status.result.is_some());
-        assert!(store.get_job(&job_id).is_err());
-        assert_eq!(store.job_count(), 0);
+        assert_eq!(repeat_status.state, AnonymizeJobState::Succeeded);
+        assert!(store.get_job(&job_id).is_ok());
+        assert_eq!(store.job_count(), 1);
     }
 
     #[test]
@@ -351,7 +353,8 @@ mod tests {
         let status = store.snapshot_job(&job_id).unwrap();
         assert_eq!(status.state, AnonymizeJobState::Failed);
         assert!(status.error.unwrap().contains("unexpectedly"));
-        assert!(store.get_job(&job_id).is_err());
+        let repeat_status = store.snapshot_job(&job_id).unwrap();
+        assert_eq!(repeat_status.state, AnonymizeJobState::Failed);
     }
 
     #[test]
@@ -526,7 +529,6 @@ mod tests {
             privacy_report: PrivacyReport {
                 direct_identifiers: 0,
                 quasi_identifiers: 0,
-                sensitive_columns: 0,
                 pseudonymized_columns: 1,
                 smart_replacement_columns: 0,
                 opaque_token_columns: 0,

@@ -28,8 +28,6 @@ export function ColumnTable({
   onStrategyChange,
   onToggleShowAll,
   availableStrategies = csvStrategies,
-  strategyControlsDisabled = false,
-  strategyControlsDisabledReason,
 }: {
   columns: ColumnMetadata[]
   allColumnCount: number
@@ -42,8 +40,6 @@ export function ColumnTable({
   onStrategyChange: (column: ColumnMetadata, value: AnonymizationStrategy) => void
   onToggleShowAll: () => void
   availableStrategies?: AnonymizationStrategy[]
-  strategyControlsDisabled?: boolean
-  strategyControlsDisabledReason?: string
 }) {
   const columnSpan = 7
 
@@ -134,9 +130,8 @@ export function ColumnTable({
                     <td className="control-cell">
                       <span className="mobile-cell-label">Strategy</span>
                       <select
-                        value={strategyControlsDisabled ? 'auto' : (control?.strategy ?? column.strategy ?? 'auto')}
-                        disabled={loading || strategyControlsDisabled}
-                        title={strategyControlsDisabled ? strategyControlsDisabledReason : undefined}
+                        value={control?.strategy ?? column.strategy ?? 'auto'}
+                        disabled={loading}
                         aria-label={`Strategy for ${column.name}`}
                         onClick={(event) => event.stopPropagation()}
                         onChange={(event) => onStrategyChange(column, event.target.value as AnonymizationStrategy)}
