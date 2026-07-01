@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import type { PrivacyReport } from '../types'
+import { privacyReportFixture } from '../test-utils/builders'
 import { PrivacyReportSummary } from './PrivacyReportSummary'
 
 describe('PrivacyReportSummary', () => {
@@ -89,37 +89,3 @@ describe('PrivacyReportSummary', () => {
     expect(screen.getByText('Check low confidence columns')).toBeInTheDocument()
   })
 })
-
-function privacyReportFixture(overrides: Partial<PrivacyReport> = {}): PrivacyReport {
-  return {
-    directIdentifiers: 0,
-    quasiIdentifiers: 0,
-    sensitiveColumns: 0,
-    pseudonymizedColumns: 0,
-    smartReplacementColumns: 0,
-    opaqueTokenColumns: 0,
-    maskedColumns: 0,
-    redactedColumns: 0,
-    passThroughColumns: 0,
-    uniquePseudonymValues: 0,
-    reusedPseudonymValues: 0,
-    collisionsAvoided: 0,
-    exhaustedPseudonymPools: 0,
-    opaqueTokenValues: 0,
-    smartReplacementValues: 0,
-    smartReplacementRejections: 0,
-    smartReplacementRejectionReasons: [],
-    smartReplacementFallbacks: 0,
-    readiness: {
-      status: 'verified',
-      blockers: [],
-      reviewItems: [],
-      verifiedItems: [],
-    },
-    evidence: [],
-    columnReports: [],
-    utilityMetrics: [],
-    notes: [],
-    ...overrides,
-  }
-}

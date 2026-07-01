@@ -1,4 +1,3 @@
-mod app_logic;
 mod cli;
 
 use cli::{CliAction, parse_cli_args, print_help, run_cli};

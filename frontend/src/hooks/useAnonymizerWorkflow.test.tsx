@@ -2,6 +2,7 @@ import { act, render } from '@testing-library/react'
 import { useEffect } from 'react'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultSettings } from '../defaults'
+import { columnMetadataFixture, privacyReportFixture as basePrivacyReportFixture, verifiedPreflightFixture } from '../test-utils/builders'
 import type {
   AnonymizeData,
   AnonymizeJobStatus,
@@ -299,17 +300,13 @@ function columnFixture(
   detectedType: ColumnMetadata['detectedType'],
   piiRisk: ColumnMetadata['piiRisk'],
 ): ColumnMetadata {
-  return {
+  return columnMetadataFixture({
     name,
     index,
     detectedType,
-    confidence: 'high',
     piiRisk,
-    sampleValues: ['sample'],
-    emptyFormat: 'emptyString',
     isSelected: true,
-    strategy: piiRisk === 'high' || piiRisk === 'medium' ? 'redact' : 'auto',
-  }
+  })
 }
 
 function runningJobStatus(): AnonymizeJobStatus {
@@ -344,49 +341,11 @@ function resultFixture(): AnonymizeData {
 }
 
 function privacyReportFixture(overrides: Partial<PrivacyReport> = {}): PrivacyReport {
-  return {
+  return basePrivacyReportFixture({
     directIdentifiers: 1,
     quasiIdentifiers: 1,
-    sensitiveColumns: 0,
     pseudonymizedColumns: 1,
-    smartReplacementColumns: 0,
-    opaqueTokenColumns: 0,
-    maskedColumns: 0,
-    redactedColumns: 0,
-    passThroughColumns: 0,
     uniquePseudonymValues: 2,
-    reusedPseudonymValues: 0,
-    collisionsAvoided: 0,
-    exhaustedPseudonymPools: 0,
-    opaqueTokenValues: 0,
-    smartReplacementValues: 0,
-    smartReplacementRejections: 0,
-    smartReplacementRejectionReasons: [],
-    smartReplacementFallbacks: 0,
-    readiness: {
-      status: 'verified',
-      blockers: [],
-      reviewItems: [],
-      verifiedItems: [],
-    },
-    evidence: [],
-    columnReports: [],
-    utilityMetrics: [],
-    notes: [],
     ...overrides,
-  }
-}
-
-function verifiedPreflightFixture() {
-  return {
-    mode: 'anonymize',
-    readiness: {
-      status: 'verified',
-      blockers: [],
-      reviewItems: [],
-      verifiedItems: [],
-    },
-    evidence: [],
-    columnReports: [],
-  }
+  })
 }

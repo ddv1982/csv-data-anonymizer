@@ -38,10 +38,14 @@ pub fn auto_select_pii_columns(metadata: &[ColumnMetadata]) -> Vec<ColumnMetadat
         .iter()
         .map(|column| {
             let mut column = column.clone();
-            column.is_selected = matches!(column.pii_risk, PiiRisk::High | PiiRisk::Medium);
+            column.is_selected = should_auto_select_column(&column);
             column
         })
         .collect()
+}
+
+pub fn should_auto_select_column(column: &ColumnMetadata) -> bool {
+    !column.sample_values.is_empty() && matches!(column.pii_risk, PiiRisk::High | PiiRisk::Medium)
 }
 
 pub fn default_strategy_for_pii_risk(pii_risk: PiiRisk) -> AnonymizationStrategy {

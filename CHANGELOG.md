@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.63 - 2026-07-01
+
+- Consolidate auto-selection policy into the Rust core so CLI and Tauri use the same high/medium-risk selection rule.
+- Simplify frontend column selection, share the CSV/Paste selection panel and Local AI setup alert, and centralize frontend DTO test builders.
+- Add DTO serialization coverage, docs command validation, a reusable Tauri prebuilt frontend check, and docs-only CI coverage for release instructions.
+
 ## v1.0.62 - 2026-07-01
 
 - Refresh the stable dependency line with current Tauri 2, Vite, ESLint, Knip, TypeScript ESLint, `open`, `unicode-segmentation`, and Criterion updates while keeping Tauri 3 and GTK4/WebKitGTK 6 migration work out of this release.

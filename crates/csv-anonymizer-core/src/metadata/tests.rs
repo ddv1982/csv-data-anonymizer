@@ -139,6 +139,19 @@ fn auto_selection_tracks_current_pii_risk_contract() {
 }
 
 #[test]
+fn should_auto_select_requires_samples_and_detected_risk() {
+    let high_risk = column_metadata(PiiRisk::High, vec!["person@example.com".to_string()]);
+    let medium_risk = column_metadata(PiiRisk::Medium, vec!["10001".to_string()]);
+    let low_risk = column_metadata(PiiRisk::Low, vec!["active".to_string()]);
+    let empty_high_risk = column_metadata(PiiRisk::High, vec![]);
+
+    assert!(should_auto_select_column(&high_risk));
+    assert!(should_auto_select_column(&medium_risk));
+    assert!(!should_auto_select_column(&low_risk));
+    assert!(!should_auto_select_column(&empty_high_risk));
+}
+
+#[test]
 fn default_strategy_redacts_medium_and_high_risk_columns() {
     let headers = vec![
         "email".to_string(),
@@ -177,6 +190,24 @@ fn default_strategy_redacts_medium_and_high_risk_columns() {
     assert_eq!(metadata[2].strategy, AnonymizationStrategy::Auto);
     assert_eq!(metadata[3].pii_risk, PiiRisk::Low);
     assert_eq!(metadata[3].strategy, AnonymizationStrategy::Auto);
+}
+
+fn column_metadata(pii_risk: PiiRisk, sample_values: Vec<String>) -> ColumnMetadata {
+    ColumnMetadata {
+        name: "field".to_string(),
+        source_path: None,
+        index: 0,
+        detected_type: DataType::String,
+        confidence: crate::types::Confidence::High,
+        detection_trace: None,
+        privacy_findings: Vec::new(),
+        privacy_evidence: Vec::new(),
+        pii_risk,
+        sample_values,
+        empty_format: crate::types::EmptyFormat::EmptyString,
+        is_selected: false,
+        strategy: AnonymizationStrategy::Auto,
+    }
 }
 
 #[test]

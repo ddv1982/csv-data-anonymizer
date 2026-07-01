@@ -15,6 +15,7 @@ pub mod strategies;
 pub mod types;
 
 pub use error::{AnonymizerError, Result};
+pub use metadata::should_auto_select_column;
 pub use service::AnonymizerService;
 pub use smart::{
     SmartReplacement, SmartReplacementMap, SmartReplacementProvider, SmartReplacementRequest,

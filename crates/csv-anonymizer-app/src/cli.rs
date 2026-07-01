@@ -1,5 +1,6 @@
-use crate::app_logic::should_auto_select;
-use csv_anonymizer_core::{AnonymizeParams, AnonymizerService, PreviewParams};
+use csv_anonymizer_core::{
+    AnonymizeParams, AnonymizerService, PreviewParams, should_auto_select_column,
+};
 use std::ffi::OsString;
 use std::path::PathBuf;
 
@@ -149,7 +150,7 @@ pub(crate) fn run_cli(action: CliAction) -> Result<(), String> {
             let columns = headers
                 .columns
                 .iter()
-                .filter(|column| should_auto_select(column))
+                .filter(|column| should_auto_select_column(column))
                 .map(|column| column.index)
                 .collect::<Vec<_>>();
             if columns.is_empty() {

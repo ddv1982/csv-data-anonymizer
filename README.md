@@ -118,7 +118,9 @@ npm run lint
 npm run test
 npm run fmt
 npm run deadcode:required
+npm run docs:check
 npm run release:check
+npm run tauri:prebuilt:check
 npm run artifacts:rust:check
 npm run linux:package-manager:check
 npm run frontend:e2e
@@ -130,7 +132,7 @@ cargo bench -p csv-anonymizer-core --bench detector_matrix -- --sample-size 10
 node scripts/rust-smoke.mjs
 ```
 
-The root `lint`, `test`, `typecheck`, `fmt`, and `deadcode:required` scripts are the canonical local gates. The dead-code scans use Knip for the frontend and cargo-machete for Rust dependency drift, and the weekly GitHub Actions maintenance workflow runs the same required dead-code gate. The detector matrix benchmark measures the built-in detector only; the external PII library comparison is archived in `docs/detector-library-evaluation.md`.
+The root `lint`, `test`, `typecheck`, `fmt`, `docs:check`, and `deadcode:required` scripts are the canonical local gates. The dead-code scans use Knip for the frontend and cargo-machete for Rust dependency drift, and the weekly GitHub Actions maintenance workflow runs the same required dead-code gate. The detector matrix benchmark measures the built-in detector only; the external PII library comparison is archived in `docs/detector-library-evaluation.md`.
 
 ## Project Layout
 

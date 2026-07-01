@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { AnonymizationStrategy, ColumnControl, ColumnMetadata, DataType } from '../types'
-import { isSelectableColumn, maxVisibleColumns } from '../utils/columns'
+import { maxVisibleColumns } from '../utils/columns'
 
 const EMPTY_COLUMNS: ColumnMetadata[] = []
 
@@ -22,18 +22,17 @@ export function useColumnSelection(
     () => selectedColumns.map((index) => columnControls[index]).filter(Boolean),
     [columnControls, selectedColumns],
   )
-  const selectableColumns = useMemo(() => columns.filter(isSelectableColumn), [columns])
   const highRiskColumns = useMemo(
-    () => selectableColumns.filter((column) => column.piiRisk === 'high').map((column) => column.index),
-    [selectableColumns],
+    () => columns.filter((column) => column.piiRisk === 'high').map((column) => column.index),
+    [columns],
   )
   const detectedRiskColumns = useMemo(
-    () => selectableColumns.filter((column) => column.piiRisk === 'high' || column.piiRisk === 'medium').map((column) => column.index),
-    [selectableColumns],
+    () => columns.filter((column) => column.piiRisk === 'high' || column.piiRisk === 'medium').map((column) => column.index),
+    [columns],
   )
   const visibleColumns = showAllColumns ? columns : columns.slice(0, maxVisibleColumns)
   const hiddenColumnCount = Math.max(0, columns.length - visibleColumns.length)
-  const allSelected = selectableColumns.length > 0 && selectableColumns.every((column) => selectedSet.has(column.index))
+  const allSelected = columns.length > 0 && columns.every((column) => selectedSet.has(column.index))
 
   function setSelectedColumns(nextSelectedColumns: number[]) {
     const uniqueSorted = [...new Set(nextSelectedColumns)].sort((left, right) => left - right)
@@ -87,8 +86,6 @@ export function useColumnSelection(
   }
 
   function toggleColumn(column: ColumnMetadata) {
-    if (!isSelectableColumn(column)) return
-
     const next = selectedSet.has(column.index)
       ? selectedColumns.filter((index) => index !== column.index)
       : [...selectedColumns, column.index]
@@ -105,7 +102,7 @@ export function useColumnSelection(
     columns,
     selectedSet,
     selectedControls,
-    selectableColumns,
+    selectableColumns: columns,
     highRiskColumns,
     detectedRiskColumns,
     visibleColumns,
