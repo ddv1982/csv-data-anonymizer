@@ -33,8 +33,11 @@ function resolveCargoAuditCommand() {
     shell: false
   })
 
-  return {
-    command: audit.command,
-    args: subcommandResult.status === 0 ? ['audit'] : []
+  if (subcommandResult.status !== 0) {
+    console.error(`Found cargo-audit at ${audit.command}, but \`cargo-audit audit --version\` failed, so the binary appears broken.`)
+    console.error('Reinstall it with `cargo install cargo-audit --force` or remove the broken binary from PATH.')
+    process.exit(1)
   }
+
+  return { command: audit.command, args: ['audit'] }
 }

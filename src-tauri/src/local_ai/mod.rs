@@ -10,7 +10,7 @@ use std::time::Duration;
 pub use download::{LocalAiDownloadStore, start_download_job};
 pub use ollama::{ensure_ollama_runtime_available, local_ai_status};
 pub use provider::{smart_provider_for_request, smart_provider_for_strategy};
-pub use types::{LocalAiDownloadState, LocalAiDownloadStatus, LocalAiRequest, LocalAiStatus};
+pub use types::{LocalAiDownloadStatus, LocalAiRequest, LocalAiStatus};
 
 pub const DEFAULT_OLLAMA_ENDPOINT: &str = "http://127.0.0.1:11434";
 pub const DEFAULT_OLLAMA_MODEL: &str = "gemma3:4b";

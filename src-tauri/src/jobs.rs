@@ -157,7 +157,7 @@ impl AnonymizeJob {
 }
 
 impl AnonymizeJobState {
-    fn is_terminal(self) -> bool {
+    pub(crate) fn is_terminal(self) -> bool {
         matches!(self, Self::Succeeded | Self::Failed | Self::Canceled)
     }
 }
@@ -196,7 +196,7 @@ pub fn run_anonymize_job(
     job.finish(result);
 }
 
-fn service() -> AnonymizerService {
+pub(crate) fn service() -> AnonymizerService {
     AnonymizerService::new(env!("CARGO_PKG_VERSION"))
 }
 

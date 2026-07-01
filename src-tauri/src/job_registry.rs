@@ -82,10 +82,10 @@ impl<J: JobRegistryEntry> JobRegistry<J> {
             .cloned()
             .ok_or_else(|| format!("Unknown {}: {job_id}", self.unknown_job_label))?;
         let status = job.snapshot()?;
+        // Terminal jobs stay readable until TTL/capacity pruning removes them,
+        // so a dropped poll response cannot turn a finished job into an
+        // "unknown job" error on the next poll.
         self.prune_terminal_jobs(&mut jobs, Some(job_id));
-        if J::status_is_terminal(&status) {
-            jobs.remove(job_id);
-        }
         Ok(status)
     }
 

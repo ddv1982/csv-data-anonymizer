@@ -18,6 +18,9 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Any
 
+import deb_common
+from deb_common import child_text, descendant_text, first_release, launchable_desktop_id, read_ar_entries
+
 
 DEFAULT_COMPONENT_ID = "io.github.ddv1982.csv-data-anonymizer"
 DEFAULT_LICENSE = "MIT"
@@ -110,60 +113,6 @@ class PackageReport:
         }
 
 
-def strip_ns(name: str) -> str:
-    return name.rsplit("}", 1)[-1]
-
-
-def child_text(element: ET.Element, tag_name: str) -> str | None:
-    for child in element:
-        if strip_ns(child.tag) == tag_name and child.text:
-            return child.text.strip()
-    return None
-
-
-def descendant_text(element: ET.Element, tag_name: str) -> str | None:
-    for child in element.iter():
-        if strip_ns(child.tag) == tag_name and child.text:
-            return child.text.strip()
-    return None
-
-
-def launchable_desktop_id(element: ET.Element) -> str | None:
-    for child in element.iter():
-        if strip_ns(child.tag) == "launchable" and child.attrib.get("type") == "desktop-id":
-            return (child.text or "").strip() or None
-    return None
-
-
-def first_release(element: ET.Element) -> tuple[str | None, str | None]:
-    for child in element.iter():
-        if strip_ns(child.tag) == "release":
-            return child.attrib.get("version"), child.attrib.get("date")
-    return None, None
-
-
-def read_ar_entries(deb_path: pathlib.Path) -> dict[str, bytes]:
-    entries: dict[str, bytes] = {}
-    with deb_path.open("rb") as handle:
-        if handle.read(8) != b"!<arch>\n":
-            raise ValueError("not a Debian ar archive: missing global header")
-        while True:
-            header = handle.read(60)
-            if not header:
-                break
-            if len(header) != 60 or header[58:60] != b"`\n":
-                raise ValueError("invalid ar member header")
-            name = header[:16].decode("utf-8", errors="replace").strip().rstrip("/")
-            size = int(header[48:58].decode("ascii").strip())
-            data = handle.read(size)
-            if len(data) != size:
-                raise ValueError("truncated ar member data")
-            if size % 2 == 1:
-                handle.read(1)
-            entries[name] = data
-    return entries
-
-
 def safe_extract_tar(tar: tarfile.TarFile, destination: pathlib.Path) -> None:
     destination = destination.resolve()
     for member in tar.getmembers():
@@ -187,19 +136,8 @@ def safe_extract_tar(tar: tarfile.TarFile, destination: pathlib.Path) -> None:
 
 
 def extract_data_archive(data_name: str, data: bytes, destination: pathlib.Path) -> str:
-    if data_name.endswith(".tar.zst"):
-        zstd = shutil.which("zstd")
-        if not zstd:
-            raise ValueError("data.tar.zst requires the zstd command")
-        completed = subprocess.run([zstd, "-dc"], input=data, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if completed.returncode != 0:
-            raise ValueError(completed.stderr.decode("utf-8", errors="replace"))
-        data = completed.stdout
-        mode = "r:"
-        extraction = "python-ar+zstd+tarfile"
-    else:
-        mode = "r:*"
-        extraction = "python-ar+tarfile"
+    data, mode = deb_common.decompress_deb_tar_member(data_name, data)
+    extraction = "python-ar+zstd+tarfile" if mode == "r:" else "python-ar+tarfile"
     with tarfile.open(fileobj=io.BytesIO(data), mode=mode) as tar:
         safe_extract_tar(tar, destination)
     return extraction
@@ -349,19 +287,7 @@ def query_rpm_header(package_path: pathlib.Path) -> tuple[ToolResult, dict[str, 
 
 
 def parse_desktop_file(path: pathlib.Path) -> dict[str, str]:
-    fields: dict[str, str] = {}
-    in_desktop_entry = False
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("[") and line.endswith("]"):
-            in_desktop_entry = line == "[Desktop Entry]"
-            continue
-        if in_desktop_entry and "=" in line:
-            key, value = line.split("=", 1)
-            fields[key] = value
-    return fields
+    return deb_common.parse_desktop_file(path.read_bytes())
 
 
 def exec_binary(exec_field: str | None) -> str | None:

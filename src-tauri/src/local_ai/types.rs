@@ -40,7 +40,7 @@ pub enum LocalAiDownloadState {
 }
 
 impl LocalAiDownloadState {
-    pub(super) fn is_terminal(self) -> bool {
+    pub(crate) fn is_terminal(self) -> bool {
         matches!(self, Self::Succeeded | Self::Failed | Self::Canceled)
     }
 }

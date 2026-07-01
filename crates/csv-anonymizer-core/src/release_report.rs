@@ -16,7 +16,6 @@ pub(crate) fn build_readiness(
     columns: &[ColumnMetadata],
     context: &ReportContext<'_>,
 ) -> ReleaseReadiness {
-    let blockers = Vec::new();
     let mut review_items = Vec::new();
     let mut verified_items = Vec::new();
 
@@ -58,9 +57,9 @@ pub(crate) fn build_readiness(
         ));
     }
 
-    let status = if !blockers.is_empty() {
-        ReleaseReadinessStatus::Blocked
-    } else if review_items.is_empty() {
+    // Blocked status comes only from the preflight path in service.rs; the
+    // report readiness built here can only be Verified or Review.
+    let status = if review_items.is_empty() {
         ReleaseReadinessStatus::Verified
     } else {
         ReleaseReadinessStatus::Review
@@ -68,7 +67,7 @@ pub(crate) fn build_readiness(
 
     ReleaseReadiness {
         status,
-        blockers,
+        blockers: Vec::new(),
         review_items,
         verified_items,
     }

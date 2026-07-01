@@ -27,8 +27,6 @@
     "dist:mac": "cd src-tauri && cargo tauri build --bundles dmg",
     "dist:mac:app": "cd src-tauri && cargo tauri build --bundles app",
     "dist:linux": "node scripts/package-tauri-linux.mjs",
-    "dist:linux:ci": "node scripts/package-tauri-linux.mjs",
-    "linux:packages": "node scripts/package-tauri-linux.mjs",
     "linux:metadata:check": "python3 scripts/validate_linux_package_metadata.py \"dist/rust/artifacts/*.deb\" \"dist/rust/artifacts/*.rpm\"",
     "linux:metadata:test": "python3 -m unittest tests.test_linux_package_metadata",
     "linux:release-helpers:check": "bash scripts/check-linux-release-helpers.sh",
@@ -43,12 +41,11 @@
     "cargo:machete:required": "node scripts/cargo-machete.mjs --required",
     "deadcode:strict": "npm --prefix frontend exec knip -- --config knip.json --production --include exports,types,dependencies,unlisted,unresolved,binaries",
     "deadcode:required": "npm run frontend:deadcode && npm run frontend:deadcode:production && npm run deadcode:strict && npm run cargo:machete:required",
-    "smoke:packaged": "node scripts/rust-smoke.mjs",
     "smoke:rust": "node scripts/rust-smoke.mjs",
     "fmt": "cargo fmt --all --check",
-    "lint": "npm run frontend:lint && npm run frontend:build && cargo clippy --workspace --all-targets -- -D warnings",
-    "test": "npm run contracts:check && npm run frontend:test && npm run frontend:build && cargo test --workspace",
-    "typecheck": "npm run frontend:build && cargo check --workspace"
+    "lint": "npm run frontend:lint && node scripts/ensure-frontend-dist.mjs && cargo clippy --workspace --all-targets -- -D warnings",
+    "test": "npm run contracts:check && npm run frontend:test && node scripts/ensure-frontend-dist.mjs && cargo test --workspace",
+    "typecheck": "npm run frontend:typecheck && node scripts/ensure-frontend-dist.mjs && cargo check --workspace"
   },
   "keywords": [
     "csv",

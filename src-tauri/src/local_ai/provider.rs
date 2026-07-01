@@ -59,6 +59,9 @@ impl SmartReplacementProvider for OllamaSmartReplacementProvider {
             "format": replacement_schema(),
             "options": options
         });
+        // Accepted limitation: this blocking request cannot be interrupted by
+        // job cancellation; cancel takes effect between batches, so a slow
+        // model can delay cancellation by up to the client timeout (120s).
         let response = self
             .client
             .post(format!("{}/api/generate", self.endpoint))

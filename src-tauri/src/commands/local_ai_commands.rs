@@ -1,7 +1,6 @@
 use crate::local_ai::{
-    LocalAiDownloadState, LocalAiDownloadStatus, LocalAiDownloadStore, LocalAiRequest,
-    LocalAiStatus, ensure_ollama_runtime_available, local_ai_status, open_setup_url,
-    start_download_job,
+    LocalAiDownloadStatus, LocalAiDownloadStore, LocalAiRequest, LocalAiStatus,
+    ensure_ollama_runtime_available, local_ai_status, open_setup_url, start_download_job,
 };
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use tauri::State;
@@ -49,12 +48,7 @@ pub fn cancel_local_ai_model_download(
 ) -> Result<LocalAiDownloadStatus, String> {
     let job = downloads.get_job(&job_id)?;
     let status = job.snapshot()?;
-    if matches!(
-        status.state,
-        LocalAiDownloadState::Succeeded
-            | LocalAiDownloadState::Failed
-            | LocalAiDownloadState::Canceled
-    ) {
+    if status.state.is_terminal() {
         return Ok(status);
     }
     job.request_cancel()

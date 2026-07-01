@@ -13,11 +13,11 @@ use std::sync::OnceLock;
 use std::time::Instant;
 
 use super::shared::{
-    FieldSamples, PASTE_MAX_TEXT_CANDIDATES, PASTE_MAX_TEXT_MATCHES, PreviewSelection,
-    bounded_analysis_sample_count, bounded_preview_sample_count, fields_to_rows,
-    metadata_from_fields, next_row_index, prepare_selected_metadata,
-    preview_from_fields_with_smart_provider, preview_smart_replacements_for_transform,
-    push_typed_field_sample, selected_columns_by_source, transform_state_for_smart_replacements,
+    FieldSamples, PASTE_MAX_TEXT_MATCHES, PreviewSelection, bounded_analysis_sample_count,
+    bounded_preview_sample_count, fields_to_rows, metadata_from_fields, next_row_index,
+    prepare_selected_metadata, preview_from_fields_with_smart_provider,
+    preview_smart_replacements_for_transform, push_typed_field_sample, selected_columns_by_source,
+    transform_state_for_smart_replacements,
 };
 
 pub(super) fn analyze_text_content(
@@ -126,7 +126,6 @@ struct TextMatch<'a> {
     start: usize,
     end: usize,
     value: &'a str,
-    priority: usize,
 }
 
 pub(super) fn looks_like_logs(content: &str) -> bool {
@@ -156,40 +155,11 @@ fn text_fields_from_matches(
 }
 
 fn collect_text_matches(content: &str) -> Result<Vec<TextMatch<'_>>> {
-    let mut candidates = Vec::new();
+    // collect_privacy_spans already returns start-sorted, non-overlapping
+    // spans, so only the total cap needs enforcing here.
+    let mut matches = Vec::new();
     for span in collect_privacy_spans(content) {
-        if candidates.len() >= PASTE_MAX_TEXT_CANDIDATES {
-            return Err(AnonymizerError::input_parse(
-                "pasted data",
-                format!(
-                    "Detected more than {PASTE_MAX_TEXT_CANDIDATES} text token candidates. Use a smaller paste or the CSV file workflow."
-                ),
-            ));
-        }
-        candidates.push(TextMatch {
-            name: span.field_name,
-            data_type: span.data_type,
-            start: span.start,
-            end: span.end,
-            value: span.value,
-            priority: span.priority,
-        });
-    }
-
-    candidates.sort_by(|left, right| {
-        left.start
-            .cmp(&right.start)
-            .then(left.priority.cmp(&right.priority))
-            .then((right.end - right.start).cmp(&(left.end - left.start)))
-    });
-
-    let mut selected = Vec::new();
-    let mut last_end = 0;
-    for candidate in candidates {
-        if candidate.start < last_end {
-            continue;
-        }
-        if selected.len() >= PASTE_MAX_TEXT_MATCHES {
+        if matches.len() >= PASTE_MAX_TEXT_MATCHES {
             return Err(AnonymizerError::input_parse(
                 "pasted data",
                 format!(
@@ -197,10 +167,15 @@ fn collect_text_matches(content: &str) -> Result<Vec<TextMatch<'_>>> {
                 ),
             ));
         }
-        last_end = candidate.end;
-        selected.push(candidate);
+        matches.push(TextMatch {
+            name: span.field_name,
+            data_type: span.data_type,
+            start: span.start,
+            end: span.end,
+            value: span.value,
+        });
     }
-    Ok(selected)
+    Ok(matches)
 }
 
 fn timestamp_regex() -> &'static Regex {

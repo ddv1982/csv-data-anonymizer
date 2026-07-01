@@ -1,5 +1,4 @@
 use crate::path_access::PathAccess;
-use csv_anonymizer_core::AnonymizerService;
 use std::path::{Path, PathBuf};
 use tauri_plugin_dialog::{DialogExt, FilePath, MessageDialogButtons, MessageDialogKind};
 
@@ -76,23 +75,18 @@ where
         .map_err(|error| format!("Background task failed: {error}"))?
 }
 
-pub(super) fn service() -> AnonymizerService {
-    AnonymizerService::new(env!("CARGO_PKG_VERSION"))
-}
+pub(super) use crate::jobs::service;
 
 pub(super) fn default_output_path_with_suffix(
     input_path: &Path,
     suffix: &str,
 ) -> Result<PathBuf, String> {
-    if suffix.chars().any(char::is_control) {
-        return Err("Output suffix must be plain filename text without path separators or control characters.".to_string());
-    }
+    validate_output_suffix(suffix)?;
     let suffix = if suffix.trim().is_empty() {
         "_private_output"
     } else {
         suffix.trim()
     };
-    validate_output_suffix(suffix)?;
     let stem = input_path
         .file_stem()
         .and_then(|value| value.to_str())

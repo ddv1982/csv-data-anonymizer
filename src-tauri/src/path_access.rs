@@ -79,6 +79,10 @@ fn canonical_input_file(path: &Path) -> Result<PathBuf, String> {
     Ok(canonical)
 }
 
+// Accepted limitation: these checks run at grant time while the write happens
+// later in a background job (TOCTOU window). The atomic temp-file+rename write
+// neutralizes symlink-follow attacks; a parent-directory swap between grant and
+// write is out of scope for a single-user desktop threat model.
 fn normalize_output_file(path: &Path) -> Result<PathBuf, String> {
     if path.as_os_str().is_empty() {
         return Err("Output path is empty.".to_string());

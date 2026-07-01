@@ -1,5 +1,5 @@
 use super::shared::authorize_or_confirm_output_file;
-use crate::jobs::{AnonymizeJobState, AnonymizeJobStatus, AnonymizeJobStore, run_anonymize_job};
+use crate::jobs::{AnonymizeJobStatus, AnonymizeJobStore, run_anonymize_job};
 use crate::local_ai::LocalAiRequest;
 use crate::path_access::PathAccess;
 use csv_anonymizer_core::{AnonymizeParams, ColumnControl, SmartReplacementEntry};
@@ -77,10 +77,7 @@ pub fn cancel_anonymize_job(
 ) -> Result<AnonymizeJobStatus, String> {
     let job = jobs.get_job(&job_id)?;
     let status = job.snapshot()?;
-    if matches!(
-        status.state,
-        AnonymizeJobState::Succeeded | AnonymizeJobState::Failed | AnonymizeJobState::Canceled
-    ) {
+    if status.state.is_terminal() {
         return Ok(status);
     }
     job.request_cancel()
