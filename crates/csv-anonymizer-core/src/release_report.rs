@@ -2,7 +2,7 @@ use crate::report_notes::push_unselected_column_note;
 use crate::service::{preview_warning_for_column, redaction_changes_structured_scalar_type};
 use crate::strategies::STRUCTURED_SCALAR_REDACTION_WARNING;
 use crate::types::{
-    AnonymizationStrategy, ColumnMetadata, ColumnReleaseReport, ReleaseEvidenceItem,
+    AnonymizationStrategy, ColumnMetadata, ColumnReleaseReport, DataType, ReleaseEvidenceItem,
     ReleaseEvidenceStatus, ReleaseReadiness, ReleaseReadinessStatus, TransformReport,
     UtilityMetric,
 };
@@ -291,6 +291,19 @@ pub(crate) fn standard_notes(
             "{} value(s) did not match their column's detected format and were replaced with generic pseudonyms.",
             transform_report.shape_fallback_values
         ));
+    }
+    if columns.iter().any(|column| {
+        column.is_selected
+            && column.detected_type == DataType::Email
+            && matches!(
+                column.strategy,
+                AnonymizationStrategy::Auto | AnonymizationStrategy::Pseudonymize
+            )
+    }) {
+        notes.push(
+            "Email pseudonymization keeps the original domain; use Redact or Tokenize when domains themselves are identifying (for example personal domains)."
+                .to_string(),
+        );
     }
 
     notes

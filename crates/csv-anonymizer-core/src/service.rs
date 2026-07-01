@@ -230,6 +230,7 @@ impl AnonymizerService {
         provider: Option<&mut dyn SmartReplacementProvider>,
     ) -> Result<AnonymizeData> {
         let input_path = normalize_path(&input.file_path)?;
+        ensure_output_differs_from_input(&input_path, &input.output_path)?;
         let output_path = validate_output_path(&input.output_path, input.force)?;
         let sample = read_sample(&input_path, sample_rows.max(1))?;
         let metadata = build_column_metadata(&sample.headers, &sample.rows);
@@ -348,28 +349,32 @@ fn add_preflight_output_evidence(input: &PreflightParams, state: &mut PreflightS
                 .push("Preview does not require an output path.".to_string());
         }
         PreflightMode::Anonymize => match input.output_path.as_ref() {
-            Some(output_path) => match validate_output_path(output_path, input.force) {
-                Ok(path) => {
-                    state
-                        .verified_items
-                        .push("Output path is writable.".to_string());
-                    state.evidence.push(ReleaseEvidenceItem {
-                        id: "output-path".to_string(),
-                        label: "Output path".to_string(),
-                        status: ReleaseEvidenceStatus::Verified,
-                        detail: format!("Output can be written to {}.", path.display()),
-                    });
+            Some(output_path) => {
+                match ensure_output_differs_from_input(&input.file_path, output_path)
+                    .and_then(|()| validate_output_path(output_path, input.force))
+                {
+                    Ok(path) => {
+                        state
+                            .verified_items
+                            .push("Output path is writable.".to_string());
+                        state.evidence.push(ReleaseEvidenceItem {
+                            id: "output-path".to_string(),
+                            label: "Output path".to_string(),
+                            status: ReleaseEvidenceStatus::Verified,
+                            detail: format!("Output can be written to {}.", path.display()),
+                        });
+                    }
+                    Err(error) => {
+                        state.blockers.push(error.to_string());
+                        state.evidence.push(ReleaseEvidenceItem {
+                            id: "output-path".to_string(),
+                            label: "Output path".to_string(),
+                            status: ReleaseEvidenceStatus::Blocked,
+                            detail: error.to_string(),
+                        });
+                    }
                 }
-                Err(error) => {
-                    state.blockers.push(error.to_string());
-                    state.evidence.push(ReleaseEvidenceItem {
-                        id: "output-path".to_string(),
-                        label: "Output path".to_string(),
-                        status: ReleaseEvidenceStatus::Blocked,
-                        detail: error.to_string(),
-                    });
-                }
-            },
+            }
             None => state.blockers.push("Choose an output path.".to_string()),
         },
     }
@@ -486,6 +491,23 @@ fn normalize_path(path: &Path) -> Result<PathBuf> {
     } else {
         Ok(std::env::current_dir()?.join(path))
     }
+}
+
+// The transform streams input to a temp file and atomically renames it over the
+// output; if output == input the original data would be destroyed. Compare on
+// canonicalized paths so symlinks and relative spellings cannot bypass the guard.
+fn ensure_output_differs_from_input(input_path: &Path, output_path: &Path) -> Result<()> {
+    let canonical_input = fs::canonicalize(input_path).unwrap_or_else(|_| input_path.to_path_buf());
+    let canonical_output = match (output_path.parent(), output_path.file_name()) {
+        (Some(parent), Some(name)) if !parent.as_os_str().is_empty() => fs::canonicalize(parent)
+            .map(|parent| parent.join(name))
+            .unwrap_or_else(|_| output_path.to_path_buf()),
+        _ => output_path.to_path_buf(),
+    };
+    if canonical_input == canonical_output {
+        return Err(AnonymizerError::OutputSameAsInput(canonical_output));
+    }
+    Ok(())
 }
 
 fn validate_output_path(output_path: &Path, force: bool) -> Result<PathBuf> {

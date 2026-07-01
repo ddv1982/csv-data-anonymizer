@@ -26,8 +26,6 @@
     "allow-open-local-ai-setup-url",
     "allow-open-output-location",
     "core:default",
-    "core:app:allow-set-app-theme",
-    "dialog:allow-open",
-    "dialog:allow-save"
+    "core:app:allow-set-app-theme"
   ]
 }

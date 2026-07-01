@@ -12,11 +12,13 @@ pub async fn get_local_ai_status(request: LocalAiRequest) -> Result<LocalAiStatu
 }
 
 #[tauri::command]
-pub fn start_local_ai_model_download(
+pub async fn start_local_ai_model_download(
     downloads: State<'_, LocalAiDownloadStore>,
     request: LocalAiRequest,
 ) -> Result<LocalAiDownloadStatus, String> {
-    ensure_ollama_runtime_available()?;
+    // The runtime probe is a blocking HTTP call (up to 120s); keep it off the
+    // main thread like the sibling status command.
+    super::shared::run_blocking(ensure_ollama_runtime_available).await?;
     let job = downloads.create_job(request.model_name())?;
     let initial_status = job.snapshot()?;
     let worker_job = job.clone();

@@ -84,7 +84,9 @@ pub async fn analyze_csv(
     output_suffix: String,
 ) -> Result<AnalyzeResponse, String> {
     let file_path = authorize_or_confirm_input_file(&app, &path_access, file_path)?;
-    let mut response = run_blocking(move || {
+    // The suggested output path is only a suggestion: write access is granted
+    // later through the explicit confirm/save-dialog flow, never silently here.
+    run_blocking(move || {
         let service = service();
         let headers = service
             .analyze_csv_sampled(&file_path, sample_row_count)
@@ -104,10 +106,7 @@ pub async fn analyze_csv(
             suggested_output_path,
         })
     })
-    .await?;
-    response.suggested_output_path =
-        path_access.grant_output_file(&response.suggested_output_path)?;
-    Ok(response)
+    .await
 }
 
 #[tauri::command]

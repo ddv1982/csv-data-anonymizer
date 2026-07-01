@@ -361,6 +361,12 @@ fn could_be_spreadsheet_formula(value: &str) -> bool {
         return false;
     };
 
+    // Plain signed numbers ("-42.50") are parsed by spreadsheets as numbers,
+    // never as formulas; neutralizing them would corrupt untouched numeric data.
+    if is_strict_signed_number(value) {
+        return false;
+    }
+
     if is_spreadsheet_formula_prefix(first) || matches!(first, '\t' | '\r' | '\n') {
         return true;
     }
@@ -374,6 +380,27 @@ fn could_be_spreadsheet_formula(value: &str) -> bool {
     }
 
     false
+}
+
+fn is_strict_signed_number(value: &str) -> bool {
+    let trimmed = value.trim();
+    let unsigned = trimmed.strip_prefix(['-', '+']).unwrap_or(trimmed);
+    if unsigned.is_empty() || unsigned == trimmed {
+        // Only sign-prefixed values need the exemption; everything else keeps
+        // the existing prefix-based neutralization decision.
+        return false;
+    }
+    let mut decimal_point_seen = false;
+    unsigned.chars().all(|character| {
+        if character == '.' {
+            if decimal_point_seen {
+                return false;
+            }
+            decimal_point_seen = true;
+            return true;
+        }
+        character.is_ascii_digit()
+    })
 }
 
 fn is_spreadsheet_formula_prefix(character: char) -> bool {

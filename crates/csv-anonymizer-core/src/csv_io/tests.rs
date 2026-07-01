@@ -284,3 +284,21 @@ fn process_control_reports_progress_and_cancels_before_next_row() {
     assert_eq!(progress_events, vec![1, 2]);
     assert!(!output_path.exists());
 }
+
+#[test]
+fn plain_signed_numbers_are_not_neutralized() {
+    assert_eq!(neutralize_spreadsheet_formula("-42.50").as_ref(), "-42.50");
+    assert_eq!(neutralize_spreadsheet_formula("+31").as_ref(), "+31");
+    assert_eq!(neutralize_spreadsheet_formula(" -7 ").as_ref(), " -7 ");
+}
+
+#[test]
+fn signed_non_numeric_values_are_still_neutralized() {
+    assert_eq!(neutralize_spreadsheet_formula("-2+3").as_ref(), "'-2+3");
+    assert_eq!(neutralize_spreadsheet_formula("-1.2.3").as_ref(), "'-1.2.3");
+    assert_eq!(
+        neutralize_spreadsheet_formula("+cmd|calc").as_ref(),
+        "'+cmd|calc"
+    );
+    assert_eq!(neutralize_spreadsheet_formula("－10").as_ref(), "'－10");
+}

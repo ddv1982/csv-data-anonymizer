@@ -159,3 +159,37 @@ fn preflight_blocks_local_ai_anonymize_when_preview_replacements_are_incomplete(
             .any(|item| item.contains("Local AI is unavailable"))
     );
 }
+
+#[test]
+fn preflight_blocks_output_path_equal_to_input() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("data.csv");
+    fs::write(&input_path, "email\nada@example.com\n").unwrap();
+
+    let result = service
+        .preflight_anonymization(PreflightParams {
+            file_path: input_path.clone(),
+            mode: PreflightMode::Anonymize,
+            output_path: Some(input_path),
+            columns: vec![0],
+            controls: vec![],
+            force: true,
+            sample_row_count: 10,
+            preview_smart_replacements: vec![],
+            local_ai_ready: false,
+            local_ai_message: None,
+        })
+        .unwrap();
+
+    assert_eq!(result.readiness.status, ReleaseReadinessStatus::Blocked);
+    assert!(
+        result
+            .readiness
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("must differ from the input")),
+        "blockers: {:?}",
+        result.readiness.blockers
+    );
+}
