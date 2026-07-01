@@ -1,6 +1,6 @@
 {
   "name": "csv-anonymizer",
-  "version": "1.0.63",
+  "version": "1.0.64",
   "description": "Desktop CSV anonymizer for local-first data transformation workflows.",
   "desktopName": "csv-anonymizer.desktop",
   "homepage": "https://github.com/ddv1982/csv-data-anonymizer",
@@ -31,6 +31,7 @@
     "linux:packages": "node scripts/package-tauri-linux.mjs",
     "linux:metadata:check": "python3 scripts/validate_linux_package_metadata.py \"dist/rust/artifacts/*.deb\" \"dist/rust/artifacts/*.rpm\"",
     "linux:metadata:test": "python3 -m unittest tests.test_linux_package_metadata",
+    "linux:release-helpers:check": "bash scripts/check-linux-release-helpers.sh",
     "linux:package-manager:check": "node scripts/package-tauri-linux.mjs && npm run linux:metadata:check -- --skip-external-tools && npm run apt:repo:check && npm run apt:installer:check",
     "apt:repo:check": "node scripts/check-apt-repository.mjs",
     "apt:installer:check": "node scripts/check-apt-installer.mjs",

@@ -1,4 +1,4 @@
-import type { ColumnMetadata, PreflightData, PrivacyReport } from '../types'
+import type { ColumnMetadata, LocalAiStatus, PreflightData, PrivacyReport } from '../types'
 
 export function columnMetadataFixture(overrides: Partial<ColumnMetadata> = {}): ColumnMetadata {
   const piiRisk = overrides.piiRisk ?? 'high'
@@ -61,6 +61,22 @@ export function verifiedPreflightFixture(overrides: Partial<PreflightData> = {})
     },
     evidence: [],
     columnReports: [],
+    ...overrides,
+  }
+}
+
+export function localAiStatusFixture(overrides: Partial<LocalAiStatus> = {}): LocalAiStatus {
+  return {
+    enabled: false,
+    provider: 'ollama',
+    model: 'gemma3:4b',
+    availableModels: [],
+    endpoint: 'http://127.0.0.1:11434',
+    runtimeAvailable: false,
+    modelInstalled: false,
+    ready: false,
+    runtimeVersion: null,
+    message: 'Local AI is off.',
     ...overrides,
   }
 }

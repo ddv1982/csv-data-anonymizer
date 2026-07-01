@@ -11,6 +11,7 @@ const enumContracts = [
   'DataType',
   'Confidence',
   'PiiRisk',
+  'PrivacyFindingKind',
   'EmptyFormat',
   'AnonymizationStrategy',
   'PasteDataFormat',
@@ -23,6 +24,10 @@ const enumContracts = [
 
 const structContracts = [
   'ColumnControl',
+  'DetectionTrace',
+  'DetectionTraceItem',
+  'PrivacyFinding',
+  'PrivacyEvidenceSummary',
   'ColumnMetadata',
   'HeadersData',
   'PasteAnalyzeData',

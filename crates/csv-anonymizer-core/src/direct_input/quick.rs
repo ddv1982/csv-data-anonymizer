@@ -189,8 +189,63 @@ fn should_transform_generated_value(data_type: DataType, strategy: Anonymization
 fn generated_quick_value(data_type: DataType, row_index: usize) -> String {
     let ordinal = row_index + 1;
     match data_type {
+        DataType::Email
+        | DataType::Phone
+        | DataType::FirstName
+        | DataType::LastName
+        | DataType::FullName => generated_person_quick_value(data_type, ordinal),
+        DataType::Uuid | DataType::IpAddress | DataType::Url | DataType::MacAddress => {
+            generated_network_quick_value(data_type)
+        }
+        DataType::Timestamp
+        | DataType::NumericId
+        | DataType::NumericValue
+        | DataType::PostalCode
+        | DataType::TaxId
+        | DataType::Boolean
+        | DataType::Currency
+        | DataType::Percentage => generated_scalar_quick_value(data_type),
+        DataType::Address | DataType::CountryCode | DataType::Enum => {
+            generated_choice_quick_value(data_type)
+        }
+        DataType::String => generated_text_quick_value("sample", ordinal),
+        DataType::Unknown => generated_text_quick_value("value", ordinal),
+    }
+}
+
+fn generated_person_quick_value(data_type: DataType, ordinal: usize) -> String {
+    match data_type {
         DataType::Email => format!("person{ordinal}@example.invalid"),
+        DataType::Phone => format!("555-020-{:04}", generated_quick_number(0, 9_999)),
+        DataType::FirstName => format!("First{ordinal}"),
+        DataType::LastName => format!("Last{ordinal}"),
+        DataType::FullName => format!("First{ordinal} Last{ordinal}"),
+        _ => unreachable!("person quick value helper called with non-person type"),
+    }
+}
+
+fn generated_network_quick_value(data_type: DataType) -> String {
+    match data_type {
         DataType::Uuid => generated_uuid(),
+        DataType::IpAddress => format!("198.51.100.{}", generated_quick_number(1, 254)),
+        DataType::Url => format!(
+            "https://example.invalid/{}/{}",
+            generated_quick_choice(&["accounts", "orders", "profiles", "reports", "sessions"]),
+            generated_quick_number(1_000, 99_999),
+        ),
+        DataType::MacAddress => format!(
+            "02:00:{}:{}:{}:{}",
+            generated_quick_hex_pair(),
+            generated_quick_hex_pair(),
+            generated_quick_hex_pair(),
+            generated_quick_hex_pair(),
+        ),
+        _ => unreachable!("network quick value helper called with non-network type"),
+    }
+}
+
+fn generated_scalar_quick_value(data_type: DataType) -> String {
+    match data_type {
         DataType::Timestamp => format!(
             "2024-{month:02}-{day:02}T{hour:02}:{minute:02}:00Z",
             month = generated_quick_number(1, 12),
@@ -205,32 +260,6 @@ fn generated_quick_value(data_type: DataType, row_index: usize) -> String {
             generated_quick_number(0, 99),
         ),
         DataType::PostalCode => format!("{:05}", generated_quick_number(1_000, 99_950)),
-        DataType::Address => format!(
-            "{} {} {}, {}",
-            generated_quick_number(10, 9_999),
-            generated_quick_choice(&["Cedar", "Maple", "Oak", "Pine", "River", "Summit"]),
-            generated_quick_choice(&["Street", "Avenue", "Lane", "Road", "Way"]),
-            generated_quick_choice(&[
-                "Arborfield",
-                "Brookhaven",
-                "Fairview",
-                "Lakeside",
-                "Riverton"
-            ],),
-        ),
-        DataType::IpAddress => format!("198.51.100.{}", generated_quick_number(1, 254)),
-        DataType::Url => format!(
-            "https://example.invalid/{}/{}",
-            generated_quick_choice(&["accounts", "orders", "profiles", "reports", "sessions"]),
-            generated_quick_number(1_000, 99_999),
-        ),
-        DataType::MacAddress => format!(
-            "02:00:{}:{}:{}:{}",
-            generated_quick_hex_pair(),
-            generated_quick_hex_pair(),
-            generated_quick_hex_pair(),
-            generated_quick_hex_pair(),
-        ),
         DataType::TaxId => format!(
             "900-{:02}-{:04}",
             generated_quick_number(1, 99),
@@ -247,20 +276,38 @@ fn generated_quick_value(data_type: DataType, row_index: usize) -> String {
             generated_quick_number(0, 100),
             generated_quick_number(0, 9),
         ),
+        _ => unreachable!("scalar quick value helper called with non-scalar type"),
+    }
+}
+
+fn generated_choice_quick_value(data_type: DataType) -> String {
+    match data_type {
+        DataType::Address => format!(
+            "{} {} {}, {}",
+            generated_quick_number(10, 9_999),
+            generated_quick_choice(&["Cedar", "Maple", "Oak", "Pine", "River", "Summit"]),
+            generated_quick_choice(&["Street", "Avenue", "Lane", "Road", "Way"]),
+            generated_quick_choice(&[
+                "Arborfield",
+                "Brookhaven",
+                "Fairview",
+                "Lakeside",
+                "Riverton",
+            ]),
+        ),
         DataType::CountryCode => {
             generated_quick_choice(&["US", "NL", "DE", "FR", "GB", "CA", "AU", "JP"]).to_string()
         }
-        DataType::Phone => format!("555-020-{:04}", generated_quick_number(0, 9_999)),
-        DataType::FirstName => format!("First{ordinal}"),
-        DataType::LastName => format!("Last{ordinal}"),
-        DataType::FullName => format!("First{ordinal} Last{ordinal}"),
         DataType::Enum => {
             generated_quick_choice(&["active", "pending", "review", "archived", "closed"])
                 .to_string()
         }
-        DataType::String => format!("sample-{}-{}", ordinal, generated_quick_string(8)),
-        DataType::Unknown => format!("value-{}-{}", ordinal, generated_quick_string(8)),
+        _ => unreachable!("choice quick value helper called with non-choice type"),
     }
+}
+
+fn generated_text_quick_value(prefix: &str, ordinal: usize) -> String {
+    format!("{prefix}-{ordinal}-{}", generated_quick_string(8))
 }
 
 fn generated_quick_number(min: i64, max: i64) -> i64 {

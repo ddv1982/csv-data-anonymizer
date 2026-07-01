@@ -148,12 +148,7 @@ function ColumnSelectionStep({ workflow }: { workflow: AnonymizerWorkflowState }
           {
             label: 'Select Detected Risk',
             disabled: workflow.busy === 'loading' || workflow.selectableColumns.length === 0,
-            onClick: () =>
-              workflow.setColumnSelection(
-                workflow.selectableColumns
-                  .filter((column) => column.piiRisk === 'high' || column.piiRisk === 'medium')
-                  .map((column) => column.index),
-              ),
+            onClick: () => workflow.setColumnSelection(workflow.detectedRiskColumns),
           },
         ]}
         notice={(
