@@ -24,10 +24,20 @@ import { PrivacyReportSummary } from './PrivacyReportSummary'
 
 type PasteBusyState = 'idle' | 'analyzing' | 'previewing' | 'transforming' | 'copying'
 
+const formatLabels: Record<PasteDataFormat, string> = {
+  auto: 'Auto detect',
+  csv: 'CSV text',
+  json: 'JSON',
+  xml: 'XML',
+  yaml: 'YAML',
+  plainText: 'Plain text',
+  logs: 'Log lines',
+}
+
 const formatOptions: Array<{ value: PasteDataFormat; label: string }> = [
-  { value: 'auto', label: 'Auto detect' },
-  { value: 'csv', label: 'CSV text' },
-  { value: 'json', label: 'JSON' },
+  { value: 'auto', label: formatLabels.auto },
+  { value: 'csv', label: formatLabels.csv },
+  { value: 'json', label: formatLabels.json },
 ]
 
 export function PasteDataWorkflowView({
@@ -267,7 +277,7 @@ export function PasteDataWorkflowView({
             {
               label: 'Select All',
               disabled: isBusy || selection.columns.length === 0 || selection.allSelected,
-              onClick: () => setColumnSelection(selection.selectableColumns.map((column) => column.index)),
+              onClick: () => setColumnSelection(selection.columns.map((column) => column.index)),
             },
             {
               label: 'Deselect All',
@@ -370,7 +380,7 @@ function formatPasteStats(result: PasteTransformData) {
 }
 
 function formatLabel(format: PasteDataFormat) {
-  return formatOptions.find((option) => option.value === format)?.label ?? format
+  return formatLabels[format] ?? format
 }
 
 function isPasteActionTarget(target: EventTarget | null) {

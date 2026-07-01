@@ -68,6 +68,8 @@ Ordering principle: report integrity and data safety first (the product promise)
 
 ### Phase 1: Make transforms total and reports truthful (Rust core)
 
+Status: completed on 2026-07-01. Typed transforms fall back to generic pseudonyms with a `shapeFallbackValues` counter in the report, readiness review items, and notes; the multibyte timestamp panic is fixed; preview and anonymize share the DEFAULT_SAMPLE_ROWS detection basis (smart replacement and preview samples stay on the display window); cell values are trimmed consistently; transform dispatch consults `uses_default_pass_through()`.
+
 Targets: CORE-1, CORE-2, CORE-3, CORE-4, CORE-5.
 
 - Make Email/Timestamp/Phone transforms total: on shape mismatch fall back to `transform_generic_string` (or typed placeholder), never the original value. Add a per-column fallback counter surfaced in the privacy report and preview warnings.
@@ -81,6 +83,8 @@ Validation: `cargo test --workspace`, new fixtures for each fixed path, `npm run
 Exit criteria: no code path writes an original value for a selected column without a report-visible counter; preview, report, and final output agree on a shared detection basis.
 
 ### Phase 2: Data-safety and shell consistency (Tauri)
+
+Status: completed on 2026-07-01. Output==input is a preflight blocker and anonymize error; analyze_csv no longer grants write access silently; the download command runs its probe off the main thread; unused dialog permissions and the stale asset: CSP source are gone; plain signed numbers are exempt from formula neutralization; email-domain preservation is disclosed in report notes.
 
 Targets: SHELL-1, SHELL-2, SHELL-3, SHELL-5, plus CORE-10/CORE-11 as product decisions.
 
@@ -96,6 +100,8 @@ Exit criteria: no write grant exists that the user did not explicitly confirm; t
 
 ### Phase 3: Frontend parity and failure-path robustness
 
+Status: completed on 2026-07-01. Panels stay mounted across tabs; Select Detected Risk gates on detected-risk columns; paste auto-selection is backend-driven via should_auto_select_column; download and job polling recover from failures; failure paths are tested.
+
 Targets: FE-1, FE-2, FE-3, FE-4, FE-5, FE-7.
 
 - Keep workflow panels mounted (rely on the existing `hidden` attribute); add a test asserting paste state survives tab switches.
@@ -109,6 +115,8 @@ Validation: `npm run frontend:test`, `npm run frontend:typecheck`, `npm run fron
 Exit criteria: CSV and paste workflows share one selection policy sourced from the core; every polling loop has a tested recovery path; no tab switch loses user input.
 
 ### Phase 4: Release pipeline hardening
+
+Status: completed on 2026-07-01. Actions SHA-pinned, secrets step-scoped, APT publish gated on all builds, shared validate steps in a composite action, contract checker asserts serde camelCase, knip.json triggers CI, cancel-in-progress skips main, published releases cannot be flipped back to draft.
 
 Targets: CI-1, CI-2, CI-3, CI-4, CI-5, CI-8 (selected).
 
@@ -124,6 +132,8 @@ Validation: `npm run release:check`, `npm run linux:release-helpers:check`, a dr
 Exit criteria: a compromised action tag cannot see signing material; no publish channel can outrun a failed release.
 
 ### Phase 5: Simplicity and DRY sweep
+
+Status: completed on 2026-07-02. Shell DRY helpers consolidated, terminal-job polling made idempotent, dead core branches and paste-text re-filtering removed, local gates build the frontend once, Debian/AppStream parsing shared in deb_common.py, legacy macOS packaging deleted, DMG naming single-sourced, aliases pruned, notarization fails fast on Invalid, DMG staging preserves symlinks, dead core APIs and the sensitive_columns metric removed, frontend dead plumbing deleted, default model constant centralized.
 
 Targets: CORE-6..CORE-9, SHELL-4 (document), SHELL-6, SHELL-7, FE-6, FE-8, FE-9, FE-10, CI-6, CI-7, CI-8 (rest).
 

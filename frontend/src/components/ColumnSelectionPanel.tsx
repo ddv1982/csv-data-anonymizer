@@ -23,8 +23,6 @@ export function ColumnSelectionPanel({
   onStrategyChange,
   onToggleShowAll,
   availableStrategies = csvStrategies,
-  strategyControlsDisabled = false,
-  strategyControlsDisabledReason,
   footer,
 }: {
   actions: SelectionAction[]
@@ -40,8 +38,6 @@ export function ColumnSelectionPanel({
   onStrategyChange: (column: ColumnMetadata, value: AnonymizationStrategy) => void
   onToggleShowAll: () => void
   availableStrategies?: AnonymizationStrategy[]
-  strategyControlsDisabled?: boolean
-  strategyControlsDisabledReason?: string
   footer: ReactNode
 }) {
   return (
@@ -74,8 +70,6 @@ export function ColumnSelectionPanel({
         onStrategyChange={onStrategyChange}
         onToggleShowAll={onToggleShowAll}
         availableStrategies={availableStrategies}
-        strategyControlsDisabled={strategyControlsDisabled}
-        strategyControlsDisabledReason={strategyControlsDisabledReason}
       />
 
       {footer}

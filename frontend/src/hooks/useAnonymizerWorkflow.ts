@@ -3,7 +3,6 @@ import type {
   AnonymizationStrategy,
   AppSettings,
   ColumnMetadata,
-  DataType,
 } from '../types'
 import { useAnonymizeJob } from './useAnonymizeJob'
 import { useCsvAnalysis } from './useCsvAnalysis'
@@ -30,7 +29,6 @@ export function useAnonymizerWorkflow() {
     columns,
     selectedSet,
     selectedControls,
-    selectableColumns,
     highRiskColumns,
     detectedRiskColumns,
     visibleColumns,
@@ -44,7 +42,6 @@ export function useAnonymizerWorkflow() {
     setColumnControls,
     controlsForColumns,
     selectionUsesLocalAi,
-    updateColumnType: updateCsvColumnType,
     updateColumnStrategy: updateCsvColumnStrategy,
     toggleColumn: toggleCsvColumn,
   } = useCsvSelection()
@@ -143,11 +140,6 @@ export function useAnonymizerWorkflow() {
     clearArtifacts()
   }
 
-  function updateColumnType(column: ColumnMetadata, value: DataType | 'auto') {
-    updateCsvColumnType(column, value)
-    clearArtifacts()
-  }
-
   function updateColumnStrategy(column: ColumnMetadata, strategy: AnonymizationStrategy) {
     updateCsvColumnStrategy(column, strategy)
     clearArtifacts()
@@ -184,7 +176,6 @@ export function useAnonymizerWorkflow() {
     localAiBlocked,
     columns,
     selectedSet,
-    selectableColumns,
     highRiskColumns,
     detectedRiskColumns,
     visibleColumns,
@@ -208,7 +199,6 @@ export function useAnonymizerWorkflow() {
     runAnonymization: anonymizeJob.runAnonymization,
     cancelCurrentJob: anonymizeJob.cancelCurrentJob,
     setColumnSelection,
-    updateColumnType,
     updateColumnStrategy,
     toggleColumn,
     clearFile: csvAnalysis.clearFile,

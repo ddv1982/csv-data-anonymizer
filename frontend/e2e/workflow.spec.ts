@@ -384,7 +384,6 @@ async function installTauriMock(page: Page) {
       return {
         directIdentifiers: 1,
         quasiIdentifiers: 0,
-        sensitiveColumns: 0,
         pseudonymizedColumns: 1,
         smartReplacementColumns: 0,
         opaqueTokenColumns: 0,

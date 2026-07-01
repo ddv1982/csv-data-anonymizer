@@ -13,10 +13,8 @@ use crate::error::Result;
 use crate::metadata::should_auto_select_column;
 use crate::smart::SmartReplacementProvider;
 use crate::types::{
-    AnonymizationStrategy, ColumnControl, ColumnMetadata, DataType, PasteAnalyzeData,
-    PasteAnalyzeParams, PasteDataFormat, PastePreviewParams, PasteTransformData,
-    PasteTransformParams, PreviewData, PrivacyReport, QuickGenerateParams, QuickTransformData,
-    QuickTransformParams,
+    PasteAnalyzeData, PasteAnalyzeParams, PasteDataFormat, PastePreviewParams, PasteTransformData,
+    PasteTransformParams, PreviewData, QuickGenerateParams, QuickTransformData,
 };
 
 pub fn analyze_paste_data(input: PasteAnalyzeParams) -> Result<PasteAnalyzeData> {
@@ -109,10 +107,6 @@ pub fn transform_paste_data_with_smart_provider(
     }
 }
 
-pub fn transform_quick_values(input: QuickTransformParams) -> Result<QuickTransformData> {
-    quick::transform_quick_values(input)
-}
-
 pub fn generate_quick_values(input: QuickGenerateParams) -> Result<QuickTransformData> {
     quick::generate_quick_values(input)
 }
@@ -122,41 +116,4 @@ pub fn generate_quick_values_with_smart_provider(
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<QuickTransformData> {
     quick::generate_quick_values_with_smart_provider(input, provider)
-}
-
-pub fn preview_rows(
-    rows: &[Vec<String>],
-    metadata: &[ColumnMetadata],
-    columns: &[usize],
-    controls: &[ColumnControl],
-    sample_count: usize,
-) -> Result<PreviewData> {
-    shared::preview_rows(rows, metadata, columns, controls, sample_count)
-}
-
-pub fn anonymize_rows(
-    rows: &[Vec<String>],
-    metadata: &[ColumnMetadata],
-    columns: &[usize],
-    controls: &[ColumnControl],
-) -> Result<(Vec<Vec<String>>, PrivacyReport)> {
-    shared::anonymize_rows(rows, metadata, columns, controls)
-}
-
-pub fn anonymize_rows_with_smart_provider(
-    rows: &[Vec<String>],
-    metadata: &[ColumnMetadata],
-    columns: &[usize],
-    controls: &[ColumnControl],
-    provider: Option<&mut dyn SmartReplacementProvider>,
-) -> Result<(Vec<Vec<String>>, PrivacyReport)> {
-    shared::anonymize_rows_with_smart_provider(rows, metadata, columns, controls, provider)
-}
-
-pub fn quick_anonymize_values(
-    values: &[String],
-    data_type: DataType,
-    strategy: AnonymizationStrategy,
-) -> Result<QuickTransformData> {
-    quick::quick_anonymize_values(values, data_type, strategy)
 }

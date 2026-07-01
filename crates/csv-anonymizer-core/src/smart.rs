@@ -211,15 +211,6 @@ pub fn missing_smart_replacement_values_from_csv(
     Ok(has_missing_smart_replacement_values(batches, existing))
 }
 
-pub fn missing_smart_replacement_values_from_rows(
-    rows: &[Vec<String>],
-    columns: &[ColumnMetadata],
-    existing: Option<&SmartReplacementMap>,
-) -> bool {
-    let batches = collect_unique_values_from_rows(rows, columns);
-    has_missing_smart_replacement_values(batches, existing)
-}
-
 fn collect_unique_values_from_rows(
     rows: &[Vec<String>],
     columns: &[ColumnMetadata],

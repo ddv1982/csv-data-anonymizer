@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import type { AnonymizationStrategy, ColumnControl, ColumnMetadata, DataType } from '../types'
+import type { AnonymizationStrategy, ColumnControl, ColumnMetadata } from '../types'
 import { maxVisibleColumns } from '../utils/columns'
 
 const EMPTY_COLUMNS: ColumnMetadata[] = []
@@ -63,11 +63,11 @@ export function useColumnSelection(
 
   function updateColumnControl(
     column: ColumnMetadata,
-    patch: Partial<Pick<ColumnControl, 'typeOverride' | 'strategy'>>,
+    patch: Partial<Pick<ColumnControl, 'strategy'>>,
   ) {
     setColumnControls((current) => {
       const next = { ...defaultControl(column), ...current[column.index], ...patch }
-      if (!options.pruneDefaultControls || next.typeOverride !== null || next.strategy !== (column.strategy ?? 'auto')) {
+      if (!options.pruneDefaultControls || next.strategy !== (column.strategy ?? 'auto')) {
         return { ...current, [column.index]: next }
       }
 
@@ -75,10 +75,6 @@ export function useColumnSelection(
       delete nextControls[column.index]
       return nextControls
     })
-  }
-
-  function updateColumnType(column: ColumnMetadata, value: DataType | 'auto') {
-    updateColumnControl(column, { typeOverride: value === 'auto' ? null : value })
   }
 
   function updateColumnStrategy(column: ColumnMetadata, strategy: AnonymizationStrategy) {
@@ -102,7 +98,6 @@ export function useColumnSelection(
     columns,
     selectedSet,
     selectedControls,
-    selectableColumns: columns,
     highRiskColumns,
     detectedRiskColumns,
     visibleColumns,
@@ -114,7 +109,6 @@ export function useColumnSelection(
     resetColumnControls,
     controlsForColumns,
     selectionUsesLocalAi,
-    updateColumnType,
     updateColumnStrategy,
     toggleColumn,
   }

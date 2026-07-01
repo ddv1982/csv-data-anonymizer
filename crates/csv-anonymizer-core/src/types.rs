@@ -632,7 +632,6 @@ pub struct PreflightData {
 pub struct PrivacyReport {
     pub direct_identifiers: usize,
     pub quasi_identifiers: usize,
-    pub sensitive_columns: usize,
     pub pseudonymized_columns: usize,
     pub smart_replacement_columns: usize,
     pub opaque_token_columns: usize,
@@ -836,7 +835,6 @@ mod tests {
         let report = PrivacyReport {
             direct_identifiers: 1,
             quasi_identifiers: 2,
-            sensitive_columns: 0,
             pseudonymized_columns: 1,
             smart_replacement_columns: 1,
             opaque_token_columns: 0,
@@ -912,7 +910,6 @@ mod tests {
         let value = json!({
             "directIdentifiers": 1,
             "quasiIdentifiers": 0,
-            "sensitiveColumns": 0,
             "pseudonymizedColumns": 1,
             "smartReplacementColumns": 0,
             "opaqueTokenColumns": 0,

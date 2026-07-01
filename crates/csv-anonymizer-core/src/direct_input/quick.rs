@@ -3,10 +3,10 @@ use crate::error::{AnonymizerError, Result};
 use crate::hash::random_uuid_v4;
 use crate::service::build_privacy_report;
 use crate::smart::{SmartReplacementProvider, prepare_smart_replacements_from_rows};
-use crate::strategies::{TransformState, transform_value_with_state};
+use crate::strategies::transform_value_with_state;
 use crate::types::{
     AnonymizationStrategy, ColumnMetadata, DataType, QuickGenerateParams, QuickTransformData,
-    QuickTransformParams, SampleTransform, TransformContext,
+    SampleTransform, TransformContext,
 };
 use rand::Rng;
 
@@ -14,44 +14,6 @@ use super::shared::transform_state_for_smart_replacements;
 
 const QUICK_GENERATE_MAX_COUNT: usize = 1_000;
 const HEX_CHARSET: &str = "0123456789abcdef";
-
-pub fn transform_quick_values(input: QuickTransformParams) -> Result<QuickTransformData> {
-    let values = parse_quick_lines(&input.input);
-    if values.is_empty() {
-        return Err(AnonymizerError::input_parse(
-            "quick values",
-            "Paste at least one value to anonymize.",
-        ));
-    }
-
-    let column = quick_column(input.data_type, input.strategy, &values);
-    let selected_columns = vec![column.clone()];
-    let mut state = TransformState::new();
-    let mut transformed = Vec::with_capacity(values.len());
-    let mut samples = Vec::with_capacity(values.len());
-
-    for (row_index, value) in values.iter().enumerate() {
-        let context = TransformContext {
-            column_name: &column.name,
-            column_index: column.index,
-            row_index,
-            empty_format: column.empty_format,
-        };
-        let anonymized = transform_value_with_state(value, &column, &context, &mut state);
-        transformed.push(anonymized.clone());
-        samples.push(SampleTransform {
-            original: value.clone(),
-            anonymized,
-        });
-    }
-
-    Ok(QuickTransformData {
-        output: transformed.join("\n"),
-        row_count: transformed.len(),
-        values: samples,
-        privacy_report: build_privacy_report(&selected_columns, state.report()),
-    })
-}
 
 pub fn generate_quick_values(input: QuickGenerateParams) -> Result<QuickTransformData> {
     generate_quick_values_with_smart_provider(input, None)
@@ -122,17 +84,7 @@ pub fn generate_quick_values_with_smart_provider(
         privacy_report: build_privacy_report(&selected_columns, state.report()),
     })
 }
-pub fn quick_anonymize_values(
-    values: &[String],
-    data_type: DataType,
-    strategy: AnonymizationStrategy,
-) -> Result<QuickTransformData> {
-    transform_quick_values(QuickTransformParams {
-        input: values.join("\n"),
-        data_type,
-        strategy,
-    })
-}
+
 fn quick_column(
     data_type: DataType,
     strategy: AnonymizationStrategy,
@@ -159,15 +111,6 @@ fn quick_column(
         is_selected: true,
         strategy,
     }
-}
-
-fn parse_quick_lines(input: &str) -> Vec<String> {
-    input
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(ToString::to_string)
-        .collect()
 }
 
 fn supports_quick_generate_strategy(strategy: AnonymizationStrategy) -> bool {

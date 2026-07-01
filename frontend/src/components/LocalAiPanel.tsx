@@ -1,4 +1,5 @@
 import { Cpu, Download, ExternalLink, RefreshCw, X } from 'lucide-react'
+import { defaultLocalAiModel } from '../defaults'
 import type { LocalAiDownloadStatus, LocalAiStatus } from '../types'
 import { GlossaryLabel, GlossaryPopover } from './GlossaryPopover'
 import { SectionHelp } from './SectionHelp'
@@ -7,6 +8,10 @@ import { SwitchRow } from './SwitchRow'
 export function LocalAiPanel({
   enabled,
   model,
+  selectedModel,
+  statusMatchesModel,
+  ready,
+  downloading,
   status,
   downloadStatus,
   disabled,
@@ -19,6 +24,10 @@ export function LocalAiPanel({
 }: {
   enabled: boolean
   model: string
+  selectedModel: string
+  statusMatchesModel: boolean
+  ready: boolean
+  downloading: boolean
   status: LocalAiStatus | null
   downloadStatus: LocalAiDownloadStatus | null
   disabled: boolean
@@ -29,17 +38,13 @@ export function LocalAiPanel({
   onCancelDownload: () => void
   onOpenSetup: () => void
 }) {
-  const selectedModel = model.trim() || 'gemma3:4b'
-  const statusMatchesModel = status?.model === selectedModel
-  const ready = Boolean(statusMatchesModel && status?.ready)
   const availableModels = status?.availableModels ?? []
   const selectedModelAvailable = availableModels.includes(selectedModel)
   const modelInstalled = selectedModelAvailable || Boolean(statusMatchesModel && status?.modelInstalled)
-  const modelOptions = uniqueModels(['gemma3:4b', ...availableModels])
-  const downloading = downloadStatus?.state === 'running'
+  const modelOptions = uniqueModels([defaultLocalAiModel, ...availableModels])
   const progress = downloadProgress(downloadStatus)
   const statusMessage = status && !statusMatchesModel ? `Checking ${selectedModel} in Ollama...` : status?.message
-  const downloadLabel = selectedModel === 'gemma3:4b' ? 'Download Gemma' : `Download ${selectedModel}`
+  const downloadLabel = selectedModel === defaultLocalAiModel ? 'Download Gemma' : `Download ${selectedModel}`
 
   return (
     <div className="local-ai-panel">
@@ -91,7 +96,7 @@ export function LocalAiPanel({
               list="local-ai-model-options"
               value={model}
               disabled={disabled || !enabled}
-              placeholder="gemma3:4b"
+              placeholder={defaultLocalAiModel}
               onChange={(event) => onModelChange(event.target.value)}
             />
             {modelInstalled ? <span className="local-ai-installed">Installed locally</span> : null}
@@ -101,7 +106,7 @@ export function LocalAiPanel({
               <option key={option} value={option} />
             ))}
           </datalist>
-          <p className="muted-text text-sm">Recommended lightweight default: gemma3:4b.</p>
+          <p className="muted-text text-sm">Recommended lightweight default: {defaultLocalAiModel}.</p>
         </div>
         <div className="local-ai-actions">
           {status && !status.runtimeAvailable ? (
