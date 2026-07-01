@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.65 - 2026-07-02
+
+- Make Email, Timestamp, and Phone transforms total: values that do not match the detected column format now become generic pseudonyms instead of passing through unchanged, with a Format fallbacks counter surfaced in the privacy report, readiness review items, and notes; fix a crash on multibyte timestamp values; align preview and final-run type detection on one sample basis; and trim cell values consistently between detection and processing.
+- Protect original data in the shell: the output path can no longer equal the input file, analyze no longer grants write access silently, the Local AI runtime probe runs off the main thread, unused dialog permissions and a stale CSP source are removed, plain negative numbers are no longer altered by formula neutralization, and email-domain preservation is disclosed in report notes.
+- Keep frontend workflows consistent and resilient: tab switches preserve paste/quick state, Select Detected Risk gating matches across CSV and paste, paste auto-selection uses the shared core policy, and download/job polling recovers from failures with new failure-path test coverage.
+- Harden the release pipeline: actions pinned by commit SHA, signing secrets scoped to their steps, APT publishing gated on all platform builds, shared CI/release validation via a composite action, and a serde casing assertion in the contract checker.
+- Simplify without behavior change: remove dead core APIs, the unused sensitive-columns metric, and dead frontend plumbing; consolidate shell helpers and the default Local AI model constant; share Debian/AppStream parsing helpers; delete legacy macOS packaging; and make local quality gates build the frontend once.
+
 ## v1.0.64 - 2026-07-01
 
 - Refactor quick-value generation and backend preflight readiness into smaller helpers while preserving detector behavior, Smart replacement behavior, output-path validation, and readiness wording.
