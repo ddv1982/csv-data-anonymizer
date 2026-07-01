@@ -2,6 +2,11 @@
 
 Last reviewed: 2026-07-01
 
+Cleanup coordination note: the behavior-preserving cleanup pass tracked in
+`docs/cleanup-phased-plan-2026-07-01.md` intentionally avoided dependency
+version churn. Keep future dependency upgrades separate from cleanup refactors
+unless the cleanup is specifically about release/package scripts.
+
 This project treats `cargo audit` warnings as review inputs, not automatic
 release blockers. As of this review, `cargo audit --json` reports zero
 vulnerabilities and the informational warnings below.
@@ -305,14 +310,10 @@ Decision:
    `rlibphonenumber` against the existing phone detection fixtures before
    changing runtime dependencies.
 
-## Complexity Refactors To Schedule Separately
+## Complexity Refactors
 
 The multilingual detection work removed the detection-specific
-`clippy::too_many_lines` warnings. Two unrelated functions still exceed the
-optional line-count lint:
-
-- `crates/csv-anonymizer-core/src/direct_input/quick.rs`: `generated_quick_value`
-- `crates/csv-anonymizer-core/src/service.rs`: `preflight_anonymization`
-
-Refactor these in separate changes so behavioral detection updates remain
-reviewable.
+`clippy::too_many_lines` warnings. The later behavior-preserving cleanup pass
+also split the unrelated quick generation and preflight readiness hotspots that
+were previously listed here. Keep future detector behavior changes separate from
+unrelated cleanup so review remains focused.

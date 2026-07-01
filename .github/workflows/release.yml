@@ -472,77 +472,16 @@ jobs:
             dist/rust/apt-pages/apt/csv-anonymizer-archive-keyring.pgp
 
       - name: Sign repository setup checksum
-        run: |
-          set -euo pipefail
-
-          setup_deb="dist/rust/artifacts/csv-anonymizer-repository-setup_1.0_all.deb"
-          setup_sha256="${setup_deb}.sha256"
-          setup_sha256_sig="${setup_sha256}.asc"
-
-          (cd "$(dirname "${setup_deb}")" && sha256sum "$(basename "${setup_deb}")" > "$(basename "${setup_sha256}")")
-          GNUPGHOME="${LINUX_GNUPGHOME}" gpg --batch --yes --pinentry-mode loopback \
-            --passphrase-file "${LINUX_GPG_PASSPHRASE_FILE}" \
-            --local-user "${LINUX_GPG_FINGERPRINT}" --armor --detach-sign \
-            --output "${setup_sha256_sig}" "${setup_sha256}"
-          GNUPGHOME="${LINUX_VERIFICATION_GNUPGHOME}" gpg --quiet --batch --trust-model always --verify "${setup_sha256_sig}" "${setup_sha256}"
+        run: bash scripts/sign-linux-checksums.sh --setup-package
 
       - name: Sign direct Linux installer checksums
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-
-          artifacts=(
-            dist/rust/artifacts/csv-anonymizer-*.rpm
-            dist/rust/artifacts/*.AppImage
-            dist/rust/artifacts/csv-anonymizer_*.deb
-          )
-
-          if [ ${#artifacts[@]} -eq 0 ]; then
-            echo "Expected at least one direct Linux installer artifact to sign." >&2
-            exit 1
-          fi
-
-          for artifact in "${artifacts[@]}"; do
-            checksum="${artifact}.sha256"
-            signature="${checksum}.asc"
-            (cd "$(dirname "${artifact}")" && sha256sum "$(basename "${artifact}")" > "$(basename "${checksum}")")
-            GNUPGHOME="${LINUX_GNUPGHOME}" gpg --batch --yes --pinentry-mode loopback \
-              --passphrase-file "${LINUX_GPG_PASSPHRASE_FILE}" \
-              --local-user "${LINUX_GPG_FINGERPRINT}" --armor --detach-sign \
-              --output "${signature}" "${checksum}"
-            GNUPGHOME="${LINUX_VERIFICATION_GNUPGHOME}" gpg --quiet --batch --trust-model always --verify "${signature}" "${checksum}"
-          done
+        run: bash scripts/sign-linux-checksums.sh --direct-installers
 
       - name: Stage APT repository installer
-        run: |
-          set -euo pipefail
-
-          installer="dist/rust/artifacts/install-apt-repo.sh"
-          sed "s/__CSV_ANONYMIZER_APT_SIGNING_KEY_FINGERPRINT__/${LINUX_GPG_FINGERPRINT}/g" \
-            scripts/install-apt-repo.sh > "${installer}"
-          chmod 0755 "${installer}"
-
-          node scripts/check-apt-installer.mjs \
-            --rendered-installer "${installer}" \
-            --expected-fingerprint "${LINUX_GPG_FINGERPRINT}"
-          sh -n "${installer}"
+        run: bash scripts/stage-apt-installer-assets.sh
 
       - name: Stage public APT installer assets
-        run: |
-          set -euo pipefail
-
-          cp dist/rust/artifacts/install-apt-repo.sh \
-            dist/rust/apt-pages/install-apt-repo.sh
-          cp dist/rust/artifacts/csv-anonymizer-repository-setup_1.0_all.deb \
-            dist/rust/apt-pages/apt/csv-anonymizer-repository-setup_1.0_all.deb
-          cp dist/rust/artifacts/csv-anonymizer-repository-setup_1.0_all.deb.sha256 \
-            dist/rust/apt-pages/apt/csv-anonymizer-repository-setup_1.0_all.deb.sha256
-          cp dist/rust/artifacts/csv-anonymizer-repository-setup_1.0_all.deb.sha256.asc \
-            dist/rust/apt-pages/apt/csv-anonymizer-repository-setup_1.0_all.deb.sha256.asc
-          node scripts/check-apt-installer.mjs \
-            --rendered-installer dist/rust/apt-pages/install-apt-repo.sh \
-            --expected-fingerprint "${LINUX_GPG_FINGERPRINT}"
-          sh -n dist/rust/apt-pages/install-apt-repo.sh
+        run: bash scripts/stage-apt-installer-assets.sh --stage-public
 
       - name: Upload Linux release assets
         uses: softprops/action-gh-release@v3

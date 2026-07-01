@@ -2,13 +2,17 @@ import { act, render } from '@testing-library/react'
 import { useEffect } from 'react'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultSettings } from '../defaults'
-import { columnMetadataFixture, privacyReportFixture as basePrivacyReportFixture, verifiedPreflightFixture } from '../test-utils/builders'
+import {
+  columnMetadataFixture,
+  localAiStatusFixture,
+  privacyReportFixture as basePrivacyReportFixture,
+  verifiedPreflightFixture,
+} from '../test-utils/builders'
 import type {
   AnonymizeData,
   AnonymizeJobStatus,
   AppSettings,
   ColumnMetadata,
-  LocalAiStatus,
   PrivacyReport,
 } from '../types'
 import { useAnonymizerWorkflow, type AnonymizerWorkflowState } from './useAnonymizerWorkflow'
@@ -250,21 +254,6 @@ function settingsFixture(overrides: Partial<AppSettings> = {}): AppSettings {
   return {
     ...defaultSettings,
     ...overrides,
-  }
-}
-
-function localAiStatusFixture(): LocalAiStatus {
-  return {
-    enabled: false,
-    provider: 'ollama',
-    model: 'gemma3:4b',
-    availableModels: [],
-    endpoint: 'http://127.0.0.1:11434',
-    runtimeAvailable: false,
-    modelInstalled: false,
-    ready: false,
-    runtimeVersion: null,
-    message: 'Local AI is off.',
   }
 }
 

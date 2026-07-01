@@ -4,7 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { defaultSettings } from './defaults'
 import { MAX_PASTE_CONTENT_BYTES } from './limits'
-import { columnMetadataFixture, privacyReportFixture as basePrivacyReportFixture, verifiedPreflightFixture } from './test-utils/builders'
+import {
+  columnMetadataFixture,
+  localAiStatusFixture,
+  privacyReportFixture as basePrivacyReportFixture,
+  verifiedPreflightFixture,
+} from './test-utils/builders'
 import type { AppSettings, ColumnMetadata, PrivacyReport } from './types'
 
 type PreflightLike = { readiness: { blockers: string[] } }
@@ -48,18 +53,7 @@ describe('App input mode tabs', () => {
     tauriMocks.firstPreflightBlocker.mockImplementation(
       (preflight: PreflightLike) => preflight.readiness.blockers[0] ?? null,
     )
-    tauriMocks.getLocalAiStatus.mockResolvedValue({
-      enabled: false,
-      provider: 'ollama',
-      model: 'gemma3:4b',
-      availableModels: [],
-      endpoint: 'http://127.0.0.1:11434',
-      runtimeAvailable: false,
-      modelInstalled: false,
-      ready: false,
-      runtimeVersion: null,
-      message: 'Local AI is off.',
-    })
+    tauriMocks.getLocalAiStatus.mockResolvedValue(localAiStatusFixture())
     clipboardWriteText.mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
@@ -171,18 +165,16 @@ describe('App input mode tabs', () => {
     tauriMocks.loadSettings.mockResolvedValue(
       settingsFixture({ localAiEnabled: true, localAiModel: 'llama3.2:3b' }),
     )
-    tauriMocks.getLocalAiStatus.mockResolvedValue({
+    tauriMocks.getLocalAiStatus.mockResolvedValue(localAiStatusFixture({
       enabled: true,
-      provider: 'ollama',
       model: 'gemma3:4b',
       availableModels: ['gemma3:4b'],
-      endpoint: 'http://127.0.0.1:11434',
       runtimeAvailable: true,
       modelInstalled: true,
       ready: true,
       runtimeVersion: '0.9.0',
       message: 'Ready.',
-    })
+    }))
     render(<App />)
 
     await waitFor(() => {

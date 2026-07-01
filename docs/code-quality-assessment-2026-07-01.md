@@ -8,6 +8,8 @@ Deployment context used for risk: single-user desktop application plus a local C
 
 This assessment is review-first. It does not change behavior or refactor code. Apparent smells were treated as candidates until surrounding guards, tests, or workflow context were checked.
 
+Update: a later 2026-07-01 behavior-preserving cleanup pass implemented the local follow-up plan in `docs/cleanup-phased-plan-2026-07-01.md`. Treat the detailed candidate list below as historical evidence; the phased plan is now the fresher status source for completed cleanup, deferred work, and manual wiki freshness.
+
 ## External Calibration
 
 - Rust API Guidelines emphasize predictable naming, meaningful error types, Serde-compatible data structures, argument validation, useful `Debug`, common metadata, and type distinctions for domain constraints. Source: Rust API Guidelines checklist, https://rust-lang.github.io/api-guidelines/checklist.html.
@@ -80,6 +82,8 @@ Assessment: release quality is treated as product quality, which is appropriate 
 
 ### 1. Auto-selection policy is duplicated across app and Tauri
 
+Status update: completed after this assessment. The core now owns `should_auto_select_column`, and CLI/Tauri callers consume that shared policy.
+
 Severity: medium.
 
 Evidence:
@@ -95,6 +99,8 @@ Refutation checked: the duplication is tiny, and both copies currently match exa
 Best fix shape: move `should_auto_select` into `csv-anonymizer-core` near `ColumnMetadata` or service metadata helpers, then call it from CLI and Tauri.
 
 ### 2. Frontend workflow panels repeat selection and Local AI blocking patterns
+
+Status update: completed after this assessment for the confirmed shared seams. CSV and paste workflows share `ColumnSelectionPanel`, Local AI blocked messaging is centralized, and the later cleanup reused existing detected-risk selection state without adding a generic workflow framework.
 
 Severity: medium.
 
@@ -112,6 +118,8 @@ Best fix shape: extract only the shared seam, such as a `ColumnSelectionPanel` a
 
 ### 3. A current no-op selectable-column abstraction adds branches without current value
 
+Status update: completed after this assessment. The speculative frontend selectable-column abstraction and disabled/non-selectable branches are gone from the current selection/table flow.
+
 Severity: low/medium.
 
 Evidence:
@@ -128,6 +136,8 @@ Best fix shape: either document and test the intended unselectable condition, or
 
 ### 4. Test fixtures are duplicated across frontend tests
 
+Status update: completed after this assessment for broad DTO fixtures. Shared builders now cover column metadata, privacy reports, verified preflight data, and Local AI status while local wrappers remain for scenario intent.
+
 Severity: low.
 
 Evidence:
@@ -142,6 +152,8 @@ Refutation checked: local fixture duplication can keep tests readable, and the f
 Best fix shape: add small test-data builders for `ColumnMetadata`, `PrivacyReport`, and preflight data under frontend test utilities, while allowing per-test overrides.
 
 ### 5. Core DTO surface is broad and centralized
+
+Status update: intentionally deferred after this assessment. `types.rs` remains explicit and centralized; the later cleanup expanded contract-check coverage for existing nested DTOs instead of splitting modules prematurely.
 
 Severity: medium, trend risk.
 
@@ -159,6 +171,8 @@ Best fix shape: defer large movement. When the next DTO-heavy feature lands, spl
 
 ### 6. CI/release workflow shell blocks are powerful but hard to maintain
 
+Status update: partially completed after this assessment. The CI prebuilt-frontend contract and Linux release checksum/APT installer staging are now delegated to scripts with local checks. macOS signing/notarization remains visible in YAML unless it becomes a recurring review hotspot.
+
 Severity: medium.
 
 Evidence:
@@ -175,6 +189,8 @@ Best fix shape: move long workflow shell contracts into scripts that CI calls, k
 
 ### 7. Contract checking is useful but shallow
 
+Status update: improved after this assessment. The checker now includes nested detection/privacy DTO surfaces while remaining lightweight; type/default-aware generation remains deferred until DTO churn proves the need.
+
 Severity: medium.
 
 Evidence:
@@ -189,6 +205,8 @@ Refutation checked: for the current DTO style, this lightweight check is valuabl
 Best fix shape: if DTO churn continues, consider generated bindings or schema-based validation. Until then, keep this gate and add targeted serialization tests for high-risk contract changes.
 
 ### 8. Docs-only changes do not appear to trigger the main CI gates
+
+Status update: completed after this assessment. Docs-only changes now have a lightweight `npm run docs:check` path in CI.
 
 Severity: low/medium.
 
@@ -210,14 +228,11 @@ Best fix shape: add a lightweight docs gate only if docs churn increases. A simp
 
 ## Best Next Steps
 
-1. Move the duplicated auto-selection policy into the Rust core.
-2. Decide whether `isSelectableColumn` represents a real product constraint; either implement/test the real condition or remove the abstraction.
-3. Extract a narrow shared frontend column-selection panel and Local AI blocker helper only after preserving current workflow-specific copy and enablement rules.
-4. Add frontend test-data builders for broad DTOs to reduce fixture drift.
-5. Extract the CI prebuilt-frontend contract shell block into a script with focused local validation.
-6. Keep the existing contract checker, but add serialization-focused tests when high-risk DTOs change.
-7. Add a docs-only lightweight check if documentation continues to carry release or install instructions.
-8. Use the full quality gate before releases: `npm run fmt`, `npm run lint`, `npm run test`, `npm run typecheck`, `npm run deadcode:required`, `npm run release:check`, `npm run frontend:e2e`, `npm run frontend:a11y`, `npm run frontend:audit`, and `npm run cargo:audit:required`.
+1. Keep broad DTO module splitting deferred until real DTO churn creates a stronger reason to split by domain.
+2. Keep macOS release signing/notarization YAML visible unless it starts consuming repeated review time.
+3. Consider type/default-aware contract validation only if regex name/field checks plus targeted serialization tests become insufficient.
+4. Manually update or link the GitHub wiki cleanup hotspot page to `docs/cleanup-phased-plan-2026-07-01.md` so it does not rediscover completed local work.
+5. Use the full quality gate before releases: `npm run fmt`, `npm run lint`, `npm run test`, `npm run typecheck`, `npm run deadcode:required`, `npm run release:check`, `npm run frontend:e2e`, `npm run frontend:a11y`, `npm run frontend:audit`, and `npm run cargo:audit:required`.
 
 ## Bottom Line
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.64 - 2026-07-01
+
+- Refactor quick-value generation and backend preflight readiness into smaller helpers while preserving detector behavior, Smart replacement behavior, output-path validation, and readiness wording.
+- Move Linux release checksum signing and APT installer staging into testable helper scripts while keeping signing inputs, workflow permissions, upload wiring, and release gates explicit.
+- Expand Rust-to-TypeScript contract coverage for nested detection/privacy DTOs, share Local AI frontend test fixtures, and refresh cleanup docs so completed phases, deferred work, and manual wiki freshness are clear.
+
 ## v1.0.63 - 2026-07-01
 
 - Consolidate auto-selection policy into the Rust core so CLI and Tauri use the same high/medium-risk selection rule.
