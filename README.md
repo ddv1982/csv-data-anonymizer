@@ -4,6 +4,8 @@ CSV Anonymizer is a local-first desktop app for reducing sensitive CSV and paste
 
 All non-LLM detection and transformation runs locally in Rust. Optional local LLM replacement also runs on your machine through Ollama.
 
+Read the generated project wiki at [github.com/ddv1982/csv-data-anonymizer/wiki](https://github.com/ddv1982/csv-data-anonymizer/wiki).
+
 ## What It Does
 
 - Detects common sensitive fields: emails, names, phone numbers, UUIDs, timestamps, numeric IDs, addresses, postal codes, IPs, URLs, MAC addresses, tax IDs, VAT/BTW numbers, and more.
