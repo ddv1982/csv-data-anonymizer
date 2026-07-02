@@ -138,7 +138,10 @@ test('supports keyboard focus for input tabs and help dialogs', async ({ page })
 
   await page.getByRole('button', { name: 'Browse for CSV file' }).click()
   await page.getByLabel('Strategy for email').selectOption('localAi')
-  const localAiSettingsButton = page.getByRole('button', { name: 'Open Local AI settings' })
+  const localAiSettingsButton = page
+    .getByRole('alert')
+    .filter({ hasText: 'Set up Local AI' })
+    .getByRole('button', { name: 'Open Local AI settings' })
   await localAiSettingsButton.click()
   const localAiDialog = page.getByRole('dialog', { name: 'Local AI Settings' })
   await expect(localAiDialog).toBeVisible()
