@@ -17,7 +17,7 @@ env:
   CARGO_TERM_COLOR: always
   RUST_LINUX_ARTIFACT_NAME: csv-anonymizer-rust-linux-x64-release-bundle
   TAURI_TARGET: x86_64-unknown-linux-gnu
-  TAURI_CLI_VERSION: 2.11.5
+  TAURI_CLI_VERSION: 2.11.4
 
 jobs:
   changes:
