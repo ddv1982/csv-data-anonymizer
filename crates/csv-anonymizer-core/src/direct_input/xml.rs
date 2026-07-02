@@ -7,7 +7,7 @@ use crate::types::{
     PasteTransformParams, PreviewData, TransformContext,
 };
 use quick_xml::events::{BytesText, Event};
-use quick_xml::{Reader, Writer};
+use quick_xml::{Reader, Writer, XmlVersion};
 use std::collections::HashMap;
 use std::time::Instant;
 
@@ -109,7 +109,7 @@ pub(super) fn collect_xml_fields(content: &str, sample_count: usize) -> Result<V
             }
             Event::Text(event) => {
                 let value = event
-                    .xml_content()
+                    .xml_content(XmlVersion::Implicit1_0)
                     .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?;
                 push_xml_text_sample(&mut fields, &path, value.trim(), sample_count)?;
             }
@@ -156,7 +156,7 @@ fn collect_xml_attributes(
         let attribute =
             attribute.map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?;
         let value = attribute
-            .decode_and_unescape_value(reader.decoder())
+            .decoded_and_normalized_value(XmlVersion::Implicit1_0, reader.decoder())
             .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?;
         if value.trim().is_empty() {
             continue;
@@ -218,7 +218,7 @@ fn transform_xml_content(
                 let path_name = xml_text_source_path(&path);
                 if let Some(column) = transform_context.selected_by_path.get(&path_name) {
                     let value = event
-                        .xml_content()
+                        .xml_content(XmlVersion::Implicit1_0)
                         .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?;
                     if value.trim().is_empty() {
                         writer.write_event(Event::Text(event)).map_err(|error| {
@@ -291,7 +291,7 @@ fn transform_xml_attributes(
                 .and_then(|attribute| {
                     let key = xml_name(attribute.key.as_ref());
                     let value = attribute
-                        .decode_and_unescape_value(reader.decoder())
+                        .decoded_and_normalized_value(XmlVersion::Implicit1_0, reader.decoder())
                         .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?;
                     let path_name = xml_attribute_source_path(path, &key);
                     let next_value = if let Some(column) = context.selected_by_path.get(&path_name)

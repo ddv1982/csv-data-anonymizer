@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.69 - 2026-07-02
+
+- Supersede the failed v1.0.68 tag without moving it, keeping the Local AI topbar release while upgrading app-owned `quick-xml` paths and scoping the remaining Tauri/plist RustSec audit exception.
+- Preserve the global Local AI opt-in, readiness pill, shared settings modal, blocked-state shortcut coverage, and browser accessibility checks from v1.0.68.
+
 ## v1.0.68 - 2026-07-02
 
 - Move the Local AI opt-in, readiness pill, and settings entry point into the global top bar so every input mode can reach setup without hunting through workflow-specific panels.

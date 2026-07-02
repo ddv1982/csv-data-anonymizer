@@ -1,6 +1,6 @@
 # Dependency Audit Follow-Ups
 
-Last reviewed: 2026-07-01
+Last reviewed: 2026-07-02
 
 Cleanup coordination note: the behavior-preserving cleanup pass tracked in
 `docs/cleanup-phased-plan-2026-07-01.md` intentionally avoided dependency
@@ -8,8 +8,11 @@ version churn. Keep future dependency upgrades separate from cleanup refactors
 unless the cleanup is specifically about release/package scripts.
 
 This project treats `cargo audit` warnings as review inputs, not automatic
-release blockers. As of this review, `cargo audit --json` reports zero
-vulnerabilities and the informational warnings below.
+release blockers. As of this review, app-owned XML and phone-number paths use
+`quick-xml 0.41.0`; the only remaining `quick-xml` vulnerability path is the
+Tauri `plist` dependency, which is temporarily ignored by `scripts/cargo-audit.mjs`
+only while `cargo tree -i quick-xml@0.39.4 --depth 1` resolves directly to
+`plist`.
 
 The scheduled `.github/workflows/dead-code.yml` maintenance workflow now also
 runs `npm run cargo:audit:required`, so new RustSec advisories are checked even
@@ -17,17 +20,18 @@ when no source change or release workflow is running.
 
 ## Current Audit State
 
-- RustSec database: 2026-06-30 16:05:13 +02:00, 1146 advisories.
+- RustSec database: 2026-07-02 10:52:02 +02:00, 1149 advisories.
 - Lockfile dependency count: 531.
-- Vulnerabilities: 0.
+- Vulnerabilities: 2 temporarily ignored Tauri/plist-transitive `quick-xml`
+  advisories: `RUSTSEC-2026-0194` and `RUSTSEC-2026-0195`.
 - Informational warnings: 17 unmaintained packages and 1 unsound package.
 
 ## Latest Upgrade Research Snapshot
 
-As of 2026-07-01, the stable Tauri line is still Tauri 2.x, not Tauri 3.x.
-The local manifests and lockfile now use `tauri 2.11.4` and
-`tauri-build 2.6.3`. The matching Cargo CLI release is `tauri-cli 2.11.4`;
-the npm CLI wrapper is also `2.11.4`. `@tauri-apps/api` is current at
+As of 2026-07-02, the stable Tauri line is still Tauri 2.x, not Tauri 3.x.
+The local manifests and lockfile now use `tauri 2.11.5` and
+`tauri-build 2.6.3`. The matching Cargo CLI release is `tauri-cli 2.11.5`;
+the npm CLI wrapper is also `2.11.5`. `@tauri-apps/api` is current at
 `2.11.1`. `tauri-runtime` remains on `2.11.3` because Cargo reports that as the
 latest published version for that crate.
 
@@ -38,8 +42,8 @@ for Tauri 3.0:
 
 Current package and dependency observations:
 
-- Tauri patch set: `tauri 2.11.4`, `tauri-build 2.6.3`,
-  `tauri-runtime-wry 2.11.4`, and `tauri-cli 2.11.4` have been applied.
+- Tauri patch set: `tauri 2.11.5`, `tauri-build 2.6.3`,
+  `tauri-runtime-wry 2.11.4`, and `tauri-cli 2.11.5` have been applied.
   `tauri-plugin-dialog 2.7.1` is current.
 - Frontend patch set: `@vitejs/plugin-react 6.0.3`, `eslint 10.6.0`,
   `knip 6.23.0`, `typescript-eslint 8.62.1`, and `vite 8.1.2` have been
@@ -50,11 +54,12 @@ Current package and dependency observations:
   runtime APIs unless the package engine floor is raised too.
 - Rust patch/minor set: `open 5.3.6`, `unicode-segmentation 1.13.3`, and
   `criterion 0.8.2` have been applied.
-- Rust major/API set: `quick-xml 0.41.0`, `reqwest 0.13.4`, and `rand 0.10.1`
-  are available and should be handled separately from patch updates.
-- `phonenumber 0.3.9+9.0.21` is current, so the `atomic-polyfill` warning is
-  still blocked on upstream `postcard`/`heapless` movement or a deliberate
-  phone-detection replacement spike.
+- Rust major/API set: `quick-xml 0.41.0` has been applied for app-owned XML and
+  phone-number paths; `reqwest 0.13.4` and `rand 0.10.1` remain available and
+  should be handled separately from patch updates.
+- `phonenumber 0.3.10+9.0.33` now routes app-owned phone metadata through
+  `quick-xml 0.41.0`, but its all-target `postcard -> heapless ->
+  atomic-polyfill` warning remains.
 - `urlpattern 0.6.0` avoids the `unic-*` path, but Tauri still pulls
   `urlpattern 0.3.0` through `tauri-utils`, so this should wait for a Tauri
   update rather than a local semver-major override.
@@ -103,10 +108,10 @@ Status: completed on 2026-07-01.
 Actions:
 
 - Update Tauri 2 patch versions together:
-  - workspace `tauri` to `2.11.4`
+  - workspace `tauri` to `2.11.5`
   - workspace `tauri-build` to `2.6.3`
-  - `.github/workflows/ci.yml` `TAURI_CLI_VERSION` to `2.11.4`
-  - `.github/workflows/release.yml` `TAURI_CLI_VERSION` to `2.11.4`
+  - `.github/workflows/ci.yml` `TAURI_CLI_VERSION` to `2.11.5`
+  - `.github/workflows/release.yml` `TAURI_CLI_VERSION` to `2.11.5`
 - Refresh `Cargo.lock` with package-specific updates first, then inspect the
   diff:
   `cargo update -p tauri -p tauri-build -p tauri-runtime -p tauri-runtime-wry`.
@@ -135,7 +140,8 @@ Verification:
 Expected audit result:
 
 - The GTK3/GLib and `unic-*` warnings probably remain on Tauri 2.x.
-- The `atomic-polyfill` warning remains unless upstream `phonenumber` changes.
+- The `atomic-polyfill` warning remains unless upstream `phonenumber` changes
+  its `postcard -> heapless` path.
 
 Implementation notes:
 
@@ -262,7 +268,7 @@ Warning:
 - `atomic-polyfill`: unmaintained, recommended alternative is
   `portable-atomic`.
 
-Current dependency path:
+Current all-target dependency path:
 
 ```text
 csv-anonymizer-core -> phonenumber -> postcard -> heapless -> atomic-polyfill
@@ -270,7 +276,8 @@ csv-anonymizer-core -> phonenumber -> postcard -> heapless -> atomic-polyfill
 
 Research status:
 
-- `phonenumber` 0.3.9+9.0.21 is current and still depends on `postcard ^1.1`:
+- `phonenumber 0.3.10+9.0.33` now uses `quick-xml 0.41.0`, clearing the
+  vulnerable phone-metadata XML path, but still depends on `postcard ^1.1`:
   <https://crates.io/crates/phonenumber>.
 - `postcard` issue <https://github.com/jamesmunns/postcard/issues/223> tracks
   the `atomic-polyfill -> heapless` warning and points toward a future postcard
