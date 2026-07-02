@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.67 - 2026-07-02
+
+- Supersede the failed v1.0.66 draft without moving the tag, keeping the release hardening while passing the public Linux signing fingerprint explicitly to the APT installer staging steps after temporary GPG material is cleaned up.
+- Preserve the safer release shape: tag builds queue instead of canceling, signing inputs stay scoped to first-party shell steps, and macOS/Linux assets upload through explicit `gh release upload` lists.
+
 ## v1.0.66 - 2026-07-02
 
 - Harden the release workflow follow-up by queueing tag builds instead of canceling in-progress releases, keeping macOS identity values scoped to the signing step, and removing the remaining third-party GitHub release upload action from platform build jobs.

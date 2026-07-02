@@ -1,6 +1,6 @@
 {
   "name": "csv-anonymizer",
-  "version": "1.0.66",
+  "version": "1.0.67",
   "description": "Desktop CSV anonymizer for local-first data transformation workflows.",
   "desktopName": "csv-anonymizer.desktop",
   "homepage": "https://github.com/ddv1982/csv-data-anonymizer",

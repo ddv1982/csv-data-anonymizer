@@ -469,9 +469,13 @@ jobs:
             "${RUNNER_TEMP}/linux-signing-passphrase"
 
       - name: Stage APT repository installer
+        env:
+          LINUX_GPG_FINGERPRINT: ${{ secrets.DEB_SIGNING_KEY_FINGERPRINT }}
         run: bash scripts/stage-apt-installer-assets.sh
 
       - name: Stage public APT installer assets
+        env:
+          LINUX_GPG_FINGERPRINT: ${{ secrets.DEB_SIGNING_KEY_FINGERPRINT }}
         run: bash scripts/stage-apt-installer-assets.sh --stage-public
 
       - name: Upload Linux release assets
