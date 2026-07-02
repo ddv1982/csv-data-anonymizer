@@ -29,9 +29,9 @@ when no source change or release workflow is running.
 ## Latest Upgrade Research Snapshot
 
 As of 2026-07-02, the stable Tauri line is still Tauri 2.x, not Tauri 3.x.
-The local manifests and lockfile now use `tauri 2.11.5` and
-`tauri-build 2.6.3`. The matching Cargo CLI release is `tauri-cli 2.11.5`;
-the npm CLI wrapper is also `2.11.5`. `@tauri-apps/api` is current at
+The local manifests and lockfile now use `tauri 2.11.4` and
+`tauri-build 2.6.3`. The matching Cargo CLI release is `tauri-cli 2.11.4`;
+the npm CLI wrapper is also `2.11.4`. `@tauri-apps/api` is current at
 `2.11.1`. `tauri-runtime` remains on `2.11.3` because Cargo reports that as the
 latest published version for that crate.
 
@@ -42,8 +42,8 @@ for Tauri 3.0:
 
 Current package and dependency observations:
 
-- Tauri patch set: `tauri 2.11.5`, `tauri-build 2.6.3`,
-  `tauri-runtime-wry 2.11.4`, and `tauri-cli 2.11.5` have been applied.
+- Tauri patch set: `tauri 2.11.4`, `tauri-build 2.6.3`,
+  `tauri-runtime-wry 2.11.4`, and `tauri-cli 2.11.4` have been applied.
   `tauri-plugin-dialog 2.7.1` is current.
 - Frontend patch set: `@vitejs/plugin-react 6.0.3`, `eslint 10.6.0`,
   `knip 6.23.0`, `typescript-eslint 8.62.1`, and `vite 8.1.2` have been
@@ -108,10 +108,10 @@ Status: completed on 2026-07-01.
 Actions:
 
 - Update Tauri 2 patch versions together:
-  - workspace `tauri` to `2.11.5`
+  - workspace `tauri` to `2.11.4`
   - workspace `tauri-build` to `2.6.3`
-  - `.github/workflows/ci.yml` `TAURI_CLI_VERSION` to `2.11.5`
-  - `.github/workflows/release.yml` `TAURI_CLI_VERSION` to `2.11.5`
+  - `.github/workflows/ci.yml` `TAURI_CLI_VERSION` to `2.11.4`
+  - `.github/workflows/release.yml` `TAURI_CLI_VERSION` to `2.11.4`
 - Refresh `Cargo.lock` with package-specific updates first, then inspect the
   diff:
   `cargo update -p tauri -p tauri-build -p tauri-runtime -p tauri-runtime-wry`.

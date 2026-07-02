@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.70 - 2026-07-02
+
+- Supersede the failed v1.0.69 tag without moving it, keeping the Local AI topbar and `quick-xml` audit hardening while restoring release builds to the published Tauri CLI 2.11.4 line.
+- Preserve the scoped Tauri/plist RustSec audit exception and the app-owned `quick-xml 0.41.0` parser updates from v1.0.69.
+
 ## v1.0.69 - 2026-07-02
 
 - Supersede the failed v1.0.68 tag without moving it, keeping the Local AI topbar release while upgrading app-owned `quick-xml` paths and scoping the remaining Tauri/plist RustSec audit exception.

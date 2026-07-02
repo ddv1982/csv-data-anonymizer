@@ -14,7 +14,7 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  TAURI_CLI_VERSION: 2.11.5
+  TAURI_CLI_VERSION: 2.11.4
 
 jobs:
   validate-release:
