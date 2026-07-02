@@ -257,8 +257,10 @@ describe('App input mode tabs', () => {
     await user.click(screen.getByRole('button', { name: /browse for csv file/i }))
     await user.selectOptions(await screen.findByLabelText('Strategy for email'), 'localAi')
 
-    expect(screen.getByText(/Set up Local AI before previewing or creating output/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /open local ai settings/i }))
+    const blockedAlert = screen
+      .getByText(/Set up Local AI before previewing or creating output/)
+      .closest('[role="alert"]') as HTMLElement
+    await user.click(within(blockedAlert).getByRole('button', { name: /open local ai settings/i }))
     expect(await screen.findByRole('dialog', { name: /local ai settings/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /create protected csv/i })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: /create protected csv/i }))

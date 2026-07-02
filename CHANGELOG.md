@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.68 - 2026-07-02
+
+- Move the Local AI opt-in, readiness pill, and settings entry point into the global top bar so every input mode can reach setup without hunting through workflow-specific panels.
+- Keep Smart replacement blocked-state alerts focused on the selected field while routing their settings shortcut to the shared Local AI modal, with React and Playwright coverage updated for the new button location.
+
 ## v1.0.67 - 2026-07-02
 
 - Supersede the failed v1.0.66 draft without moving the tag, keeping the release hardening while passing the public Linux signing fingerprint explicitly to the APT installer staging steps after temporary GPG material is cleaned up.
