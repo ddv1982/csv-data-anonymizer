@@ -111,4 +111,21 @@ mod tests {
     fn iso_codes_sorted() {
         assert!(ISO_COUNTRY_CODES.windows(2).all(|w| w[0] < w[1]));
     }
+
+    #[test]
+    fn vat_prefixes_contribute_countries() {
+        let columns = vec![column(&[
+            "NL000099998B57",
+            "NL000099998B57",
+            "NL000099998B57",
+        ])];
+        assert_eq!(infer_locale_context(&columns).countries(), ["NL"]);
+    }
+
+    #[test]
+    fn prefix_less_numeric_values_contribute_nothing() {
+        // Country attribution requires a two-letter ISO prefix by design
+        let columns = vec![column(&["123456789", "987654321", "123456789"])];
+        assert!(infer_locale_context(&columns).countries().is_empty());
+    }
 }
