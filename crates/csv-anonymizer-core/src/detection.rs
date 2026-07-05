@@ -5,15 +5,21 @@ mod header;
 mod header_rules;
 mod locale;
 mod national_id;
+mod postal;
 mod privacy;
 mod scoring;
 mod spans;
 mod validators;
 mod value;
 
-use header_rules::{HeaderDetectionRule, first_header_detection};
+use header_rules::{
+    HeaderDetectionRule, address_keywords, first_header_detection, is_plausible_address,
+};
 use national_id::national_id_countries;
-use scoring::{attach_single_trace, detection_result, raise_one_tier, trace_item};
+use postal::postal_match_country;
+use scoring::{
+    attach_single_trace, calculate_confidence, detection_result, raise_one_tier, trace_item,
+};
 use value::{
     PatternOutcome, detect_enum_type, detect_iban_value_type, detect_numeric_value_type,
     detect_priority_pattern, detect_vat_value_type,
@@ -122,6 +128,7 @@ pub fn detect_column_type_in_context(
             values.len(),
             total_non_empty,
             &early_header_rules,
+            locale,
         );
     }
 
@@ -133,6 +140,7 @@ pub fn detect_column_type_in_context(
             values.len(),
             total_non_empty,
             &early_header_rules,
+            locale,
         );
     }
 
@@ -149,6 +157,7 @@ pub fn detect_column_type_in_context(
             values.len(),
             total_non_empty,
             &early_header_rules,
+            locale,
         );
     }
 
@@ -160,6 +169,7 @@ pub fn detect_column_type_in_context(
         values.len(),
         total_non_empty,
         &early_header_rules,
+        locale,
     ) {
         return result;
     }
@@ -181,6 +191,7 @@ pub fn detect_column_type_in_context(
             selected_reason: "Header terms and integer sample shape matched numeric ID detection.",
             trace_reason: "header numeric ID rule",
         }],
+        locale,
     ) {
         return result;
     }
@@ -204,7 +215,21 @@ pub fn detect_column_type_in_context(
             selected_reason: "Header terms and sample shape matched name detection.",
             trace_reason: "header name rule",
         }],
+        locale,
     ) {
+        return result;
+    }
+
+    // 4. Postal and address value voters: pure value evidence, running after
+    //    the header name rule so shape-based winners keep priority, but before
+    //    the enum check so a genuine postal-code or street-address column
+    //    doesn't get swallowed by the finite-repeated-values heuristic.
+    if let Some(result) = detect_postal_value_type(&sampled, values.len(), total_non_empty, locale)
+    {
+        return result;
+    }
+
+    if let Some(result) = detect_address_value_type(&sampled, values.len(), total_non_empty) {
         return result;
     }
 
@@ -253,6 +278,7 @@ fn finalize_validator(
     total_samples: usize,
     total_non_empty: usize,
     early_header_rules: &[HeaderDetectionRule],
+    locale: &LocaleContext,
 ) -> crate::types::DetectionResult {
     let Some(mut agreeing) = first_header_detection(
         column_name,
@@ -260,6 +286,7 @@ fn finalize_validator(
         total_samples,
         total_non_empty,
         early_header_rules,
+        locale,
     )
     .filter(|header_result| header_result.data_type == validator_result.data_type) else {
         return validator_result;
@@ -309,6 +336,105 @@ fn label_national_id_country(
             }
         }
     }
+}
+
+/// Postal-code value voter: counts samples whose shape matches a known
+/// per-country postal format (bare-digit formats require the country to be
+/// present in `locale`; unambiguous formats like NL do not). On a Medium+
+/// match ratio, selects `DataType::PostalCode` with a trace reason naming the
+/// most frequently matching country.
+fn detect_postal_value_type(
+    sampled: &[&String],
+    total_samples: usize,
+    total_non_empty: usize,
+    locale: &LocaleContext,
+) -> Option<crate::types::DetectionResult> {
+    let mut country_counts: std::collections::HashMap<&'static str, usize> =
+        std::collections::HashMap::new();
+    for value in sampled {
+        if let Some(country) = postal_match_country(value, locale) {
+            *country_counts.entry(country).or_default() += 1;
+        }
+    }
+    let match_count: usize = country_counts.values().sum();
+    let confidence = calculate_confidence(match_count, total_non_empty);
+    if confidence == Confidence::Low {
+        return None;
+    }
+
+    let top_country = country_counts
+        .into_iter()
+        .max_by_key(|(country, count)| (*count, std::cmp::Reverse(*country)))
+        .map(|(country, _)| country)
+        .unwrap_or("");
+
+    Some(detection_result(
+        DataType::PostalCode,
+        confidence,
+        match_count,
+        total_samples,
+        total_non_empty,
+        "Sample values matched a per-country postal code format.",
+        vec![trace_item(
+            DataType::PostalCode,
+            format!("postal:{top_country}"),
+            match_count,
+            total_non_empty,
+            confidence,
+            true,
+        )],
+    ))
+}
+
+/// Address value voter: counts samples with a plausible street-address shape
+/// (digits + letters, comma/whitespace structure, or a known street keyword).
+/// Requires that at least 30% of the *matching* values contain a street
+/// keyword, guarding against generic digit+letter strings being misread as
+/// addresses. On a Medium+ match ratio, selects `DataType::Address`.
+fn detect_address_value_type(
+    sampled: &[&String],
+    total_samples: usize,
+    total_non_empty: usize,
+) -> Option<crate::types::DetectionResult> {
+    let matches: Vec<&&String> = sampled
+        .iter()
+        .filter(|value| is_plausible_address(value))
+        .collect();
+    let match_count = matches.len();
+    let confidence = calculate_confidence(match_count, total_non_empty);
+    if confidence == Confidence::Low {
+        return None;
+    }
+
+    let keyword_count = matches
+        .iter()
+        .filter(|value| {
+            let normalized = value.to_lowercase();
+            address_keywords()
+                .iter()
+                .any(|keyword| normalized.contains(keyword))
+        })
+        .count();
+    if keyword_count * 10 < match_count * 3 {
+        return None;
+    }
+
+    Some(detection_result(
+        DataType::Address,
+        confidence,
+        match_count,
+        total_samples,
+        total_non_empty,
+        "Sample values matched address shape and street keywords.",
+        vec![trace_item(
+            DataType::Address,
+            "address shape + street keywords",
+            match_count,
+            total_non_empty,
+            confidence,
+            true,
+        )],
+    ))
 }
 
 pub fn classify_pii_risk(data_type: DataType) -> PiiRisk {
