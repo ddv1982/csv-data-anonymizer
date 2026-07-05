@@ -12,10 +12,11 @@ mod validators;
 mod value;
 
 use header_rules::{HeaderDetectionRule, first_header_detection};
-use scoring::{attach_single_trace, detection_result, trace_item};
+use national_id::national_id_countries;
+use scoring::{attach_single_trace, detection_result, raise_one_tier, trace_item};
 use value::{
-    detect_enum_type, detect_iban_value_type, detect_numeric_value_type, detect_priority_pattern,
-    detect_vat_value_type,
+    PatternOutcome, detect_enum_type, detect_iban_value_type, detect_numeric_value_type,
+    detect_priority_pattern, detect_vat_value_type,
 };
 
 pub use locale::{LocaleContext, infer_locale_context};
@@ -106,29 +107,69 @@ pub fn detect_column_type_in_context(
         );
     }
 
+    // 1. Value battery first. Checksum/validator-backed selections (VAT, IBAN,
+    //    and validator-evidence priority patterns such as national IDs) are
+    //    final: the column *is* that sensitive type. The header may only
+    //    agree-and-boost (contributing its richer taxonomy trace and raising
+    //    confidence one tier); it can never suppress or replace the selection.
+    let early_header_rules = header_rules::early_header_detection_rules();
+
+    if let Some(result) = detect_vat_value_type(&sampled, values.len(), total_non_empty) {
+        return finalize_validator(
+            column_name,
+            result,
+            &sampled,
+            values.len(),
+            total_non_empty,
+            &early_header_rules,
+        );
+    }
+
+    if let Some(result) = detect_iban_value_type(&sampled, values.len(), total_non_empty) {
+        return finalize_validator(
+            column_name,
+            result,
+            &sampled,
+            values.len(),
+            total_non_empty,
+            &early_header_rules,
+        );
+    }
+
+    let pattern = detect_priority_pattern(&sampled, values.len(), total_non_empty, locale);
+    if pattern.selected_is_validator() {
+        let mut result = pattern
+            .result()
+            .expect("validator selection yields a result");
+        label_national_id_country(&mut result, &pattern, &sampled);
+        return finalize_validator(
+            column_name,
+            result,
+            &sampled,
+            values.len(),
+            total_non_empty,
+            &early_header_rules,
+        );
+    }
+
+    // 2. No validator claimed the column: the header rules run exactly as
+    //    before (early rules, numeric-id, name).
     if let Some(result) = first_header_detection(
         column_name,
         &sampled,
         values.len(),
         total_non_empty,
-        &header_rules::early_header_detection_rules(),
+        &early_header_rules,
     ) {
         return result;
     }
 
-    if let Some(result) = detect_vat_value_type(&sampled, values.len(), total_non_empty) {
+    // 3. The deferred non-validator pattern selection keeps its original slot,
+    //    after the early header rules and before the numeric-id / numeric /
+    //    name rules.
+    if let Some(result) = pattern.result() {
         return result;
     }
-
-    if let Some(result) = detect_iban_value_type(&sampled, values.len(), total_non_empty) {
-        return result;
-    }
-
-    let candidates = match detect_priority_pattern(&sampled, values.len(), total_non_empty, locale)
-    {
-        Ok(result) => return result,
-        Err(candidates) => candidates,
-    };
 
     if let Some(result) = first_header_detection(
         column_name,
@@ -193,8 +234,81 @@ pub fn detect_column_type_in_context(
         values.len(),
         total_non_empty,
         "No sensitive pattern, header, numeric, name, or enum rule passed the threshold.",
-        candidates,
+        pattern.trace_items,
     )
+}
+
+/// Commit a validator-backed selection. The value evidence is final: the
+/// column *is* `result.data_type`. If the column header independently agrees
+/// on that same type (its matching early-header rule fires), we prefer that
+/// rule's result — it carries the richer header-taxonomy trace — and raise its
+/// confidence one tier (capped at High), appending a `"header agreement boost"`
+/// trace item. The header rule can only fire for the validator's own type, so
+/// it can never suppress or replace the selection; absent header agreement, the
+/// validator result stands unchanged.
+fn finalize_validator(
+    column_name: &str,
+    validator_result: crate::types::DetectionResult,
+    sampled: &[&String],
+    total_samples: usize,
+    total_non_empty: usize,
+    early_header_rules: &[HeaderDetectionRule],
+) -> crate::types::DetectionResult {
+    let Some(mut agreeing) = first_header_detection(
+        column_name,
+        sampled,
+        total_samples,
+        total_non_empty,
+        early_header_rules,
+    )
+    .filter(|header_result| header_result.data_type == validator_result.data_type) else {
+        return validator_result;
+    };
+
+    let boosted = raise_one_tier(agreeing.confidence);
+    agreeing.confidence = boosted;
+    if let Some(trace) = agreeing.trace.as_mut() {
+        trace.candidates.push(trace_item(
+            agreeing.data_type,
+            "header agreement boost",
+            agreeing.sample_matches,
+            trace.total_non_empty,
+            boosted,
+            true,
+        ));
+    }
+
+    agreeing
+}
+
+/// For a national-ID (idsmith) validator selection, append `":{country}"` to
+/// the selected trace item's reason using the first matching sample. This is
+/// the deferred trace-label step from Task 5.
+fn label_national_id_country(
+    result: &mut crate::types::DetectionResult,
+    pattern: &PatternOutcome,
+    sampled: &[&String],
+) {
+    let Some(selected) = pattern.selected.as_ref() else {
+        return;
+    };
+    if selected.reason != "validator:idsmith" {
+        return;
+    }
+    let Some(country) = sampled
+        .iter()
+        .find_map(|value| national_id_countries(value).into_iter().next())
+    else {
+        return;
+    };
+
+    if let Some(trace) = result.trace.as_mut() {
+        for item in trace.candidates.iter_mut() {
+            if item.reason == "validator:idsmith" {
+                item.reason = format!("validator:idsmith:{country}");
+            }
+        }
+    }
 }
 
 pub fn classify_pii_risk(data_type: DataType) -> PiiRisk {

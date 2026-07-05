@@ -127,6 +127,70 @@ fn bsn_column_detects_as_tax_id_without_header() {
 }
 
 #[test]
+fn national_id_trace_reason_carries_country_label() {
+    // A validator:idsmith selection (no agreeing header) labels its trace item
+    // with the first matching country (BSN -> NL). Deferred from Task 5.
+    let values: Vec<String> = vec!["111222333", "123456782", "111222333", "123456782"]
+        .into_iter()
+        .map(String::from)
+        .collect();
+    let result = detect_column_type_with_name("code", &values);
+    assert_eq!(result.data_type, DataType::TaxId);
+    let trace = result.trace.expect("trace present");
+    assert!(
+        trace
+            .candidates
+            .iter()
+            .any(|item| item.reason == "validator:idsmith:NL"),
+        "expected an idsmith:NL trace item, got {:?}",
+        trace.candidates
+    );
+}
+
+#[test]
+fn checksum_column_beats_contradicting_header() {
+    // Header says "code" (benign) but values are valid BSNs: validator wins.
+    let values: Vec<String> = vec!["111222333", "123456782", "111222333", "123456782"]
+        .into_iter()
+        .map(String::from)
+        .collect();
+    let result = detect_column_type_with_name("code", &values);
+    assert_eq!(result.data_type, DataType::TaxId);
+}
+
+#[test]
+fn header_agreement_raises_validator_confidence_one_tier() {
+    // 3 of 5 valid VAT ids -> Medium by ratio; matching header lifts to High.
+    let values: Vec<String> = vec![
+        "NL000099998B57",
+        "NL000099998B57",
+        "NL000099998B57",
+        "pending",
+        "pending",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+    let with_header = detect_column_type_with_name("btw nummer", &values);
+    let without_header = detect_column_type_with_name("kolom", &values);
+    assert_eq!(with_header.data_type, DataType::TaxId);
+    assert_eq!(without_header.data_type, DataType::TaxId);
+    assert_eq!(without_header.confidence, Confidence::Medium);
+    assert_eq!(with_header.confidence, Confidence::High);
+}
+
+#[test]
+fn header_rules_still_catch_what_values_alone_cannot() {
+    // 7-digit local phone format only passes the header-gated fallback shape.
+    let values: Vec<String> = vec!["555-0199", "555-0142", "555-0175"]
+        .into_iter()
+        .map(String::from)
+        .collect();
+    let result = detect_column_type_with_name("telefoonnummer", &values);
+    assert_eq!(result.data_type, DataType::Phone);
+}
+
+#[test]
 fn random_numeric_ids_do_not_become_tax_ids() {
     // 4+ digit sequence numbers: near-misses for every checksum scheme.
     let values: Vec<String> = vec!["100001", "100002", "100003", "100004"]

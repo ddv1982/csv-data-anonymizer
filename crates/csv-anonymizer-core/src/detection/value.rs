@@ -13,12 +13,49 @@ use super::validators::{is_email, is_iban, is_phone_in_context, is_tax_id, is_ur
 
 type DetectionPredicate = fn(&str, &LocaleContext) -> bool;
 
+/// Outcome of the priority-pattern battery, exposing the raw decision so the
+/// pipeline can inspect the selected candidate's evidence (Validator vs. not)
+/// before committing to a `DetectionResult`. Validator-backed selections are
+/// final and lifted above the header rules; non-validator selections are
+/// deferred to their original slot after the header rules run.
+pub(in crate::detection) struct PatternOutcome {
+    pub selected: Option<DetectorCandidate>,
+    pub trace_items: Vec<DetectionTraceItem>,
+    total_samples: usize,
+    total_non_empty: usize,
+}
+
+impl PatternOutcome {
+    /// True when the selected candidate carries checksum/validator evidence.
+    pub(in crate::detection) fn selected_is_validator(&self) -> bool {
+        self.selected
+            .as_ref()
+            .map(|candidate| candidate.evidence == DetectorEvidence::Validator)
+            .unwrap_or(false)
+    }
+
+    /// Build the committed `DetectionResult` for the selected candidate.
+    /// Callers only invoke this once they have decided to accept the selection.
+    pub(in crate::detection) fn result(&self) -> Option<DetectionResult> {
+        let selected = self.selected.as_ref()?;
+        Some(detection_result(
+            selected.data_type,
+            selected.confidence,
+            selected.match_count,
+            self.total_samples,
+            self.total_non_empty,
+            "Sample values matched a built-in pattern rule.",
+            self.trace_items.clone(),
+        ))
+    }
+}
+
 pub(in crate::detection) fn detect_priority_pattern(
     values: &[&String],
     total_samples: usize,
     total_non_empty: usize,
     locale: &LocaleContext,
-) -> std::result::Result<DetectionResult, Vec<DetectionTraceItem>> {
+) -> PatternOutcome {
     let candidates = detection_priority()
         .into_iter()
         .enumerate()
@@ -41,19 +78,12 @@ pub(in crate::detection) fn detect_priority_pattern(
     let decision = DetectorDecision::select(candidates);
     let trace_items = decision.trace_items();
 
-    if let Some(selected) = decision.selected {
-        return Ok(detection_result(
-            selected.data_type,
-            selected.confidence,
-            selected.match_count,
-            total_samples,
-            total_non_empty,
-            "Sample values matched a built-in pattern rule.",
-            trace_items,
-        ));
+    PatternOutcome {
+        selected: decision.selected,
+        trace_items,
+        total_samples,
+        total_non_empty,
     }
-
-    Err(trace_items)
 }
 
 pub(in crate::detection) fn detect_numeric_value_type(
