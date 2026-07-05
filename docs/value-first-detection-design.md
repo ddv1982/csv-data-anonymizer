@@ -1,7 +1,7 @@
 # Value-First Detection Design
 
 Date: 2026-07-05
-Status: Approved design, pending implementation plan
+Status: Implemented except name gazetteer (Phase 3 withdrawn) (see docs/value-first-detection-plan-2026-07-05.md)
 
 ## Problem
 
@@ -45,8 +45,8 @@ third-party detector engine.
    battery grows — full scan remains for files under the cap).
 2. **Run all value detectors** on each sample: existing validators (email,
    phonenumber, iban, card, VAT, SSN/EIN), new idsmith validators, gazetteer
-   matchers (names), and shape/pattern detectors. Each hit yields
-   `(DataType, evidence tier, optional country)`.
+   matchers (names — withdrawn, see Name gazetteer below), and shape/pattern
+   detectors. Each hit yields `(DataType, evidence tier, optional country)`.
 3. **Vote per column**: match ratio against existing thresholds (High >= 80%,
    Medium >= 50%). Ties resolve by evidence tier (validator > gazetteer >
    pattern > shape), then by the existing specificity ranking.
@@ -77,11 +77,15 @@ UI can say "Dutch BSN" rather than "some ID". Adoption gate: must win fixtures
 `cargo audit`/`machete` clean) before it replaces or extends any existing
 validator path.
 
-**Name gazetteer.** A bundled dictionary of ~100–300k forenames and surnames
-from clean-provenance sources (Wikipedia-derived popular-names-by-country,
-government open-data name lists), compiled at build time into a compact
-static structure (FST or perfect-hash; target a few MB in the binary).
-Matching is case- and accent-normalized, multi-script. Column rules:
+**Name gazetteer.** _Not shipped: bundled name datasets rejected on
+data-minimization grounds (user decision, 2026-07-06); name detection remains
+header-gated; future work requires a user-approved data source._ The original
+design (retained below for reference) proposed a bundled dictionary of
+~100–300k forenames and surnames from clean-provenance sources
+(Wikipedia-derived popular-names-by-country, government open-data name lists),
+compiled at build time into a compact static structure (FST or perfect-hash;
+target a few MB in the binary). Matching is case- and accent-normalized,
+multi-script. Column rules:
 
 - >= 60% of samples in forename set → `FirstName`
 - >= 60% in surname set → `LastName`
@@ -137,6 +141,27 @@ checksum-near-miss), phones in national formats, addresses, postal codes, and
 benign look-alikes (SKUs, order IDs, sequence numbers) that must stay
 unflagged. The June 30 benchmark fixtures are folded in as regression guards.
 
+The matrix landed in `detection/tests/locale_matrix.rs` (9 locales × 3 header
+variants). Person-name columns are omitted from every fixture: the name
+gazetteer was withdrawn (user decision, 2026-07-06, see Name gazetteer above),
+so name detection stays header-gated and cannot be proven header-independent
+until a user-approved data source lands. One documented gap remains and is
+tracked here:
+
+- **JP national ID.** Japan's My Number has no checksum scheme in the idsmith
+  allowlist, so no JP-authentic national ID can be validated. Because national-ID
+  detection is value-first and locale-independent (every allowlisted country is
+  tried regardless of inferred locale), the JP fixture uses a valid allowlisted
+  vector to prove the `national-ID column → TaxId` behavior. Adding a My Number
+  checksum to idsmith would close this.
+
+One detector refinement was required to make the matrix pass: bare-digit postal
+formats (DE/FR/US/IT/ES/JP...) share the numeric-id shape (`^\d{4,}$`), so the
+context-gated postal voter now runs *before* the deferred numeric-id pattern
+selection when the file establishes a matching locale context. Without matching
+context the voter yields nothing and the column stays `NumericId`, so context-free
+files are unaffected.
+
 ## Phases
 
 1. **Validator expansion** — idsmith integration behind the adoption gate,
@@ -144,8 +169,9 @@ unflagged. The June 30 benchmark fixtures are folded in as regression guards.
    no scoring changes.
 2. **Value-first voting** — sampling, per-column voting, header re-weighting
    (boost/disambiguate, never gate). The architectural core.
-3. **Name gazetteer** — data sourcing/licensing, build-time compilation,
-   column rules, binary-size check.
+3. **Name gazetteer** — _withdrawn (user decision, 2026-07-06): bundled name
+   datasets rejected on data-minimization grounds; name detection remains
+   header-gated; future work requires a user-approved data source._
 4. **Address/postal tightening + fixture matrix completion** — per-country
    postal formats, address voter, full per-locale triple matrix.
 

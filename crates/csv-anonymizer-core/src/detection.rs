@@ -174,6 +174,25 @@ pub fn detect_column_type_in_context(
         return result;
     }
 
+    // 3a. Context-backed postal codes: when the file establishes a country
+    //     whose postal format is bare-digit (DE/FR/US/IT/ES/SE/JP...), those
+    //     values collide with the numeric-id shape (`^\d{4,}$`). Run the
+    //     context-gated postal voter *before* the deferred numeric-id pattern
+    //     selection so a genuine postal column in a locale-tagged file is
+    //     classified as PostalCode rather than NumericId. This is safe: the
+    //     voter only counts values matching a *context-present* country format
+    //     (see `postal_match_country`'s `requires_context` gate), so a file
+    //     without matching context — or a bare-digit column in a file whose
+    //     context format it does not match — falls straight through to the
+    //     numeric-id rule unchanged. Guarded on non-empty context so
+    //     context-free files keep their exact prior behavior.
+    if !locale.countries().is_empty()
+        && let Some(result) =
+            detect_postal_value_type(&sampled, values.len(), total_non_empty, locale)
+    {
+        return result;
+    }
+
     // 3. The deferred non-validator pattern selection keeps its original slot,
     //    after the early header rules and before the numeric-id / numeric /
     //    name rules.
