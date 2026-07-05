@@ -33,6 +33,14 @@ use validators::{
     is_dutch_btw_tax_number, is_email, is_payment_card_number, is_tax_id, is_url, is_vat_id,
 };
 
+#[cfg(test)]
+pub(crate) fn validators_test_hook_is_valid_phone_in_context(
+    value: &str,
+    locale: &LocaleContext,
+) -> bool {
+    validators::is_valid_phone_number_in_context(value, locale)
+}
+
 pub fn is_empty_value(value: &str) -> bool {
     value.is_empty() || value.eq_ignore_ascii_case("null")
 }
