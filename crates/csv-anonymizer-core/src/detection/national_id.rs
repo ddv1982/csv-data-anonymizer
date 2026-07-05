@@ -43,9 +43,25 @@ fn scheme_validates(country: &str, value: &str, scheme: Scheme) -> bool {
 /// "987654321B00" is silently cleaned to "98765432100" and can pass the
 /// checksum despite being shape-garbage. Gate that scheme here so a
 /// contaminated value never reaches idsmith's lax stripping behavior.
+///
+/// For BR the gate permits exactly the two conventional CPF shapes: after
+/// removing only the standard separators '.' and '-', the remainder must be
+/// exactly 11 ASCII digits and nothing else. So both "11144477735" and the
+/// canonical formatted "111.444.777-35" pass through to idsmith, while any
+/// value carrying a non-separator, non-digit character (e.g. the 'B' in
+/// "987654321B00") is rejected before idsmith can strip it away.
 fn raw_shape_matches_country(country: &str, value: &str) -> bool {
     match country {
-        "BR" => value.chars().all(|character| character.is_ascii_digit()) && value.len() == 11,
+        "BR" => {
+            let unseparated: String = value
+                .chars()
+                .filter(|character| !matches!(character, '.' | '-'))
+                .collect();
+            unseparated.len() == 11
+                && unseparated
+                    .chars()
+                    .all(|character| character.is_ascii_digit())
+        }
         _ => true,
     }
 }
@@ -161,6 +177,14 @@ mod tests {
     fn german_steuer_id_validates_via_tax_registry() {
         assert!(is_national_id("86095742719"));
         assert!(national_id_countries("86095742719").contains(&"DE"));
+    }
+
+    #[test]
+    fn formatted_cpf_validates() {
+        // The canonical human-readable CPF format uses '.' and '-' separators;
+        // the BR shape gate must strip exactly those and nothing more.
+        assert!(national_id_countries("111.444.777-35").contains(&"BR"));
+        assert!(is_national_id("111.444.777-35"));
     }
 
     #[test]
