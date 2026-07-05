@@ -3,6 +3,7 @@ use crate::types::{Confidence, DataType, EmptyFormat, PiiRisk};
 mod candidate;
 mod header;
 mod header_rules;
+mod locale;
 mod national_id;
 mod privacy;
 mod scoring;
@@ -17,6 +18,7 @@ use value::{
     detect_vat_value_type,
 };
 
+pub use locale::{LocaleContext, infer_locale_context};
 pub use privacy::{ColumnPrivacyAnalysis, analyze_column_privacy, max_pii_risk};
 pub use spans::{PrivacySpan, collect_privacy_spans};
 
