@@ -173,18 +173,27 @@ fn detect_header_postal_code(
     let header_terms = header::terms(column_name);
     let signal = header::best_signal_for_kinds(&header_terms, &["postal_code"])?;
 
-    let context_match_count = non_empty_values
-        .iter()
-        .filter(|value| postal_match_country(value, locale).is_some())
-        .count();
-    let shape_match_count = non_empty_values
-        .iter()
-        .filter(|value| is_postal_code(value))
-        .count();
-    // Prefer the stricter per-country count when it hits, but never let it
-    // regress a column the loose shape check would already have accepted
-    // (e.g. a header-driven column mixing GB and unlabeled US zips).
-    let match_count = context_match_count.max(shape_match_count);
+    // With a known file locale, header-labeled postal columns are held to the
+    // per-country formats: when any sample matches a country format, only
+    // those matches count. Without locale context (the default), the loose
+    // shape check stands unchanged, preserving columns that mix unambiguous
+    // formats with unlabeled bare-digit zips (e.g. GB + US).
+    let context_match_count = if locale.countries().is_empty() {
+        0
+    } else {
+        non_empty_values
+            .iter()
+            .filter(|value| postal_match_country(value, locale).is_some())
+            .count()
+    };
+    let match_count = if context_match_count > 0 {
+        context_match_count
+    } else {
+        non_empty_values
+            .iter()
+            .filter(|value| is_postal_code(value))
+            .count()
+    };
     let confidence = calculate_confidence(match_count, non_empty_values.len());
     if confidence == Confidence::Low {
         return None;

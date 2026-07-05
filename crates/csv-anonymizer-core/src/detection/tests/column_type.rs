@@ -266,6 +266,34 @@ fn street_address_column_detected_without_header() {
 }
 
 #[test]
+fn locale_context_tightens_header_postal_counting() {
+    // NL locale context, built the same way build_column_metadata does: from
+    // an IBAN column elsewhere in the file.
+    let iban_column: Vec<String> = (0..12).map(|_| "NL91ABNA0417164300".to_string()).collect();
+    let locale = infer_locale_context(&[iban_column]);
+    assert_eq!(locale.countries(), ["NL"]);
+
+    // 8 NL-format postcodes plus 4 values that pass the loose postal shape
+    // check (3-12 alphanumeric chars with a digit) but match no country
+    // format available in the NL context.
+    let values: Vec<String> = [
+        "1012 AB", "2511 CV", "3011 ED", "9711 LM", "5611 EM", "6511 KL", "7511 JE", "8011 NW",
+        "12345678", "87654321", "11223344", "44332211",
+    ]
+    .iter()
+    .map(|value| value.to_string())
+    .collect();
+
+    let result = detect_column_type_in_context("postcode", &values, &locale);
+    assert_eq!(result.data_type, DataType::PostalCode);
+    // Context-format counting: exactly the 8 NL-format values are counted,
+    // not the 12 loose-shape matches, so confidence lands at Medium (8/12)
+    // instead of High (12/12).
+    assert_eq!(result.sample_matches, 8);
+    assert_eq!(result.confidence, Confidence::Medium);
+}
+
+#[test]
 fn five_digit_sku_column_is_not_postal_without_context() {
     let values: Vec<String> = (10000..10012).map(|n| n.to_string()).collect();
     let result = detect_column_type_with_name("artikel", &values);
