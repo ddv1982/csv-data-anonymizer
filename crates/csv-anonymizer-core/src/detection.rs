@@ -13,7 +13,7 @@ mod validators;
 mod value;
 
 use header_rules::{
-    HeaderDetectionRule, address_keywords, first_header_detection, is_plausible_address,
+    HeaderDetectionRule, contains_address_keyword, first_header_detection, is_plausible_address,
 };
 use national_id::national_id_countries;
 use postal::postal_match_country;
@@ -429,9 +429,7 @@ fn detect_address_value_type(
         .iter()
         .filter(|value| {
             let normalized = value.to_lowercase();
-            address_keywords()
-                .iter()
-                .any(|keyword| normalized.contains(keyword))
+            contains_address_keyword(&normalized)
         })
         .count();
     if keyword_count * 10 < match_count * 3 {

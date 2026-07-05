@@ -362,10 +362,7 @@ pub(in crate::detection) fn is_plausible_address(value: &str) -> bool {
     }
 
     let normalized = trimmed.to_lowercase();
-    if address_keywords()
-        .iter()
-        .any(|keyword| normalized.contains(keyword))
-    {
+    if contains_address_keyword(&normalized) {
         return true;
     }
 
@@ -452,6 +449,27 @@ pub(in crate::detection) fn address_keywords() -> &'static [&'static str] {
         "via",
         "viale",
         "piazza",
+    ]
+}
+
+pub(in crate::detection) fn contains_address_keyword(normalized: &str) -> bool {
+    normalized
+        .split(|character: char| !character.is_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .any(|token| {
+            address_keywords().iter().any(|keyword| {
+                let keyword = keyword.trim();
+                token == keyword
+                    || compound_address_suffixes().contains(&keyword)
+                        && token.len() > keyword.len()
+                        && token.ends_with(keyword)
+            })
+        })
+}
+
+fn compound_address_suffixes() -> &'static [&'static str] {
+    &[
+        "straat", "weg", "laan", "plein", "strasse", "straße", "platz", "allee",
     ]
 }
 

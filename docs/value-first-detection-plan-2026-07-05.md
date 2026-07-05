@@ -1,10 +1,21 @@
 # Value-First Detection Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status:** Archived implementation record. The shipped scope is implemented
+> except Phase 3, which was withdrawn on data-minimization grounds; unchecked
+> task boxes below are historical plan steps, not active work tracking.
 
-**Goal:** Make column-level PII detection value-first so names, national IDs, phones, postal codes, and addresses are detected from cell values across locales, with headers demoted to confidence boosters — per `docs/value-first-detection-design.md`.
+**Goal:** Make column-level PII detection value-first so national IDs, phones,
+postal codes, and addresses are detected from cell values across locales, with
+headers demoted to confidence boosters — per
+`docs/value-first-detection-design.md`. Header-independent name detection was
+withdrawn with Phase 3.
 
-**Architecture:** Extend the existing deterministic detector in `crates/csv-anonymizer-core/src/detection/` with new checksum validators (idsmith), a file-locale context, a name gazetteer, and per-country postal formats; then invert the pipeline in `detection.rs` so the value battery runs before header rules and checksum-validated selections cannot be suppressed by headers.
+**Architecture:** Extend the existing deterministic detector in
+`crates/csv-anonymizer-core/src/detection/` with new checksum validators
+(idsmith), a file-locale context, and per-country postal formats; then invert
+the pipeline in `detection.rs` so the value battery runs before header rules and
+checksum-validated selections cannot be suppressed by headers. The proposed name
+gazetteer is documented only in the withdrawn Phase 3 section below.
 
 **Tech Stack:** Rust (workspace crate `csv-anonymizer-core`), `idsmith` crate (new), existing `phonenumber`, `regex`, `unicode-normalization`. No ML, no network at runtime.
 
