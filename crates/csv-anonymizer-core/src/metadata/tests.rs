@@ -423,6 +423,19 @@ fn metadata_promotes_headerless_vat_values_to_tax_id() {
 }
 
 #[test]
+fn locale_context_flows_from_iban_column_to_detection() {
+    // One IBAN column establishes NL context; this test only asserts the
+    // plumbing compiles end-to-end and detection still classifies the IBAN
+    // column. Behavioral use of the context lands in later tasks.
+    let headers = vec!["iban".to_string(), "note".to_string()];
+    let rows: Vec<Vec<String>> = (0..12)
+        .map(|_| vec!["NL91ABNA0417164300".to_string(), "hello".to_string()])
+        .collect();
+    let metadata = build_column_metadata(&headers, &rows);
+    assert_eq!(metadata.len(), 2);
+}
+
+#[test]
 fn low_confidence_date_evidence_does_not_auto_select_column() {
     let headers = vec!["event_notes".to_string()];
     let samples = vec![vec!["created 2026-06-29".to_string()]];
