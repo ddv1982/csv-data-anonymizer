@@ -227,3 +227,47 @@ fn small_columns_are_scanned_in_full() {
     assert_eq!(result.data_type, DataType::Email);
     assert_eq!(result.confidence, Confidence::High);
 }
+
+#[test]
+fn short_columns_get_names_from_header_corroboration() {
+    // Name detection is header-gated: a short values-only column does not
+    // classify as a name, but the same values under a name header do.
+    let values: Vec<String> = vec!["Willem", "Anna", "Pieter"]
+        .into_iter()
+        .map(String::from)
+        .collect();
+    let headerless = detect_column_type_with_name("kolom5", &values);
+    assert_ne!(headerless.data_type, DataType::FirstName);
+    let with_header = detect_column_type_with_name("voornaam", &values);
+    assert_eq!(with_header.data_type, DataType::FirstName);
+}
+
+#[test]
+fn street_address_column_detected_without_header() {
+    let values: Vec<String> = vec![
+        "Kerkstraat 12",
+        "Hoofdweg 3",
+        "Dorpsplein 8",
+        "Molenlaan 22",
+        "Schoolstraat 1",
+        "Stationsweg 45",
+        "Julianalaan 7",
+        "Beatrixstraat 19",
+        "Wilhelminaweg 30",
+        "Oranjelaan 5",
+        "Parkweg 11",
+        "Lindenstraat 4",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+    let result = detect_column_type_with_name("kolom7", &values);
+    assert_eq!(result.data_type, DataType::Address);
+}
+
+#[test]
+fn five_digit_sku_column_is_not_postal_without_context() {
+    let values: Vec<String> = (10000..10012).map(|n| n.to_string()).collect();
+    let result = detect_column_type_with_name("artikel", &values);
+    assert_ne!(result.data_type, DataType::PostalCode);
+}

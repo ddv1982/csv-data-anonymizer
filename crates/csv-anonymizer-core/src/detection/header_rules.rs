@@ -2,6 +2,8 @@ use crate::types::{Confidence, DataType, DetectionResult};
 
 use super::candidate::{DetectorCandidate, DetectorCandidateSpec, DetectorEvidence};
 use super::header;
+use super::locale::LocaleContext;
+use super::postal::postal_match_country;
 use super::scoring::{calculate_confidence, detection_result};
 use super::validators::{
     is_dutch_btw_tax_number, is_formatted_phone_fallback, is_tax_id, is_unformatted_tax_id,
@@ -10,7 +12,7 @@ use super::validators::{
 use super::value::is_unsigned_integer;
 
 pub(in crate::detection) type HeaderDetector =
-    fn(&str, &[&String], usize) -> Option<HeaderDetection>;
+    fn(&str, &[&String], usize, &LocaleContext) -> Option<HeaderDetection>;
 
 pub(in crate::detection) struct HeaderDetection {
     result: DetectionResult,
@@ -55,9 +57,10 @@ pub(in crate::detection) fn first_header_detection(
     total_samples: usize,
     total_non_empty: usize,
     rules: &[HeaderDetectionRule],
+    locale: &LocaleContext,
 ) -> Option<DetectionResult> {
     rules.iter().find_map(|rule| {
-        (rule.detect)(column_name, non_empty_values, total_samples).map(|detection| {
+        (rule.detect)(column_name, non_empty_values, total_samples, locale).map(|detection| {
             let trace_candidate = DetectorCandidate::from_spec(DetectorCandidateSpec {
                 data_type: detection.result.data_type,
                 reason: format!(
@@ -104,6 +107,7 @@ pub(in crate::detection) fn detect_header_numeric_id(
     column_name: &str,
     non_empty_values: &[&String],
     total_samples: usize,
+    _locale: &LocaleContext,
 ) -> Option<HeaderDetection> {
     let header_terms = header::terms(column_name);
     let signal = header::best_signal_for_kinds(&header_terms, &["numeric_id", "account_number"])?;
@@ -134,6 +138,7 @@ fn detect_header_phone(
     column_name: &str,
     non_empty_values: &[&String],
     total_samples: usize,
+    _locale: &LocaleContext,
 ) -> Option<HeaderDetection> {
     let header_terms = header::terms(column_name);
     let signal = header::best_signal_for_kinds(&header_terms, &["phone"])?;
@@ -163,14 +168,23 @@ fn detect_header_postal_code(
     column_name: &str,
     non_empty_values: &[&String],
     total_samples: usize,
+    locale: &LocaleContext,
 ) -> Option<HeaderDetection> {
     let header_terms = header::terms(column_name);
     let signal = header::best_signal_for_kinds(&header_terms, &["postal_code"])?;
 
-    let match_count = non_empty_values
+    let context_match_count = non_empty_values
+        .iter()
+        .filter(|value| postal_match_country(value, locale).is_some())
+        .count();
+    let shape_match_count = non_empty_values
         .iter()
         .filter(|value| is_postal_code(value))
         .count();
+    // Prefer the stricter per-country count when it hits, but never let it
+    // regress a column the loose shape check would already have accepted
+    // (e.g. a header-driven column mixing GB and unlabeled US zips).
+    let match_count = context_match_count.max(shape_match_count);
     let confidence = calculate_confidence(match_count, non_empty_values.len());
     if confidence == Confidence::Low {
         return None;
@@ -192,6 +206,7 @@ fn detect_header_address(
     column_name: &str,
     non_empty_values: &[&String],
     total_samples: usize,
+    _locale: &LocaleContext,
 ) -> Option<HeaderDetection> {
     let header_terms = header::terms(column_name);
     let signal = header::best_signal_for_kinds(&header_terms, &["address"])?;
@@ -221,6 +236,7 @@ fn detect_header_tax_id(
     column_name: &str,
     non_empty_values: &[&String],
     total_samples: usize,
+    _locale: &LocaleContext,
 ) -> Option<HeaderDetection> {
     let header_terms = header::terms(column_name);
     let signal = header::best_signal_for_kinds(&header_terms, &["tax_id"])?;
@@ -257,6 +273,7 @@ pub(in crate::detection) fn detect_name_type(
     column_name: &str,
     non_empty_values: &[&String],
     total_samples: usize,
+    _locale: &LocaleContext,
 ) -> Option<HeaderDetection> {
     let header_terms = header::terms(column_name);
     let signal = header::best_signal_for_kinds(
@@ -326,7 +343,7 @@ fn is_postal_code(value: &str) -> bool {
             .all(|character| character.is_ascii_alphanumeric() || matches!(character, ' ' | '-'))
 }
 
-fn is_plausible_address(value: &str) -> bool {
+pub(in crate::detection) fn is_plausible_address(value: &str) -> bool {
     let trimmed = value.trim();
     if !(5..=200).contains(&trimmed.len())
         || !trimmed.chars().any(|character| character.is_ascii_digit())
@@ -390,7 +407,7 @@ pub(in crate::detection) fn is_contextual_unformatted_us_tax_id(
     }
 }
 
-fn address_keywords() -> &'static [&'static str] {
+pub(in crate::detection) fn address_keywords() -> &'static [&'static str] {
     &[
         " st",
         " street",

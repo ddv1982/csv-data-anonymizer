@@ -450,3 +450,27 @@ fn low_confidence_date_evidence_does_not_auto_select_column() {
         == crate::types::PrivacyFindingKind::PrivateDate
         && summary.confidence == crate::types::Confidence::Low));
 }
+
+#[test]
+fn dutch_postcodes_detected_via_iban_locale_context() {
+    let headers = vec!["c1".to_string(), "c2".to_string()];
+    let rows: Vec<Vec<String>> = [
+        ("NL91ABNA0417164300", "1012 AB"),
+        ("NL02RABO0123456789", "2511 CV"),
+        ("NL91ABNA0417164300", "3011 ED"),
+        ("NL02RABO0123456789", "9711 LM"),
+        ("NL91ABNA0417164300", "5611 EM"),
+        ("NL02RABO0123456789", "6511 KL"),
+        ("NL91ABNA0417164300", "7511 JE"),
+        ("NL02RABO0123456789", "8011 NW"),
+        ("NL91ABNA0417164300", "4811 DJ"),
+        ("NL02RABO0123456789", "1071 XX"),
+        ("NL91ABNA0417164300", "2312 EZ"),
+        ("NL02RABO0123456789", "3512 JE"),
+    ]
+    .iter()
+    .map(|(a, b)| vec![a.to_string(), b.to_string()])
+    .collect();
+    let metadata = build_column_metadata(&headers, &rows);
+    assert_eq!(metadata[1].detected_type, DataType::PostalCode);
+}
