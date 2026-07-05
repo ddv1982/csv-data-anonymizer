@@ -1,6 +1,6 @@
 use crate::detection::{
-    analyze_column_privacy, classify_pii_risk, detect_column_type_with_name, detect_empty_format,
-    max_pii_risk,
+    LocaleContext, analyze_column_privacy, classify_pii_risk, detect_column_type_in_context,
+    detect_empty_format, infer_locale_context, max_pii_risk,
 };
 use crate::types::{AnonymizationStrategy, ColumnMetadata, PiiRisk};
 use std::collections::HashSet;
@@ -8,12 +8,21 @@ use std::collections::HashSet;
 const DEFAULT_SAMPLE_COUNT: usize = 5;
 
 pub fn build_column_metadata(headers: &[String], samples: &[Vec<String>]) -> Vec<ColumnMetadata> {
+    let column_values: Vec<Vec<String>> = (0..headers.len())
+        .map(|index| extract_column_values(samples, index))
+        .collect();
+    let locale = infer_locale_context(&column_values);
     headers
         .iter()
         .enumerate()
         .map(|(index, header)| {
-            let values = extract_column_values(samples, index);
-            build_single_column_metadata(header, index, &values, DEFAULT_SAMPLE_COUNT)
+            build_single_column_metadata(
+                header,
+                index,
+                &column_values[index],
+                DEFAULT_SAMPLE_COUNT,
+                &locale,
+            )
         })
         .collect()
 }
@@ -67,8 +76,9 @@ fn build_single_column_metadata(
     index: usize,
     values: &[String],
     sample_count: usize,
+    locale: &LocaleContext,
 ) -> ColumnMetadata {
-    let detection = detect_column_type_with_name(name, values);
+    let detection = detect_column_type_in_context(name, values, locale);
     let privacy = analyze_column_privacy(
         name,
         index,

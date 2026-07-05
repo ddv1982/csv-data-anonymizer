@@ -8,6 +8,8 @@ use std::convert::TryFrom;
 use url::Url;
 use vat_id_validator::check_vat_by_country;
 
+use super::locale::LocaleContext;
+
 pub(super) fn is_payment_card_number(digits: &str) -> bool {
     (13..=19).contains(&digits.len()) && CardValidate::from(digits).is_ok()
 }
@@ -26,11 +28,11 @@ pub(super) fn is_email(value: &str) -> bool {
         .is_ok()
 }
 
-pub(super) fn is_phone(value: &str) -> bool {
+pub(super) fn is_phone_in_context(value: &str, locale: &LocaleContext) -> bool {
     let trimmed = value.trim();
     is_phone_like_shape(trimmed, 10, false)
         && !has_code_like_leading_group(trimmed)
-        && is_valid_phone_number(trimmed)
+        && is_valid_phone_number_in_context(trimmed, locale)
 }
 
 fn is_phone_separator(character: char) -> bool {
@@ -83,30 +85,37 @@ fn has_code_like_leading_group(value: &str) -> bool {
     })
 }
 
-pub(super) fn is_valid_phone_number(value: &str) -> bool {
+/// Broad world coverage ordered by rough likelihood; locale-context regions
+/// are tried first. 200-sample cap (Task 6) bounds worst-case parse cost.
+fn world_phone_regions() -> &'static [country::Id] {
+    use country::Id::*;
+    &[
+        US, CA, GB, NL, DE, FR, ES, PT, IT, JP, BE, LU, IE, AT, CH, DK, SE, NO, FI, PL, CZ, SK, HU,
+        RO, BG, GR, TR, UA, IN, CN, KR, AU, NZ, SG, HK, ID, TH, VN, PH, MY, BR, AR, CL, CO, MX, PE,
+        ZA, NG, EG, KE, IL, SA, AE, RU,
+    ]
+}
+
+pub(super) fn is_valid_phone_number_in_context(value: &str, locale: &LocaleContext) -> bool {
     let trimmed = value.trim();
     if trimmed.starts_with('+') {
         return parse_phone_number(None, trimmed).is_ok_and(|number| number.is_valid());
     }
 
-    phone_region_candidates().iter().any(|country| {
-        parse_phone_number(Some(*country), trimmed).is_ok_and(|number| number.is_valid())
-    })
+    let context_regions = locale
+        .countries()
+        .iter()
+        .filter_map(|code| code.parse::<country::Id>().ok());
+
+    context_regions
+        .chain(world_phone_regions().iter().copied())
+        .any(|region| {
+            parse_phone_number(Some(region), trimmed).is_ok_and(|number| number.is_valid())
+        })
 }
 
-fn phone_region_candidates() -> &'static [country::Id] {
-    &[
-        country::Id::US,
-        country::Id::CA,
-        country::Id::GB,
-        country::Id::NL,
-        country::Id::DE,
-        country::Id::FR,
-        country::Id::ES,
-        country::Id::PT,
-        country::Id::IT,
-        country::Id::JP,
-    ]
+pub(super) fn is_valid_phone_number(value: &str) -> bool {
+    is_valid_phone_number_in_context(value, &LocaleContext::default())
 }
 
 pub(super) fn is_formatted_phone_fallback(
