@@ -266,6 +266,30 @@ fn street_address_column_detected_without_header() {
 }
 
 #[test]
+fn product_models_with_embedded_street_keyword_are_not_addresses() {
+    let values: Vec<String> = vec![
+        "AVIA TURBO 1000",
+        "AVIA TURBO 2000",
+        "AVIA TURBO 3000",
+        "AVIA TURBO 4000",
+        "AVIA TURBO 5000",
+        "AVIA TURBO 6000",
+        "AVIA TURBO 7000",
+        "AVIA TURBO 8000",
+        "AVIA TURBO 9000",
+        "AVIA TURBO 1100",
+        "AVIA TURBO 1200",
+        "AVIA TURBO 1300",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+
+    let result = detect_column_type_with_name("model", &values);
+    assert_ne!(result.data_type, DataType::Address);
+}
+
+#[test]
 fn locale_context_tightens_header_postal_counting() {
     // NL locale context, built the same way build_column_metadata does: from
     // an IBAN column elsewhere in the file.
