@@ -2,6 +2,19 @@
 
 Date: 2026-06-30
 
+> **Superseded in part (2026-07-05).** The value-first detection work
+> (`docs/value-first-detection-design.md`, implemented per
+> `docs/value-first-detection-plan-2026-07-05.md`) supersedes the "future
+> improvements" items this plan overlaps: value-first PII classification across
+> locales (national IDs via idsmith checksums, phones via libphonenumber,
+> per-country postal formats), with headers demoted to confidence boosters.
+> Person-name classification stays header-gated: the bundled name gazetteer was
+> rejected on data-minimization grounds (user decision, 2026-07-06), so
+> header-independent name detection is future work pending a user-approved data
+> source. The residual items that remain future work are the local-AI /
+> embeddings phases (Phases 6–7), now scoped to the ambiguity left after
+> value-first classification — including person-name coverage.
+
 ## Purpose
 
 This plan turns the multilingual header detection investigation into an
