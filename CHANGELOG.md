@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.71 - 2026-07-06
+
+- Make column detection value-first for checksum-backed national IDs, VAT IDs, phones, postal codes, and street addresses so sensitive values are detected even when headers are missing, generic, or localized.
+- Add locale inference, per-country postal formats, broader phone-region parsing, idsmith-backed national-ID validation, and a per-locale fixture matrix while keeping name detection header-gated after withdrawing bundled name datasets.
+- Fix address keyword matching so embedded substrings in product/model codes such as `AVIA TURBO 1000` no longer trigger high-risk address detection, and archive the completed value-first implementation plan.
+
 ## v1.0.70 - 2026-07-02
 
 - Supersede the failed v1.0.69 tag without moving it, keeping the Local AI topbar and `quick-xml` audit hardening while restoring release builds to the published Tauri CLI 2.11.4 line.
