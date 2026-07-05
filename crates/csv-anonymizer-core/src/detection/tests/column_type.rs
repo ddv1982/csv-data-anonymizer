@@ -136,3 +136,30 @@ fn random_numeric_ids_do_not_become_tax_ids() {
     let result = detect_column_type_with_name("id", &values);
     assert_eq!(result.data_type, DataType::NumericId);
 }
+
+#[test]
+fn sampling_caps_large_columns_but_spans_the_file() {
+    // 1000 rows: first 500 emails, last 500 numbers. Even sampling must see both.
+    let values: Vec<String> = (0..1000)
+        .map(|i| {
+            if i < 500 {
+                format!("user{i}@example.com")
+            } else {
+                format!("{i}")
+            }
+        })
+        .collect();
+    let result = detect_column_type_with_name("", &values);
+    // Neither type reaches the 80% bar on an even sample; must not be High.
+    assert_ne!(result.confidence, Confidence::High);
+    assert_eq!(result.total_samples, 1000);
+    assert!(result.trace.as_ref().unwrap().total_non_empty <= 200);
+}
+
+#[test]
+fn small_columns_are_scanned_in_full() {
+    let values: Vec<String> = (0..50).map(|i| format!("user{i}@example.com")).collect();
+    let result = detect_column_type_with_name("", &values);
+    assert_eq!(result.data_type, DataType::Email);
+    assert_eq!(result.confidence, Confidence::High);
+}

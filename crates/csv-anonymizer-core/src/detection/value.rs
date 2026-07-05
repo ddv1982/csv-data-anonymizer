@@ -6,7 +6,6 @@ use regex::Regex;
 use crate::types::{Confidence, DataType, DetectionResult, DetectionTraceItem};
 
 use super::candidate::{DetectorCandidate, DetectorCandidateSpec, DetectorEvidence};
-use super::is_empty_value;
 use super::locale::LocaleContext;
 use super::national_id::is_national_id;
 use super::scoring::{DetectorDecision, calculate_confidence, detection_result, trace_item};
@@ -15,7 +14,8 @@ use super::validators::{is_email, is_iban, is_phone_in_context, is_tax_id, is_ur
 type DetectionPredicate = fn(&str, &LocaleContext) -> bool;
 
 pub(in crate::detection) fn detect_priority_pattern(
-    values: &[String],
+    values: &[&String],
+    total_samples: usize,
     total_non_empty: usize,
     locale: &LocaleContext,
 ) -> std::result::Result<DetectionResult, Vec<DetectionTraceItem>> {
@@ -23,10 +23,7 @@ pub(in crate::detection) fn detect_priority_pattern(
         .into_iter()
         .enumerate()
         .map(|(order, (data_type, matches, reason))| {
-            let match_count = values
-                .iter()
-                .filter(|value| !is_empty_value(value) && matches(value, locale))
-                .count();
+            let match_count = values.iter().filter(|value| matches(value, locale)).count();
             let confidence = calculate_confidence(match_count, total_non_empty);
 
             DetectorCandidate::from_spec(DetectorCandidateSpec {
@@ -49,7 +46,7 @@ pub(in crate::detection) fn detect_priority_pattern(
             selected.data_type,
             selected.confidence,
             selected.match_count,
-            values.len(),
+            total_samples,
             total_non_empty,
             "Sample values matched a built-in pattern rule.",
             trace_items,
@@ -60,12 +57,13 @@ pub(in crate::detection) fn detect_priority_pattern(
 }
 
 pub(in crate::detection) fn detect_numeric_value_type(
-    values: &[String],
+    values: &[&String],
+    total_samples: usize,
     total_non_empty: usize,
 ) -> Option<DetectionResult> {
     let match_count = values
         .iter()
-        .filter(|value| !is_empty_value(value) && is_numeric_value(value))
+        .filter(|value| is_numeric_value(value))
         .count();
     let confidence = calculate_confidence(match_count, total_non_empty);
 
@@ -77,19 +75,17 @@ pub(in crate::detection) fn detect_numeric_value_type(
         data_type: DataType::NumericValue,
         confidence,
         sample_matches: match_count,
-        total_samples: values.len(),
+        total_samples,
         trace: None,
     })
 }
 
 pub(in crate::detection) fn detect_vat_value_type(
-    values: &[String],
+    values: &[&String],
+    total_samples: usize,
     total_non_empty: usize,
 ) -> Option<DetectionResult> {
-    let match_count = values
-        .iter()
-        .filter(|value| !is_empty_value(value) && is_vat_id(value))
-        .count();
+    let match_count = values.iter().filter(|value| is_vat_id(value)).count();
     let confidence = calculate_confidence(match_count, total_non_empty);
 
     if confidence == Confidence::Low {
@@ -100,7 +96,7 @@ pub(in crate::detection) fn detect_vat_value_type(
         DataType::TaxId,
         confidence,
         match_count,
-        values.len(),
+        total_samples,
         total_non_empty,
         "Sample values matched the VAT country-specific validator.",
         vec![trace_item(
@@ -115,13 +111,11 @@ pub(in crate::detection) fn detect_vat_value_type(
 }
 
 pub(in crate::detection) fn detect_iban_value_type(
-    values: &[String],
+    values: &[&String],
+    total_samples: usize,
     total_non_empty: usize,
 ) -> Option<DetectionResult> {
-    let match_count = values
-        .iter()
-        .filter(|value| !is_empty_value(value) && is_iban(value))
-        .count();
+    let match_count = values.iter().filter(|value| is_iban(value)).count();
     let confidence = calculate_confidence(match_count, total_non_empty);
 
     if confidence == Confidence::Low {
@@ -132,7 +126,7 @@ pub(in crate::detection) fn detect_iban_value_type(
         DataType::String,
         confidence,
         match_count,
-        values.len(),
+        total_samples,
         total_non_empty,
         "Sample values matched the IBAN checksum validator.",
         vec![trace_item(

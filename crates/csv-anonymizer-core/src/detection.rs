@@ -45,6 +45,21 @@ pub fn is_empty_value(value: &str) -> bool {
     value.is_empty() || value.eq_ignore_ascii_case("null")
 }
 
+const DETECTION_SAMPLE_CAP: usize = 200;
+
+fn sample_evenly(values: &[String], cap: usize) -> Vec<&String> {
+    let non_empty: Vec<&String> = values
+        .iter()
+        .filter(|value| !is_empty_value(value))
+        .collect();
+    if non_empty.len() <= cap {
+        return non_empty;
+    }
+    (0..cap)
+        .map(|slot| non_empty[slot * non_empty.len() / cap])
+        .collect()
+}
+
 pub(super) fn utf16_index_for_byte(value: &str, byte_index: usize) -> usize {
     match value.get(..byte_index) {
         Some(prefix) => utf16_len(prefix),
@@ -76,11 +91,8 @@ pub fn detect_column_type_in_context(
     values: &[String],
     locale: &LocaleContext,
 ) -> crate::types::DetectionResult {
-    let non_empty_values: Vec<&String> = values
-        .iter()
-        .filter(|value| !is_empty_value(value))
-        .collect();
-    let total_non_empty = non_empty_values.len();
+    let sampled: Vec<&String> = sample_evenly(values, DETECTION_SAMPLE_CAP);
+    let total_non_empty = sampled.len();
 
     if total_non_empty == 0 {
         return detection_result(
@@ -96,7 +108,7 @@ pub fn detect_column_type_in_context(
 
     if let Some(result) = first_header_detection(
         column_name,
-        &non_empty_values,
+        &sampled,
         values.len(),
         total_non_empty,
         &header_rules::early_header_detection_rules(),
@@ -104,22 +116,23 @@ pub fn detect_column_type_in_context(
         return result;
     }
 
-    if let Some(result) = detect_vat_value_type(values, total_non_empty) {
+    if let Some(result) = detect_vat_value_type(&sampled, values.len(), total_non_empty) {
         return result;
     }
 
-    if let Some(result) = detect_iban_value_type(values, total_non_empty) {
+    if let Some(result) = detect_iban_value_type(&sampled, values.len(), total_non_empty) {
         return result;
     }
 
-    let candidates = match detect_priority_pattern(values, total_non_empty, locale) {
+    let candidates = match detect_priority_pattern(&sampled, values.len(), total_non_empty, locale)
+    {
         Ok(result) => return result,
         Err(candidates) => candidates,
     };
 
     if let Some(result) = first_header_detection(
         column_name,
-        &non_empty_values,
+        &sampled,
         values.len(),
         total_non_empty,
         &[HeaderDetectionRule {
@@ -131,7 +144,7 @@ pub fn detect_column_type_in_context(
         return result;
     }
 
-    if let Some(result) = detect_numeric_value_type(values, total_non_empty) {
+    if let Some(result) = detect_numeric_value_type(&sampled, values.len(), total_non_empty) {
         return attach_single_trace(
             result,
             total_non_empty,
@@ -142,7 +155,7 @@ pub fn detect_column_type_in_context(
 
     if let Some(result) = first_header_detection(
         column_name,
-        &non_empty_values,
+        &sampled,
         values.len(),
         total_non_empty,
         &[HeaderDetectionRule {
@@ -154,18 +167,18 @@ pub fn detect_column_type_in_context(
         return result;
     }
 
-    if detect_enum_type(&non_empty_values) {
+    if detect_enum_type(&sampled) {
         return detection_result(
             DataType::Enum,
             Confidence::High,
-            non_empty_values.len(),
+            sampled.len(),
             values.len(),
             total_non_empty,
             "Sample values formed a repeated finite set.",
             vec![trace_item(
                 DataType::Enum,
                 "finite repeated values",
-                non_empty_values.len(),
+                sampled.len(),
                 total_non_empty,
                 Confidence::High,
                 true,
@@ -176,7 +189,7 @@ pub fn detect_column_type_in_context(
     detection_result(
         DataType::String,
         Confidence::Low,
-        non_empty_values.len(),
+        sampled.len(),
         values.len(),
         total_non_empty,
         "No sensitive pattern, header, numeric, name, or enum rule passed the threshold.",
