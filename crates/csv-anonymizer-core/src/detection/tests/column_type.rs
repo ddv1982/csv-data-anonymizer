@@ -114,3 +114,25 @@ fn value_only_names_remain_strings() {
     let result = detect_column_type(&strings(&["Alice", "Bob", "Carol"]));
     assert_eq!(result.data_type, DataType::String);
 }
+
+#[test]
+fn bsn_column_detects_as_tax_id_without_header() {
+    let values: Vec<String> = vec!["111222333", "123456782", "111222333", "123456782"]
+        .into_iter()
+        .map(String::from)
+        .collect();
+    let result = detect_column_type_with_name("kolom3", &values);
+    assert_eq!(result.data_type, DataType::TaxId);
+    assert_eq!(result.confidence, Confidence::High);
+}
+
+#[test]
+fn random_numeric_ids_do_not_become_tax_ids() {
+    // 4+ digit sequence numbers: near-misses for every checksum scheme.
+    let values: Vec<String> = vec!["100001", "100002", "100003", "100004"]
+        .into_iter()
+        .map(String::from)
+        .collect();
+    let result = detect_column_type_with_name("id", &values);
+    assert_eq!(result.data_type, DataType::NumericId);
+}

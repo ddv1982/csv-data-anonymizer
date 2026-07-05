@@ -10,7 +10,6 @@ enum Scheme {
 
 /// Checksum-backed schemes only, verified by the probe tests in this file.
 /// Countries whose probes failed in Task 1 must not appear here.
-#[allow(dead_code)]
 const ALLOWLIST: &[(&str, Scheme)] = &[
     ("NL", Scheme::Personal),
     ("BE", Scheme::Personal),
@@ -24,8 +23,10 @@ const ALLOWLIST: &[(&str, Scheme)] = &[
     ("DE", Scheme::Tax),
 ];
 
-#[allow(dead_code)]
 fn scheme_validates(country: &str, value: &str, scheme: Scheme) -> bool {
+    if !raw_shape_matches_country(country, value) {
+        return false;
+    }
     match scheme {
         Scheme::Personal => idsmith::personal_ids()
             .validate(country, value)
@@ -34,7 +35,21 @@ fn scheme_validates(country: &str, value: &str, scheme: Scheme) -> bool {
     }
 }
 
-#[allow(dead_code)]
+/// idsmith's own per-country `validate()` implementations vary in how
+/// strictly they check the raw input shape before checksumming: most
+/// (NL, PL, FR, ...) reject anything but a pure digit string of the exact
+/// expected length, but BR's CPF validator strips *any* non-digit
+/// character from *any* position before checksumming, so a value like
+/// "987654321B00" is silently cleaned to "98765432100" and can pass the
+/// checksum despite being shape-garbage. Gate that scheme here so a
+/// contaminated value never reaches idsmith's lax stripping behavior.
+fn raw_shape_matches_country(country: &str, value: &str) -> bool {
+    match country {
+        "BR" => value.chars().all(|character| character.is_ascii_digit()) && value.len() == 11,
+        _ => true,
+    }
+}
+
 fn is_plausible_id_shape(value: &str) -> bool {
     let trimmed = value.trim();
     (6..=20).contains(&trimmed.len())
@@ -44,7 +59,6 @@ fn is_plausible_id_shape(value: &str) -> bool {
         })
 }
 
-#[allow(dead_code)]
 pub(in crate::detection) fn national_id_countries(value: &str) -> Vec<&'static str> {
     if !is_plausible_id_shape(value) {
         return Vec::new();
@@ -57,7 +71,6 @@ pub(in crate::detection) fn national_id_countries(value: &str) -> Vec<&'static s
         .collect()
 }
 
-#[allow(dead_code)]
 pub(in crate::detection) fn is_national_id(value: &str) -> bool {
     !national_id_countries(value).is_empty()
 }
@@ -148,5 +161,15 @@ mod tests {
     fn german_steuer_id_validates_via_tax_registry() {
         assert!(is_national_id("86095742719"));
         assert!(national_id_countries("86095742719").contains(&"DE"));
+    }
+
+    #[test]
+    fn letter_contaminated_digits_do_not_pass_via_br_stripping() {
+        // idsmith's BR CPF validator strips any non-digit character from any
+        // position before checksumming, so "987654321B00" would otherwise be
+        // silently cleaned to "98765432100" (a checksum-valid CPF) and match.
+        // This is a Dutch BTW-suffix near-miss shape, not a Brazilian CPF.
+        assert!(!national_id_countries("987654321B00").contains(&"BR"));
+        assert!(!is_national_id("987654321B00"));
     }
 }

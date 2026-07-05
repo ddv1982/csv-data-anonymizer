@@ -8,8 +8,9 @@ use crate::types::{Confidence, DataType, DetectionResult, DetectionTraceItem};
 use super::candidate::{DetectorCandidate, DetectorCandidateSpec, DetectorEvidence};
 use super::is_empty_value;
 use super::locale::LocaleContext;
+use super::national_id::is_national_id;
 use super::scoring::{DetectorDecision, calculate_confidence, detection_result, trace_item};
-use super::validators::{is_email, is_iban, is_phone, is_tax_id, is_url, is_vat_id};
+use super::validators::{is_email, is_iban, is_phone_in_context, is_tax_id, is_url, is_vat_id};
 
 type DetectionPredicate = fn(&str, &LocaleContext) -> bool;
 
@@ -21,7 +22,7 @@ pub(in crate::detection) fn detect_priority_pattern(
     let candidates = detection_priority()
         .into_iter()
         .enumerate()
-        .map(|(order, (data_type, matches))| {
+        .map(|(order, (data_type, matches, reason))| {
             let match_count = values
                 .iter()
                 .filter(|value| !is_empty_value(value) && matches(value, locale))
@@ -30,7 +31,7 @@ pub(in crate::detection) fn detect_priority_pattern(
 
             DetectorCandidate::from_spec(DetectorCandidateSpec {
                 data_type,
-                reason: "pattern rule".to_string(),
+                reason: reason.to_string(),
                 match_count,
                 total_considered: total_non_empty,
                 confidence,
@@ -156,21 +157,26 @@ pub(in crate::detection) fn detect_enum_type(non_empty_values: &[&String]) -> bo
     unique_values.len() <= 20
 }
 
-fn detection_priority() -> [(DataType, DetectionPredicate); 13] {
+fn detection_priority() -> [(DataType, DetectionPredicate, &'static str); 14] {
     [
-        (DataType::Email, email_predicate),
-        (DataType::Uuid, uuid_predicate),
-        (DataType::Timestamp, timestamp_predicate),
-        (DataType::Phone, phone_predicate),
-        (DataType::IpAddress, ip_address_predicate),
-        (DataType::MacAddress, mac_address_predicate),
-        (DataType::Url, url_predicate),
-        (DataType::TaxId, tax_id_predicate),
-        (DataType::Boolean, boolean_predicate),
-        (DataType::Currency, currency_predicate),
-        (DataType::Percentage, percentage_predicate),
-        (DataType::NumericId, numeric_id_predicate),
-        (DataType::CountryCode, country_code_predicate),
+        (DataType::Email, email_predicate, "pattern rule"),
+        (DataType::Uuid, uuid_predicate, "pattern rule"),
+        (DataType::Timestamp, timestamp_predicate, "pattern rule"),
+        (DataType::Phone, phone_predicate, "pattern rule"),
+        (DataType::IpAddress, ip_address_predicate, "pattern rule"),
+        (DataType::MacAddress, mac_address_predicate, "pattern rule"),
+        (DataType::Url, url_predicate, "pattern rule"),
+        (DataType::TaxId, tax_id_predicate, "pattern rule"),
+        (DataType::TaxId, is_national_id_value, "validator:idsmith"),
+        (DataType::Boolean, boolean_predicate, "pattern rule"),
+        (DataType::Currency, currency_predicate, "pattern rule"),
+        (DataType::Percentage, percentage_predicate, "pattern rule"),
+        (DataType::NumericId, numeric_id_predicate, "pattern rule"),
+        (
+            DataType::CountryCode,
+            country_code_predicate,
+            "pattern rule",
+        ),
     ]
 }
 
@@ -186,8 +192,8 @@ fn timestamp_predicate(value: &str, _locale: &LocaleContext) -> bool {
     is_timestamp(value)
 }
 
-fn phone_predicate(value: &str, _locale: &LocaleContext) -> bool {
-    is_phone(value)
+fn phone_predicate(value: &str, locale: &LocaleContext) -> bool {
+    is_phone_in_context(value, locale)
 }
 
 fn ip_address_predicate(value: &str, _locale: &LocaleContext) -> bool {
@@ -204,6 +210,10 @@ fn url_predicate(value: &str, _locale: &LocaleContext) -> bool {
 
 fn tax_id_predicate(value: &str, _locale: &LocaleContext) -> bool {
     is_tax_id(value)
+}
+
+fn is_national_id_value(value: &str, _locale: &LocaleContext) -> bool {
+    is_national_id(value)
 }
 
 fn boolean_predicate(value: &str, _locale: &LocaleContext) -> bool {

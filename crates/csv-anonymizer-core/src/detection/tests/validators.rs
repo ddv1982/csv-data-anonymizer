@@ -2,6 +2,18 @@ use super::*;
 use crate::types::PrivacyFindingKind;
 
 #[test]
+fn brazilian_mobile_validates_without_context() {
+    // BR is not in the legacy 10-region list; the extended list must cover it.
+    use crate::detection::LocaleContext;
+    assert!(
+        crate::detection::validators_test_hook_is_valid_phone_in_context(
+            "(11) 91234-5678",
+            &LocaleContext::default(),
+        )
+    );
+}
+
+#[test]
 fn detects_formatted_phone_numbers() {
     let result = detect_column_type(&strings(&[
         "(555) 123-4567",
