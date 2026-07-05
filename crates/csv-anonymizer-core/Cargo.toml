@@ -28,6 +28,7 @@ url.workspace = true
 vat_id_validator.workspace = true
 yaml_serde.workspace = true
 ssn.workspace = true
+idsmith.workspace = true
 
 [dev-dependencies]
 criterion = { version = "0.8.2", features = ["html_reports"] }

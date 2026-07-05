@@ -3,6 +3,7 @@ use crate::types::{Confidence, DataType, EmptyFormat, PiiRisk};
 mod candidate;
 mod header;
 mod header_rules;
+mod national_id;
 mod privacy;
 mod scoring;
 mod spans;
