@@ -892,6 +892,15 @@ git commit -m "lore(core): value-first pipeline with header agreement boost"
 
 ## Phase 3: Name gazetteer
 
+> **Withdrawn (user decision, 2026-07-06).** This entire phase — the bundled
+> forename/surname datasets, the build script, the provenance doc, the
+> `gazetteer.rs` runtime, and the `name_value.rs` detector — was rejected on
+> data-minimization grounds: no bundled person-name datasets ship in the repo
+> or its history, even public-domain ones. Name detection remains header-gated;
+> header-independent name classification is future work pending a user-approved
+> data source. The tasks below are retained for historical context only and
+> were not shipped.
+
 ### Task 8: Gazetteer data build script + committed data + provenance
 
 **Files:**

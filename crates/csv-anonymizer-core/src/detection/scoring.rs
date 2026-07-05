@@ -56,6 +56,16 @@ fn decision_key(candidate: &DetectorCandidate, index: usize) -> DecisionKey {
     )
 }
 
+/// Raise a confidence one tier, capped at High. Used when a header signal
+/// agrees with an already-final validator selection: the header may lift
+/// confidence by exactly one tier but can never suppress or replace it.
+pub(in crate::detection) fn raise_one_tier(confidence: Confidence) -> Confidence {
+    match confidence {
+        Confidence::Low => Confidence::Medium,
+        Confidence::Medium | Confidence::High => Confidence::High,
+    }
+}
+
 pub(in crate::detection) fn calculate_confidence(
     match_count: usize,
     total_non_empty: usize,

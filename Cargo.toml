@@ -21,6 +21,7 @@ card-validate = "2.4.0"
 ein = "0.3.0"
 email_address = { version = "0.2.9", default-features = false }
 iban = { package = "iban_validate", version = "5.0.1" }
+idsmith = { version = "0.5.4", default-features = false }
 open = "5.3.6"
 phonenumber = "0.3.10"
 rand = "0.8.5"

@@ -6,29 +6,66 @@ use regex::Regex;
 use crate::types::{Confidence, DataType, DetectionResult, DetectionTraceItem};
 
 use super::candidate::{DetectorCandidate, DetectorCandidateSpec, DetectorEvidence};
-use super::is_empty_value;
+use super::locale::LocaleContext;
+use super::national_id::is_national_id;
 use super::scoring::{DetectorDecision, calculate_confidence, detection_result, trace_item};
-use super::validators::{is_email, is_iban, is_phone, is_tax_id, is_url, is_vat_id};
+use super::validators::{is_email, is_iban, is_phone_in_context, is_tax_id, is_url, is_vat_id};
 
-type DetectionPredicate = fn(&str) -> bool;
+type DetectionPredicate = fn(&str, &LocaleContext) -> bool;
+
+/// Outcome of the priority-pattern battery, exposing the raw decision so the
+/// pipeline can inspect the selected candidate's evidence (Validator vs. not)
+/// before committing to a `DetectionResult`. Validator-backed selections are
+/// final and lifted above the header rules; non-validator selections are
+/// deferred to their original slot after the header rules run.
+pub(in crate::detection) struct PatternOutcome {
+    pub selected: Option<DetectorCandidate>,
+    pub trace_items: Vec<DetectionTraceItem>,
+    total_samples: usize,
+    total_non_empty: usize,
+}
+
+impl PatternOutcome {
+    /// True when the selected candidate carries checksum/validator evidence.
+    pub(in crate::detection) fn selected_is_validator(&self) -> bool {
+        self.selected
+            .as_ref()
+            .map(|candidate| candidate.evidence == DetectorEvidence::Validator)
+            .unwrap_or(false)
+    }
+
+    /// Build the committed `DetectionResult` for the selected candidate.
+    /// Callers only invoke this once they have decided to accept the selection.
+    pub(in crate::detection) fn result(&self) -> Option<DetectionResult> {
+        let selected = self.selected.as_ref()?;
+        Some(detection_result(
+            selected.data_type,
+            selected.confidence,
+            selected.match_count,
+            self.total_samples,
+            self.total_non_empty,
+            "Sample values matched a built-in pattern rule.",
+            self.trace_items.clone(),
+        ))
+    }
+}
 
 pub(in crate::detection) fn detect_priority_pattern(
-    values: &[String],
+    values: &[&String],
+    total_samples: usize,
     total_non_empty: usize,
-) -> std::result::Result<DetectionResult, Vec<DetectionTraceItem>> {
+    locale: &LocaleContext,
+) -> PatternOutcome {
     let candidates = detection_priority()
         .into_iter()
         .enumerate()
-        .map(|(order, (data_type, matches))| {
-            let match_count = values
-                .iter()
-                .filter(|value| !is_empty_value(value) && matches(value))
-                .count();
+        .map(|(order, (data_type, matches, reason))| {
+            let match_count = values.iter().filter(|value| matches(value, locale)).count();
             let confidence = calculate_confidence(match_count, total_non_empty);
 
             DetectorCandidate::from_spec(DetectorCandidateSpec {
                 data_type,
-                reason: "pattern rule".to_string(),
+                reason: reason.to_string(),
                 match_count,
                 total_considered: total_non_empty,
                 confidence,
@@ -41,28 +78,22 @@ pub(in crate::detection) fn detect_priority_pattern(
     let decision = DetectorDecision::select(candidates);
     let trace_items = decision.trace_items();
 
-    if let Some(selected) = decision.selected {
-        return Ok(detection_result(
-            selected.data_type,
-            selected.confidence,
-            selected.match_count,
-            values.len(),
-            total_non_empty,
-            "Sample values matched a built-in pattern rule.",
-            trace_items,
-        ));
+    PatternOutcome {
+        selected: decision.selected,
+        trace_items,
+        total_samples,
+        total_non_empty,
     }
-
-    Err(trace_items)
 }
 
 pub(in crate::detection) fn detect_numeric_value_type(
-    values: &[String],
+    values: &[&String],
+    total_samples: usize,
     total_non_empty: usize,
 ) -> Option<DetectionResult> {
     let match_count = values
         .iter()
-        .filter(|value| !is_empty_value(value) && is_numeric_value(value))
+        .filter(|value| is_numeric_value(value))
         .count();
     let confidence = calculate_confidence(match_count, total_non_empty);
 
@@ -74,19 +105,17 @@ pub(in crate::detection) fn detect_numeric_value_type(
         data_type: DataType::NumericValue,
         confidence,
         sample_matches: match_count,
-        total_samples: values.len(),
+        total_samples,
         trace: None,
     })
 }
 
 pub(in crate::detection) fn detect_vat_value_type(
-    values: &[String],
+    values: &[&String],
+    total_samples: usize,
     total_non_empty: usize,
 ) -> Option<DetectionResult> {
-    let match_count = values
-        .iter()
-        .filter(|value| !is_empty_value(value) && is_vat_id(value))
-        .count();
+    let match_count = values.iter().filter(|value| is_vat_id(value)).count();
     let confidence = calculate_confidence(match_count, total_non_empty);
 
     if confidence == Confidence::Low {
@@ -97,7 +126,7 @@ pub(in crate::detection) fn detect_vat_value_type(
         DataType::TaxId,
         confidence,
         match_count,
-        values.len(),
+        total_samples,
         total_non_empty,
         "Sample values matched the VAT country-specific validator.",
         vec![trace_item(
@@ -112,13 +141,11 @@ pub(in crate::detection) fn detect_vat_value_type(
 }
 
 pub(in crate::detection) fn detect_iban_value_type(
-    values: &[String],
+    values: &[&String],
+    total_samples: usize,
     total_non_empty: usize,
 ) -> Option<DetectionResult> {
-    let match_count = values
-        .iter()
-        .filter(|value| !is_empty_value(value) && is_iban(value))
-        .count();
+    let match_count = values.iter().filter(|value| is_iban(value)).count();
     let confidence = calculate_confidence(match_count, total_non_empty);
 
     if confidence == Confidence::Low {
@@ -129,7 +156,7 @@ pub(in crate::detection) fn detect_iban_value_type(
         DataType::String,
         confidence,
         match_count,
-        values.len(),
+        total_samples,
         total_non_empty,
         "Sample values matched the IBAN checksum validator.",
         vec![trace_item(
@@ -154,22 +181,83 @@ pub(in crate::detection) fn detect_enum_type(non_empty_values: &[&String]) -> bo
     unique_values.len() <= 20
 }
 
-fn detection_priority() -> [(DataType, DetectionPredicate); 13] {
+fn detection_priority() -> [(DataType, DetectionPredicate, &'static str); 14] {
     [
-        (DataType::Email, is_email),
-        (DataType::Uuid, is_uuid),
-        (DataType::Timestamp, is_timestamp),
-        (DataType::Phone, is_phone),
-        (DataType::IpAddress, is_ip_address),
-        (DataType::MacAddress, is_mac_address),
-        (DataType::Url, is_url),
-        (DataType::TaxId, is_tax_id),
-        (DataType::Boolean, is_boolean),
-        (DataType::Currency, is_currency),
-        (DataType::Percentage, is_percentage),
-        (DataType::NumericId, is_numeric_id),
-        (DataType::CountryCode, is_country_code),
+        (DataType::Email, email_predicate, "pattern rule"),
+        (DataType::Uuid, uuid_predicate, "pattern rule"),
+        (DataType::Timestamp, timestamp_predicate, "pattern rule"),
+        (DataType::Phone, phone_predicate, "pattern rule"),
+        (DataType::IpAddress, ip_address_predicate, "pattern rule"),
+        (DataType::MacAddress, mac_address_predicate, "pattern rule"),
+        (DataType::Url, url_predicate, "pattern rule"),
+        (DataType::TaxId, tax_id_predicate, "pattern rule"),
+        (DataType::TaxId, is_national_id_value, "validator:idsmith"),
+        (DataType::Boolean, boolean_predicate, "pattern rule"),
+        (DataType::Currency, currency_predicate, "pattern rule"),
+        (DataType::Percentage, percentage_predicate, "pattern rule"),
+        (DataType::NumericId, numeric_id_predicate, "pattern rule"),
+        (
+            DataType::CountryCode,
+            country_code_predicate,
+            "pattern rule",
+        ),
     ]
+}
+
+fn email_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_email(value)
+}
+
+fn uuid_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_uuid(value)
+}
+
+fn timestamp_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_timestamp(value)
+}
+
+fn phone_predicate(value: &str, locale: &LocaleContext) -> bool {
+    is_phone_in_context(value, locale)
+}
+
+fn ip_address_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_ip_address(value)
+}
+
+fn mac_address_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_mac_address(value)
+}
+
+fn url_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_url(value)
+}
+
+fn tax_id_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_tax_id(value)
+}
+
+fn is_national_id_value(value: &str, _locale: &LocaleContext) -> bool {
+    is_national_id(value)
+}
+
+fn boolean_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_boolean(value)
+}
+
+fn currency_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_currency(value)
+}
+
+fn percentage_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_percentage(value)
+}
+
+fn numeric_id_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_numeric_id(value)
+}
+
+fn country_code_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_country_code(value)
 }
 
 fn evidence_for(data_type: DataType) -> DetectorEvidence {

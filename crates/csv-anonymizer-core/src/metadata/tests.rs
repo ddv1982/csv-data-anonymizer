@@ -423,6 +423,19 @@ fn metadata_promotes_headerless_vat_values_to_tax_id() {
 }
 
 #[test]
+fn locale_context_flows_from_iban_column_to_detection() {
+    // One IBAN column establishes NL context; this test only asserts the
+    // plumbing compiles end-to-end and detection still classifies the IBAN
+    // column. Behavioral use of the context lands in later tasks.
+    let headers = vec!["iban".to_string(), "note".to_string()];
+    let rows: Vec<Vec<String>> = (0..12)
+        .map(|_| vec!["NL91ABNA0417164300".to_string(), "hello".to_string()])
+        .collect();
+    let metadata = build_column_metadata(&headers, &rows);
+    assert_eq!(metadata.len(), 2);
+}
+
+#[test]
 fn low_confidence_date_evidence_does_not_auto_select_column() {
     let headers = vec!["event_notes".to_string()];
     let samples = vec![vec!["created 2026-06-29".to_string()]];
@@ -436,4 +449,28 @@ fn low_confidence_date_evidence_does_not_auto_select_column() {
     assert!(column.privacy_evidence.iter().any(|summary| summary.kind
         == crate::types::PrivacyFindingKind::PrivateDate
         && summary.confidence == crate::types::Confidence::Low));
+}
+
+#[test]
+fn dutch_postcodes_detected_via_iban_locale_context() {
+    let headers = vec!["c1".to_string(), "c2".to_string()];
+    let rows: Vec<Vec<String>> = [
+        ("NL91ABNA0417164300", "1012 AB"),
+        ("NL02RABO0123456789", "2511 CV"),
+        ("NL91ABNA0417164300", "3011 ED"),
+        ("NL02RABO0123456789", "9711 LM"),
+        ("NL91ABNA0417164300", "5611 EM"),
+        ("NL02RABO0123456789", "6511 KL"),
+        ("NL91ABNA0417164300", "7511 JE"),
+        ("NL02RABO0123456789", "8011 NW"),
+        ("NL91ABNA0417164300", "4811 DJ"),
+        ("NL02RABO0123456789", "1071 XX"),
+        ("NL91ABNA0417164300", "2312 EZ"),
+        ("NL02RABO0123456789", "3512 JE"),
+    ]
+    .iter()
+    .map(|(a, b)| vec![a.to_string(), b.to_string()])
+    .collect();
+    let metadata = build_column_metadata(&headers, &rows);
+    assert_eq!(metadata[1].detected_type, DataType::PostalCode);
 }
