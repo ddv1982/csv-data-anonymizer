@@ -7,14 +7,16 @@ use crate::types::{Confidence, DataType, DetectionResult, DetectionTraceItem};
 
 use super::candidate::{DetectorCandidate, DetectorCandidateSpec, DetectorEvidence};
 use super::is_empty_value;
+use super::locale::LocaleContext;
 use super::scoring::{DetectorDecision, calculate_confidence, detection_result, trace_item};
 use super::validators::{is_email, is_iban, is_phone, is_tax_id, is_url, is_vat_id};
 
-type DetectionPredicate = fn(&str) -> bool;
+type DetectionPredicate = fn(&str, &LocaleContext) -> bool;
 
 pub(in crate::detection) fn detect_priority_pattern(
     values: &[String],
     total_non_empty: usize,
+    locale: &LocaleContext,
 ) -> std::result::Result<DetectionResult, Vec<DetectionTraceItem>> {
     let candidates = detection_priority()
         .into_iter()
@@ -22,7 +24,7 @@ pub(in crate::detection) fn detect_priority_pattern(
         .map(|(order, (data_type, matches))| {
             let match_count = values
                 .iter()
-                .filter(|value| !is_empty_value(value) && matches(value))
+                .filter(|value| !is_empty_value(value) && matches(value, locale))
                 .count();
             let confidence = calculate_confidence(match_count, total_non_empty);
 
@@ -156,20 +158,72 @@ pub(in crate::detection) fn detect_enum_type(non_empty_values: &[&String]) -> bo
 
 fn detection_priority() -> [(DataType, DetectionPredicate); 13] {
     [
-        (DataType::Email, is_email),
-        (DataType::Uuid, is_uuid),
-        (DataType::Timestamp, is_timestamp),
-        (DataType::Phone, is_phone),
-        (DataType::IpAddress, is_ip_address),
-        (DataType::MacAddress, is_mac_address),
-        (DataType::Url, is_url),
-        (DataType::TaxId, is_tax_id),
-        (DataType::Boolean, is_boolean),
-        (DataType::Currency, is_currency),
-        (DataType::Percentage, is_percentage),
-        (DataType::NumericId, is_numeric_id),
-        (DataType::CountryCode, is_country_code),
+        (DataType::Email, email_predicate),
+        (DataType::Uuid, uuid_predicate),
+        (DataType::Timestamp, timestamp_predicate),
+        (DataType::Phone, phone_predicate),
+        (DataType::IpAddress, ip_address_predicate),
+        (DataType::MacAddress, mac_address_predicate),
+        (DataType::Url, url_predicate),
+        (DataType::TaxId, tax_id_predicate),
+        (DataType::Boolean, boolean_predicate),
+        (DataType::Currency, currency_predicate),
+        (DataType::Percentage, percentage_predicate),
+        (DataType::NumericId, numeric_id_predicate),
+        (DataType::CountryCode, country_code_predicate),
     ]
+}
+
+fn email_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_email(value)
+}
+
+fn uuid_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_uuid(value)
+}
+
+fn timestamp_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_timestamp(value)
+}
+
+fn phone_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_phone(value)
+}
+
+fn ip_address_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_ip_address(value)
+}
+
+fn mac_address_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_mac_address(value)
+}
+
+fn url_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_url(value)
+}
+
+fn tax_id_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_tax_id(value)
+}
+
+fn boolean_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_boolean(value)
+}
+
+fn currency_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_currency(value)
+}
+
+fn percentage_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_percentage(value)
+}
+
+fn numeric_id_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_numeric_id(value)
+}
+
+fn country_code_predicate(value: &str, _locale: &LocaleContext) -> bool {
+    is_country_code(value)
 }
 
 fn evidence_for(data_type: DataType) -> DetectorEvidence {

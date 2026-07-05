@@ -53,12 +53,20 @@ pub(super) fn utf16_len(value: &str) -> usize {
 }
 
 pub fn detect_column_type(values: &[String]) -> crate::types::DetectionResult {
-    detect_column_type_with_name("", values)
+    detect_column_type_in_context("", values, &LocaleContext::default())
 }
 
 pub fn detect_column_type_with_name(
     column_name: &str,
     values: &[String],
+) -> crate::types::DetectionResult {
+    detect_column_type_in_context(column_name, values, &LocaleContext::default())
+}
+
+pub fn detect_column_type_in_context(
+    column_name: &str,
+    values: &[String],
+    locale: &LocaleContext,
 ) -> crate::types::DetectionResult {
     let non_empty_values: Vec<&String> = values
         .iter()
@@ -96,7 +104,7 @@ pub fn detect_column_type_with_name(
         return result;
     }
 
-    let candidates = match detect_priority_pattern(values, total_non_empty) {
+    let candidates = match detect_priority_pattern(values, total_non_empty, locale) {
         Ok(result) => return result,
         Err(candidates) => candidates,
     };
