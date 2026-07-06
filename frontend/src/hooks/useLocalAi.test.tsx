@@ -80,16 +80,36 @@ describe('useLocalAi', () => {
     expect(tauriMocks.getLocalAiStatus).toHaveBeenCalledTimes(2)
     expect(onError).not.toHaveBeenCalled()
   })
+
+  it('keeps the active download cancellable when the selected model changes', async () => {
+    const onError = vi.fn()
+    tauriMocks.startLocalAiModelDownload.mockResolvedValue(downloadStatusFixture())
+    const harness = renderLocalAi(onError)
+    await flushPromises()
+
+    await act(async () => {
+      await harness.localAi.startDownload()
+    })
+
+    expect(harness.localAi.downloadRunning).toBe(true)
+
+    harness.rerender(settingsFixture({ localAiModel: 'llama3:8b' }))
+
+    expect(harness.localAi.selectedModel).toBe('llama3:8b')
+    expect(harness.localAi.downloadRunning).toBe(true)
+  })
 })
 
 function LocalAiHarness({
+  settings,
   onError,
   onUpdate,
 }: {
+  settings: AppSettings
   onError: (message: string) => void
   onUpdate: (localAi: LocalAiState) => void
 }) {
-  const localAi = useLocalAi(settingsFixture(), onError)
+  const localAi = useLocalAi(settings, onError)
 
   useEffect(() => {
     onUpdate(localAi)
@@ -98,10 +118,11 @@ function LocalAiHarness({
   return null
 }
 
-function renderLocalAi(onError: (message: string) => void) {
+function renderLocalAi(onError: (message: string) => void, settings = settingsFixture()) {
   let localAi: LocalAiState | null = null
-  render(
+  const result = render(
     <LocalAiHarness
+      settings={settings}
       onError={onError}
       onUpdate={(nextLocalAi) => {
         localAi = nextLocalAi
@@ -114,6 +135,17 @@ function renderLocalAi(onError: (message: string) => void) {
       if (!localAi) throw new Error('localAi did not render')
       return localAi
     },
+    rerender(nextSettings: AppSettings) {
+      result.rerender(
+        <LocalAiHarness
+          settings={nextSettings}
+          onError={onError}
+          onUpdate={(nextLocalAi) => {
+            localAi = nextLocalAi
+          }}
+        />,
+      )
+    },
   }
 }
 
@@ -124,8 +156,8 @@ async function flushPromises() {
   })
 }
 
-function settingsFixture(): AppSettings {
-  return { ...defaultSettings }
+function settingsFixture(overrides: Partial<AppSettings> = {}): AppSettings {
+  return { ...defaultSettings, ...overrides }
 }
 
 function downloadStatusFixture(overrides: Partial<LocalAiDownloadStatus> = {}): LocalAiDownloadStatus {

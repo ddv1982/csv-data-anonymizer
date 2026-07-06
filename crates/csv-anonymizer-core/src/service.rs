@@ -1,4 +1,5 @@
 use crate::csv_io::{count_csv_data_rows, process_file_with_control, read_sample};
+use crate::detection::{analyze_column_privacy, classify_pii_risk, max_pii_risk};
 use crate::error::{AnonymizerError, Result};
 use crate::metadata::{apply_column_selection, build_column_metadata};
 use crate::preview::generate_column_preview;
@@ -570,6 +571,16 @@ pub(crate) fn apply_column_controls(
 
         if let Some(data_type) = control.type_override {
             column.detected_type = data_type;
+            let privacy = analyze_column_privacy(
+                &column.name,
+                column.index,
+                &column.sample_values,
+                data_type,
+                column.confidence,
+            );
+            column.privacy_findings = privacy.findings;
+            column.privacy_evidence = privacy.evidence;
+            column.pii_risk = max_pii_risk(classify_pii_risk(data_type), privacy.pii_risk);
         }
         column.strategy = control.strategy;
     }

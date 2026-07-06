@@ -8,7 +8,7 @@ frontend build and repository release scripts.
 ## Version And Tag
 
 Update `package.json`, `frontend/package.json`, `frontend/package-lock.json`,
-`Cargo.toml`, `src-tauri/tauri.conf.json`, `CHANGELOG.md`, and the latest
+`Cargo.toml`, `Cargo.lock`, `src-tauri/tauri.conf.json`, `CHANGELOG.md`, and the latest
 `<release>` entry in `build/linux/io.github.ddv1982.csv-data-anonymizer.metainfo.xml`
 to the same version and date.
 

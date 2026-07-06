@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.72 - 2026-07-06
+
+- Show every privacy-report readiness item and column decision so review blockers and later columns are not hidden behind compact truncation.
+- Keep Local AI model downloads tied to the active job, disable model changes while a download is running, and preserve the cancel affordance during download state changes.
+- Reject duplicate Smart replacement outputs across Local AI provider chunks, recompute privacy evidence and risk for type overrides, and gate releases on matching `Cargo.lock` workspace package versions.
+
 ## v1.0.71 - 2026-07-06
 
 - Make column detection value-first for checksum-backed national IDs, VAT IDs, phones, postal codes, and street addresses so sensitive values are detected even when headers are missing, generic, or localized.

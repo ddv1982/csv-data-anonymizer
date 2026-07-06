@@ -4,14 +4,12 @@ import { RiskBadge } from '../RiskBadge'
 import { statusLabel, statusPillClass } from './helpers'
 
 export function PrivacyReportColumnDecisions({ columns }: { columns: ColumnReleaseReport[] }) {
-  const visibleColumns = columns.slice(0, 12)
-
   return (
     <div className="report-subsection">
       <div className="report-subsection-header">
         <h4>Column Decisions</h4>
         <span className="status-pill">
-          Showing {visibleColumns.length.toLocaleString()} of {columns.length.toLocaleString()}
+          Showing {columns.length.toLocaleString()} of {columns.length.toLocaleString()}
         </span>
       </div>
       <div className="table-frame release-column-frame">
@@ -33,7 +31,7 @@ export function PrivacyReportColumnDecisions({ columns }: { columns: ColumnRelea
             </tr>
           </thead>
           <tbody>
-            {visibleColumns.map((column) => (
+            {columns.map((column) => (
               <tr key={`${column.columnIndex}-${column.columnName}`}>
                 <td className="release-column-name-cell">
                   <strong>{column.columnName}</strong>

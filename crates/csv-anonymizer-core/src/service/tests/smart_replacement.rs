@@ -27,6 +27,7 @@ impl SmartReplacementProvider for MockSmartProvider {
 struct RecordingSmartProvider {
     prefix: &'static str,
     requests: Vec<Vec<String>>,
+    next_index: usize,
 }
 
 impl RecordingSmartProvider {
@@ -34,8 +35,14 @@ impl RecordingSmartProvider {
         Self {
             prefix,
             requests: Vec::new(),
+            next_index: 0,
         }
     }
+}
+
+#[derive(Default)]
+struct CrossChunkDuplicateProvider {
+    next_index: usize,
 }
 
 #[derive(Default)]
@@ -63,13 +70,43 @@ impl SmartReplacementProvider for RecordingSmartProvider {
         request: SmartReplacementRequest<'_>,
     ) -> Result<Vec<SmartReplacement>> {
         self.requests.push(request.values.to_vec());
+        let replacements = request
+            .values
+            .iter()
+            .map(|value| {
+                self.next_index += 1;
+                SmartReplacement {
+                    original: value.clone(),
+                    replacement: format!(
+                        "{} {} {}",
+                        self.prefix, request.column.index, self.next_index
+                    ),
+                }
+            })
+            .collect();
+        Ok(replacements)
+    }
+}
+
+impl SmartReplacementProvider for CrossChunkDuplicateProvider {
+    fn generate_replacements(
+        &mut self,
+        request: SmartReplacementRequest<'_>,
+    ) -> Result<Vec<SmartReplacement>> {
         Ok(request
             .values
             .iter()
             .enumerate()
-            .map(|(index, value)| SmartReplacement {
-                original: value.clone(),
-                replacement: format!("{} {} {}", self.prefix, request.column.index, index + 1),
+            .map(|(index, value)| {
+                self.next_index += 1;
+                SmartReplacement {
+                    original: value.clone(),
+                    replacement: if index == 0 {
+                        "Repeated Local AI Name".to_string()
+                    } else {
+                        format!("Unique Local AI {}", self.next_index)
+                    },
+                }
             })
             .collect())
     }
@@ -331,6 +368,53 @@ fn anonymize_caps_local_ai_unique_values_and_falls_back_for_excess_values() {
         SMART_REPLACEMENT_VALUE_CAP_PER_COLUMN
     );
     assert_eq!(result.privacy_report.smart_replacement_fallbacks, 2);
+}
+
+#[test]
+fn anonymize_rejects_duplicate_smart_outputs_across_provider_chunks() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("smart-cross-chunk-duplicates.csv");
+    let output_path = temp_dir
+        .path()
+        .join("smart-cross-chunk-duplicates-output.csv");
+    let mut csv = String::from("name\n");
+    for index in 0..21 {
+        csv.push_str(&format!("Person {index}\n"));
+    }
+    fs::write(&input_path, csv).unwrap();
+    let mut provider = CrossChunkDuplicateProvider::default();
+
+    let result = service
+        .anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+            AnonymizeParams {
+                file_path: input_path,
+                output_path,
+                columns: vec![0],
+                controls: vec![ColumnControl {
+                    column_index: 0,
+                    type_override: Some(DataType::FullName),
+                    strategy: AnonymizationStrategy::LocalAi,
+                }],
+                force: false,
+                preview_smart_replacements: vec![],
+            },
+            30,
+            None,
+            Some(&mut provider),
+        )
+        .unwrap();
+
+    assert_eq!(result.privacy_report.smart_replacement_values, 20);
+    assert_eq!(result.privacy_report.smart_replacement_rejections, 1);
+    assert_eq!(result.privacy_report.smart_replacement_fallbacks, 1);
+    assert_eq!(
+        result.privacy_report.smart_replacement_rejection_reasons,
+        vec![SmartReplacementRejectionCount {
+            reason: SmartReplacementRejectionReason::DuplicateOutput,
+            count: 1,
+        }]
+    );
 }
 
 #[test]

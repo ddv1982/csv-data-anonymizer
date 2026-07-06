@@ -68,6 +68,20 @@ function readWorkspaceCargoVersion(cargoToml) {
   return versionMatch?.[1] ?? null;
 }
 
+function readCargoLockPackageVersions(cargoLock, packageNames) {
+  const wanted = new Set(packageNames);
+  const versions = new Map();
+  for (const block of cargoLock.split('[[package]]').slice(1)) {
+    const name = block.match(/^name\s*=\s*"([^"]+)"\s*$/m)?.[1];
+    if (!name || !wanted.has(name)) {
+      continue;
+    }
+    const version = block.match(/^version\s*=\s*"([^"]+)"\s*$/m)?.[1];
+    versions.set(name, version ?? null);
+  }
+  return versions;
+}
+
 async function readTrackedFiles() {
   const { stdout } = await execFileAsync('git', ['ls-files'], { maxBuffer: 1024 * 1024 * 10 });
   return stdout.split(/\r?\n/).filter(Boolean);
@@ -81,7 +95,14 @@ const frontendPackageLock = JSON.parse(await readFile('frontend/package-lock.jso
 const tauriConfig = JSON.parse(await readFile('src-tauri/tauri.conf.json', 'utf-8'));
 const linuxTauriConfig = JSON.parse(await readFile('src-tauri/tauri.linux.conf.json', 'utf-8'));
 const cargoToml = await readFile('Cargo.toml', 'utf-8');
+const cargoLock = await readFile('Cargo.lock', 'utf-8');
 const cargoVersion = readWorkspaceCargoVersion(cargoToml);
+const cargoLockWorkspacePackages = [
+  'csv-anonymizer-app',
+  'csv-anonymizer-core',
+  'csv-anonymizer-tauri'
+];
+const cargoLockVersions = readCargoLockPackageVersions(cargoLock, cargoLockWorkspacePackages);
 
 if (!validateSemver(packageJson.version)) {
   throw new Error(`package.json version must be semver-compatible, got ${packageJson.version}`);
@@ -93,6 +114,16 @@ if (!cargoVersion) {
 
 if (cargoVersion !== packageJson.version) {
   throw new Error(`Cargo.toml workspace package version ${cargoVersion} does not match package.json version ${packageJson.version}`);
+}
+
+for (const packageName of cargoLockWorkspacePackages) {
+  if (!cargoLockVersions.has(packageName)) {
+    throw new Error(`Cargo.lock must contain workspace package ${packageName}`);
+  }
+  const lockedVersion = cargoLockVersions.get(packageName);
+  if (lockedVersion !== packageJson.version) {
+    throw new Error(`Cargo.lock package ${packageName} version ${lockedVersion} does not match package.json version ${packageJson.version}`);
+  }
 }
 
 if (frontendPackageJson.version !== packageJson.version) {

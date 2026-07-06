@@ -180,7 +180,7 @@ function ReadinessNotes({ privacyReport }: { privacyReport: PrivacyReport }) {
     <div className="report-readiness-notes">
       <strong>{readiness.status === 'blocked' ? 'Blocked by' : 'Needs review'}</strong>
       <ul>
-        {items.slice(0, 3).map((item) => (
+        {items.map((item) => (
           <li key={item}>{item}</li>
         ))}
       </ul>

@@ -111,7 +111,9 @@ impl SmartReplacementMap {
                 .iter()
                 .map(|replacement| replacement.original.clone())
                 .collect::<Vec<_>>();
-            let validation = validated_replacements(&expected_values, replacements);
+            let mut used_outputs = BTreeSet::new();
+            let validation =
+                validated_replacements(&expected_values, replacements, &mut used_outputs);
             map.record_request_batch(expected_values.len(), &validation.rejection_reasons);
             for (original, replacement) in validation.accepted {
                 map.insert(column_index, &original, replacement);
@@ -148,6 +150,14 @@ impl SmartReplacementMap {
         for reason in rejection_reasons {
             *self.rejection_counts.entry(*reason).or_default() += 1;
         }
+    }
+
+    fn output_keys_for_column(&self, column_index: usize) -> BTreeSet<String> {
+        self.replacements
+            .values()
+            .filter(|replacement| replacement.column_index == column_index)
+            .map(|replacement| normalized_value_key(&replacement.replacement))
+            .collect()
     }
 }
 
@@ -317,6 +327,7 @@ fn build_replacement_map(
                     .to_string(),
             ));
         };
+        let mut used_outputs = map.output_keys_for_column(column_index);
 
         for chunk in missing_values.chunks(SMART_REPLACEMENT_BATCH_SIZE) {
             let requested = chunk.len();
@@ -324,7 +335,7 @@ fn build_replacement_map(
                 column,
                 values: chunk,
             })?;
-            let validation = validated_replacements(chunk, replacements);
+            let validation = validated_replacements(chunk, replacements, &mut used_outputs);
             map.record_request_batch(requested, &validation.rejection_reasons);
             for (original, replacement) in validation.accepted {
                 map.insert(column_index, &original, replacement);
@@ -355,12 +366,12 @@ struct ValidatedSmartReplacements {
 fn validated_replacements(
     expected_values: &[String],
     replacements: Vec<SmartReplacement>,
+    used_outputs: &mut BTreeSet<String>,
 ) -> ValidatedSmartReplacements {
     let expected_by_key = expected_values
         .iter()
         .map(|value| (normalized_value_key(value), value.clone()))
         .collect::<HashMap<_, _>>();
-    let mut used_outputs = BTreeSet::new();
     let mut seen_expected_originals = BTreeSet::new();
     let mut accepted_originals = BTreeSet::new();
     let mut accepted = Vec::new();

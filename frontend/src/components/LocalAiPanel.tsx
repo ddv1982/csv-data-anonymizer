@@ -95,7 +95,7 @@ export function LocalAiPanel({
               id="local-ai-model"
               list="local-ai-model-options"
               value={model}
-              disabled={disabled || !enabled}
+              disabled={disabled || !enabled || downloading}
               placeholder={defaultLocalAiModel}
               onChange={(event) => onModelChange(event.target.value)}
             />
@@ -145,7 +145,7 @@ export function LocalAiPanel({
                   key={availableModel}
                   type="button"
                   className={availableModel === selectedModel ? 'local-ai-model-option selected' : 'local-ai-model-option'}
-                  disabled={disabled || !enabled}
+                  disabled={disabled || !enabled || downloading}
                   aria-pressed={availableModel === selectedModel}
                   onClick={() => onModelChange(availableModel)}
                 >
