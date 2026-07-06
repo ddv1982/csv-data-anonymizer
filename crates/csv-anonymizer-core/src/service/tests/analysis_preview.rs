@@ -380,6 +380,34 @@ fn preview_applies_per_column_type_and_strategy_controls() {
 }
 
 #[test]
+fn type_override_updates_report_risk_for_effective_type() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("type-override-risk.csv");
+    let output_path = temp_dir.path().join("type-override-risk-output.csv");
+    fs::write(&input_path, "value\nnot-an-email\n").unwrap();
+
+    let result = service
+        .anonymize_csv(AnonymizeParams {
+            file_path: input_path,
+            output_path,
+            columns: vec![0],
+            controls: vec![ColumnControl {
+                column_index: 0,
+                type_override: Some(DataType::Email),
+                strategy: AnonymizationStrategy::Redact,
+            }],
+            force: false,
+            preview_smart_replacements: vec![],
+        })
+        .unwrap();
+
+    let report = &result.privacy_report.column_reports[0];
+    assert_eq!(report.detected_type, DataType::Email);
+    assert_eq!(report.pii_risk, crate::types::PiiRisk::High);
+}
+
+#[test]
 fn preview_warns_for_pass_through_and_no_op_columns() {
     let service = AnonymizerService::new("test-version");
     let temp_dir = tempfile::tempdir().unwrap();

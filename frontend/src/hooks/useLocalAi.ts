@@ -23,8 +23,6 @@ export function useLocalAi(settings: AppSettings, onError: (message: string) => 
   )
   const selectedModel = request.model.trim() || defaultLocalAiModel
   const statusMatchesModel = status?.model === selectedModel
-  const downloadMatchesModel = downloadStatus?.model === selectedModel
-
   const refresh = useCallback(async () => {
     try {
       setStatus(await getLocalAiStatus(request))
@@ -111,7 +109,7 @@ export function useLocalAi(settings: AppSettings, onError: (message: string) => 
     selectedModel,
     statusMatchesModel,
     ready: Boolean(settings.localAiEnabled && statusMatchesModel && status?.ready),
-    downloadRunning: Boolean(downloadMatchesModel && downloadStatus?.state === 'running'),
+    downloadRunning: downloadStatus?.state === 'running',
     refresh,
     startDownload,
     cancelDownload,

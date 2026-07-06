@@ -71,6 +71,29 @@ describe('PrivacyReportSummary', () => {
     expect(screen.getByText('Showing 1 of 1')).toBeInTheDocument()
   })
 
+  it('renders every column decision instead of hiding later columns', () => {
+    const columnReports = Array.from({ length: 13 }, (_, index) => ({
+      columnIndex: index,
+      columnName: `column-${index}`,
+      selected: true,
+      detectedType: 'email' as const,
+      piiRisk: 'high' as const,
+      strategy: 'redact' as const,
+      action: 'Redacted values',
+      status: 'verified' as const,
+      detail: 'Selected values were redacted.',
+    }))
+
+    render(
+      <PrivacyReportSummary
+        privacyReport={privacyReportFixture({ columnReports })}
+      />,
+    )
+
+    expect(screen.getByText('Showing 13 of 13')).toBeInTheDocument()
+    expect(screen.getByText('column-12')).toBeInTheDocument()
+  })
+
   it('surfaces readiness review items above the details sections', () => {
     render(
       <PrivacyReportSummary
@@ -87,5 +110,22 @@ describe('PrivacyReportSummary', () => {
 
     expect(screen.getByText('Needs review')).toBeInTheDocument()
     expect(screen.getByText('Check low confidence columns')).toBeInTheDocument()
+  })
+
+  it('renders every readiness item that needs review', () => {
+    render(
+      <PrivacyReportSummary
+        privacyReport={privacyReportFixture({
+          readiness: {
+            status: 'review',
+            blockers: [],
+            reviewItems: ['Review 1', 'Review 2', 'Review 3', 'Review 4'],
+            verifiedItems: [],
+          },
+        })}
+      />,
+    )
+
+    expect(screen.getByText('Review 4')).toBeInTheDocument()
   })
 })
