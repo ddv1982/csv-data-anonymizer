@@ -2,10 +2,12 @@ use super::shared::authorize_or_confirm_output_file;
 use crate::jobs::{AnonymizeJobStatus, AnonymizeJobStore, run_anonymize_job};
 use crate::local_ai::LocalAiRequest;
 use crate::path_access::PathAccess;
+use crate::settings::SettingsStore;
 use csv_anonymizer_core::{AnonymizeParams, ColumnControl, SmartReplacementEntry};
 use serde::Deserialize;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
+use std::sync::Arc;
 use tauri::State;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -28,11 +30,16 @@ pub struct StartAnonymizeJobRequest {
 pub async fn start_anonymize_job(
     app: tauri::AppHandle,
     path_access: State<'_, PathAccess>,
+    settings: State<'_, Arc<SettingsStore>>,
     jobs: State<'_, AnonymizeJobStore>,
     request: StartAnonymizeJobRequest,
 ) -> Result<AnonymizeJobStatus, String> {
     let file_path = path_access.authorize_input_file(request.file_path)?;
     let output_path = authorize_or_confirm_output_file(&app, &path_access, request.output_path)?;
+    let local_ai_enabled = settings
+        .load_settings()
+        .map(|settings| settings.local_ai_enabled)
+        .map_err(|error| format!("Could not load settings: {error}"))?;
     let job = jobs.create_job(request.total_row_count)?;
     let initial_status = job.snapshot()?;
     let worker_job = job.clone();
@@ -52,6 +59,7 @@ pub async fn start_anonymize_job(
                 },
                 request.sample_row_count,
                 request.local_ai,
+                local_ai_enabled,
             );
         }));
         if result.is_err() {

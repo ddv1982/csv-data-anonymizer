@@ -1,6 +1,6 @@
 # Dependency Audit Follow-Ups
 
-Last reviewed: 2026-07-02
+Last reviewed: 2026-07-09
 
 Cleanup coordination note: the behavior-preserving cleanup pass tracked in
 `docs/cleanup-phased-plan-2026-07-01.md` intentionally avoided dependency
@@ -20,11 +20,15 @@ when no source change or release workflow is running.
 
 ## Current Audit State
 
-- RustSec database: 2026-07-02 10:52:02 +02:00, 1149 advisories.
-- Lockfile dependency count: 531.
+- RustSec database: 2026-07-09, 1159 advisories.
+- Lockfile dependency count: 532.
 - Vulnerabilities: 2 temporarily ignored Tauri/plist-transitive `quick-xml`
   advisories: `RUSTSEC-2026-0194` and `RUSTSEC-2026-0195`.
-- Informational warnings: 17 unmaintained packages and 1 unsound package.
+- `RUSTSEC-2026-0204` for dev-only `criterion -> rayon -> rayon-core ->
+  crossbeam-deque -> crossbeam-epoch` was cleared by refreshing
+  `crossbeam-epoch` from `0.9.18` to `0.9.20` in `Cargo.lock`.
+- Informational warnings: 17 unmaintained packages and 1 unsound package (18
+  allowed warnings total).
 
 ## Latest Upgrade Research Snapshot
 

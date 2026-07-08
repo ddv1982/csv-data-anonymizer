@@ -38,6 +38,10 @@ const formatOptions: Array<{ value: PasteDataFormat; label: string }> = [
   { value: 'auto', label: formatLabels.auto },
   { value: 'csv', label: formatLabels.csv },
   { value: 'json', label: formatLabels.json },
+  { value: 'xml', label: formatLabels.xml },
+  { value: 'yaml', label: formatLabels.yaml },
+  { value: 'plainText', label: formatLabels.plainText },
+  { value: 'logs', label: formatLabels.logs },
 ]
 
 export function PasteDataWorkflowView({

@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.73 - 2026-07-09
+
+- Seal the overwrite and XML privacy cracks by rejecting same-file output paths even when relative and absolute spellings differ, transforming selected XML CDATA values, and counting IBAN/account evidence in privacy-report aggregates.
+- Make Local AI consent a backend trust boundary: selected Smart replacement work now requires the persisted Local AI opt-in before any Ollama provider is constructed.
+- Restore paste-format discoverability, clear the dev-only `crossbeam-epoch` RustSec blocker, refresh dependency audit lore, and harden the macOS release keychain list without changing signing semantics.
+
 ## v1.0.72 - 2026-07-06
 
 - Show every privacy-report readiness item and column decision so review blockers and later columns are not hidden behind compact truncation.
