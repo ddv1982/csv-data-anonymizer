@@ -103,13 +103,10 @@ pub fn smart_provider_for_request(
     selected_columns: &[usize],
     local_ai_enabled: bool,
 ) -> Result<Option<OllamaSmartReplacementProvider>, String> {
-    if !controls
-        .iter()
-        .any(|control| {
-            selected_columns.contains(&control.column_index)
-                && control.strategy == AnonymizationStrategy::LocalAi
-        })
-    {
+    if !controls.iter().any(|control| {
+        selected_columns.contains(&control.column_index)
+            && control.strategy == AnonymizationStrategy::LocalAi
+    }) {
         return Ok(None);
     }
 
@@ -136,8 +133,9 @@ fn smart_provider_for_enabled_request(
         return Ok(None);
     };
     if !local_ai_enabled {
-        return Err("Local AI is off. Enable it in Settings before choosing Smart replacement."
-            .to_string());
+        return Err(
+            "Local AI is off. Enable it in Settings before choosing Smart replacement.".to_string(),
+        );
     }
     OllamaSmartReplacementProvider::new(request.model_name())
         .map(Some)
@@ -165,9 +163,13 @@ mod tests {
 
     #[test]
     fn rejects_request_enabled_when_persisted_local_ai_consent_is_off() {
-        let error =
-            smart_provider_for_request(Some(local_ai_request()), &[local_ai_control()], &[0], false)
-                .unwrap_err();
+        let error = smart_provider_for_request(
+            Some(local_ai_request()),
+            &[local_ai_control()],
+            &[0],
+            false,
+        )
+        .unwrap_err();
 
         assert!(error.contains("Local AI is off"));
     }
@@ -191,9 +193,13 @@ mod tests {
 
     #[test]
     fn ignores_unselected_local_ai_controls() {
-        let provider =
-            smart_provider_for_request(Some(local_ai_request()), &[local_ai_control()], &[1], false)
-                .unwrap();
+        let provider = smart_provider_for_request(
+            Some(local_ai_request()),
+            &[local_ai_control()],
+            &[1],
+            false,
+        )
+        .unwrap();
 
         assert!(provider.is_none());
     }
