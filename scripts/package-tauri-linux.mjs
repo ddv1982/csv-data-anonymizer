@@ -2,7 +2,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, copyFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { isCurrentVersionDesktopArtifactName, runOrExit } from './command-utils.mjs'
+import { isCurrentVersionDesktopArtifactName, run, runOrExit } from './command-utils.mjs'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const args = new Set(process.argv.slice(2))
@@ -17,6 +17,29 @@ const bundleRootCandidates = [
 const artifactDir = path.join(repoRoot, 'dist', 'rust', 'artifacts')
 const packageJson = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8'))
 const version = packageJson.version
+const tauriCwd = path.join(repoRoot, 'src-tauri')
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function runOrRetry(label, command, args, options = {}) {
+  const attempts = options.attempts ?? 3
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const result = run(command, args, { ...options, allowFailure: true })
+    if (result.status === 0) return
+
+    if (attempt === attempts) {
+      console.error(`${label} failed after ${attempts} attempts.`)
+      process.exit(result.status ?? 1)
+    }
+
+    const delaySeconds = attempt * 30
+    console.warn(`${label} failed on attempt ${attempt}; retrying in ${delaySeconds}s.`)
+    await sleep(delaySeconds * 1000)
+  }
+}
 
 function bundleDirectory() {
   for (const candidate of bundleRootCandidates) {
@@ -63,9 +86,18 @@ if (!skipBuild) {
     })
   }
 
-  runOrExit('cargo', ['tauri', 'build', '--target', target], {
-    cwd: path.join(repoRoot, 'src-tauri'),
+  runOrExit('cargo', ['tauri', 'build', '--target', target, '--no-bundle'], {
+    cwd: tauriCwd,
   })
+  runOrExit('cargo', ['tauri', 'bundle', '--target', target, '--bundles', 'deb,rpm'], {
+    cwd: tauriCwd,
+  })
+  await runOrRetry(
+    'Tauri AppImage bundle',
+    'cargo',
+    ['tauri', 'bundle', '--target', target, '--bundles', 'appimage'],
+    { cwd: tauriCwd },
+  )
 } else {
   runOrExit('bash', ['scripts/build_frontend_for_tauri.sh'], {
     cwd: repoRoot,
