@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.75 - 2026-07-09
+
+- Supersede the failed v1.0.74 tag without moving it, preserving the release-validation formatting fix while splitting Linux packaging into separate deb/rpm and retried AppImage bundling steps to tolerate transient AppImage helper download rate limits.
+
 ## v1.0.74 - 2026-07-09
 
 - Supersede the failed v1.0.73 tag without moving it, preserving the overwrite, XML CDATA, privacy-report, Local AI consent, paste-format, dependency-audit, and release keychain hardening while restoring release validation formatting.
