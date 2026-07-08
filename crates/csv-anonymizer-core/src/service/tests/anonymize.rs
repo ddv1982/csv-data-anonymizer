@@ -385,9 +385,7 @@ fn anonymize_rejects_output_path_equal_to_input_even_with_force() {
 fn anonymize_rejects_absolute_input_matching_bare_relative_output() {
     let service = AnonymizerService::new("test-version");
     let mut input_file = tempfile::NamedTempFile::new_in(std::env::current_dir().unwrap()).unwrap();
-    input_file
-        .write_all(b"email\nada@example.com\n")
-        .unwrap();
+    input_file.write_all(b"email\nada@example.com\n").unwrap();
     let input_path = input_file.path().canonicalize().unwrap();
     let output_path = input_path.file_name().unwrap().into();
 

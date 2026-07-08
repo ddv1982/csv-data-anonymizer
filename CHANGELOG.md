@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.74 - 2026-07-09
+
+- Supersede the failed v1.0.73 tag without moving it, preserving the overwrite, XML CDATA, privacy-report, Local AI consent, paste-format, dependency-audit, and release keychain hardening while restoring release validation formatting.
+
 ## v1.0.73 - 2026-07-09
 
 - Seal the overwrite and XML privacy cracks by rejecting same-file output paths even when relative and absolute spellings differ, transforming selected XML CDATA values, and counting IBAN/account evidence in privacy-report aggregates.
