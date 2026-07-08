@@ -1,4 +1,5 @@
 use super::*;
+use std::io::Write;
 
 #[test]
 fn anonymizes_selected_columns_without_web_runtime() {
@@ -378,4 +379,61 @@ fn anonymize_rejects_output_path_equal_to_input_even_with_force() {
     );
     let original = fs::read_to_string(&input_path).unwrap();
     assert_eq!(original, "email\nada@example.com\n");
+}
+
+#[test]
+fn anonymize_rejects_absolute_input_matching_bare_relative_output() {
+    let service = AnonymizerService::new("test-version");
+    let mut input_file = tempfile::NamedTempFile::new_in(std::env::current_dir().unwrap()).unwrap();
+    input_file
+        .write_all(b"email\nada@example.com\n")
+        .unwrap();
+    let input_path = input_file.path().canonicalize().unwrap();
+    let output_path = input_path.file_name().unwrap().into();
+
+    let error = service
+        .anonymize_csv(AnonymizeParams {
+            file_path: input_path.clone(),
+            output_path,
+            columns: vec![0],
+            controls: vec![],
+            force: true,
+            preview_smart_replacements: vec![],
+        })
+        .unwrap_err();
+
+    assert!(
+        error.to_string().contains("must differ from the input"),
+        "unexpected error: {error}"
+    );
+    let original = fs::read_to_string(&input_path).unwrap();
+    assert_eq!(original, "email\nada@example.com\n");
+}
+
+#[test]
+fn anonymize_counts_iban_evidence_as_quasi_identifier() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("iban.csv");
+    let output_path = temp_dir.path().join("iban-output.csv");
+    fs::write(
+        &input_path,
+        "rekening\nGB82 WEST 1234 5698 7654 32\nNL91ABNA0417164300\n",
+    )
+    .unwrap();
+
+    let result = service
+        .anonymize_csv(AnonymizeParams {
+            file_path: input_path,
+            output_path,
+            columns: vec![0],
+            controls: vec![],
+            force: false,
+            preview_smart_replacements: vec![],
+        })
+        .unwrap();
+
+    assert_eq!(result.privacy_report.direct_identifiers, 0);
+    assert_eq!(result.privacy_report.quasi_identifiers, 1);
+    assert_eq!(result.privacy_report.redacted_columns, 1);
 }

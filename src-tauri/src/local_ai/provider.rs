@@ -100,35 +100,113 @@ impl SmartReplacementProvider for OllamaSmartReplacementProvider {
 pub fn smart_provider_for_request(
     request: Option<LocalAiRequest>,
     controls: &[ColumnControl],
+    selected_columns: &[usize],
+    local_ai_enabled: bool,
 ) -> Result<Option<OllamaSmartReplacementProvider>, String> {
     if !controls
         .iter()
-        .any(|control| control.strategy == AnonymizationStrategy::LocalAi)
+        .any(|control| {
+            selected_columns.contains(&control.column_index)
+                && control.strategy == AnonymizationStrategy::LocalAi
+        })
     {
         return Ok(None);
     }
 
-    smart_provider_for_enabled_request(request)
+    smart_provider_for_enabled_request(request, local_ai_enabled)
 }
 
 pub fn smart_provider_for_strategy(
     request: Option<LocalAiRequest>,
     strategy: AnonymizationStrategy,
+    local_ai_enabled: bool,
 ) -> Result<Option<OllamaSmartReplacementProvider>, String> {
     if strategy != AnonymizationStrategy::LocalAi {
         return Ok(None);
     }
 
-    smart_provider_for_enabled_request(request)
+    smart_provider_for_enabled_request(request, local_ai_enabled)
 }
 
 fn smart_provider_for_enabled_request(
     request: Option<LocalAiRequest>,
+    local_ai_enabled: bool,
 ) -> Result<Option<OllamaSmartReplacementProvider>, String> {
     let Some(request) = request.filter(|request| request.enabled) else {
         return Ok(None);
     };
+    if !local_ai_enabled {
+        return Err("Local AI is off. Enable it in Settings before choosing Smart replacement."
+            .to_string());
+    }
     OllamaSmartReplacementProvider::new(request.model_name())
         .map(Some)
         .map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn local_ai_request() -> LocalAiRequest {
+        LocalAiRequest {
+            enabled: true,
+            model: "gemma3:4b".to_string(),
+        }
+    }
+
+    fn local_ai_control() -> ColumnControl {
+        ColumnControl {
+            column_index: 0,
+            type_override: None,
+            strategy: AnonymizationStrategy::LocalAi,
+        }
+    }
+
+    #[test]
+    fn rejects_request_enabled_when_persisted_local_ai_consent_is_off() {
+        let error =
+            smart_provider_for_request(Some(local_ai_request()), &[local_ai_control()], &[0], false)
+                .unwrap_err();
+
+        assert!(error.contains("Local AI is off"));
+    }
+
+    #[test]
+    fn ignores_persisted_local_ai_consent_for_non_local_ai_controls() {
+        let provider = smart_provider_for_request(
+            Some(local_ai_request()),
+            &[ColumnControl {
+                column_index: 0,
+                type_override: None,
+                strategy: AnonymizationStrategy::Mask,
+            }],
+            &[0],
+            false,
+        )
+        .unwrap();
+
+        assert!(provider.is_none());
+    }
+
+    #[test]
+    fn ignores_unselected_local_ai_controls() {
+        let provider =
+            smart_provider_for_request(Some(local_ai_request()), &[local_ai_control()], &[1], false)
+                .unwrap();
+
+        assert!(provider.is_none());
+    }
+
+    #[test]
+    fn creates_provider_when_request_and_persisted_consent_are_enabled() {
+        let provider = smart_provider_for_strategy(
+            Some(local_ai_request()),
+            AnonymizationStrategy::LocalAi,
+            true,
+        )
+        .unwrap();
+
+        assert!(provider.is_some());
+    }
 }

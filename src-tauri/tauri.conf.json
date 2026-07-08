@@ -70,5 +70,5 @@
   "productName": "CSV Anonymizer",
   "mainBinaryName": "csv-anonymizer",
   "identifier": "io.github.ddv1982.csv-data-anonymizer",
-  "version": "1.0.72"
+  "version": "1.0.73"
 }

@@ -16,9 +16,9 @@ use crate::strategies::{STRUCTURED_SCALAR_REDACTION_WARNING, TransformState};
 use crate::types::{
     AnonymizationStrategy, AnonymizeData, AnonymizeParams, ColumnControl, ColumnMetadata,
     HeadersData, PreflightData, PreflightMode, PreflightParams, PreviewData, PreviewParams,
-    PreviewWarning, PrivacyReport, ProcessControl, ProcessOptions, ReleaseEvidenceItem,
-    ReleaseEvidenceStatus, ReleaseReadiness, ReleaseReadinessStatus, ReportIdentifierClass,
-    SmartReplacementEntry, WarningSeverity,
+    PreviewWarning, PrivacyFindingKind, PrivacyReport, ProcessControl, ProcessOptions,
+    ReleaseEvidenceItem, ReleaseEvidenceStatus, ReleaseReadiness, ReleaseReadinessStatus,
+    ReportIdentifierClass, SmartReplacementEntry, WarningSeverity,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -499,6 +499,7 @@ fn normalize_path(path: &Path) -> Result<PathBuf> {
 // canonicalized paths so symlinks and relative spellings cannot bypass the guard.
 fn ensure_output_differs_from_input(input_path: &Path, output_path: &Path) -> Result<()> {
     let canonical_input = fs::canonicalize(input_path).unwrap_or_else(|_| input_path.to_path_buf());
+    let output_path = normalize_path(output_path)?;
     let canonical_output = match (output_path.parent(), output_path.file_name()) {
         (Some(parent), Some(name)) if !parent.as_os_str().is_empty() => fs::canonicalize(parent)
             .map(|parent| parent.join(name))
@@ -686,7 +687,7 @@ pub(crate) fn build_privacy_report(
     };
 
     for column in columns.iter().filter(|column| column.is_selected) {
-        match column.detected_type.report_identifier_class() {
+        match report_identifier_class_for_column(column) {
             Some(ReportIdentifierClass::Direct) => report.direct_identifiers += 1,
             Some(ReportIdentifierClass::Quasi) => report.quasi_identifiers += 1,
             None => {}
@@ -717,6 +718,16 @@ pub(crate) fn build_privacy_report(
     report.utility_metrics = build_utility_metrics(columns, &context);
 
     report
+}
+
+fn report_identifier_class_for_column(column: &ColumnMetadata) -> Option<ReportIdentifierClass> {
+    column.detected_type.report_identifier_class().or_else(|| {
+        column
+            .privacy_evidence
+            .iter()
+            .any(|evidence| evidence.kind == PrivacyFindingKind::AccountOrFinancialId)
+            .then_some(ReportIdentifierClass::Quasi)
+    })
 }
 
 pub(crate) fn count_transforming_selected_columns(columns: &[ColumnMetadata]) -> usize {

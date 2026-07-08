@@ -167,6 +167,7 @@ pub fn run_anonymize_job(
     input: AnonymizeParams,
     sample_row_count: usize,
     local_ai: Option<LocalAiRequest>,
+    local_ai_enabled: bool,
 ) {
     let progress_job = job.clone();
     let mut on_progress = move |progress: ProcessProgress| {
@@ -179,7 +180,12 @@ pub fn run_anonymize_job(
         should_cancel: Some(&should_cancel),
     };
 
-    let result = match smart_provider_for_request(local_ai, &input.controls) {
+    let result = match smart_provider_for_request(
+        local_ai,
+        &input.controls,
+        &input.columns,
+        local_ai_enabled,
+    ) {
         Ok(mut provider) => {
             let provider = provider
                 .as_mut()
@@ -393,6 +399,7 @@ mod tests {
             },
             10,
             None,
+            false,
         );
 
         let status = job.snapshot().unwrap();
@@ -429,6 +436,7 @@ mod tests {
             },
             10,
             None,
+            false,
         );
 
         let status = job.snapshot().unwrap();
@@ -469,6 +477,7 @@ mod tests {
             },
             10,
             None,
+            false,
         );
 
         let status = job.snapshot().unwrap();
@@ -505,6 +514,7 @@ mod tests {
             },
             10,
             None,
+            false,
         );
 
         let status = job.snapshot().unwrap();

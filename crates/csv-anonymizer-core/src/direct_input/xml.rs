@@ -6,7 +6,7 @@ use crate::types::{
     ColumnMetadata, PasteAnalyzeData, PasteDataFormat, PastePreviewParams, PasteTransformData,
     PasteTransformParams, PreviewData, TransformContext,
 };
-use quick_xml::events::{BytesText, Event};
+use quick_xml::events::{BytesCData, BytesText, Event};
 use quick_xml::{Reader, Writer, XmlVersion};
 use std::collections::HashMap;
 use std::time::Instant;
@@ -247,6 +247,42 @@ fn transform_xml_content(
                 } else {
                     writer
                         .write_event(Event::Text(event))
+                        .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?;
+                }
+            }
+            Event::CData(event) => {
+                let path_name = xml_text_source_path(&path);
+                if let Some(column) = transform_context.selected_by_path.get(&path_name) {
+                    let value = event
+                        .decode()
+                        .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?;
+                    if value.trim().is_empty() {
+                        writer.write_event(Event::CData(event)).map_err(|error| {
+                            AnonymizerError::input_parse("XML", error.to_string())
+                        })?;
+                    } else {
+                        let row_index = next_row_index(transform_context.row_indices, &path_name);
+                        let context = TransformContext {
+                            column_name: &column.name,
+                            column_index: column.index,
+                            row_index,
+                            empty_format: column.empty_format,
+                        };
+                        let anonymized = transform_value_with_state(
+                            value.trim(),
+                            column,
+                            &context,
+                            transform_context.state,
+                        );
+                        writer
+                            .write_event(Event::CData(BytesCData::new(&anonymized)))
+                            .map_err(|error| {
+                                AnonymizerError::input_parse("XML", error.to_string())
+                            })?;
+                    }
+                } else {
+                    writer
+                        .write_event(Event::CData(event))
                         .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?;
                 }
             }

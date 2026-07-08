@@ -256,6 +256,38 @@ fn transforms_xml_attributes_and_text() {
 }
 
 #[test]
+fn transforms_selected_xml_cdata() {
+    let input = r#"<users><user><name><![CDATA[Ada Lovelace]]></name></user></users>"#;
+    let analysis = analyze_paste_data(PasteAnalyzeParams {
+        content: input.to_string(),
+        format: PasteDataFormat::Xml,
+        sample_row_count: 10,
+    })
+    .unwrap();
+    let name = analysis
+        .columns
+        .iter()
+        .find(|column| column.name == "users.user.name")
+        .unwrap();
+
+    let result = transform_paste_data(PasteTransformParams {
+        content: input.to_string(),
+        format: PasteDataFormat::Xml,
+        columns: vec![name.index],
+        controls: vec![ColumnControl {
+            column_index: name.index,
+            type_override: Some(DataType::FullName),
+            strategy: AnonymizationStrategy::Redact,
+        }],
+        preview_smart_replacements: Vec::new(),
+    })
+    .unwrap();
+
+    assert!(!result.output.contains("Ada Lovelace"));
+    assert!(result.output.contains("<![CDATA["));
+}
+
+#[test]
 fn json_paths_distinguish_literal_dotted_keys_from_nested_keys() {
     let input = r#"{
   "a.b": "literal@example.com",

@@ -109,6 +109,27 @@ describe('App input mode tabs', () => {
     expect(tauriMocks.analyzePasteData).toHaveBeenCalledTimes(1)
   })
 
+  it('exposes all supported paste data formats', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('tab', { name: /paste sample/i }))
+
+    const options = within(screen.getByLabelText(/format/i))
+      .getAllByRole('option')
+      .map((option) => option.textContent)
+
+    expect(options).toEqual([
+      'Auto detect',
+      'CSV text',
+      'JSON',
+      'XML',
+      'YAML',
+      'Plain text',
+      'Log lines',
+    ])
+  })
+
   it('disables Select Detected Risk in the CSV workflow when no risky columns are detected', async () => {
     const user = userEvent.setup()
     tauriMocks.pickInputCsv.mockResolvedValue('/data/input.csv')

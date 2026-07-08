@@ -6,6 +6,7 @@ use crate::local_ai::{
     LocalAiRequest, local_ai_status, smart_provider_for_request, smart_provider_for_strategy,
 };
 use crate::path_access::PathAccess;
+use crate::settings::SettingsStore;
 use csv_anonymizer_core::{
     AnonymizationStrategy, ColumnControl, HeadersData, PasteAnalyzeData, PasteAnalyzeParams,
     PastePreviewParams, PasteTransformData, PasteTransformParams, PreflightData, PreflightMode,
@@ -14,6 +15,7 @@ use csv_anonymizer_core::{
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::Arc;
 use tauri::State;
 
 #[derive(Debug, Clone, Serialize)]
@@ -75,6 +77,13 @@ pub struct QuickGenerateRequest {
     pub local_ai: Option<LocalAiRequest>,
 }
 
+fn load_local_ai_enabled(settings: &State<'_, Arc<SettingsStore>>) -> Result<bool, String> {
+    settings
+        .load_settings()
+        .map(|settings| settings.local_ai_enabled)
+        .map_err(|error| format!("Could not load settings: {error}"))
+}
+
 #[tauri::command]
 pub async fn analyze_csv(
     app: tauri::AppHandle,
@@ -112,11 +121,18 @@ pub async fn analyze_csv(
 #[tauri::command]
 pub async fn preview_anonymization(
     path_access: State<'_, PathAccess>,
+    settings: State<'_, Arc<SettingsStore>>,
     request: PreviewRequest,
 ) -> Result<PreviewData, String> {
     let file_path = path_access.authorize_input_file(request.file_path)?;
+    let local_ai_enabled = load_local_ai_enabled(&settings)?;
     run_blocking(move || {
-        let mut provider = smart_provider_for_request(request.local_ai, &request.controls)?;
+        let mut provider = smart_provider_for_request(
+            request.local_ai,
+            &request.controls,
+            &request.columns,
+            local_ai_enabled,
+        )?;
         let provider = provider
             .as_mut()
             .map(|provider| provider as &mut dyn SmartReplacementProvider);
@@ -139,6 +155,7 @@ pub async fn preview_anonymization(
 pub async fn preflight_anonymization(
     app: tauri::AppHandle,
     path_access: State<'_, PathAccess>,
+    settings: State<'_, Arc<SettingsStore>>,
     request: PreflightRequest,
 ) -> Result<PreflightData, String> {
     let mode = request.mode;
@@ -149,13 +166,22 @@ pub async fn preflight_anonymization(
         }
         (_, output_path) => output_path,
     };
+    let local_ai_enabled = load_local_ai_enabled(&settings)?;
 
     run_blocking(move || {
         let local_ai_required = request.controls.iter().any(|control| {
             request.columns.contains(&control.column_index)
                 && control.strategy == AnonymizationStrategy::LocalAi
         });
-        let (local_ai_ready, local_ai_message) = if local_ai_required {
+        let (local_ai_ready, local_ai_message) = if local_ai_required && !local_ai_enabled {
+            (
+                false,
+                Some(
+                    "Local AI is off. Enable it in Settings before choosing Smart replacement."
+                        .to_string(),
+                ),
+            )
+        } else if local_ai_required {
             match request.local_ai.clone() {
                 Some(local_ai) => match local_ai_status(local_ai) {
                     Ok(status) => (status.ready, Some(status.message)),
@@ -215,9 +241,18 @@ pub async fn analyze_pasted_data(request: PasteAnalyzeParams) -> Result<PasteAna
 }
 
 #[tauri::command]
-pub async fn preview_pasted_data(request: PastePreviewRequest) -> Result<PreviewData, String> {
+pub async fn preview_pasted_data(
+    settings: State<'_, Arc<SettingsStore>>,
+    request: PastePreviewRequest,
+) -> Result<PreviewData, String> {
+    let local_ai_enabled = load_local_ai_enabled(&settings)?;
     run_blocking(move || {
-        let mut provider = smart_provider_for_request(request.local_ai, &request.params.controls)?;
+        let mut provider = smart_provider_for_request(
+            request.local_ai,
+            &request.params.controls,
+            &request.params.columns,
+            local_ai_enabled,
+        )?;
         let provider = provider
             .as_mut()
             .map(|provider| provider as &mut dyn SmartReplacementProvider);
@@ -232,10 +267,17 @@ pub async fn preview_pasted_data(request: PastePreviewRequest) -> Result<Preview
 
 #[tauri::command]
 pub async fn anonymize_pasted_data(
+    settings: State<'_, Arc<SettingsStore>>,
     request: PasteTransformRequest,
 ) -> Result<PasteTransformData, String> {
+    let local_ai_enabled = load_local_ai_enabled(&settings)?;
     run_blocking(move || {
-        let mut provider = smart_provider_for_request(request.local_ai, &request.params.controls)?;
+        let mut provider = smart_provider_for_request(
+            request.local_ai,
+            &request.params.controls,
+            &request.params.columns,
+            local_ai_enabled,
+        )?;
         let provider = provider
             .as_mut()
             .map(|provider| provider as &mut dyn SmartReplacementProvider);
@@ -250,10 +292,16 @@ pub async fn anonymize_pasted_data(
 
 #[tauri::command]
 pub async fn generate_quick_values(
+    settings: State<'_, Arc<SettingsStore>>,
     request: QuickGenerateRequest,
 ) -> Result<QuickTransformData, String> {
+    let local_ai_enabled = load_local_ai_enabled(&settings)?;
     run_blocking(move || {
-        let mut provider = smart_provider_for_strategy(request.local_ai, request.params.strategy)?;
+        let mut provider = smart_provider_for_strategy(
+            request.local_ai,
+            request.params.strategy,
+            local_ai_enabled,
+        )?;
         let provider = provider
             .as_mut()
             .map(|provider| provider as &mut dyn SmartReplacementProvider);
