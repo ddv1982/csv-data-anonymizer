@@ -5,6 +5,8 @@ use std::path::PathBuf;
 pub(super) const SETTINGS_SCHEMA_VERSION: u32 = 10;
 pub(super) const DEFAULT_OUTPUT_SUFFIX: &str = "_private_output";
 pub(super) const LEGACY_OUTPUT_SUFFIX: &str = "_anonymized";
+pub const MAX_SAMPLE_ROW_COUNT: usize = 10_000;
+pub const MAX_PREVIEW_SAMPLE_COUNT: usize = 100;
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -54,8 +56,14 @@ impl Default for AppSettings {
 
 pub fn sanitize_settings(settings: &mut AppSettings) {
     settings.schema_version = SETTINGS_SCHEMA_VERSION;
-    settings.sample_row_count = settings.sample_row_count.clamp(1, 10_000);
-    settings.preview_sample_count = settings.preview_sample_count.clamp(1, 100);
+    settings.sample_row_count = settings.sample_row_count.clamp(1, MAX_SAMPLE_ROW_COUNT);
+    settings.preview_sample_count = settings
+        .preview_sample_count
+        .clamp(1, MAX_PREVIEW_SAMPLE_COUNT);
+    if !settings.remember_last_paths {
+        settings.last_input_directory = None;
+        settings.last_output_directory = None;
+    }
     if settings.default_output_suffix.trim().is_empty() {
         settings.default_output_suffix = DEFAULT_OUTPUT_SUFFIX.to_string();
     }
@@ -66,6 +74,27 @@ pub fn sanitize_settings(settings: &mut AppSettings) {
     }
 }
 
+pub fn validate_sample_count(value: usize, maximum: usize, label: &str) -> Result<(), String> {
+    if (1..=maximum).contains(&value) {
+        Ok(())
+    } else {
+        Err(format!("{label} must be between 1 and {maximum}."))
+    }
+}
+
 fn default_local_ai_model() -> String {
     DEFAULT_OLLAMA_MODEL.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_sample_limits_reject_zero_and_oversized_values() {
+        assert!(validate_sample_count(1, 10, "Samples").is_ok());
+        assert!(validate_sample_count(10, 10, "Samples").is_ok());
+        assert!(validate_sample_count(0, 10, "Samples").is_err());
+        assert!(validate_sample_count(11, 10, "Samples").is_err());
+    }
 }

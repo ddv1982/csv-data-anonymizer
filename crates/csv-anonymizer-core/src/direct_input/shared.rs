@@ -3,12 +3,11 @@ use crate::error::{AnonymizerError, Result};
 use crate::metadata::{
     apply_column_selection, build_column_metadata, default_strategy_for_pii_risk,
 };
-use crate::preview::generate_column_preview;
-use crate::service::{apply_column_controls, preview_warning_for_column, validate_column_indices};
-use crate::smart::{
-    SmartReplacementMap, SmartReplacementProvider, has_smart_replacement_columns,
-    prepare_smart_replacements_from_rows,
+use crate::service::{
+    apply_column_controls, preview_rows_with_smart_provider as build_preview_from_rows,
+    validate_column_indices,
 };
+use crate::smart::{SmartReplacementMap, SmartReplacementProvider, has_smart_replacement_columns};
 use crate::strategies::TransformState;
 use crate::types::{ColumnControl, ColumnMetadata, DataType, PreviewData};
 use std::collections::HashMap;
@@ -48,42 +47,14 @@ pub(super) fn preview_from_rows_with_smart_provider(
     rows: &[Vec<String>],
     selection: PreviewSelection<'_, '_>,
 ) -> Result<PreviewData> {
-    let PreviewSelection {
-        columns,
-        controls,
-        sample_count,
-        provider,
-    } = selection;
-
-    validate_column_indices(metadata, columns)?;
-    let controlled = apply_column_controls(metadata, controls)?;
-    let selected_metadata = apply_column_selection(&controlled, columns);
-    let smart_replacements =
-        prepare_smart_replacements_from_rows(rows, &selected_metadata, None, provider)?;
-    let smart_replacement_entries = smart_replacements.to_entries();
-    let mut state = transform_state_for_smart_replacements(smart_replacements);
-    let mut previews = Vec::new();
-
-    for column in selected_metadata.iter().filter(|column| column.is_selected) {
-        previews.push(generate_column_preview(
-            column,
-            rows,
-            sample_count,
-            &mut state,
-        ));
-    }
-
-    let warnings = selected_metadata
-        .iter()
-        .filter(|column| column.is_selected)
-        .filter_map(preview_warning_for_column)
-        .collect();
-
-    Ok(PreviewData {
-        previews,
-        warnings,
-        smart_replacements: smart_replacement_entries,
-    })
+    build_preview_from_rows(
+        metadata,
+        rows,
+        selection.columns,
+        selection.controls,
+        selection.sample_count,
+        selection.provider,
+    )
 }
 
 pub(super) fn transform_state_for_smart_replacements(

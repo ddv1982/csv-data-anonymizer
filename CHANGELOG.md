@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.76 - 2026-07-13
+
+- Preserve sensitive-data evidence through type overrides so privacy risk and direct/quasi-identifier reporting cannot be understated, with cross-format preview and preflight regressions.
+- Harden desktop lifecycle boundaries by serializing anonymization writers, making settings replacement atomic and self-healing, clearing disabled remembered paths, and enforcing backend sample limits.
+- Separate Rust service and pasted-data workflow orchestration into focused modules and hooks while fixing stale Local AI refreshes, truthful clipboard fallback, and verified orphaned styling.
+- Strengthen release quality gates with tested documentation commands, synthetic Linux package metadata checks, fail-closed workflow invariants, and scoped expiring RustSec exceptions validated against exact findings and dependency paths.
+
 ## v1.0.75 - 2026-07-09
 
 - Supersede the failed v1.0.74 tag without moving it, preserving the release-validation formatting fix while splitting Linux packaging into separate deb/rpm and retried AppImage bundling steps to tolerate transient AppImage helper download rate limits.

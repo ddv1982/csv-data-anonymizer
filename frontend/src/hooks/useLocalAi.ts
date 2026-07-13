@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   cancelLocalAiModelDownload,
   getLocalAiModelDownloadStatus,
@@ -14,6 +14,7 @@ export function useLocalAi(settings: AppSettings, onError: (message: string) => 
   const [status, setStatus] = useState<LocalAiStatus | null>(null)
   const [downloadJobId, setDownloadJobId] = useState<string | null>(null)
   const [downloadStatus, setDownloadStatus] = useState<LocalAiDownloadStatus | null>(null)
+  const refreshSequence = useRef(0)
   const request = useMemo(
     () => ({
       enabled: settings.localAiEnabled,
@@ -24,11 +25,17 @@ export function useLocalAi(settings: AppSettings, onError: (message: string) => 
   const selectedModel = request.model.trim() || defaultLocalAiModel
   const statusMatchesModel = status?.model === selectedModel
   const refresh = useCallback(async () => {
+    const sequence = ++refreshSequence.current
     try {
-      setStatus(await getLocalAiStatus(request))
+      const nextStatus = await getLocalAiStatus(request)
+      if (sequence === refreshSequence.current) {
+        setStatus(nextStatus)
+      }
     } catch (caught) {
-      setStatus(null)
-      onError(messageFrom(caught))
+      if (sequence === refreshSequence.current) {
+        setStatus(null)
+        onError(messageFrom(caught))
+      }
     }
   }, [onError, request])
 
@@ -67,6 +74,13 @@ export function useLocalAi(settings: AppSettings, onError: (message: string) => 
   useEffect(() => {
     void Promise.resolve().then(refresh)
   }, [refresh])
+
+  useEffect(
+    () => () => {
+      refreshSequence.current += 1
+    },
+    [],
+  )
 
   useEffect(() => {
     if (!downloadJobId) return

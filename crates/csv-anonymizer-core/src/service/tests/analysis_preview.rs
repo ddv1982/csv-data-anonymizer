@@ -408,6 +408,57 @@ fn type_override_updates_report_risk_for_effective_type() {
 }
 
 #[test]
+fn type_override_preserves_privacy_evidence_beyond_retained_samples() {
+    let headers = vec!["value".to_string()];
+    let rows = [
+        "alpha",
+        "bravo",
+        "charlie",
+        "delta",
+        "echo",
+        "late@example.com",
+    ]
+    .into_iter()
+    .map(|value| vec![value.to_string()])
+    .collect::<Vec<_>>();
+    let metadata = build_column_metadata(&headers, &rows);
+
+    assert_eq!(metadata[0].sample_values.len(), 5);
+    assert_eq!(metadata[0].pii_risk, crate::types::PiiRisk::High);
+    assert!(
+        metadata[0]
+            .privacy_findings
+            .iter()
+            .any(|finding| finding.sample_value == "late@example.com")
+    );
+
+    let controlled = apply_column_controls(
+        &metadata,
+        &[ColumnControl {
+            column_index: 0,
+            type_override: Some(DataType::String),
+            strategy: AnonymizationStrategy::Redact,
+        }],
+    )
+    .unwrap();
+
+    assert_eq!(controlled[0].detected_type, DataType::String);
+    assert_eq!(controlled[0].pii_risk, crate::types::PiiRisk::High);
+    assert!(
+        controlled[0]
+            .privacy_findings
+            .iter()
+            .any(|finding| finding.sample_value == "late@example.com")
+    );
+    assert!(
+        controlled[0]
+            .privacy_evidence
+            .iter()
+            .any(|evidence| evidence.kind == crate::types::PrivacyFindingKind::Contact)
+    );
+}
+
+#[test]
 fn preview_warns_for_pass_through_and_no_op_columns() {
     let service = AnonymizerService::new("test-version");
     let temp_dir = tempfile::tempdir().unwrap();

@@ -374,10 +374,9 @@ jobs:
 
       - name: Validate Linux package metadata
         run: |
+          set -euo pipefail
           set +e
-          python3 scripts/validate_linux_package_metadata.py \
-            "dist/rust/artifacts/*.deb" \
-            "dist/rust/artifacts/*.rpm" \
+          npm run linux:metadata:check -- \
             --json-report linux-package-metadata-report.json
           validator_status=$?
           set -e

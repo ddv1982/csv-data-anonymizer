@@ -1,5 +1,13 @@
 # Full Codebase Review And Improvement Plan - 2026-07-01
 
+## Status Notice - 2026-07-13
+
+This review and phased plan remain historical evidence. The findings and source locations below record what the 2026-07-01 review observed; their dated phase-status paragraphs record the follow-up known when those paragraphs were added. They should not be rewritten into a retrospective current-state review.
+
+Six subsequent modernization features strengthened privacy-evidence retention, frontend async behavior, native writer/settings lifecycles, Rust and React module ownership, and locally reproducible quality gates. The dated current-state map is [`modernization-status-2026-07-13.md`](modernization-status-2026-07-13.md). It also records intentional deferrals and platform validation limits rather than silently erasing them from this plan.
+
+The status document records the final broad project-convergence gate and passing detailed final review. Earlier targeted evidence remains historical context, not a replacement for that final review.
+
 ## Scope
 
 Independent full review of the Rust core (`crates/`), Tauri shell (`src-tauri/`), React frontend (`frontend/`), and release/CI tooling (`scripts/`, `.github/workflows/`). This review deliberately excludes findings already completed or explicitly deferred in `docs/code-quality-assessment-2026-07-01.md` and `docs/cleanup-phased-plan-2026-07-01.md`; it hunts for what those passes missed.

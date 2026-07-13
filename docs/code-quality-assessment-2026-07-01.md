@@ -1,5 +1,13 @@
 # Code Quality Assessment - 2026-07-01
 
+## Status Notice - 2026-07-13
+
+This document remains a dated assessment and historical review record. Its file references, line counts, candidate findings, and recommendations describe the repository at the time of the review (plus the explicitly dated updates already embedded below); they are not a new 2026-07-13 inventory.
+
+Six later modernization features delivered privacy-evidence integrity, frontend async correctness, native lifecycle safety, focused Rust and React module boundaries, and stronger quality gates. In particular, `service.rs` is now a 221-line facade over focused service modules, while `types.rs` remains intentionally centralized because the contract checker consumes it directly. See [`modernization-status-2026-07-13.md`](modernization-status-2026-07-13.md) for the current implementation map, preserved invariants, targeted validation evidence, and residual risks.
+
+The broad project-convergence gate and passing detailed final review are recorded in that status document. Retain the assessment below as evidence of what earlier reviews actually observed.
+
 ## Scope
 
 Reviewed CSV Anonymizer as a local-first desktop app with a Rust anonymization core, Tauri command shell, React/Vite frontend, release/package scripts, and GitHub Actions gates.

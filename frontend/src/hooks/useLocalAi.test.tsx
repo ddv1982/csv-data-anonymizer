@@ -3,7 +3,7 @@ import { useEffect } from 'react'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultSettings } from '../defaults'
 import { localAiStatusFixture } from '../test-utils/builders'
-import type { AppSettings, LocalAiDownloadStatus } from '../types'
+import type { AppSettings, LocalAiDownloadStatus, LocalAiStatus } from '../types'
 import { useLocalAi, type LocalAiState } from './useLocalAi'
 
 const tauriMocks = vi.hoisted(() => ({
@@ -98,6 +98,62 @@ describe('useLocalAi', () => {
     expect(harness.localAi.selectedModel).toBe('llama3:8b')
     expect(harness.localAi.downloadRunning).toBe(true)
   })
+
+  it('keeps the newest status when an older refresh resolves last', async () => {
+    const onError = vi.fn()
+    const first = deferred<LocalAiStatus>()
+    const second = deferred<LocalAiStatus>()
+    tauriMocks.getLocalAiStatus
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+    const harness = renderLocalAi(onError)
+    await flushPromises()
+
+    harness.rerender(settingsFixture({ localAiEnabled: true, localAiModel: 'llama3:8b' }))
+    await flushPromises()
+
+    await act(async () => {
+      second.resolve(localAiStatusFixture({ model: 'llama3:8b', ready: true }))
+      await second.promise
+    })
+    expect(harness.localAi.status?.model).toBe('llama3:8b')
+    expect(harness.localAi.ready).toBe(true)
+
+    await act(async () => {
+      first.resolve(localAiStatusFixture({ model: 'gemma3:4b', ready: true }))
+      await first.promise
+    })
+    expect(harness.localAi.status?.model).toBe('llama3:8b')
+    expect(harness.localAi.ready).toBe(true)
+    expect(onError).not.toHaveBeenCalled()
+  })
+
+  it('ignores an older refresh failure after the newest status succeeds', async () => {
+    const onError = vi.fn()
+    const first = deferred<LocalAiStatus>()
+    const second = deferred<LocalAiStatus>()
+    tauriMocks.getLocalAiStatus
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+    const harness = renderLocalAi(onError)
+    await flushPromises()
+
+    harness.rerender(settingsFixture({ localAiEnabled: true, localAiModel: 'llama3:8b' }))
+    await flushPromises()
+
+    await act(async () => {
+      second.resolve(localAiStatusFixture({ model: 'llama3:8b', ready: true }))
+      await second.promise
+    })
+    await act(async () => {
+      first.reject(new Error('Stale status failure'))
+      await first.promise.catch(() => undefined)
+    })
+
+    expect(harness.localAi.status?.model).toBe('llama3:8b')
+    expect(harness.localAi.ready).toBe(true)
+    expect(onError).not.toHaveBeenCalled()
+  })
 })
 
 function LocalAiHarness({
@@ -172,4 +228,14 @@ function downloadStatusFixture(overrides: Partial<LocalAiDownloadStatus> = {}): 
     error: null,
     ...overrides,
   }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
 }
