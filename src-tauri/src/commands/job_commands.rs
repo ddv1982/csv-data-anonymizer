@@ -2,7 +2,7 @@ use super::shared::authorize_or_confirm_output_file;
 use crate::jobs::{AnonymizeJobStatus, AnonymizeJobStore, run_anonymize_job};
 use crate::local_ai::LocalAiRequest;
 use crate::path_access::PathAccess;
-use crate::settings::SettingsStore;
+use crate::settings::{MAX_SAMPLE_ROW_COUNT, SettingsStore, validate_sample_count};
 use csv_anonymizer_core::{AnonymizeParams, ColumnControl, SmartReplacementEntry};
 use serde::Deserialize;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -34,13 +34,18 @@ pub async fn start_anonymize_job(
     jobs: State<'_, AnonymizeJobStore>,
     request: StartAnonymizeJobRequest,
 ) -> Result<AnonymizeJobStatus, String> {
+    validate_sample_count(
+        request.sample_row_count,
+        MAX_SAMPLE_ROW_COUNT,
+        "Sample row count",
+    )?;
     let file_path = path_access.authorize_input_file(request.file_path)?;
     let output_path = authorize_or_confirm_output_file(&app, &path_access, request.output_path)?;
     let local_ai_enabled = settings
         .load_settings()
         .map(|settings| settings.local_ai_enabled)
         .map_err(|error| format!("Could not load settings: {error}"))?;
-    let job = jobs.create_job(request.total_row_count)?;
+    let job = jobs.create_job_for_output(request.total_row_count, output_path.clone())?;
     let initial_status = job.snapshot()?;
     let worker_job = job.clone();
     let panic_job = job.clone();

@@ -6,7 +6,9 @@ use crate::local_ai::{
     LocalAiRequest, local_ai_status, smart_provider_for_request, smart_provider_for_strategy,
 };
 use crate::path_access::PathAccess;
-use crate::settings::SettingsStore;
+use crate::settings::{
+    MAX_PREVIEW_SAMPLE_COUNT, MAX_SAMPLE_ROW_COUNT, SettingsStore, validate_sample_count,
+};
 use csv_anonymizer_core::{
     AnonymizationStrategy, ColumnControl, HeadersData, PasteAnalyzeData, PasteAnalyzeParams,
     PastePreviewParams, PasteTransformData, PasteTransformParams, PreflightData, PreflightMode,
@@ -92,6 +94,7 @@ pub async fn analyze_csv(
     sample_row_count: usize,
     output_suffix: String,
 ) -> Result<AnalyzeResponse, String> {
+    validate_sample_count(sample_row_count, MAX_SAMPLE_ROW_COUNT, "Sample row count")?;
     let file_path = authorize_or_confirm_input_file(&app, &path_access, file_path)?;
     // The suggested output path is only a suggestion: write access is granted
     // later through the explicit confirm/save-dialog flow, never silently here.
@@ -124,6 +127,11 @@ pub async fn preview_anonymization(
     settings: State<'_, Arc<SettingsStore>>,
     request: PreviewRequest,
 ) -> Result<PreviewData, String> {
+    validate_sample_count(
+        request.sample_count,
+        MAX_PREVIEW_SAMPLE_COUNT,
+        "Preview sample count",
+    )?;
     let file_path = path_access.authorize_input_file(request.file_path)?;
     let local_ai_enabled = load_local_ai_enabled(&settings)?;
     run_blocking(move || {
@@ -158,6 +166,11 @@ pub async fn preflight_anonymization(
     settings: State<'_, Arc<SettingsStore>>,
     request: PreflightRequest,
 ) -> Result<PreflightData, String> {
+    validate_sample_count(
+        request.sample_row_count,
+        MAX_SAMPLE_ROW_COUNT,
+        "Sample row count",
+    )?;
     let mode = request.mode;
     let file_path = authorize_or_confirm_input_file(&app, &path_access, request.file_path.clone())?;
     let output_path = match (mode, request.output_path.clone()) {

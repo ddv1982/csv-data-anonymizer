@@ -1,19 +1,10 @@
 import { AlertCircle, Check, Clipboard, Eraser, Loader2, Wand2 } from 'lucide-react'
-import { type FocusEvent, useMemo, useState } from 'react'
+import type { FocusEvent } from 'react'
 import { directInputStrategies } from '../dataOptions'
-import { useColumnSelection } from '../hooks/useColumnSelection'
-import { byteLength, formatByteLimit, MAX_PASTE_CONTENT_BYTES } from '../limits'
-import { analyzePasteData, previewPasteData, transformPasteData } from '../tauri'
-import { useCopyOutput } from '../hooks/useCopyOutput'
-import type {
-  AppSettings,
-  PasteAnalyzeData,
-  PasteDataFormat,
-  PasteTransformData,
-  PreviewData,
-} from '../types'
+import { usePasteDataWorkflow } from '../hooks/usePasteDataWorkflow'
+import { formatByteLimit, MAX_PASTE_CONTENT_BYTES } from '../limits'
+import type { AppSettings, PasteDataFormat, PasteTransformData } from '../types'
 import type { LocalAiState } from '../hooks/useLocalAi'
-import { messageFrom } from '../utils/errors'
 import { formatRowCount } from '../utils/format'
 import { Alert } from './Alert'
 import { Card } from './Card'
@@ -21,8 +12,6 @@ import { ColumnSelectionPanel } from './ColumnSelectionPanel'
 import { LocalAiBlockedAlert } from './LocalAiBlockedAlert'
 import { PreviewTable } from './PreviewTable'
 import { PrivacyReportSummary } from './PrivacyReportSummary'
-
-type PasteBusyState = 'idle' | 'analyzing' | 'previewing' | 'transforming' | 'copying'
 
 const formatLabels: Record<PasteDataFormat, string> = {
   auto: 'Auto detect',
@@ -57,142 +46,13 @@ export function PasteDataWorkflowView({
   onOpenLocalAiSettings: () => void
   onError: (message: string | null) => void
 }) {
-  const [format, setFormat] = useState<PasteDataFormat>('auto')
-  const [content, setContent] = useState('')
-  const [analysis, setAnalysis] = useState<PasteAnalyzeData | null>(null)
-  const [preview, setPreview] = useState<PreviewData | null>(null)
-  const [result, setResult] = useState<PasteTransformData | null>(null)
-  const [busy, setBusy] = useState<PasteBusyState>('idle')
-  const selection = useColumnSelection(analysis?.columns, { pruneDefaultControls: true })
-
-  const isBusy = busy !== 'idle'
-  const { copyOutput, copyStatus, setCopyStatus } = useCopyOutput({ isBusy, onError, setBusy })
-  const contentByteLength = useMemo(() => byteLength(content), [content])
+  const workflow = usePasteDataWorkflow({ settings, settingsLoaded, localAi, onError })
+  const { analysis, busy, content, format, preview, result, selection } = workflow
   const contentLimitLabel = formatByteLimit(MAX_PASTE_CONTENT_BYTES)
-  const isContentTooLarge = contentByteLength > MAX_PASTE_CONTENT_BYTES
-  const selectedUsesLocalAi = selection.selectionUsesLocalAi(selection.selectedColumns)
-  const localAiBlocked = selectedUsesLocalAi && (!localAi.ready || localAi.downloadRunning)
-  const canAnalyze = settingsLoaded && content.trim().length > 0 && !isBusy && !isContentTooLarge
-  const canClear = !isBusy && (content.length > 0 || analysis !== null || preview !== null || result !== null || copyStatus !== null)
-  const canPreview = settingsLoaded && Boolean(analysis) && selection.selectedColumns.length > 0 && !isBusy && !localAiBlocked
-  const canTransform = settingsLoaded && Boolean(analysis) && selection.selectedColumns.length > 0 && !isBusy && !localAiBlocked
-
-  function resetDerivedState() {
-    setAnalysis(null)
-    selection.resetColumnSelection()
-    setPreview(null)
-    setResult(null)
-    setCopyStatus(null)
-  }
-
-  async function handleAnalyze() {
-    if (!canAnalyze) return
-    onError(null)
-    setBusy('analyzing')
-    setCopyStatus(null)
-    setPreview(null)
-    setResult(null)
-    try {
-      const nextAnalysis = await analyzePasteData(content, format, settings.sampleRowCount)
-      setAnalysis(nextAnalysis)
-      selection.setSelectedColumns(
-        nextAnalysis.columns.filter((column) => column.isSelected).map((column) => column.index),
-      )
-      selection.resetColumnControls()
-    } catch (caught) {
-      onError(messageFrom(caught))
-    } finally {
-      setBusy('idle')
-    }
-  }
 
   async function handlePasteInputBlur(event: FocusEvent<HTMLTextAreaElement>) {
     if (analysis || isPasteActionTarget(event.relatedTarget)) return
-    await handleAnalyze()
-  }
-
-  function handleClearPaste() {
-    if (!canClear) return
-    onError(null)
-    setContent('')
-    resetDerivedState()
-  }
-
-  async function handlePreview() {
-    if (!settingsLoaded || !analysis || selection.selectedColumns.length === 0 || isBusy) return
-    if (localAiBlocked) {
-      onError('Set up Local AI before previewing Smart replacement fields.')
-      return
-    }
-    onError(null)
-    setBusy('previewing')
-    setCopyStatus(null)
-    setResult(null)
-    try {
-      const nextPreview = await previewPasteData(
-        content,
-        analysis.format,
-        selection.selectedColumns,
-        selection.columnControlList,
-        settings.previewSampleCount,
-        localAi.request,
-      )
-      setPreview(nextPreview)
-    } catch (caught) {
-      onError(messageFrom(caught))
-    } finally {
-      setBusy('idle')
-    }
-  }
-
-  async function handleTransform() {
-    if (!settingsLoaded || !analysis || selection.selectedColumns.length === 0 || isBusy) return
-    if (localAiBlocked) {
-      onError('Set up Local AI before anonymizing Smart replacement fields.')
-      return
-    }
-    onError(null)
-    setBusy('transforming')
-    setCopyStatus(null)
-    try {
-      const transformed = await transformPasteData(
-        content,
-        analysis.format,
-        selection.selectedColumns,
-        selection.columnControlList,
-        preview?.smartReplacements ?? [],
-        localAi.request,
-      )
-      setResult(transformed)
-    } catch (caught) {
-      onError(messageFrom(caught))
-    } finally {
-      setBusy('idle')
-    }
-  }
-
-  async function handleCopy() {
-    await copyOutput(result?.output)
-  }
-
-  function setColumnSelection(nextColumns: number[]) {
-    selection.setSelectedColumns(nextColumns)
-    clearPreviewAndResult()
-  }
-
-  function toggleColumn(column: Parameters<typeof selection.toggleColumn>[0]) {
-    selection.toggleColumn(column)
-    clearPreviewAndResult()
-  }
-
-  function updateColumnStrategy(column: Parameters<typeof selection.updateColumnStrategy>[0], strategy: Parameters<typeof selection.updateColumnStrategy>[1]) {
-    selection.updateColumnStrategy(column, strategy)
-    clearPreviewAndResult()
-  }
-
-  function clearPreviewAndResult() {
-    setResult(null)
-    setPreview(null)
+    await workflow.analyze()
   }
 
   return (
@@ -205,8 +65,8 @@ export function PasteDataWorkflowView({
               type="button"
               className="button button-outline button-sm"
               data-paste-action
-              disabled={!canClear}
-              onClick={handleClearPaste}
+              disabled={!workflow.canClear}
+              onClick={workflow.clear}
             >
               <Eraser aria-hidden="true" />
               Clear
@@ -215,8 +75,8 @@ export function PasteDataWorkflowView({
               type="button"
               className="button button-outline button-sm"
               data-paste-action
-              disabled={!canAnalyze}
-              onClick={handleAnalyze}
+              disabled={!workflow.canAnalyze}
+              onClick={workflow.analyze}
             >
               {busy === 'analyzing' ? <Loader2 className="spin" aria-hidden="true" /> : null}
               Detect Fields
@@ -231,10 +91,9 @@ export function PasteDataWorkflowView({
               <select
                 id="paste-format"
                 value={format}
-                disabled={isBusy}
+                disabled={workflow.isBusy}
                 onChange={(event) => {
-                  setFormat(event.target.value as PasteDataFormat)
-                  resetDerivedState()
+                  workflow.setFormat(event.target.value as PasteDataFormat)
                 }}
               >
                 {formatOptions.map((option) => (
@@ -253,21 +112,20 @@ export function PasteDataWorkflowView({
           <textarea
             className="direct-textarea"
             value={content}
-            disabled={isBusy}
+            disabled={workflow.isBusy}
             placeholder='{"email":"ada@example.com","id":"123456"}'
             aria-label="Pasted data"
             onChange={(event) => {
-              setContent(event.target.value)
-              resetDerivedState()
+              workflow.setContent(event.target.value)
             }}
             onBlur={handlePasteInputBlur}
           />
           <div className="direct-input-meta">
-            <span className={`muted-text text-sm${isContentTooLarge ? ' danger-text' : ''}`}>
-              {formatByteLimit(contentByteLength)} / {contentLimitLabel}
+            <span className={`muted-text text-sm${workflow.isContentTooLarge ? ' danger-text' : ''}`}>
+              {formatByteLimit(workflow.contentByteLength)} / {contentLimitLabel}
             </span>
           </div>
-          {isContentTooLarge ? (
+          {workflow.isContentTooLarge ? (
             <Alert icon={<AlertCircle aria-hidden="true" />}>
               Paste at most {contentLimitLabel} at a time, or use the CSV file workflow for larger inputs.
             </Alert>
@@ -280,18 +138,18 @@ export function PasteDataWorkflowView({
           actions={[
             {
               label: 'Select All',
-              disabled: isBusy || selection.columns.length === 0 || selection.allSelected,
-              onClick: () => setColumnSelection(selection.columns.map((column) => column.index)),
+              disabled: workflow.isBusy || selection.columns.length === 0 || selection.allSelected,
+              onClick: () => workflow.setColumnSelection(selection.columns.map((column) => column.index)),
             },
             {
               label: 'Deselect All',
-              disabled: isBusy || selection.selectedColumns.length === 0,
-              onClick: () => setColumnSelection([]),
+              disabled: workflow.isBusy || selection.selectedColumns.length === 0,
+              onClick: () => workflow.setColumnSelection([]),
             },
             {
               label: 'Select Detected Risk',
-              disabled: isBusy || selection.detectedRiskColumns.length === 0,
-              onClick: () => setColumnSelection(selection.detectedRiskColumns),
+              disabled: workflow.isBusy || selection.detectedRiskColumns.length === 0,
+              onClick: () => workflow.setColumnSelection(selection.detectedRiskColumns),
             },
           ]}
           columns={selection.visibleColumns}
@@ -300,14 +158,14 @@ export function PasteDataWorkflowView({
           loading={busy === 'analyzing'}
           showAllColumns={selection.showAllColumns}
           hiddenColumnCount={selection.hiddenColumnCount}
-          onToggleColumn={toggleColumn}
+          onToggleColumn={workflow.toggleColumn}
           controls={selection.columnControls}
-          onStrategyChange={updateColumnStrategy}
+          onStrategyChange={workflow.updateColumnStrategy}
           onToggleShowAll={() => selection.setShowAllColumns((current) => !current)}
           availableStrategies={directInputStrategies}
           footer={(
             <>
-              {selectedUsesLocalAi && localAiBlocked ? (
+              {workflow.selectedUsesLocalAi && workflow.localAiBlocked ? (
                 <LocalAiBlockedAlert
                   message="Set up Local AI before previewing or anonymizing Smart replacement fields."
                   onOpenSettings={onOpenLocalAiSettings}
@@ -326,7 +184,7 @@ export function PasteDataWorkflowView({
         title="3. Preview (Optional)"
         disabled={!analysis || selection.selectedColumns.length === 0}
         action={
-          <button type="button" className="button button-outline button-sm" disabled={!canPreview} onClick={handlePreview}>
+          <button type="button" className="button button-outline button-sm" disabled={!workflow.canPreview} onClick={workflow.showPreview}>
             {busy === 'previewing' ? <Loader2 className="spin" aria-hidden="true" /> : null}
             Show Preview
           </button>
@@ -336,7 +194,7 @@ export function PasteDataWorkflowView({
       </Card>
 
       <Card contentClassName="anonymize-card-content">
-        <button type="button" className="button button-primary button-lg full-width" disabled={!canTransform} onClick={handleTransform}>
+        <button type="button" className="button button-primary button-lg full-width" disabled={!workflow.canTransform} onClick={workflow.transform}>
           {busy === 'transforming' ? <Loader2 className="spin" aria-hidden="true" /> : <Wand2 aria-hidden="true" />}
           Transform pasted sample
         </button>
@@ -346,7 +204,7 @@ export function PasteDataWorkflowView({
         <Card
           title="Anonymized Output"
           action={
-            <button type="button" className="button button-outline button-sm" disabled={isBusy} onClick={handleCopy}>
+            <button type="button" className="button button-outline button-sm" disabled={workflow.isBusy} onClick={workflow.copyOutput}>
               {busy === 'copying' ? <Loader2 className="spin" aria-hidden="true" /> : <Clipboard aria-hidden="true" />}
               Copy
             </button>
@@ -356,10 +214,10 @@ export function PasteDataWorkflowView({
             <textarea className="direct-output" value={result.output} readOnly aria-label="Anonymized pasted data" />
             <div className="direct-output-meta" aria-live="polite">
               <span className="muted-text text-sm">{formatPasteStats(result)}</span>
-              {copyStatus ? (
+              {workflow.copyStatus ? (
                 <span className="status-pill success">
                   <Check aria-hidden="true" />
-                  {copyStatus}
+                  {workflow.copyStatus}
                 </span>
               ) : null}
             </div>

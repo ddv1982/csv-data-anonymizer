@@ -112,29 +112,50 @@ Run the desktop app:
 npm run tauri:dev
 ```
 
-Useful checks:
+Canonical local gates:
 
 ```bash
-npm run typecheck
+npm run fmt
 npm run lint
 npm run test
-npm run fmt
+npm run typecheck
 npm run deadcode:required
 npm run docs:check
+```
+
+Focused release, browser, packaging, and supply-chain checks:
+
+```bash
+npm run tooling:test
 npm run release:check
 npm run tauri:prebuilt:check
 npm run artifacts:rust:check
 npm run linux:package-manager:check
+npm run frontend:build
 npm run frontend:e2e
 npm run frontend:a11y
 npm run frontend:audit
-npm run cargo:audit
-cargo bench -p csv-anonymizer-core --bench csv_streaming
-cargo bench -p csv-anonymizer-core --bench detector_matrix -- --sample-size 10
-node scripts/rust-smoke.mjs
+npm run cargo:audit:required
+npm run smoke:rust
 ```
 
-The root `lint`, `test`, `typecheck`, `fmt`, `docs:check`, and `deadcode:required` scripts are the canonical local gates. The dead-code scans use Knip for the frontend and cargo-machete for Rust dependency drift, and the weekly GitHub Actions maintenance workflow runs the same required dead-code gate. The detector matrix benchmark measures the built-in detector only; the external PII library comparison is archived in `docs/detector-library-evaluation.md`.
+Performance checks:
+
+```bash
+cargo bench -p csv-anonymizer-core --bench csv_streaming
+cargo bench -p csv-anonymizer-core --bench detector_matrix -- --sample-size 10
+```
+
+The root `fmt`, `lint`, `test`, `typecheck`, `deadcode:required`, and `docs:check` scripts are the canonical local gates. The dead-code scans use Knip for the frontend and cargo-machete for Rust dependency drift. CI installs exact versions of cargo-audit (`0.22.2`) and cargo-machete (`0.9.2`); use `cargo:audit:required` when a missing audit tool must fail rather than skip. The detector matrix benchmark measures the built-in detector only; the external PII library comparison is archived in `docs/detector-library-evaluation.md`.
+
+## Architecture And Lifecycle Boundaries
+
+- **Rust core:** `AnonymizerService` in `crates/csv-anonymizer-core/src/service.rs` is the stable facade. Control merging, path validation, preflight, preview, and privacy-report construction live in focused `service/` modules. File and direct-input previews use the shared preview orchestration so format entrypoints do not reimplement privacy behavior.
+- **Contracts:** `crates/csv-anonymizer-core/src/types.rs` remains intentionally centralized. `scripts/check-contracts.mjs` reads that source directly to compare the Rust and TypeScript enum/DTO surfaces.
+- **Tauri lifecycle:** `src-tauri` owns IPC validation, path authorization, background jobs, settings persistence, and Local AI integration. It conservatively permits one active anonymization writer, releases that lease before publishing terminal status, bounds backend sample requests, and serializes settings replacement through unique same-directory temporary files.
+- **React workflows:** CSV orchestration lives in `useAnonymizerWorkflow`; pasted-data orchestration lives in `usePasteDataWorkflow`; rendering components consume those hooks. Local AI status refreshes are latest-request-wins and unmount-safe, and clipboard fallback reports success only when the browser copy operation succeeds.
+
+The dated modernization evidence and remaining validation limits are recorded in [`docs/modernization-status-2026-07-13.md`](docs/modernization-status-2026-07-13.md).
 
 ## Project Layout
 

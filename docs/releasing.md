@@ -86,7 +86,7 @@ The release workflow:
 - validates tag, package version, changelog, Rust workspace, and Linux metainfo metadata
 - audits frontend dependencies with `npm run frontend:audit`
 - audits Rust dependencies with RustSec `cargo-audit`
-- keeps dead-code and unused-dependency drift covered by the separate scheduled `.github/workflows/dead-code.yml` maintenance workflow
+- checks dead-code and unused-dependency drift in the shared validation gate and the scheduled `.github/workflows/dead-code.yml` maintenance workflow
 - runs frontend lint and unit tests before building the bundled UI
 - creates or refreshes a draft GitHub Release
 - builds and verifies signed/notarized macOS arm64 and x64 artifacts
@@ -149,7 +149,13 @@ npm run frontend:e2e
 npm run frontend:a11y
 npm run frontend:audit
 npm run cargo:audit:required
+npm run tooling:test
 ```
+
+Temporary RustSec exceptions in `scripts/cargo-audit.mjs` must identify an
+owner, rationale, exact dependency path, and expiry date. The wrapper rejects
+malformed or expired declarations and still verifies the allowed dependency
+path with `cargo tree` before passing the advisory IDs to `cargo audit`.
 
 On macOS, validate app packaging:
 
@@ -162,7 +168,8 @@ On Linux, also validate package-manager artifacts. The package metadata validato
 
 ```bash
 node scripts/package-tauri-linux.mjs
-python3 scripts/validate_linux_package_metadata.py "dist/rust/artifacts/*.deb" "dist/rust/artifacts/*.rpm"
+npm run linux:metadata:test
+npm run linux:metadata:check
 node scripts/check-apt-repository.mjs
 node scripts/check-apt-installer.mjs
 ```

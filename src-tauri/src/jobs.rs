@@ -5,7 +5,9 @@ use csv_anonymizer_core::{
     ProcessProgress, SmartReplacementProvider,
 };
 use serde::Serialize;
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 
 const MAX_RETAINED_TERMINAL_JOBS: usize = 20;
@@ -35,11 +37,26 @@ pub struct AnonymizeJobStatus {
 #[derive(Debug)]
 pub struct AnonymizeJobStore {
     registry: JobRegistry<AnonymizeJob>,
+    active_job: Arc<Mutex<bool>>,
 }
 
 #[derive(Debug)]
 pub struct AnonymizeJob {
     lifecycle: JobLifecycle<AnonymizeJobStatus>,
+    active_job_lease: Mutex<Option<ActiveJobLease>>,
+}
+
+#[derive(Debug)]
+struct ActiveJobLease {
+    active_job: Arc<Mutex<bool>>,
+}
+
+impl Drop for ActiveJobLease {
+    fn drop(&mut self) {
+        if let Ok(mut active) = self.active_job.lock() {
+            *active = false;
+        }
+    }
 }
 
 impl Default for AnonymizeJobStore {
@@ -52,11 +69,13 @@ impl Default for AnonymizeJobStore {
                 MAX_RETAINED_TERMINAL_JOBS,
                 TERMINAL_JOB_TTL,
             ),
+            active_job: Arc::new(Mutex::new(false)),
         }
     }
 }
 
 impl AnonymizeJobStore {
+    #[cfg(test)]
     pub fn create_job(&self, total_rows: Option<usize>) -> Result<Arc<AnonymizeJob>, String> {
         self.registry.create_job(|id, sequence| AnonymizeJob {
             lifecycle: JobLifecycle::new(
@@ -72,7 +91,48 @@ impl AnonymizeJobStore {
                 },
                 "Anonymization job status is unavailable.",
             ),
+            active_job_lease: Mutex::new(None),
         })
+    }
+
+    pub fn create_job_for_output(
+        &self,
+        total_rows: Option<usize>,
+        _output_path: PathBuf,
+    ) -> Result<Arc<AnonymizeJob>, String> {
+        let mut active = self
+            .active_job
+            .lock()
+            .map_err(|_| "Anonymization job admission is unavailable.".to_string())?;
+        if *active {
+            return Err("Another anonymization job is already running.".into());
+        }
+        *active = true;
+        drop(active);
+
+        let active_job = self.active_job.clone();
+        let result = self.registry.create_job(|id, sequence| AnonymizeJob {
+            lifecycle: JobLifecycle::new(
+                sequence,
+                AnonymizeJobStatus {
+                    job_id: id,
+                    state: AnonymizeJobState::Running,
+                    rows_processed: 0,
+                    total_rows,
+                    cancel_requested: false,
+                    result: None,
+                    error: None,
+                },
+                "Anonymization job status is unavailable.",
+            ),
+            active_job_lease: Mutex::new(Some(ActiveJobLease { active_job })),
+        });
+        if result.is_err()
+            && let Ok(mut active) = self.active_job.lock()
+        {
+            *active = false;
+        }
+        result
     }
 
     pub fn snapshot_job(&self, job_id: &str) -> Result<AnonymizeJobStatus, String> {
@@ -127,6 +187,9 @@ impl AnonymizeJob {
     }
 
     pub fn finish(&self, result: Result<AnonymizeData, AnonymizerError>) {
+        // Processing is complete. Reopen admission before publishing a terminal
+        // state so a client that observes completion can always start the next job.
+        self.release_active_job_lease();
         let _ = self.lifecycle.update_status(|status| match result {
             Ok(data) => {
                 status.rows_processed = data.row_count;
@@ -148,11 +211,18 @@ impl AnonymizeJob {
     }
 
     pub(super) fn finish_panic(&self) {
+        self.release_active_job_lease();
         let _ = self.lifecycle.update_status(|status| {
             status.state = AnonymizeJobState::Failed;
             status.error = Some("Anonymization job failed unexpectedly.".to_string());
         });
         self.lifecycle.mark_terminal();
+    }
+
+    fn release_active_job_lease(&self) {
+        if let Ok(mut lease) = self.active_job_lease.lock() {
+            lease.take();
+        }
     }
 }
 
@@ -230,6 +300,44 @@ mod tests {
         assert_eq!(status.state, AnonymizeJobState::Running);
         assert_eq!(status.rows_processed, 0);
         assert_eq!(status.total_rows, Some(10));
+    }
+
+    #[test]
+    fn rejects_second_job_until_active_job_finishes() {
+        let store = AnonymizeJobStore::default();
+        let output = PathBuf::from("/tmp/private-output.csv");
+        let job = store.create_job_for_output(None, output.clone()).unwrap();
+
+        assert!(
+            store
+                .create_job_for_output(None, output.clone())
+                .unwrap_err()
+                .contains("already running")
+        );
+
+        job.finish(Err(AnonymizerError::Canceled));
+        assert!(store.create_job_for_output(None, output).is_ok());
+    }
+
+    #[test]
+    fn rejects_different_output_while_anonymization_is_active() {
+        let store = AnonymizeJobStore::default();
+        let job = store
+            .create_job_for_output(None, PathBuf::from("/tmp/output.csv"))
+            .unwrap();
+
+        assert!(
+            store
+                .create_job_for_output(None, PathBuf::from("/tmp/different-output.csv"))
+                .unwrap_err()
+                .contains("already running")
+        );
+        job.finish(Err(AnonymizerError::Canceled));
+        assert!(
+            store
+                .create_job_for_output(None, PathBuf::from("/tmp/after-finish.csv"))
+                .is_ok()
+        );
     }
 
     #[test]

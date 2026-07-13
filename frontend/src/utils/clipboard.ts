@@ -15,7 +15,9 @@ export async function copyTextToClipboard(text: string) {
   textarea.select()
 
   try {
-    document.execCommand('copy')
+    if (!document.execCommand('copy')) {
+      throw new Error('Could not copy text to the clipboard.')
+    }
   } finally {
     document.body.removeChild(textarea)
   }

@@ -17,24 +17,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Install frontend dependencies
-      shell: bash
-      run: npm ci --prefix frontend
-
-    - name: Audit frontend dependencies
-      shell: bash
-      run: npm run frontend:audit
-
-    - name: Install cargo-audit
-      if: runner.os == 'Linux'
-      shell: bash
-      run: cargo install cargo-audit --locked --version 0.22.2
-
-    - name: Audit Rust dependencies
-      if: runner.os == 'Linux'
-      shell: bash
-      run: npm run cargo:audit:required
-
     - name: Validate release metadata
       shell: bash
       env:
@@ -46,14 +28,40 @@ runs:
           node scripts/check-release-metadata.mjs
         fi
 
+    - name: Validate documented commands
+      shell: bash
+      run: npm run docs:check
+
+    - name: Test release tooling
+      shell: bash
+      run: npm run tooling:test
+
     - name: Validate frontend/backend contracts
       shell: bash
       run: npm run contracts:check
 
+    - name: Install frontend dependencies
+      shell: bash
+      run: npm ci --prefix frontend
+
+    - name: Audit frontend dependencies
+      shell: bash
+      run: npm run frontend:audit
+
+    - name: Install cargo-audit
+      if: runner.os == 'Linux'
+      shell: bash
+      run: cargo install cargo-audit --locked --version "=0.22.2"
+
+    - name: Audit Rust dependencies
+      if: runner.os == 'Linux'
+      shell: bash
+      run: npm run cargo:audit:required
+
     - name: Install cargo-machete
       if: runner.os == 'Linux'
       shell: bash
-      run: cargo install cargo-machete --locked --version 0.9.2
+      run: cargo install cargo-machete --locked --version "=0.9.2"
 
     - name: Check dead code
       if: runner.os == 'Linux'

@@ -37,6 +37,28 @@ fn transforms_csv_text_with_existing_csv_rules() {
 }
 
 #[test]
+fn csv_text_type_override_preserves_direct_identifier_reporting() {
+    let input = "value\nalpha\nbravo\ncharlie\ndelta\necho\nlate@example.com\n";
+
+    let result = transform_paste_data(PasteTransformParams {
+        content: input.to_string(),
+        format: PasteDataFormat::Csv,
+        columns: vec![0],
+        controls: vec![ColumnControl {
+            column_index: 0,
+            type_override: Some(DataType::String),
+            strategy: AnonymizationStrategy::Redact,
+        }],
+        preview_smart_replacements: Vec::new(),
+    })
+    .unwrap();
+
+    assert_eq!(result.privacy_report.direct_identifiers, 1);
+    assert_eq!(result.privacy_report.quasi_identifiers, 0);
+    assert!(!result.output.contains("late@example.com"));
+}
+
+#[test]
 fn analyze_paste_data_auto_selects_columns_with_core_policy() {
     let input = "email,notes\nada@example.com,\n";
     let analysis = analyze_paste_data(PasteAnalyzeParams {
@@ -540,6 +562,58 @@ fn previews_pasted_json_fields() {
     assert_eq!(preview.previews[0].column_name, "[].email");
     assert_eq!(preview.previews[0].samples[0].original, "ada@example.com");
     assert_ne!(preview.previews[0].samples[0].anonymized, "ada@example.com");
+}
+
+#[test]
+fn previews_xml_fields_through_shared_orchestration() {
+    let input = "<root><name>Ada Lovelace</name></root>";
+    assert_shared_smart_preview(input, PasteDataFormat::Xml);
+}
+
+#[test]
+fn previews_plain_text_and_logs_through_shared_orchestration() {
+    let input = "contact=ada@example.com";
+    assert_shared_smart_preview(input, PasteDataFormat::PlainText);
+    assert_shared_smart_preview(input, PasteDataFormat::Logs);
+}
+
+fn assert_shared_smart_preview(input: &str, format: PasteDataFormat) {
+    let analysis = analyze_paste_data(PasteAnalyzeParams {
+        content: input.to_string(),
+        format,
+        sample_row_count: 10,
+    })
+    .unwrap();
+    let column = analysis.columns.first().expect("detected preview column");
+    let original = column
+        .sample_values
+        .first()
+        .expect("detected preview sample")
+        .clone();
+    let mut provider = PrefixSmartProvider;
+
+    let preview = preview_paste_data_with_smart_provider(
+        PastePreviewParams {
+            content: input.to_string(),
+            format,
+            columns: vec![column.index],
+            controls: vec![ColumnControl {
+                column_index: column.index,
+                type_override: Some(DataType::FullName),
+                strategy: AnonymizationStrategy::LocalAi,
+            }],
+            sample_count: 5,
+        },
+        Some(&mut provider),
+    )
+    .unwrap();
+
+    assert_eq!(preview.previews[0].samples[0].original, original);
+    assert_eq!(preview.previews[0].samples[0].anonymized, "Smart Person 1");
+    assert_eq!(preview.smart_replacements.len(), 1);
+    assert!(preview.warnings.iter().any(
+        |warning| warning.column_index == column.index && warning.message.contains("Local AI")
+    ));
 }
 
 #[test]

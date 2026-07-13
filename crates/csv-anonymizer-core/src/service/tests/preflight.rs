@@ -1,5 +1,8 @@
 use super::*;
-use crate::types::{PreflightMode, PreflightParams, ReleaseReadinessStatus, SmartReplacementEntry};
+use crate::types::{
+    PreflightMode, PreflightParams, ReleaseEvidenceStatus, ReleaseReadinessStatus,
+    SmartReplacementEntry,
+};
 
 #[test]
 fn preflight_preview_does_not_require_output_path() {
@@ -191,5 +194,51 @@ fn preflight_blocks_output_path_equal_to_input() {
             .any(|blocker| blocker.contains("must differ from the input")),
         "blockers: {:?}",
         result.readiness.blockers
+    );
+}
+
+#[test]
+fn preflight_keeps_late_privacy_evidence_after_type_override() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("late-privacy-evidence.csv");
+    fs::write(
+        &input_path,
+        "safe,value\n1,alpha\n2,bravo\n3,charlie\n4,delta\n5,echo\n6,late@example.com\n",
+    )
+    .unwrap();
+
+    let result = service
+        .preflight_anonymization(PreflightParams {
+            file_path: input_path,
+            mode: PreflightMode::Preview,
+            output_path: None,
+            columns: vec![0],
+            controls: vec![ColumnControl {
+                column_index: 1,
+                type_override: Some(DataType::String),
+                strategy: AnonymizationStrategy::Redact,
+            }],
+            force: false,
+            sample_row_count: 10,
+            preview_smart_replacements: vec![],
+            local_ai_ready: false,
+            local_ai_message: None,
+        })
+        .unwrap();
+
+    let detector_risk = result
+        .evidence
+        .iter()
+        .find(|item| item.id == "detector-risk")
+        .expect("detector-risk evidence");
+    assert_eq!(detector_risk.status, ReleaseEvidenceStatus::Review);
+    assert!(detector_risk.detail.contains("value"));
+    assert!(
+        result
+            .readiness
+            .review_items
+            .iter()
+            .any(|item| item.contains("value"))
     );
 }
