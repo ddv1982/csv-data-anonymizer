@@ -6,6 +6,7 @@ import test from 'node:test'
 const root = process.cwd()
 const action = fs.readFileSync(path.join(root, '.github/actions/validate-build/action.yml'), 'utf8')
 const ci = fs.readFileSync(path.join(root, '.github/workflows/ci.yml'), 'utf8')
+const playwright = fs.readFileSync(path.join(root, 'frontend/playwright.config.ts'), 'utf8')
 const release = fs.readFileSync(path.join(root, '.github/workflows/release.yml'), 'utf8')
 
 test('shared validation runs static gates before dependency installation', () => {
@@ -38,4 +39,9 @@ test('release tags reach shell steps only through quoted environment variables',
   }
   assert.match(release, /RELEASE_TAG: \$\{\{ github\.ref_name \}\}/)
   assert.match(release, /gh release edit "\$\{RELEASE_TAG\}"/)
+})
+
+test("CI preview listens on Playwright's configured port", () => {
+  assert.match(playwright, /npm run preview -- --host 127\.0\.0\.1 --port 5173/)
+  assert.match(playwright, /url: 'http:\/\/127\.0\.0\.1:5173'/)
 })
