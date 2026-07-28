@@ -26,6 +26,12 @@ test('CI and release use the canonical Linux metadata package command', () => {
   }
 })
 
+test('CI and release pin the published Tauri CLI version', () => {
+  for (const workflow of [ci, release]) {
+    assert.match(workflow, /TAURI_CLI_VERSION: 2\.11\.4/)
+  }
+})
+
 test('release validation and publication dependencies remain fail-closed', () => {
   assert.match(release, /uses: \.\/\.github\/actions\/validate-build[\s\S]*expected-tag: \$\{\{ github\.ref_name \}\}/)
   assert.match(release, /publish-apt-repository:[\s\S]*needs: \[build-macos-release, build-linux-release\]/)

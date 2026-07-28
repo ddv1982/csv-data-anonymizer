@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.79 - 2026-07-29
+
+- Supersede the failed v1.0.78 tag without moving it, preserving the Playwright CI preview fix and all v1.0.77 modernization changes while restoring release packaging to the latest published compatible Tauri CLI, v2.11.4.
+
 ## v1.0.78 - 2026-07-29
 
 - Supersede the failed v1.0.77 tag without moving it, preserving the complete TypeScript 7, dependency, frontend workflow, privacy, accessibility, Rust publication, settings, and release hardening changes while pinning CI's Vite preview server to Playwright's expected port.
