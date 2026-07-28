@@ -43,6 +43,12 @@ export function ModalDialog({
     restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    const backdrop = dialogRef.current?.parentElement
+    const backgroundElements = Array.from(document.body.children).filter(
+      (element): element is HTMLElement => element instanceof HTMLElement && element !== backdrop,
+    )
+    const previouslyInert = backgroundElements.map((element) => element.hasAttribute('inert'))
+    backgroundElements.forEach((element) => element.setAttribute('inert', ''))
     const frame = window.requestAnimationFrame(() => closeButtonRef.current?.focus())
 
     function handleKeyDown(event: KeyboardEvent) {
@@ -80,6 +86,9 @@ export function ModalDialog({
     return () => {
       window.cancelAnimationFrame(frame)
       document.body.style.overflow = previousOverflow
+      backgroundElements.forEach((element, index) => {
+        if (!previouslyInert[index]) element.removeAttribute('inert')
+      })
       document.removeEventListener('keydown', handleKeyDown)
       window.requestAnimationFrame(() => restoreFocusRef.current?.focus())
     }

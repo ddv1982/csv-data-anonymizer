@@ -19,7 +19,7 @@ vi.mock('../tauri', () => tauriMocks)
 describe('useLocalAi', () => {
   beforeEach(() => {
     vi.useRealTimers()
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     tauriMocks.getLocalAiStatus.mockResolvedValue(localAiStatusFixture())
   })
 
@@ -96,6 +96,29 @@ describe('useLocalAi', () => {
     harness.rerender(settingsFixture({ localAiModel: 'llama3:8b' }))
 
     expect(harness.localAi.selectedModel).toBe('llama3:8b')
+    expect(harness.localAi.downloadRunning).toBe(true)
+  })
+
+  it('coalesces repeated download starts while the first request is pending', async () => {
+    const pending = deferred<LocalAiDownloadStatus>()
+    tauriMocks.startLocalAiModelDownload.mockReturnValue(pending.promise)
+    const harness = renderLocalAi(vi.fn())
+    await flushPromises()
+
+    let firstStart: Promise<void>
+    act(() => {
+      firstStart = harness.localAi.startDownload()
+      void harness.localAi.startDownload()
+    })
+
+    expect(tauriMocks.startLocalAiModelDownload).toHaveBeenCalledTimes(1)
+    expect(harness.localAi.downloadRunning).toBe(true)
+
+    await act(async () => {
+      pending.resolve(downloadStatusFixture())
+      await firstStart!
+    })
+
     expect(harness.localAi.downloadRunning).toBe(true)
   })
 

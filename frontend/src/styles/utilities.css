@@ -67,3 +67,17 @@
     transform: translateX(385%);
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .spin,
+  .skeleton,
+  .progress-bar-indeterminate {
+    animation: none;
+  }
+
+  .progress-bar-indeterminate {
+    left: 0;
+    width: 100%;
+    opacity: 0.65;
+  }
+}

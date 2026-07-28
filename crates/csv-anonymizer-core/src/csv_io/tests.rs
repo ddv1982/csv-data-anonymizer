@@ -286,6 +286,41 @@ fn process_control_reports_progress_and_cancels_before_next_row() {
 }
 
 #[test]
+fn process_control_cancels_after_final_progress_before_output_commit() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("cancel-final.csv");
+    let output_path = temp_dir.path().join("cancel-final-output.csv");
+    fs::write(&input_path, "id,email\n1,a@example.com\n,\n").unwrap();
+    let sample = read_sample(&input_path, 100).unwrap();
+    let columns =
+        apply_column_selection(&build_column_metadata(&sample.headers, &sample.rows), &[1]);
+    let last_progress = std::cell::Cell::new(0);
+    let error = {
+        let mut on_progress =
+            |progress: ProcessProgress| last_progress.set(progress.rows_processed);
+        let should_cancel = || last_progress.get() >= 1;
+        let mut control = ProcessControl {
+            on_progress: Some(&mut on_progress),
+            should_cancel: Some(&should_cancel),
+        };
+
+        process_file_with_control(
+            &input_path,
+            &output_path,
+            &columns,
+            ProcessOptions {
+                smart_replacements: None,
+            },
+            Some(&mut control),
+        )
+        .unwrap_err()
+    };
+
+    assert!(matches!(error, AnonymizerError::Canceled));
+    assert!(!output_path.exists());
+}
+
+#[test]
 fn plain_signed_numbers_are_not_neutralized() {
     assert_eq!(neutralize_spreadsheet_formula("-42.50").as_ref(), "-42.50");
     assert_eq!(neutralize_spreadsheet_formula("+31").as_ref(), "+31");

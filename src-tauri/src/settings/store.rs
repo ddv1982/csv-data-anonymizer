@@ -59,6 +59,15 @@ pub(super) fn load_settings_from_path(path: &Path) -> io::Result<AppSettings> {
     let content = fs::read_to_string(path)?;
     let mut settings = serde_json::from_str::<AppSettings>(&content)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    if settings.schema_version > SETTINGS_SCHEMA_VERSION {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "Settings schema version {} is newer than supported version {SETTINGS_SCHEMA_VERSION}",
+                settings.schema_version
+            ),
+        ));
+    }
     let stored_settings = settings.clone();
 
     if settings.schema_version != SETTINGS_SCHEMA_VERSION {
@@ -91,8 +100,15 @@ pub(super) fn save_settings_to_path(path: &Path, settings: &AppSettings) -> io::
         "json.{}.{temporary_sequence}.tmp",
         std::process::id()
     ));
-    fs::write(&temporary_path, content)?;
-    fs::rename(temporary_path, path)
+    if let Err(error) = fs::write(&temporary_path, content) {
+        let _ = fs::remove_file(&temporary_path);
+        return Err(error);
+    }
+    if let Err(error) = fs::rename(&temporary_path, path) {
+        let _ = fs::remove_file(&temporary_path);
+        return Err(error);
+    }
+    Ok(())
 }
 
 pub(super) fn default_settings_path() -> PathBuf {
@@ -148,6 +164,33 @@ mod tests {
         let saved_content = fs::read_to_string(&settings_path).unwrap();
         assert!(!saved_content.contains("deterministicDefault"));
         assert!(!saved_content.contains("seed"));
+    }
+
+    #[test]
+    fn future_settings_schema_is_rejected_without_rewriting_the_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let settings_path = temp_dir.path().join("settings.json");
+        let content = serde_json::to_string(&serde_json::json!({
+            "schemaVersion": SETTINGS_SCHEMA_VERSION + 1,
+            "themeMode": "system",
+            "overwriteOutput": false,
+            "sampleRowCount": 100,
+            "previewSampleCount": 5,
+            "defaultOutputSuffix": "_future",
+            "rememberLastPaths": true,
+            "lastInputDirectory": null,
+            "lastOutputDirectory": null,
+            "localAiEnabled": false,
+            "localAiModel": "gemma3:4b",
+            "futureField": "preserve-me"
+        }))
+        .unwrap();
+        fs::write(&settings_path, &content).unwrap();
+
+        let error = load_settings_from_path(&settings_path).unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(fs::read_to_string(settings_path).unwrap(), content);
     }
 
     #[test]

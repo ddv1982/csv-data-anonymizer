@@ -16,7 +16,10 @@ function App() {
   const workflow = useAnonymizerWorkflow()
   const [activeMode, setActiveMode] = useState<InputMode>('csv')
   const [localAiSettingsOpen, setLocalAiSettingsOpen] = useState(false)
+  const [pasteBusy, setPasteBusy] = useState(false)
+  const [quickBusy, setQuickBusy] = useState(false)
   const themeMode = normalizeThemeMode(workflow.settings.themeMode)
+  const anyWorkflowBusy = workflow.isLoading || pasteBusy || quickBusy
   useTheme(themeMode)
 
   return (
@@ -29,14 +32,14 @@ function App() {
             <LocalAiTopbarControl
               settings={workflow.settings}
               localAi={workflow.localAi}
-              disabled={workflow.settingsDisabled}
+              disabled={workflow.settingsDisabled || pasteBusy || quickBusy}
               settingsOpen={localAiSettingsOpen}
               onToggleSettings={setLocalAiSettingsOpen}
               onUpdateSetting={workflow.updateSetting}
             />
             <ThemeModeToggle
               themeMode={themeMode}
-              disabled={workflow.settingsDisabled}
+              disabled={workflow.settingsDisabled || pasteBusy || quickBusy}
               onChange={(mode) => workflow.updateSetting('themeMode', mode)}
             />
           </div>
@@ -46,7 +49,7 @@ function App() {
       <WorkflowErrorToast error={workflow.error} onDismiss={() => workflow.setError(null)} />
 
       <main className="container app-main">
-        <InputModeTabs activeMode={activeMode} onChange={setActiveMode} />
+        <InputModeTabs activeMode={activeMode} disabled={anyWorkflowBusy} onChange={setActiveMode} />
 
         <section
           id="input-mode-panel-csv"
@@ -71,6 +74,7 @@ function App() {
             localAi={workflow.localAi}
             onOpenLocalAiSettings={() => setLocalAiSettingsOpen(true)}
             onError={workflow.setError}
+            onBusyChange={setPasteBusy}
           />
         </section>
 
@@ -86,6 +90,7 @@ function App() {
             localAi={workflow.localAi}
             onOpenLocalAiSettings={() => setLocalAiSettingsOpen(true)}
             onError={workflow.setError}
+            onBusyChange={setQuickBusy}
           />
         </section>
       </main>

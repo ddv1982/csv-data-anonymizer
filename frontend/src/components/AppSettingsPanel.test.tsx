@@ -8,11 +8,14 @@ import { AppSettingsPanel } from './AppSettingsPanel'
 
 describe('AppSettingsPanel', () => {
   it('allows remember-paths changes before a CSV is loaded', async () => {
+    const user = userEvent.setup()
     const updates: Array<[keyof AppSettings, AppSettings[keyof AppSettings]]> = []
 
     render(<SettingsPanelHarness updates={updates} />)
 
     expect(screen.getByRole('switch', { name: /Remember paths/ })).toBeEnabled()
+    await user.click(screen.getByRole('switch', { name: /Remember paths/ }))
+    expect(updates).toContainEqual(['rememberLastPaths', false])
   })
 
   it('emits typed setting updates when controls change', async () => {

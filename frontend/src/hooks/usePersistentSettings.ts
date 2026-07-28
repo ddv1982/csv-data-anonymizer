@@ -109,7 +109,6 @@ export function usePersistentSettings({ onError, onAcceptedSettings }: Persisten
     settings,
     settingsLoaded,
     latestSettingsRef,
-    applyAuthoritativeSettings,
     persistSettings,
     refreshSettings,
   }

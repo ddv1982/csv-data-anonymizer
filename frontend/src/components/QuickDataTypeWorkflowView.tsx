@@ -1,5 +1,5 @@
 import { Check, Clipboard, Loader2, Wand2 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { dataTypes, quickGenerateStrategies, strategyLabel } from '../dataOptions'
 import { generateQuickValues } from '../tauri'
 import { useCopyOutput } from '../hooks/useCopyOutput'
@@ -20,11 +20,13 @@ export function QuickDataTypeWorkflowView({
   localAi,
   onOpenLocalAiSettings,
   onError,
+  onBusyChange,
 }: {
   settingsLoaded: boolean
   localAi: LocalAiState
   onOpenLocalAiSettings: () => void
   onError: (message: string | null) => void
+  onBusyChange?: (busy: boolean) => void
 }) {
   const [dataType, setDataType] = useState<DataType>('email')
   const [strategy, setStrategy] = useState<AnonymizationStrategy>('auto')
@@ -37,6 +39,11 @@ export function QuickDataTypeWorkflowView({
   const usesLocalAi = strategy === 'localAi'
   const localAiBlocked = usesLocalAi && (!localAi.ready || localAi.downloadRunning)
   const canGenerate = settingsLoaded && count >= MIN_COUNT && count <= MAX_COUNT && !isBusy && !localAiBlocked
+
+  useEffect(() => {
+    onBusyChange?.(isBusy)
+    return () => onBusyChange?.(false)
+  }, [isBusy, onBusyChange])
 
   async function handleGenerate() {
     if (!settingsLoaded || count < MIN_COUNT || count > MAX_COUNT || isBusy) return

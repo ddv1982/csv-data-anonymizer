@@ -1,4 +1,4 @@
-use crate::csv_io::{count_csv_data_rows, process_file_with_control, read_sample};
+use crate::csv_io::{count_csv_data_rows, read_sample};
 use crate::error::Result;
 use crate::metadata::{apply_column_selection, build_column_metadata};
 use crate::smart::{
@@ -197,7 +197,7 @@ impl AnonymizerService {
         let smart_replacements = smart_replacements
             .has_activity()
             .then_some(smart_replacements);
-        let result = process_file_with_control(
+        let result = crate::csv_io::process_file_with_control_and_overwrite(
             &input_path,
             &output_path,
             &selected_metadata,
@@ -205,6 +205,7 @@ impl AnonymizerService {
                 smart_replacements: smart_replacements.as_ref(),
             },
             control,
+            input.force,
         )?;
 
         Ok(AnonymizeData {

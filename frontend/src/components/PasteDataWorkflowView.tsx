@@ -1,5 +1,5 @@
 import { AlertCircle, Check, Clipboard, Eraser, Loader2, Wand2 } from 'lucide-react'
-import type { FocusEvent } from 'react'
+import { useEffect, type FocusEvent } from 'react'
 import { directInputStrategies } from '../dataOptions'
 import { usePasteDataWorkflow } from '../hooks/usePasteDataWorkflow'
 import { formatByteLimit, MAX_PASTE_CONTENT_BYTES } from '../limits'
@@ -39,16 +39,23 @@ export function PasteDataWorkflowView({
   localAi,
   onOpenLocalAiSettings,
   onError,
+  onBusyChange,
 }: {
   settings: AppSettings
   settingsLoaded: boolean
   localAi: LocalAiState
   onOpenLocalAiSettings: () => void
   onError: (message: string | null) => void
+  onBusyChange?: (busy: boolean) => void
 }) {
   const workflow = usePasteDataWorkflow({ settings, settingsLoaded, localAi, onError })
   const { analysis, busy, content, format, preview, result, selection } = workflow
   const contentLimitLabel = formatByteLimit(MAX_PASTE_CONTENT_BYTES)
+
+  useEffect(() => {
+    onBusyChange?.(busy !== 'idle')
+    return () => onBusyChange?.(false)
+  }, [busy, onBusyChange])
 
   async function handlePasteInputBlur(event: FocusEvent<HTMLTextAreaElement>) {
     if (analysis || isPasteActionTarget(event.relatedTarget)) return
@@ -156,6 +163,7 @@ export function PasteDataWorkflowView({
           allColumnCount={selection.columns.length}
           selectedSet={selection.selectedSet}
           loading={busy === 'analyzing'}
+          disabled={workflow.isBusy}
           showAllColumns={selection.showAllColumns}
           hiddenColumnCount={selection.hiddenColumnCount}
           onToggleColumn={workflow.toggleColumn}

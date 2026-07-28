@@ -72,6 +72,10 @@ runs:
       shell: bash
       run: npm run frontend:lint
 
+    - name: Check TypeScript 6 compatibility
+      shell: bash
+      run: npm run frontend:typecheck:compat
+
     - name: Test frontend
       shell: bash
       run: npm run frontend:test

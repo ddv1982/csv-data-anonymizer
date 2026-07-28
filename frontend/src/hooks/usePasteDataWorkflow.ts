@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { byteLength, MAX_PASTE_CONTENT_BYTES } from '../limits'
 import { analyzePasteData, previewPasteData, transformPasteData } from '../tauri'
 import type {
@@ -34,6 +34,7 @@ export function usePasteDataWorkflow({
   const [preview, setPreview] = useState<PreviewData | null>(null)
   const [result, setResult] = useState<PasteTransformData | null>(null)
   const [busy, setBusy] = useState<PasteBusyState>('idle')
+  const operationSequence = useRef(0)
   const selection = useColumnSelection(analysis?.columns, { pruneDefaultControls: true })
 
   const isBusy = busy !== 'idle'
@@ -47,7 +48,13 @@ export function usePasteDataWorkflow({
   const canPreview = settingsLoaded && Boolean(analysis) && selection.selectedColumns.length > 0 && !isBusy && !localAiBlocked
   const canTransform = settingsLoaded && Boolean(analysis) && selection.selectedColumns.length > 0 && !isBusy && !localAiBlocked
 
+  useEffect(() => () => {
+    operationSequence.current += 1
+  }, [])
+
   function resetDerivedState() {
+    operationSequence.current += 1
+    setBusy('idle')
     setAnalysis(null)
     selection.resetColumnSelection()
     setPreview(null)
@@ -67,6 +74,7 @@ export function usePasteDataWorkflow({
 
   async function analyze() {
     if (!canAnalyze) return
+    const sequence = ++operationSequence.current
     onError(null)
     setBusy('analyzing')
     setCopyStatus(null)
@@ -74,15 +82,16 @@ export function usePasteDataWorkflow({
     setResult(null)
     try {
       const nextAnalysis = await analyzePasteData(content, format, settings.sampleRowCount)
+      if (sequence !== operationSequence.current) return
       setAnalysis(nextAnalysis)
       selection.setSelectedColumns(
         nextAnalysis.columns.filter((column) => column.isSelected).map((column) => column.index),
       )
       selection.resetColumnControls()
     } catch (caught) {
-      onError(messageFrom(caught))
+      if (sequence === operationSequence.current) onError(messageFrom(caught))
     } finally {
-      setBusy('idle')
+      if (sequence === operationSequence.current) setBusy('idle')
     }
   }
 
@@ -99,23 +108,25 @@ export function usePasteDataWorkflow({
       onError('Set up Local AI before previewing Smart replacement fields.')
       return
     }
+    const sequence = ++operationSequence.current
     onError(null)
     setBusy('previewing')
     setCopyStatus(null)
     setResult(null)
     try {
-      setPreview(await previewPasteData(
+      const nextPreview = await previewPasteData(
         content,
         analysis.format,
         selection.selectedColumns,
-        selection.columnControlList,
+        selection.controlsForColumns(selection.selectedColumns),
         settings.previewSampleCount,
         localAi.request,
-      ))
+      )
+      if (sequence === operationSequence.current) setPreview(nextPreview)
     } catch (caught) {
-      onError(messageFrom(caught))
+      if (sequence === operationSequence.current) onError(messageFrom(caught))
     } finally {
-      setBusy('idle')
+      if (sequence === operationSequence.current) setBusy('idle')
     }
   }
 
@@ -125,36 +136,42 @@ export function usePasteDataWorkflow({
       onError('Set up Local AI before anonymizing Smart replacement fields.')
       return
     }
+    const sequence = ++operationSequence.current
     onError(null)
     setBusy('transforming')
     setCopyStatus(null)
     try {
-      setResult(await transformPasteData(
+      const nextResult = await transformPasteData(
         content,
         analysis.format,
         selection.selectedColumns,
-        selection.columnControlList,
+        selection.controlsForColumns(selection.selectedColumns),
         preview?.smartReplacements ?? [],
         localAi.request,
-      ))
+      )
+      if (sequence === operationSequence.current) setResult(nextResult)
     } catch (caught) {
-      onError(messageFrom(caught))
+      if (sequence === operationSequence.current) onError(messageFrom(caught))
     } finally {
-      setBusy('idle')
+      if (sequence === operationSequence.current) setBusy('idle')
     }
   }
 
   function clearOutput() {
+    operationSequence.current += 1
+    setBusy('idle')
     setResult(null)
     setPreview(null)
   }
 
   function setColumnSelection(nextColumns: number[]) {
+    if (isBusy) return
     selection.setSelectedColumns(nextColumns)
     clearOutput()
   }
 
   function toggleColumn(column: Parameters<typeof selection.toggleColumn>[0]) {
+    if (isBusy) return
     selection.toggleColumn(column)
     clearOutput()
   }
@@ -163,6 +180,7 @@ export function usePasteDataWorkflow({
     column: Parameters<typeof selection.updateColumnStrategy>[0],
     strategy: Parameters<typeof selection.updateColumnStrategy>[1],
   ) {
+    if (isBusy) return
     selection.updateColumnStrategy(column, strategy)
     clearOutput()
   }

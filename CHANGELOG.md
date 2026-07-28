@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.77 - 2026-07-29
+
+- Adopt the native TypeScript 7 compiler for authoritative frontend builds and type checks while retaining Microsoft's supported TypeScript 6 compatibility package for ESLint's compiler API, with explicit application, Vite, and Playwright project settings.
+- Refresh the supported frontend, Rust, Tauri, workflow action, and lockfile dependency stack while keeping audits, dead-code checks, contracts, release metadata, and clean-install validation fail-closed.
+- Harden frontend workflows against stale paste and Local AI operations, prevent mutations during active IPC work, improve modal and keyboard accessibility, honor reduced motion, and redact absolute paths from surfaced errors.
+- Make output publication collision-safe and atomic across concurrent writers, preserve cancellation before commit, reject future settings schemas without data loss, clean temporary files and path probes, and quote release tags at shell boundaries.
+
 ## v1.0.76 - 2026-07-13
 
 - Preserve sensitive-data evidence through type overrides so privacy risk and direct/quasi-identifier reporting cannot be understated, with cross-format preview and preflight regressions.

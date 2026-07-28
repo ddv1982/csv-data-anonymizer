@@ -21,6 +21,7 @@ export function ColumnTable({
   allColumnCount,
   selectedSet,
   loading,
+  disabled = false,
   showAllColumns,
   hiddenColumnCount,
   onToggleColumn,
@@ -33,6 +34,7 @@ export function ColumnTable({
   allColumnCount: number
   selectedSet: Set<number>
   loading: boolean
+  disabled?: boolean
   showAllColumns: boolean
   hiddenColumnCount: number
   onToggleColumn: (column: ColumnMetadata) => void
@@ -89,15 +91,14 @@ export function ColumnTable({
                   <tr
                     key={`${column.index}-${column.name}`}
                     className={rowClassName}
-                    onClick={() => {
-                      onToggleColumn(column)
-                    }}
+                    onClick={disabled ? undefined : () => onToggleColumn(column)}
                   >
                     <td className="checkbox-column">
                       <input
                         type="checkbox"
                         className="table-checkbox"
                         checked={selected}
+                        disabled={disabled}
                         onChange={() => {
                           onToggleColumn(column)
                         }}
@@ -131,7 +132,7 @@ export function ColumnTable({
                       <span className="mobile-cell-label">Strategy</span>
                       <select
                         value={control?.strategy ?? column.strategy ?? 'auto'}
-                        disabled={loading}
+                        disabled={loading || disabled}
                         aria-label={`Strategy for ${column.name}`}
                         onClick={(event) => event.stopPropagation()}
                         onChange={(event) => onStrategyChange(column, event.target.value as AnonymizationStrategy)}
@@ -158,7 +159,7 @@ export function ColumnTable({
           {!loading && allColumnCount > maxVisibleColumns ? (
             <tr className="show-more-row">
               <td colSpan={columnSpan} className="show-more-cell">
-                <button type="button" className="button button-ghost button-sm" onClick={onToggleShowAll}>
+                <button type="button" className="button button-ghost button-sm" disabled={disabled} onClick={onToggleShowAll}>
                   {showAllColumns ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
                   {showAllColumns ? 'Show Less' : `Show ${hiddenColumnCount} More Columns`}
                 </button>
