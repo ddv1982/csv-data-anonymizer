@@ -1,6 +1,9 @@
 export function directoryOf(path: string) {
   const slashIndex = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
-  return slashIndex > 0 ? path.slice(0, slashIndex) : null
+  if (slashIndex < 0) return null
+  if (slashIndex === 0) return path[0]
+  if (slashIndex === 2 && /^[A-Za-z]:[\\/]/.test(path)) return path.slice(0, 3)
+  return path.slice(0, slashIndex)
 }
 
 export function defaultOutputPathWithSuffix(inputPath: string, suffix: string) {

@@ -322,6 +322,32 @@ describe('useAnonymizerWorkflow', () => {
     expect(harness.workflow.busy).toBe('idle')
   })
 
+  it('stays busy until poll-failure cancellation is confirmed', async () => {
+    vi.useFakeTimers()
+    const pendingCancel = deferred<AnonymizeJobStatus>()
+    tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())
+    tauriMocks.startAnonymizeJob.mockResolvedValue(runningJobStatus())
+    tauriMocks.getAnonymizeJobStatus.mockRejectedValue(new Error('Simulated poll failure'))
+    tauriMocks.cancelAnonymizeJob.mockReturnValue(pendingCancel.promise)
+    const harness = renderWorkflow()
+    await flushPromises()
+
+    await act(async () => harness.workflow.handlePickInput())
+    await act(async () => harness.workflow.runAnonymization())
+    await act(async () => vi.advanceTimersByTimeAsync(600))
+
+    expect(tauriMocks.cancelAnonymizeJob).toHaveBeenCalledWith('job-1')
+    expect(harness.workflow.busy).toBe('running')
+
+    await act(async () => {
+      pendingCancel.resolve({ ...runningJobStatus(), state: 'canceled', cancelRequested: true })
+      await pendingCancel.promise
+    })
+
+    expect(harness.workflow.busy).toBe('idle')
+    expect(harness.workflow.error).toBe('Simulated poll failure')
+  })
+
   it('recomputes the suggested output path when the suffix setting changes', async () => {
     tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())
     const harness = renderWorkflow()
@@ -368,6 +394,14 @@ async function flushPromises() {
     await Promise.resolve()
     await Promise.resolve()
   })
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve
+  })
+  return { promise, resolve }
 }
 
 function settingsFixture(overrides: Partial<AppSettings> = {}): AppSettings {

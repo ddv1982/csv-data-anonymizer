@@ -5,6 +5,8 @@ describe('paths', () => {
   it('extracts parent directories from unix and windows paths', () => {
     expect(directoryOf('/tmp/input.csv')).toBe('/tmp')
     expect(directoryOf('C:\\tmp\\input.csv')).toBe('C:\\tmp')
+    expect(directoryOf('/input.csv')).toBe('/')
+    expect(directoryOf('C:\\input.csv')).toBe('C:\\')
     expect(directoryOf('input.csv')).toBeNull()
   })
 

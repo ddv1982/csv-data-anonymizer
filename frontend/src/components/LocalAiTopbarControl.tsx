@@ -3,6 +3,7 @@ import type { LocalAiState } from '../hooks/useLocalAi'
 import type { AppSettings } from '../types'
 import { LocalAiSettingsBlock } from './LocalAiSettingsBlock'
 import { ModalDialog } from './ModalDialog'
+import { localAiStatus } from './localAiStatus'
 
 export function LocalAiTopbarControl({
   settings,
@@ -19,7 +20,7 @@ export function LocalAiTopbarControl({
   onToggleSettings: (open: boolean) => void
   onUpdateSetting: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => void
 }) {
-  const status = localAiTopbarStatus(settings, localAi)
+  const status = localAiStatus(settings.localAiEnabled, localAi.downloadRunning, localAi.ready, Boolean(localAi.status))
 
   return (
     <>
@@ -69,20 +70,4 @@ export function LocalAiTopbarControl({
       </ModalDialog>
     </>
   )
-}
-
-function localAiTopbarStatus(settings: AppSettings, localAi: LocalAiState) {
-  if (!settings.localAiEnabled) {
-    return { label: 'Off', ready: false }
-  }
-  if (localAi.downloadRunning) {
-    return { label: 'Downloading', ready: false }
-  }
-  if (localAi.ready) {
-    return { label: 'Ready', ready: true }
-  }
-  if (localAi.status) {
-    return { label: 'Setup needed', ready: false }
-  }
-  return { label: 'Checking', ready: false }
 }

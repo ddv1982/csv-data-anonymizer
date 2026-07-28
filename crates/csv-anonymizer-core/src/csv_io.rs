@@ -197,9 +197,27 @@ pub fn process_file_with_control(
     options: ProcessOptions<'_>,
     control: Option<&mut ProcessControl<'_>>,
 ) -> Result<ProcessResult> {
+    process_file_with_control_and_overwrite(
+        input_path,
+        output_path,
+        columns,
+        options,
+        control,
+        true,
+    )
+}
+
+pub(crate) fn process_file_with_control_and_overwrite(
+    input_path: &Path,
+    output_path: &Path,
+    columns: &[ColumnMetadata],
+    options: ProcessOptions<'_>,
+    control: Option<&mut ProcessControl<'_>>,
+    overwrite: bool,
+) -> Result<ProcessResult> {
     validate_file(input_path)?;
     let start_time = Instant::now();
-    let mut result = replace_file_atomically(output_path, |temporary_output_path| {
+    let mut result = replace_file_atomically(output_path, overwrite, |temporary_output_path| {
         process_file_to_temporary_output(
             input_path,
             temporary_output_path,
@@ -266,6 +284,7 @@ fn process_csv_reader_to_writer<R: Read, W: Write>(
     for result in reader.records() {
         let record = result.map_err(csv_error)?;
         let mut row = record_to_vec(&record);
+        check_canceled(&mut control)?;
 
         if !header_processed {
             if let Some(first) = row.first_mut() {
@@ -284,7 +303,6 @@ fn process_csv_reader_to_writer<R: Read, W: Write>(
             continue;
         }
 
-        check_canceled(&mut control)?;
         let transformed_row =
             transform_row_with_state(&row, columns, row_count, &mut transform_state);
         write_csv_output_record(writer, transformed_row.iter().map(String::as_str))?;
@@ -292,6 +310,7 @@ fn process_csv_reader_to_writer<R: Read, W: Write>(
         report_progress(&mut control, row_count);
     }
 
+    check_canceled(&mut control)?;
     writer.flush()?;
 
     Ok(ProcessResult {

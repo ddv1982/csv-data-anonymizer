@@ -14,6 +14,8 @@ export function useLocalAi(settings: AppSettings, onError: (message: string) => 
   const [status, setStatus] = useState<LocalAiStatus | null>(null)
   const [downloadJobId, setDownloadJobId] = useState<string | null>(null)
   const [downloadStatus, setDownloadStatus] = useState<LocalAiDownloadStatus | null>(null)
+  const [downloadPending, setDownloadPending] = useState(false)
+  const downloadPendingRef = useRef(false)
   const refreshSequence = useRef(0)
   const request = useMemo(
     () => ({
@@ -40,14 +42,20 @@ export function useLocalAi(settings: AppSettings, onError: (message: string) => 
   }, [onError, request])
 
   const startDownload = useCallback(async () => {
+    if (downloadPendingRef.current || downloadJobId) return
+    downloadPendingRef.current = true
+    setDownloadPending(true)
     try {
       const nextStatus = await startLocalAiModelDownload(request)
       setDownloadStatus(nextStatus)
       setDownloadJobId(nextStatus.jobId)
     } catch (caught) {
       onError(messageFrom(caught))
+    } finally {
+      downloadPendingRef.current = false
+      setDownloadPending(false)
     }
-  }, [onError, request])
+  }, [downloadJobId, onError, request])
 
   const cancelDownload = useCallback(async () => {
     if (!downloadJobId) return
@@ -78,6 +86,7 @@ export function useLocalAi(settings: AppSettings, onError: (message: string) => 
   useEffect(
     () => () => {
       refreshSequence.current += 1
+      downloadPendingRef.current = false
     },
     [],
   )
@@ -123,7 +132,7 @@ export function useLocalAi(settings: AppSettings, onError: (message: string) => 
     selectedModel,
     statusMatchesModel,
     ready: Boolean(settings.localAiEnabled && statusMatchesModel && status?.ready),
-    downloadRunning: downloadStatus?.state === 'running',
+    downloadRunning: downloadPending || downloadStatus?.state === 'running',
     refresh,
     startDownload,
     cancelDownload,

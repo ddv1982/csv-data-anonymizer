@@ -99,11 +99,20 @@ export function useAnonymizeJob({
           timeoutId = window.setTimeout(pollJob, 300)
           return
         }
-        void cancelAnonymizeJob(jobId).catch(() => undefined)
-        setActiveJobId(null)
-        setJobStatus(null)
-        setBusy('idle')
-        setError(messageFrom(caught))
+        try {
+          const cancelStatus = await cancelAnonymizeJob(jobId)
+          if (!isMounted) return
+          const finished = handleJobStatusRef.current(cancelStatus)
+          setError(messageFrom(caught))
+          if (!finished) {
+            consecutivePollFailuresRef.current = 0
+            timeoutId = window.setTimeout(pollJob, 300)
+          }
+        } catch {
+          if (!isMounted) return
+          setError(messageFrom(caught))
+          timeoutId = window.setTimeout(pollJob, 300)
+        }
       }
     }
 

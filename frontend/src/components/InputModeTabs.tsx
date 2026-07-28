@@ -14,9 +14,11 @@ const inputModes: Array<{
 
 export function InputModeTabs({
   activeMode,
+  disabled = false,
   onChange,
 }: {
   activeMode: InputMode
+  disabled?: boolean
   onChange: (mode: InputMode) => void
 }) {
   return (
@@ -34,8 +36,10 @@ export function InputModeTabs({
             aria-selected={selected}
             aria-controls={`input-mode-panel-${mode.id}`}
             tabIndex={selected ? 0 : -1}
+            disabled={disabled}
             onClick={() => onChange(mode.id)}
             onKeyDown={(event) => {
+              if (disabled) return
               if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
               event.preventDefault()
               const nextIndex =

@@ -51,8 +51,14 @@ function sanitizeErrorMessage(message: string) {
 }
 
 function stripSensitiveDetails(message: string) {
-  return message
-    .replace(/(^|[\s(["'])\/(?:Users|home|private|var|tmp|Volumes|Applications|Library|System|opt|etc)\/[^\s"',)]+/g, '$1[path]')
-    .replace(/(^|[\s(["'])[A-Za-z]:\\[^\s"',)]+/g, '$1[path]')
-    .replace(/\bat\s+[^\s]+\.rs:\d+(?::\d+)?/g, 'at [internal]')
+  if (
+    /\bfile:\/+/i.test(message) ||
+    /(^\/|[^A-Za-z0-9/:]\/|:\/(?!\/))/.test(message) ||
+    /(^|[^A-Za-z0-9])[A-Za-z]:[\\/]/.test(message) ||
+    /(^|[^\\])\\\\[^\s\\]/.test(message)
+  ) {
+    return 'Unexpected application error.'
+  }
+
+  return message.replace(/\bat\s+[^\s]+\.rs:\d+(?::\d+)?/g, 'at [internal]')
 }

@@ -100,6 +100,8 @@ Requirements:
 - Frontend dependencies from `frontend/package-lock.json`
 - Playwright Chromium for browser e2e checks: `cd frontend && npx playwright install chromium`
 
+The frontend uses TypeScript 7's native compiler for builds and type checks. TypeScript 6 is installed through Microsoft's `@typescript/typescript6` compatibility package only because `typescript-eslint` still requires the TypeScript 6 programmatic API. The frontend `postinstall` rebuilds the native alias so npm consistently links `tsc` to TypeScript 7 instead of the compatibility package's transitive compiler. `npm run frontend:typecheck:compat` keeps both compilers aligned until the lint ecosystem supports the TypeScript 7 API.
+
 Setup:
 
 ```bash
@@ -119,6 +121,7 @@ npm run fmt
 npm run lint
 npm run test
 npm run typecheck
+npm run frontend:typecheck:compat
 npm run deadcode:required
 npm run docs:check
 ```
@@ -146,7 +149,7 @@ cargo bench -p csv-anonymizer-core --bench csv_streaming
 cargo bench -p csv-anonymizer-core --bench detector_matrix -- --sample-size 10
 ```
 
-The root `fmt`, `lint`, `test`, `typecheck`, `deadcode:required`, and `docs:check` scripts are the canonical local gates. The dead-code scans use Knip for the frontend and cargo-machete for Rust dependency drift. CI installs exact versions of cargo-audit (`0.22.2`) and cargo-machete (`0.9.2`); use `cargo:audit:required` when a missing audit tool must fail rather than skip. The detector matrix benchmark measures the built-in detector only; the external PII library comparison is archived in `docs/detector-library-evaluation.md`.
+The root `fmt`, `lint`, `test`, `typecheck`, `frontend:typecheck:compat`, `deadcode:required`, and `docs:check` scripts are the canonical local gates. The native TypeScript 7 compiler is authoritative; the compatibility check is temporary and exists only for TypeScript 6 API consumers. The dead-code scans use Knip for the frontend and cargo-machete for Rust dependency drift. CI installs exact versions of cargo-audit (`0.22.2`) and cargo-machete (`0.9.2`); use `cargo:audit:required` when a missing audit tool must fail rather than skip. The detector matrix benchmark measures the built-in detector only; the external PII library comparison is archived in `docs/detector-library-evaluation.md`.
 
 ## Architecture And Lifecycle Boundaries
 

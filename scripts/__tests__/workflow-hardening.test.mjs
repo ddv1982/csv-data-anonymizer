@@ -31,3 +31,11 @@ test('release validation and publication dependencies remain fail-closed', () =>
   assert.match(release, /publish-release:[\s\S]*needs: \[create-release, build-macos-release, build-linux-release, publish-apt-repository\]/)
   assert.ok(release.indexOf('- name: Validate Linux package metadata') < release.indexOf('- name: Build signed APT repository and checksums'))
 })
+
+test('release tags reach shell steps only through quoted environment variables', () => {
+  for (const line of release.split('\n').filter((line) => line.includes('${{ github.ref_name }}'))) {
+    assert.match(line, /(?:group|expected-tag|RELEASE_TAG):/)
+  }
+  assert.match(release, /RELEASE_TAG: \$\{\{ github\.ref_name \}\}/)
+  assert.match(release, /gh release edit "\$\{RELEASE_TAG\}"/)
+})

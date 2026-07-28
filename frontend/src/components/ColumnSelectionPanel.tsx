@@ -16,6 +16,7 @@ export function ColumnSelectionPanel({
   allColumnCount,
   selectedSet,
   loading,
+  disabled = false,
   showAllColumns,
   hiddenColumnCount,
   onToggleColumn,
@@ -31,6 +32,7 @@ export function ColumnSelectionPanel({
   allColumnCount: number
   selectedSet: Set<number>
   loading: boolean
+  disabled?: boolean
   showAllColumns: boolean
   hiddenColumnCount: number
   onToggleColumn: (column: ColumnMetadata) => void
@@ -63,6 +65,7 @@ export function ColumnSelectionPanel({
         allColumnCount={allColumnCount}
         selectedSet={selectedSet}
         loading={loading}
+        disabled={disabled}
         showAllColumns={showAllColumns}
         hiddenColumnCount={hiddenColumnCount}
         onToggleColumn={onToggleColumn}

@@ -1,6 +1,6 @@
 {
   "name": "csv-anonymizer",
-  "version": "1.0.76",
+  "version": "1.0.77",
   "description": "Desktop CSV anonymizer for local-first data transformation workflows.",
   "desktopName": "csv-anonymizer.desktop",
   "homepage": "https://github.com/ddv1982/csv-data-anonymizer",
@@ -12,6 +12,7 @@
     "frontend:e2e": "npm --prefix frontend run e2e",
     "frontend:a11y": "npm --prefix frontend run a11y",
     "frontend:typecheck": "npm --prefix frontend run typecheck",
+    "frontend:typecheck:compat": "npm --prefix frontend run typecheck:compat",
     "frontend:audit": "npm audit --prefix frontend --audit-level=high",
     "frontend:deadcode": "npm --prefix frontend run deadcode",
     "frontend:deadcode:production": "npm --prefix frontend run deadcode:production",

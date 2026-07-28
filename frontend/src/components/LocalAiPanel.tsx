@@ -4,6 +4,7 @@ import type { LocalAiDownloadStatus, LocalAiStatus } from '../types'
 import { GlossaryLabel, GlossaryPopover } from './GlossaryPopover'
 import { SectionHelp } from './SectionHelp'
 import { SwitchRow } from './SwitchRow'
+import { localAiStatus } from './localAiStatus'
 
 export function LocalAiPanel({
   enabled,
@@ -45,6 +46,7 @@ export function LocalAiPanel({
   const progress = downloadProgress(downloadStatus)
   const statusMessage = status && !statusMatchesModel ? `Checking ${selectedModel} in Ollama...` : status?.message
   const downloadLabel = selectedModel === defaultLocalAiModel ? 'Download Gemma' : `Download ${selectedModel}`
+  const displayStatus = localAiStatus(enabled, downloading, ready, Boolean(status))
 
   return (
     <div className="local-ai-panel">
@@ -54,7 +56,7 @@ export function LocalAiPanel({
             <div className="local-ai-title">
               <Cpu aria-hidden="true" />
               <span>Local AI</span>
-              <span className={ready ? 'status-pill success' : 'status-pill'}>{ready ? 'Ready' : 'Setup needed'}</span>
+              <span className={displayStatus.ready ? 'status-pill success' : 'status-pill'}>{displayStatus.label}</span>
             </div>
             <SectionHelp topic="localAi" label="How Local AI works" />
           </div>
