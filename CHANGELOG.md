@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.78 - 2026-07-29
+
+- Supersede the failed v1.0.77 tag without moving it, preserving the complete TypeScript 7, dependency, frontend workflow, privacy, accessibility, Rust publication, settings, and release hardening changes while pinning CI's Vite preview server to Playwright's expected port.
+
 ## v1.0.77 - 2026-07-29
 
 - Adopt the native TypeScript 7 compiler for authoritative frontend builds and type checks while retaining Microsoft's supported TypeScript 6 compatibility package for ESLint's compiler API, with explicit application, Vite, and Playwright project settings.
