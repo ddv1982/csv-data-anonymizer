@@ -26,12 +26,17 @@ pub(super) fn transform_email(
     context: &TransformContext<'_>,
     state: &mut TransformState,
 ) -> String {
-    let Some(at_index) = value.rfind('@') else {
+    // The domain is read from the folded value, not the raw one. Taking it raw carried
+    // the source's own padding into the output — `"  a@b.com  "` produced
+    // `"userNNN@b.com  "` — so one source value written twice with different padding
+    // produced two different cells while the ledger counted it once, and the retained
+    // whitespace disclosed a detail of the original that nothing else in the output does.
+    let identity = value_identity_key(value);
+    let Some(at_index) = identity.rfind('@') else {
         return shape_fallback(value, context, state);
     };
-    let domain = &value[at_index..];
-    let source_key = value_identity_key(value);
-    let local_part = state.assign_generated(PseudonymDomain::EmailLocal, &source_key, || {
+    let domain = &identity[at_index..];
+    let local_part = state.assign_generated(PseudonymDomain::EmailLocal, &identity, || {
         let mut rng = rand::thread_rng();
         format!("user{}", rng.gen_range(1..=999_999))
     });
@@ -160,9 +165,9 @@ pub(super) fn transform_generic_string(
     _context: &TransformContext<'_>,
     state: &mut TransformState,
 ) -> String {
-    let source_key = format!("{}:{}", value.len(), value_identity_key(value));
-    state.assign_generated(PseudonymDomain::GenericString, &source_key, || {
-        transform_generic_string_candidate(value)
+    let identity = value_identity_key(value);
+    state.assign_generated(PseudonymDomain::GenericString, &identity, || {
+        transform_generic_string_candidate(&identity)
     })
 }
 
@@ -180,11 +185,18 @@ fn transform_generic_string_candidate(value: &str) -> String {
     let output_length = rand::thread_rng().gen_range(min_length..=max_length);
 
     let candidate = random_string(output_length, GENERIC_STRING_CHARSET);
-    if candidate == value {
+    if candidate.eq_ignore_ascii_case(value) {
         // A short value can be redrawn exactly — a single character repeats
         // roughly once in 64 draws. An "anonymized" cell must never be the
         // original, so extend the draw instead of returning it. The result is
         // longer than the input, so it cannot match it.
+        //
+        // Case-insensitively, because `value` here is the case-folded identity while
+        // the charset below is mixed-case: an exact comparison would let the draw
+        // `A` through for the source value `A`, whose identity is `a`. Folding the
+        // comparison covers the original and every case variant of it, so this is
+        // stricter than comparing against the raw source rather than a substitute
+        // for it.
         return format!("{candidate}{}", random_string(1, GENERIC_STRING_CHARSET));
     }
     candidate

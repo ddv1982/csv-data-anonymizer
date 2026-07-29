@@ -7,7 +7,7 @@ mod redaction;
 mod state;
 mod structured;
 
-pub(crate) use redaction::STRUCTURED_SCALAR_REDACTION_WARNING;
+pub(crate) use redaction::{STRUCTURED_SCALAR_REDACTION_WARNING, base_column_label};
 pub use state::TransformState;
 
 pub fn transform_value(
@@ -35,11 +35,17 @@ pub fn transform_value_with_state(
         AnonymizationStrategy::Redact => {
             return redaction::placeholder_for_column(column).to_string();
         }
+        AnonymizationStrategy::Label => {
+            let ordinal = state.record_pseudonymized_value(column.index, value);
+            return redaction::labelled_placeholder(column, ordinal);
+        }
         AnonymizationStrategy::Tokenize => {
+            state.record_pseudonymized_value(column.index, value);
             return structured::transform_opaque_token(value, context, state);
         }
         AnonymizationStrategy::LocalAi => {
             if let Some(replacement) = state.smart_replacement(column.index, value) {
+                state.record_pseudonymized_value(column.index, value);
                 return replacement;
             }
             state.record_smart_fallback();
@@ -52,6 +58,10 @@ pub fn transform_value_with_state(
     if column.detected_type.uses_default_pass_through() {
         return value.to_string();
     }
+
+    // Past every early return, so what remains is consistently pseudonymized —
+    // including the Local AI fallback, which lands on the same transformers.
+    state.record_pseudonymized_value(column.index, value);
 
     match column.detected_type {
         DataType::Email => structured::transform_email(value, context, state),

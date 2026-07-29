@@ -156,6 +156,7 @@ fn processes_csv_text() {
         &columns,
         ProcessOptions {
             smart_replacements: None,
+            mapping_entry_ceiling: None,
         },
     )
     .unwrap();
@@ -180,6 +181,7 @@ fn processes_selected_columns() {
         &columns,
         ProcessOptions {
             smart_replacements: None,
+            mapping_entry_ceiling: None,
         },
     )
     .unwrap();
@@ -207,6 +209,7 @@ fn rejects_non_empty_fields_beyond_headers_without_committing_output() {
 
     let columns = vec![
         ColumnMetadata {
+            header_label_is_ambiguous: false,
             name: "id".to_string(),
             source_path: None,
             index: 0,
@@ -217,11 +220,13 @@ fn rejects_non_empty_fields_beyond_headers_without_committing_output() {
             privacy_evidence: Vec::new(),
             pii_risk: crate::types::PiiRisk::High,
             sample_values: vec![],
+            sample_value_distribution: Default::default(),
             empty_format: crate::types::EmptyFormat::EmptyString,
             is_selected: false,
             strategy: crate::types::AnonymizationStrategy::Auto,
         },
         ColumnMetadata {
+            header_label_is_ambiguous: false,
             name: "email".to_string(),
             source_path: None,
             index: 1,
@@ -232,6 +237,7 @@ fn rejects_non_empty_fields_beyond_headers_without_committing_output() {
             privacy_evidence: Vec::new(),
             pii_risk: crate::types::PiiRisk::High,
             sample_values: vec![],
+            sample_value_distribution: Default::default(),
             empty_format: crate::types::EmptyFormat::EmptyString,
             is_selected: true,
             strategy: crate::types::AnonymizationStrategy::Auto,
@@ -244,6 +250,7 @@ fn rejects_non_empty_fields_beyond_headers_without_committing_output() {
         &columns,
         ProcessOptions {
             smart_replacements: None,
+            mapping_entry_ceiling: None,
         },
     )
     .unwrap_err();
@@ -272,6 +279,7 @@ fn pads_short_rows_and_truncates_empty_extra_cells() {
         &columns,
         ProcessOptions {
             smart_replacements: None,
+            mapping_entry_ceiling: None,
         },
     )
     .unwrap();
@@ -303,6 +311,7 @@ fn neutralizes_formula_like_headers_and_cells_in_standard_output() {
         &columns,
         ProcessOptions {
             smart_replacements: None,
+            mapping_entry_ceiling: None,
         },
     )
     .unwrap();
@@ -353,6 +362,7 @@ fn process_row_count_skips_blank_data_rows_but_preserves_them() {
         &columns,
         ProcessOptions {
             smart_replacements: None,
+            mapping_entry_ceiling: None,
         },
     )
     .unwrap();
@@ -396,6 +406,7 @@ fn process_control_reports_progress_and_cancels_before_next_row() {
             &columns,
             ProcessOptions {
                 smart_replacements: None,
+                mapping_entry_ceiling: None,
             },
             Some(&mut control),
         )
@@ -432,6 +443,7 @@ fn process_control_cancels_after_final_progress_before_output_commit() {
             &columns,
             ProcessOptions {
                 smart_replacements: None,
+                mapping_entry_ceiling: None,
             },
             Some(&mut control),
         )
@@ -458,4 +470,60 @@ fn signed_non_numeric_values_are_still_neutralized() {
         "'+cmd|calc"
     );
     assert_eq!(neutralize_spreadsheet_formula("－10").as_ref(), "'－10");
+}
+
+/// The mapping ceiling has to be *consulted by the run loop*, not merely defined.
+///
+/// `TransformState::check_mapping_budget_against` can be perfectly correct in
+/// isolation while nothing ever calls it, and that failure mode is invisible in the
+/// worst way: every unit test passes, the error message is well worded, the README
+/// describes a guard — and a large run is still killed by the operating system with no
+/// explanation, because the check sits in unreachable code. This test fails if the
+/// call is removed from the loop, which no test of the method itself can do.
+///
+/// The real ceiling stands for roughly 5 GB of mapping, far past what a test can
+/// build, which is the whole reason `ProcessOptions::mapping_entry_ceiling` exists.
+///
+/// It also asserts the destination is untouched, because refusing part-way through is
+/// only an improvement on running out of memory if it does not leave a half-written
+/// file behind for someone to mistake for a finished one.
+#[test]
+fn refuses_a_run_that_outgrows_its_mapping_ceiling_without_committing_output() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("wide-cardinality.csv");
+    let output_path = temp_dir.path().join("wide-cardinality-output.csv");
+    let mut text = String::from("id,email\n");
+    for row in 0..40 {
+        text.push_str(&format!("{row},person{row}@example.com\n"));
+    }
+    fs::write(&input_path, &text).unwrap();
+
+    let sample = read_sample(&input_path, 100).unwrap();
+    let mut columns =
+        apply_column_selection(&build_column_metadata(&sample.headers, &sample.rows), &[1]);
+    // Pseudonymize explicitly. Left on `Auto` this column is High risk and so defaults
+    // to Redact, which holds no mapping at all — the run then finishes cleanly at any
+    // ceiling, and the test would pass while proving nothing about the guard.
+    columns[1].strategy = crate::types::AnonymizationStrategy::Pseudonymize;
+
+    let error = process_file(
+        &input_path,
+        &output_path,
+        &columns,
+        ProcessOptions {
+            smart_replacements: None,
+            // Every row here introduces a distinct value, so a ceiling this small is
+            // passed within the first few rows: the refusal lands mid-file, which is
+            // the case that matters for the output-commit assertion below.
+            mapping_entry_ceiling: Some(4),
+        },
+    )
+    .unwrap_err();
+
+    assert!(
+        matches!(error, AnonymizerError::MappingBudgetExceeded { .. }),
+        "expected the mapping ceiling to refuse the run, got {error:?}"
+    );
+    assert!(error.to_string().contains("No output was written"));
+    assert!(!output_path.exists());
 }

@@ -1,4 +1,3 @@
-use super::preview_warning_for_column;
 use crate::release_report::{
     ReportContext, build_column_reports, build_evidence, build_readiness, build_utility_metrics,
     standard_notes,
@@ -19,6 +18,7 @@ pub(crate) fn build_privacy_report(
         smart_replacement_columns: 0,
         opaque_token_columns: 0,
         masked_columns: 0,
+        labelled_columns: 0,
         redacted_columns: 0,
         pass_through_columns: 0,
         unique_pseudonym_values: transform_report.unique_pseudonym_values,
@@ -33,6 +33,14 @@ pub(crate) fn build_privacy_report(
             .clone(),
         smart_replacement_fallbacks: transform_report.smart_replacement_fallbacks,
         shape_fallback_values: transform_report.shape_fallback_values,
+        // Carried even though no UI component renders it, which makes it look like dead
+        // payload. It is the evidence behind the frequency-inversion note, and it is the
+        // only place the exact post-run figures are observable: `TransformReport` never
+        // leaves the core, and the notes state distinct and total counts in prose but not
+        // `max_value_occurrences`. Removing it was tried and reverted — it takes the
+        // ledger's exactness out of reach of the tests that check it, which is the part
+        // of this feature most worth being able to check.
+        column_value_distributions: transform_report.column_value_distributions.clone(),
         readiness: Default::default(),
         evidence: Vec::new(),
         column_reports: Vec::new(),
@@ -53,8 +61,14 @@ pub(crate) fn build_privacy_report(
             AnonymizationStrategy::PassThrough => report.pass_through_columns += 1,
             AnonymizationStrategy::Tokenize => report.opaque_token_columns += 1,
             AnonymizationStrategy::LocalAi => report.smart_replacement_columns += 1,
+            AnonymizationStrategy::Label => report.labelled_columns += 1,
             AnonymizationStrategy::Auto | AnonymizationStrategy::Pseudonymize => {
-                if preview_warning_for_column(column).is_some() {
+                // Asks the pass-through predicate directly rather than reading it off
+                // `preview_warning_for_column`. Under these two strategies a warning
+                // means exactly this, but the warning list is free to grow — a
+                // cardinality note would otherwise silently reclassify a
+                // pseudonymized column as pass-through.
+                if column.detected_type.uses_default_pass_through() {
                     report.pass_through_columns += 1;
                 } else {
                     report.pseudonymized_columns += 1;
@@ -130,6 +144,7 @@ fn strategy_changes_output(column: &ColumnMetadata) -> bool {
     match column.strategy {
         AnonymizationStrategy::Mask
         | AnonymizationStrategy::Redact
+        | AnonymizationStrategy::Label
         | AnonymizationStrategy::Tokenize
         | AnonymizationStrategy::LocalAi => true,
         AnonymizationStrategy::PassThrough => false,

@@ -68,6 +68,8 @@ export const sectionHelp = {
           ', and ',
           { text: 'Tokenize', term: 'tokenize' },
           ' are stricter. ',
+          { text: 'Label with column name', term: 'label' },
+          ' names the column and numbers each distinct value. ',
           { text: 'Smart replacement', term: 'smartReplacement' },
           ' uses ',
           { text: 'Local AI', term: 'localAi' },

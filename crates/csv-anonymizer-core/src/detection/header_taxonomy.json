@@ -234,6 +234,13 @@
     { "kind": "generic_name", "concept": "person.generic_name", "dataType": "fullName", "lang": "es", "text": "nombre", "weight": 82, "matchMode": "exact" },
     { "kind": "generic_name", "concept": "person.generic_name", "dataType": "fullName", "lang": "pt", "text": "nome", "weight": 82, "matchMode": "exact" },
     { "kind": "generic_name", "concept": "person.generic_name", "dataType": "fullName", "lang": "it", "text": "nome", "weight": 82, "matchMode": "exact" },
-    { "kind": "generic_name", "concept": "person.generic_name", "dataType": "fullName", "lang": "ja", "text": "名前", "weight": 82, "matchMode": "exact" }
+    { "kind": "generic_name", "concept": "person.generic_name", "dataType": "fullName", "lang": "ja", "text": "名前", "weight": 82, "matchMode": "exact" },
+    { "kind": "possible_name", "concept": "person.possible_name", "dataType": "fullName", "lang": "en", "text": "name", "weight": 60, "matchMode": "suffix" },
+    { "kind": "possible_name", "concept": "person.possible_name", "dataType": "fullName", "lang": "nl", "text": "naam", "weight": 60, "matchMode": "suffix" },
+    { "kind": "possible_name", "concept": "person.possible_name", "dataType": "fullName", "lang": "de", "text": "name", "weight": 60, "matchMode": "suffix" },
+    { "kind": "possible_name", "concept": "person.possible_name", "dataType": "fullName", "lang": "es", "text": "nombre", "weight": 60, "matchMode": "suffix" },
+    { "kind": "possible_name", "concept": "person.possible_name", "dataType": "fullName", "lang": "pt", "text": "nome", "weight": 60, "matchMode": "suffix" },
+    { "kind": "possible_name", "concept": "person.possible_name", "dataType": "fullName", "lang": "it", "text": "nome", "weight": 60, "matchMode": "suffix" },
+    { "kind": "possible_name", "concept": "person.possible_name", "dataType": "fullName", "lang": "fr", "text": "nom", "weight": 60, "matchMode": "suffix" }
   ]
 }

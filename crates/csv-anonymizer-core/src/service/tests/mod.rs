@@ -11,5 +11,8 @@ fn fixture(name: &str) -> PathBuf {
 
 mod analysis_preview;
 mod anonymize;
+mod cardinality;
+mod label_output;
+mod possible_names;
 mod preflight;
 mod smart_replacement;

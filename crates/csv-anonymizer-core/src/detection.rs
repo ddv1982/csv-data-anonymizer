@@ -27,6 +27,7 @@ use value::{
 };
 
 pub use locale::{LocaleContext, infer_locale_context};
+pub(crate) use privacy::POSSIBLE_PERSON_NAME_DETECTOR;
 pub use privacy::{ColumnPrivacyAnalysis, analyze_column_privacy, max_pii_risk};
 pub use spans::{PrivacySpan, collect_privacy_spans};
 

@@ -47,6 +47,11 @@ export const glossaryTerms = {
     title: 'Tokenize',
     body: 'Replace values with opaque tok_... tokens that stay consistent within the current run.',
   },
+  label: {
+    title: 'Label with column name',
+    body:
+      'Replace values with a placeholder naming the column and numbering each distinct value, such as [CUSTOMER_NOTES_1]. Useful when detection cannot identify the values but you still want to see which rows shared one. Repeated values keep the same number, so they stay linkable — this is pseudonymization, not anonymization.',
+  },
   smartReplacement: {
     title: 'Smart replacement',
     body: 'Use the local AI model to generate context-aware replacements. If no valid AI value is available, the app falls back to rule-based pseudonymization.',

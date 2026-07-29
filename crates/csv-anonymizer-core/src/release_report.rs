@@ -1,10 +1,10 @@
 use crate::report_notes::push_unselected_column_note;
-use crate::service::{preview_warning_for_column, redaction_changes_structured_scalar_type};
+use crate::service::redaction_changes_structured_scalar_type;
 use crate::strategies::STRUCTURED_SCALAR_REDACTION_WARNING;
 use crate::types::{
-    AnonymizationStrategy, ColumnMetadata, ColumnReleaseReport, DataType, ReleaseEvidenceItem,
-    ReleaseEvidenceStatus, ReleaseReadiness, ReleaseReadinessStatus, TransformReport,
-    UtilityMetric,
+    AnonymizationStrategy, ColumnMetadata, ColumnReleaseReport, DataType, FrequencyInversionRisk,
+    ReleaseEvidenceItem, ReleaseEvidenceStatus, ReleaseReadiness, ReleaseReadinessStatus,
+    TransformReport, UtilityMetric,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -55,6 +55,27 @@ pub(crate) fn build_readiness(
             "{} value(s) did not match their column's detected format and were replaced with generic pseudonyms instead of format-preserving ones.",
             report.shape_fallback_values
         ));
+    }
+    // A review item rather than a blocker. Whether few distinct values matter depends
+    // on what the column holds — a six-valued column may carry nothing sensitive — so
+    // a measured heuristic should inform the reviewer, not refuse the release. Note
+    // this cannot change the readiness status on its own: the "not a formal anonymity
+    // guarantee" item below is unconditional, so the status is already Review.
+    if let Some(report) = context.transform_report {
+        let invertible = report
+            .column_value_distributions
+            .iter()
+            .filter(|distribution| distribution.risks_frequency_inversion())
+            .count();
+        if invertible > 0 {
+            // "Repeated few enough values" described only the distinct-count test. A
+            // column flagged for one dominant value has not repeated few values — it
+            // repeated *one* value often — so the summary states the property all three
+            // tests establish and leaves the specific evidence to the per-column note.
+            review_items.push(format!(
+                "The value distribution of {invertible} pseudonymized column(s) is uneven enough that the mapping could be matched back by value frequency."
+            ));
+        }
     }
 
     // Blocked status comes only from the preflight path in service.rs; the
@@ -235,13 +256,60 @@ pub(crate) fn standard_notes(
                     column.strategy,
                     AnonymizationStrategy::Auto | AnonymizationStrategy::Pseudonymize
                 )
-                && preview_warning_for_column(column).is_none()
+                && !column.detected_type.uses_default_pass_through()
         })
     {
         notes.push(
             "Pseudonyms and tokens are tracked within each run so repeated source values stay consistent while distinct readable names avoid reuse while capacity remains."
                 .to_string(),
         );
+        // The sentence above describes consistency as the feature it is. It is also a
+        // re-identification property, and saying only the first half is what the EDPB
+        // anonymisation guidelines warn against: output that keeps records linkable is
+        // pseudonymised, and pseudonymised data is still personal data. Naming that
+        // costs nothing and stops the report implying more than it delivers.
+        notes.push(
+            "Because repeated values keep the same replacement, these columns are pseudonymized rather than anonymized: records stay linkable to each other, and the output remains personal data under GDPR. Redaction and masking do not preserve that link."
+                .to_string(),
+        );
+    }
+
+    let invertible: Vec<String> = transform_report
+        .column_value_distributions
+        .iter()
+        .filter_map(|distribution| {
+            let risk = distribution.frequency_inversion_risk()?;
+            let name = columns
+                .iter()
+                .find(|column| column.index == distribution.column_index)
+                .map(|column| column.name.as_str())
+                .unwrap_or("(unnamed)");
+            // These figures are exact rather than sampled — the ledger counted every
+            // row — so unlike the pre-run warning this names no sample size.
+            Some(match risk {
+                // A distinct count would actively mislead here: a column of 101 values
+                // where one covers half the rows renders as "101 distinct of 200
+                // values", which is true, reads as reassuring, and describes a risk the
+                // column does not have instead of the one it does.
+                FrequencyInversionRisk::DominantValue { share } => format!(
+                    "{name} (one value in {:.0}% of {} values)",
+                    share * 100.0,
+                    distribution.total_values
+                ),
+                FrequencyInversionRisk::FewDistinctValues
+                | FrequencyInversionRisk::LargeGroups { .. } => format!(
+                    "{name} ({} distinct of {} values)",
+                    distribution.distinct_values, distribution.total_values
+                ),
+            })
+        })
+        .collect();
+    if !invertible.is_empty() {
+        notes.push(format!(
+            "The replacement mapping for {} column(s) could be matched back by how often each value occurs: {}.",
+            invertible.len(),
+            invertible.join(", ")
+        ));
     }
     if transform_report.collisions_avoided > 0 {
         notes.push(format!(
@@ -340,6 +408,15 @@ fn column_action(column: &ColumnMetadata) -> (String, ReleaseEvidenceStatus, Str
             ReleaseEvidenceStatus::Verified,
             "Selected values become opaque tokens that stay consistent within the run.".to_string(),
         ),
+        AnonymizationStrategy::Label => (
+            "Labelled".to_string(),
+            // Review, not Verified: the output is readable and re-linkable by design,
+            // so it is pseudonymised rather than anonymous. A reader has to decide
+            // whether that is acceptable for the release, which is the definition of
+            // a review item.
+            ReleaseEvidenceStatus::Review,
+            "Selected values become column-named placeholders that stay consistent within the run, which keeps repeated values linkable.".to_string(),
+        ),
         AnonymizationStrategy::LocalAi => (
             "Smart replacement".to_string(),
             ReleaseEvidenceStatus::Review,
@@ -351,7 +428,7 @@ fn column_action(column: &ColumnMetadata) -> (String, ReleaseEvidenceStatus, Str
             "Selected values are intentionally kept unchanged.".to_string(),
         ),
         AnonymizationStrategy::Auto | AnonymizationStrategy::Pseudonymize => {
-            if preview_warning_for_column(column).is_some() {
+            if column.detected_type.uses_default_pass_through() {
                 (
                     "No-op/pass-through".to_string(),
                     ReleaseEvidenceStatus::Review,

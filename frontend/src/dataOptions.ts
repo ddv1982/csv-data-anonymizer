@@ -36,6 +36,7 @@ const smartReplacementStrategies: AnonymizationStrategy[] = [
 export const csvStrategies: AnonymizationStrategy[] = [
   ...smartReplacementStrategies,
   'mask',
+  'label',
   'redact',
   'passThrough',
 ]
@@ -43,6 +44,7 @@ export const csvStrategies: AnonymizationStrategy[] = [
 export const directInputStrategies: AnonymizationStrategy[] = [
   ...smartReplacementStrategies,
   'mask',
+  'label',
   'redact',
   'passThrough',
 ]
@@ -55,6 +57,9 @@ export function strategyLabel(strategy: AnonymizationStrategy) {
   }
   if (strategy === 'redact') {
     return 'Redact'
+  }
+  if (strategy === 'label') {
+    return 'Label with column name'
   }
   return formatToken(strategy)
 }
