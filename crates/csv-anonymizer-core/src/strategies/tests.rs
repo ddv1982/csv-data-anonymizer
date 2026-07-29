@@ -90,11 +90,37 @@ fn numeric_id_all_zero_value_is_replaced() {
     assert!(result.chars().all(|character| character.is_ascii_digit()));
 }
 
+/// A numeric-looking `String` column gets the generic pseudonym, not the
+/// numeric strategy's length- and digit-preserving treatment. The distinguishing
+/// property is that the generic charset is alphanumeric, but any single draw can
+/// legitimately come out all digits (about once in a hundred for a 3-character
+/// value), so it is checked across draws rather than once.
 #[test]
 fn numeric_string_fallback_currently_uses_generic_string_strategy() {
-    let result = transform_value("123", &column(DataType::String), &context());
-    assert_ne!(result, "123");
-    assert!(result.chars().any(|character| !character.is_ascii_digit()));
+    let mut saw_non_digit = false;
+    for _ in 0..64 {
+        let result = transform_value("123", &column(DataType::String), &context());
+        assert_ne!(result, "123");
+        saw_non_digit |= result.chars().any(|character| !character.is_ascii_digit());
+    }
+
+    assert!(
+        saw_non_digit,
+        "generic string strategy should draw from the alphanumeric charset"
+    );
+}
+
+/// The generic string strategy draws a random value of roughly the original's
+/// length, so for short inputs it can draw the original back. Returning it would
+/// leave a source value sitting in the "anonymized" output.
+#[test]
+fn generic_string_strategy_never_returns_the_original_value() {
+    for value in ["a", "7", "ab", "x1"] {
+        for _ in 0..512 {
+            let result = transform_value(value, &column(DataType::String), &context());
+            assert_ne!(result, value, "generic pseudonym echoed the input {value}");
+        }
+    }
 }
 
 #[test]
@@ -178,6 +204,98 @@ fn redact_uses_typed_placeholders() {
     assert_eq!(
         transform_value("johndoe", &username_column, &context()),
         "[ACCOUNT_ID]"
+    );
+}
+
+/// The risk model and the placeholder must read the same evidence the same way.
+///
+/// Both call `PrivacyEvidenceSummary::is_actionable`, and this runs the real detector so
+/// that dropping either call fails here: if `analyze_column_privacy` stops filtering, the
+/// risk assertion fails; if `placeholder_from_evidence` stops filtering, the placeholder
+/// assertion does. A hand-built evidence fixture could not catch the first, because it
+/// would assert only what I had already decided the evidence was.
+#[test]
+fn a_column_the_risk_model_leaves_at_low_gets_no_specific_placeholder() {
+    use crate::detection::analyze_column_privacy;
+
+    let values: Vec<String> = [
+        "please ring 4915550123 tomorrow",
+        "call 4915550124 about the order",
+        "ring 4915550125 after noon",
+    ]
+    .iter()
+    .map(ToString::to_string)
+    .collect();
+
+    let analysis = analyze_column_privacy("note", 0, &values, DataType::Enum, Confidence::High);
+
+    assert!(
+        !analysis.evidence.is_empty(),
+        "the fixture must still produce evidence, or neither half of this test means anything"
+    );
+    assert!(
+        analysis
+            .evidence
+            .iter()
+            .all(|summary| summary.confidence == Confidence::Low),
+        "the fixture must stay Low-only to exercise the all-Low case: {:?}",
+        analysis.evidence
+    );
+    assert_eq!(
+        analysis.pii_risk,
+        PiiRisk::Low,
+        "Low-only evidence must not raise the column's risk"
+    );
+
+    let mut column = column(DataType::Enum);
+    column.strategy = AnonymizationStrategy::Redact;
+    column.pii_risk = analysis.pii_risk;
+    column.privacy_evidence = analysis.evidence;
+
+    assert_eq!(
+        transform_value(&values[0], &column, &context()),
+        "[REDACTED]",
+        "the placeholder must not claim a type the risk model declined to trust"
+    );
+}
+
+/// The filter must not swallow evidence the app does act on.
+///
+/// Identical fixtures apart from `confidence`, so this isolates that field as the thing
+/// deciding the outcome. Without it, a filter that had collapsed every specific
+/// placeholder to `[REDACTED]` would still look correct.
+#[test]
+fn redact_names_a_placeholder_only_on_evidence_the_risk_model_trusts() {
+    let phone_span_evidence = |confidence| {
+        vec![PrivacyEvidenceSummary {
+            kind: PrivacyFindingKind::Contact,
+            data_type: DataType::Phone,
+            confidence,
+            match_count: 1,
+            sample_count: 1,
+            score: 55,
+            detector: "pattern:phone-digits".to_string(),
+            reason: "Digit run resembles a phone number.".to_string(),
+            detectors: vec!["pattern:phone-digits".to_string()],
+        }]
+    };
+
+    let mut low_only = column(DataType::Enum);
+    low_only.strategy = AnonymizationStrategy::Redact;
+    low_only.privacy_evidence = phone_span_evidence(Confidence::Low);
+    assert_eq!(
+        transform_value("please ring 4915550123 tomorrow", &low_only, &context()),
+        "[REDACTED]",
+        "a Low-only column must not claim the cell held a phone number"
+    );
+
+    let mut medium = column(DataType::Enum);
+    medium.strategy = AnonymizationStrategy::Redact;
+    medium.privacy_evidence = phone_span_evidence(Confidence::Medium);
+    assert_eq!(
+        transform_value("please ring 4915550123 tomorrow", &medium, &context()),
+        "[PHONE]",
+        "raising the same evidence to Medium must still name the specific placeholder"
     );
 }
 
@@ -401,6 +519,36 @@ fn local_ai_strategy_uses_validated_replacement_map() {
     assert_eq!(result, "Maya Carter");
     assert_eq!(state.report().smart_replacement_values, 1);
     assert_eq!(state.report().smart_replacement_fallbacks, 0);
+}
+
+/// The Local AI replacement map and the pseudonym maps key source values
+/// through the same `value_identity_key`. They hold separate key spaces and never
+/// query each other, so a divergence would not cause a cross-map miss — each map
+/// would simply stop recognizing its own values as repeats, handing out a second
+/// replacement for a value it has already seen. That is the quieter failure and
+/// the reason both halves are pinned here rather than only the shared helper: the
+/// helper being right is no use if a map stops routing its lookups through it.
+#[test]
+fn replacement_lookup_ignores_case_and_padding_on_both_map_kinds() {
+    let mut local_ai_column = column(DataType::FullName);
+    local_ai_column.strategy = AnonymizationStrategy::LocalAi;
+    let mut replacements = SmartReplacementMap::default();
+    replacements.insert(0, "Alice Smith", "Maya Carter");
+    let mut state = TransformState::with_smart_replacements(replacements);
+    let context = context();
+
+    let result =
+        transform_value_with_state("  alice SMITH  ", &local_ai_column, &context, &mut state);
+
+    assert_eq!(result, "Maya Carter");
+    assert_eq!(state.report().smart_replacement_fallbacks, 0);
+
+    let name_column = column(DataType::FullName);
+    let mut state = TransformState::new();
+    let first = transform_value_with_state("Alice Smith", &name_column, &context, &mut state);
+    let second = transform_value_with_state("  alice SMITH  ", &name_column, &context, &mut state);
+
+    assert_eq!(first, second);
 }
 
 #[test]

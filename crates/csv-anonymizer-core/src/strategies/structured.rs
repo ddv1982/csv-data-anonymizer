@@ -1,7 +1,6 @@
-use super::state::{
-    PseudonymDomain, TOKEN_CHARSET, TransformState, normalized_identity, random_string,
-};
-use crate::hash::random_uuid_v4;
+use super::state::{PseudonymDomain, TOKEN_CHARSET, TransformState};
+use crate::random::{random_digit, random_string, random_uuid_v4};
+use crate::smart::value_identity_key;
 use crate::types::TransformContext;
 use chrono::{Duration, NaiveDate};
 use rand::Rng;
@@ -15,10 +14,9 @@ pub(super) fn transform_opaque_token(
         "{}:{}:{}",
         context.column_name,
         context.column_index,
-        normalized_identity(value)
+        value_identity_key(value)
     );
-    state.assign_generated(PseudonymDomain::OpaqueToken, &source_key, |attempt| {
-        let _ = attempt;
+    state.assign_generated(PseudonymDomain::OpaqueToken, &source_key, || {
         format!("tok_{}", random_string(16, TOKEN_CHARSET))
     })
 }
@@ -32,9 +30,8 @@ pub(super) fn transform_email(
         return shape_fallback(value, context, state);
     };
     let domain = &value[at_index..];
-    let source_key = normalized_identity(value);
-    let local_part = state.assign_generated(PseudonymDomain::EmailLocal, &source_key, |attempt| {
-        let _ = attempt;
+    let source_key = value_identity_key(value);
+    let local_part = state.assign_generated(PseudonymDomain::EmailLocal, &source_key, || {
         let mut rng = rand::thread_rng();
         format!("user{}", rng.gen_range(1..=999_999))
     });
@@ -46,11 +43,8 @@ pub(super) fn transform_uuid(
     _context: &TransformContext<'_>,
     state: &mut TransformState,
 ) -> String {
-    let source_key = normalized_identity(value);
-    let uuid = state.assign_generated(PseudonymDomain::Uuid, &source_key, |attempt| {
-        let _ = attempt;
-        random_uuid_v4()
-    });
+    let source_key = value_identity_key(value);
+    let uuid = state.assign_generated(PseudonymDomain::Uuid, &source_key, random_uuid_v4);
     if value == value.to_uppercase() {
         uuid.to_uppercase()
     } else {
@@ -66,9 +60,9 @@ pub(super) fn transform_timestamp(
     let Some((date, suffix)) = iso_date_prefix(value) else {
         return shape_fallback(value, context, state);
     };
-    let source_key = normalized_identity(value);
-    state.assign_generated(PseudonymDomain::Timestamp, &source_key, |attempt| {
-        transform_timestamp_candidate(date, suffix, attempt)
+    let source_key = value_identity_key(value);
+    state.assign_generated(PseudonymDomain::Timestamp, &source_key, || {
+        transform_timestamp_candidate(date, suffix)
     })
 }
 
@@ -78,7 +72,7 @@ fn iso_date_prefix(value: &str) -> Option<(NaiveDate, &str)> {
     Some((date, &value[10..]))
 }
 
-fn transform_timestamp_candidate(date: NaiveDate, suffix: &str, _attempt: usize) -> String {
+fn transform_timestamp_candidate(date: NaiveDate, suffix: &str) -> String {
     let Some(offset_date) = shifted_date(date) else {
         return format!("{}{}", date.format("%Y-%m-%d"), suffix);
     };
@@ -111,9 +105,9 @@ pub(super) fn transform_phone(
     if !is_phone_shaped(value) {
         return shape_fallback(value, context, state);
     }
-    let source_key = normalized_identity(value);
-    state.assign_generated(PseudonymDomain::Phone, &source_key, |attempt| {
-        transform_phone_candidate(value, attempt)
+    let source_key = value_identity_key(value);
+    state.assign_generated(PseudonymDomain::Phone, &source_key, || {
+        transform_phone_candidate(value)
     })
 }
 
@@ -136,7 +130,7 @@ fn is_phone_shaped(value: &str) -> bool {
     })
 }
 
-fn transform_phone_candidate(value: &str, _attempt: usize) -> String {
+fn transform_phone_candidate(value: &str) -> String {
     value
         .chars()
         .map(|character| {
@@ -144,7 +138,7 @@ fn transform_phone_candidate(value: &str, _attempt: usize) -> String {
                 return character.to_string();
             }
 
-            rand::thread_rng().gen_range(0..=9).to_string()
+            random_digit()
         })
         .collect()
 }
@@ -166,13 +160,16 @@ pub(super) fn transform_generic_string(
     _context: &TransformContext<'_>,
     state: &mut TransformState,
 ) -> String {
-    let source_key = format!("{}:{}", value.len(), normalized_identity(value));
-    state.assign_generated(PseudonymDomain::GenericString, &source_key, |attempt| {
-        transform_generic_string_candidate(value, attempt)
+    let source_key = format!("{}:{}", value.len(), value_identity_key(value));
+    state.assign_generated(PseudonymDomain::GenericString, &source_key, || {
+        transform_generic_string_candidate(value)
     })
 }
 
-fn transform_generic_string_candidate(value: &str, _attempt: usize) -> String {
+const GENERIC_STRING_CHARSET: &str =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-";
+
+fn transform_generic_string_candidate(value: &str) -> String {
     let target_length = value.len();
     if target_length == 0 {
         return value.to_string();
@@ -180,12 +177,15 @@ fn transform_generic_string_candidate(value: &str, _attempt: usize) -> String {
 
     let min_length = (target_length as f64 * 0.8).floor().max(1.0) as usize;
     let max_length = (target_length as f64 * 1.2).ceil() as usize;
-    let charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-";
-
     let output_length = rand::thread_rng().gen_range(min_length..=max_length);
-    let chars: Vec<char> = charset.chars().collect();
-    let mut rng = rand::thread_rng();
-    (0..output_length)
-        .map(|_| chars[rng.gen_range(0..chars.len())])
-        .collect()
+
+    let candidate = random_string(output_length, GENERIC_STRING_CHARSET);
+    if candidate == value {
+        // A short value can be redrawn exactly — a single character repeats
+        // roughly once in 64 draws. An "anonymized" cell must never be the
+        // original, so extend the draw instead of returning it. The result is
+        // longer than the input, so it cannot match it.
+        return format!("{candidate}{}", random_string(1, GENERIC_STRING_CHARSET));
+    }
+    candidate
 }

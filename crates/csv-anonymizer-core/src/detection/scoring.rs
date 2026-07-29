@@ -4,16 +4,11 @@ use crate::types::{Confidence, DataType, DetectionResult, DetectionTrace, Detect
 
 use super::candidate::DetectorCandidate;
 
-type DecisionKey = (
-    u8,
-    u8,
-    u8,
-    usize,
-    usize,
-    Reverse<usize>,
-    Reverse<usize>,
-    Reverse<usize>,
-);
+/// Ranked tie-breakers for candidate selection: confidence tier, evidence tier,
+/// entity specificity, how many sampled values matched, and finally the
+/// candidate's position in the priority list so that ties resolve to the
+/// earlier, more conservative detector.
+type DecisionKey = (u8, u8, u8, usize, Reverse<usize>);
 
 pub(in crate::detection) struct DetectorDecision {
     pub selected: Option<DetectorCandidate>,
@@ -49,9 +44,6 @@ fn decision_key(candidate: &DetectorCandidate, index: usize) -> DecisionKey {
         candidate.evidence.rank(),
         candidate.specificity,
         candidate.match_count,
-        candidate.span_len,
-        Reverse(candidate.span_start),
-        Reverse(candidate.order),
         Reverse(index),
     )
 }
@@ -181,7 +173,6 @@ mod tests {
         data_type: DataType,
         evidence: DetectorEvidence,
         specificity: u8,
-        order: usize,
     ) -> DetectorCandidate {
         DetectorCandidate::from_spec(DetectorCandidateSpec {
             data_type,
@@ -191,15 +182,14 @@ mod tests {
             confidence: Confidence::High,
             evidence,
             specificity,
-            order,
         })
     }
 
     #[test]
     fn validator_backed_candidates_win_ties() {
         let decision = DetectorDecision::select(vec![
-            candidate(DataType::NumericId, DetectorEvidence::Pattern, 60, 0),
-            candidate(DataType::TaxId, DetectorEvidence::Validator, 95, 1),
+            candidate(DataType::NumericId, DetectorEvidence::Pattern, 60),
+            candidate(DataType::TaxId, DetectorEvidence::Validator, 95),
         ]);
 
         assert_eq!(decision.selected.unwrap().data_type, DataType::TaxId);
@@ -208,23 +198,22 @@ mod tests {
     #[test]
     fn specific_entities_win_with_equal_evidence() {
         let decision = DetectorDecision::select(vec![
-            candidate(DataType::Phone, DetectorEvidence::Pattern, 50, 0),
-            candidate(DataType::MacAddress, DetectorEvidence::Pattern, 80, 1),
+            candidate(DataType::Phone, DetectorEvidence::Pattern, 50),
+            candidate(DataType::MacAddress, DetectorEvidence::Pattern, 80),
         ]);
 
         assert_eq!(decision.selected.unwrap().data_type, DataType::MacAddress);
     }
 
+    /// Fully tied candidates resolve to the one listed first, so the priority
+    /// order in `detection_priority()` stays the final word.
     #[test]
-    fn longer_then_earlier_span_wins_with_equal_scores() {
+    fn earlier_candidate_wins_when_everything_else_ties() {
         let decision = DetectorDecision::select(vec![
-            candidate(DataType::Url, DetectorEvidence::Pattern, 70, 0).with_span(8, 10),
-            candidate(DataType::Url, DetectorEvidence::Pattern, 70, 1).with_span(4, 10),
-            candidate(DataType::Url, DetectorEvidence::Pattern, 70, 2).with_span(0, 8),
+            candidate(DataType::PostalCode, DetectorEvidence::Pattern, 70),
+            candidate(DataType::NumericId, DetectorEvidence::Pattern, 70),
         ]);
 
-        let selected = decision.selected.unwrap();
-        assert_eq!(selected.span_start, 4);
-        assert_eq!(selected.span_len, 10);
+        assert_eq!(decision.selected.unwrap().data_type, DataType::PostalCode);
     }
 }

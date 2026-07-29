@@ -1,6 +1,6 @@
 use super::*;
 use crate::smart::{SmartReplacement, SmartReplacementProvider, SmartReplacementRequest};
-use crate::types::{AnonymizationStrategy, ColumnControl, DataType};
+use crate::types::{AnonymizationStrategy, ColumnControl, DataType, PiiRisk};
 use std::{fs, path::PathBuf};
 
 fn fixture(name: &str) -> PathBuf {

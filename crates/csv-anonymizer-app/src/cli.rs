@@ -163,6 +163,9 @@ pub(crate) fn run_cli(action: CliAction) -> Result<(), String> {
                     columns: columns.clone(),
                     controls: vec![],
                     sample_count: 2,
+                    // The analyze and anonymize calls either side of this one take
+                    // the service default, so the preview has to ask for it too.
+                    sample_row_count: 100,
                 })
                 .map_err(|error| error.to_string())?;
             if preview.previews.is_empty() {

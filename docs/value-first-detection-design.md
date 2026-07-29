@@ -40,9 +40,48 @@ third-party detector engine.
 
 ### Column classification pipeline (revised)
 
-1. **Sample** up to 200 non-empty values per column, spread evenly across the
-   file (today all rows are scanned; sampling caps cost as the validator
-   battery grows — full scan remains for files under the cap).
+1. **Sample** up to 200 non-empty values per column, drawn from across the whole
+   file. Detection streams every data row in one pass and keeps a bounded,
+   deterministic subset (`csv_io::read_detection_sample`); the per-column cap
+   then bounds validator cost. A head-anchored window is not an option here: the
+   transform streams every row, so any row detection never sees is a row whose
+   PII is never classified and never auto-selected.
+
+   The subset is chosen by a fixed hash of the row's position, not by keeping
+   every nth row. Even spacing looks like the fairer rule and is the opposite:
+   flattened exports are periodic — one logical record per k rows, each field on
+   a fixed row of the block — so a sampling period aligns with the record period
+   and the sample lands on one phase of it. A column holding one email address
+   per four-row block was classified entirely off the other three rows: 100 real
+   addresses, none sampled, `String` at Low risk, not auto-selected. Nothing
+   downstream depends on the spacing, and a pseudorandom choice of rows has no
+   period to align with.
+
+   This applies to every input kind, not just CSV rows. `sampling::SpreadSampler`
+   is the one implementation: CSV files and CSV pastes sample rows through it, and
+   the field-shaped paste formats (XML, JSON/YAML, free text) sample each field's
+   values through it. Collecting a field's *first* N values is a head window by
+   another name, and it failed the same way — a field whose PII started past the
+   basis was classified off the placeholder values that came before it.
+
+   The sample size is a *floor*, and the configurable "Sample rows" setting is
+   passed to every entry point that classifies an input: analyze, preflight,
+   preview and the run for CSV files (`service::detection_sample_rows`), and
+   analyze, preview and transform for pasted data
+   (`direct_input::shared::paste_detection_sample_rows`). The setting may
+   therefore only ask for more evidence than the floor, never less, and it asks
+   all of them at once. This is not tidiness: classification is a vote on the
+   ratio of matching values in the sample, so a column that is part one type and
+   part another lands on genuinely different answers at different sample sizes,
+   and a larger basis additionally finds rare values a smaller one is unlikely to
+   sample at all. Two entry points sampling differently means the column table
+   the user selects from promises a classification the run does not apply.
+
+   How many rows to *display* is a separate setting and a separate window, head-
+   anchored at the requested size — the user expects a preview to show the
+   input's opening rows, not the detection sample. It is not evidence about the
+   input and no entry point may classify on it; a preview that did classified on
+   a hundred rows at most however high "Sample rows" was set.
 2. **Run all value detectors** on each sample: existing validators (email,
    phonenumber, iban, card, VAT, SSN/EIN), new idsmith validators, gazetteer
    matchers (names — withdrawn, see Name gazetteer below), and shape/pattern
@@ -161,6 +200,16 @@ context-gated postal voter now runs *before* the deferred numeric-id pattern
 selection when the file establishes a matching locale context. Without matching
 context the voter yields nothing and the column stays `NumericId`, so context-free
 files are unaffected.
+
+This is why the postal voter appears at two precedence levels in
+`detect_column_type_in_context` — stage 3 with locale context, stage 8 without —
+and the two are mutually exclusive by construction: whichever gate is open, the
+voter is asked exactly once per column.
+
+The pipeline's stages are numbered 1–9 in the source. The numbering is the
+specification of the precedence order, so a new rule means picking its stage
+deliberately rather than appending an `if let` and inheriting whatever priority
+its position happens to give it.
 
 ## Phases
 

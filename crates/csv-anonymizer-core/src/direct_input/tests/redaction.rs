@@ -1,6 +1,6 @@
 use crate::direct_input::{
     analyze_paste_data, preview_paste_data,
-    shared::{FieldSamples, fields_to_rows, metadata_from_fields},
+    shared::{FieldSamples, FieldWindow, fields_to_rows, metadata_from_fields},
     transform_paste_data,
 };
 use crate::types::{
@@ -40,6 +40,7 @@ fn preview(
         columns,
         controls,
         sample_count: 3,
+        sample_row_count: 100,
     })
     .unwrap()
 }
@@ -55,6 +56,7 @@ fn transform(
         format,
         columns,
         controls,
+        sample_row_count: 100,
         preview_smart_replacements: Vec::new(),
     })
     .unwrap()
@@ -222,7 +224,9 @@ fn redacting_json_numeric_scalars_warns_for_default_and_manual_strategy() {
     );
 
     assert_scalar_warning(&default_preview);
-    assert!(default_result.output.contains("\"id\": \"[ACCOUNT_ID]\""));
+    // A bare `id` is a record key, not an account number — see
+    // `PrivacyFindingKind::RecordIdentifier`.
+    assert!(default_result.output.contains("\"id\": \"[RECORD_ID]\""));
     assert_scalar_note(&default_result);
 
     let manual_input = r#"{"age":42}"#;
@@ -266,7 +270,7 @@ fn redacting_yaml_scalar_values_warns_about_type_changes() {
     );
 
     assert_scalar_warning(&default_preview);
-    assert!(default_result.output.contains("[ACCOUNT_ID]"));
+    assert!(default_result.output.contains("[RECORD_ID]"));
     assert_scalar_note(&default_result);
 
     let manual_input = "enabled: true\n";
@@ -293,17 +297,43 @@ fn redacting_yaml_scalar_values_warns_about_type_changes() {
 
 #[test]
 fn typed_field_override_preserves_existing_privacy_risk_before_redact_default() {
-    let fields = vec![FieldSamples {
-        source_path: Some("text/username".to_string()),
-        name: "username".to_string(),
-        values: vec!["johndoe".to_string()],
-        data_type: Some(DataType::String),
-    }];
-    let (headers, rows) = fields_to_rows(&fields, 10);
+    let fields = vec![FieldSamples::from_values(
+        Some("text/username"),
+        "username",
+        Some(DataType::String),
+        &["johndoe"],
+    )];
+    let (headers, rows) = fields_to_rows(&fields, FieldWindow::Detection);
     let metadata = metadata_from_fields(&fields, &headers, &rows);
     let username = &metadata[0];
 
     assert_eq!(username.detected_type, DataType::String);
     assert_eq!(username.pii_risk, PiiRisk::High);
     assert_eq!(username.strategy, AnonymizationStrategy::Redact);
+}
+
+/// Free text keeps finding unformatted phone numbers.
+///
+/// The inline scanner reports a bare digit run at Low confidence rather than
+/// dropping it, so prose containing `0612345678` still yields a redactable field.
+/// The free-text path then names that field `phone`, which reaches column
+/// classification as a header — so it is High-risk and selected here, unlike in the
+/// CSV column path where the header is the file's own. That asymmetry is the point:
+/// aggressive discovery is what the prose workflow is for, and the user reviews the
+/// selection before anything is written.
+#[test]
+fn unformatted_phone_runs_in_prose_are_still_offered_for_redaction() {
+    for content in [
+        "Reach Ada on (415) 555-0100 today.",
+        "Bel 0612345678 voor informatie.",
+    ] {
+        let analysis = analyze(content, PasteDataFormat::PlainText);
+        let phone = column_named(&analysis, "phone");
+
+        assert_eq!(phone.detected_type, DataType::Phone, "{content}");
+        assert!(
+            crate::metadata::should_auto_select_column(phone),
+            "{content} should offer its phone number for redaction"
+        );
+    }
 }

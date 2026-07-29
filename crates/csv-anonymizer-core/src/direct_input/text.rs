@@ -13,11 +13,11 @@ use std::sync::OnceLock;
 use std::time::Instant;
 
 use super::shared::{
-    FieldSamples, PASTE_MAX_TEXT_MATCHES, PreviewSelection, bounded_analysis_sample_count,
+    FieldSampleLimits, FieldSamples, FieldWindow, PASTE_MAX_TEXT_MATCHES, PreviewSelection,
     bounded_preview_sample_count, fields_to_rows, metadata_from_fields, next_row_index,
-    prepare_selected_metadata, preview_from_fields_with_smart_provider,
-    preview_smart_replacements_for_transform, push_typed_field_sample, selected_columns_by_source,
-    transform_state_for_smart_replacements,
+    paste_detection_sample_rows, prepare_selected_metadata, preview_field_sample_limits,
+    preview_from_fields_with_smart_provider, preview_smart_replacements_for_transform,
+    push_typed_field_sample, selected_columns_by_source, transform_state_for_smart_replacements,
 };
 
 pub(super) fn analyze_text_content(
@@ -25,10 +25,13 @@ pub(super) fn analyze_text_content(
     format: PasteDataFormat,
     sample_row_count: usize,
 ) -> Result<PasteAnalyzeData> {
-    let sample_row_count = bounded_analysis_sample_count(sample_row_count)?;
+    let sample_row_count = paste_detection_sample_rows(sample_row_count)?;
     let matches = collect_text_matches(content)?;
-    let fields = text_fields_from_matches(&matches, sample_row_count)?;
-    let (headers, rows) = fields_to_rows(&fields, sample_row_count);
+    let fields = text_fields_from_matches(
+        &matches,
+        FieldSampleLimits::detection_only(sample_row_count),
+    )?;
+    let (headers, rows) = fields_to_rows(&fields, FieldWindow::Detection);
     let columns = metadata_from_fields(&fields, &headers, &rows);
 
     Ok(PasteAnalyzeData {
@@ -45,8 +48,12 @@ pub(super) fn preview_text_content_with_smart_provider(
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<PreviewData> {
     let sample_count = bounded_preview_sample_count(input.sample_count)?;
+    let detection_sample_rows = paste_detection_sample_rows(input.sample_row_count)?;
     let matches = collect_text_matches(&input.content)?;
-    let fields = text_fields_from_matches(&matches, sample_count.saturating_mul(2).max(1))?;
+    let fields = text_fields_from_matches(
+        &matches,
+        preview_field_sample_limits(sample_count, detection_sample_rows),
+    )?;
     preview_from_fields_with_smart_provider(
         &fields,
         PreviewSelection {
@@ -63,9 +70,13 @@ pub(super) fn transform_text_with_smart_provider(
     format: PasteDataFormat,
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<PasteTransformData> {
+    let detection_sample_rows = paste_detection_sample_rows(input.sample_row_count)?;
     let matches = collect_text_matches(&input.content)?;
-    let fields = text_fields_from_matches(&matches, 100)?;
-    let (headers, rows) = fields_to_rows(&fields, 100);
+    let fields = text_fields_from_matches(
+        &matches,
+        FieldSampleLimits::detection_only(detection_sample_rows),
+    )?;
+    let (headers, rows) = fields_to_rows(&fields, FieldWindow::Detection);
     let analysis = PasteAnalyzeData {
         format,
         row_count: matches.len(),
@@ -74,8 +85,11 @@ pub(super) fn transform_text_with_smart_provider(
     };
     let metadata = prepare_selected_metadata(&analysis.columns, &input.columns, &input.controls)?;
     let selected_by_name = selected_columns_by_source(&metadata);
-    let smart_fields = text_fields_from_matches(&matches, matches.len().max(1))?;
-    let (_headers, smart_rows) = fields_to_rows(&smart_fields, matches.len().max(1));
+    let smart_fields = text_fields_from_matches(
+        &matches,
+        FieldSampleLimits::detection_only(matches.len().max(1)),
+    )?;
+    let (_headers, smart_rows) = fields_to_rows(&smart_fields, FieldWindow::Detection);
     let existing_smart_replacements = preview_smart_replacements_for_transform(&input, &metadata);
     let smart_replacements = prepare_smart_replacements_from_rows(
         &smart_rows,
@@ -139,7 +153,7 @@ pub(super) fn looks_like_logs(content: &str) -> bool {
 
 fn text_fields_from_matches(
     matches: &[TextMatch<'_>],
-    sample_count: usize,
+    limits: FieldSampleLimits,
 ) -> Result<Vec<FieldSamples>> {
     let mut fields = Vec::new();
     for token_match in matches {
@@ -148,7 +162,7 @@ fn text_fields_from_matches(
             token_match.name,
             token_match.data_type,
             token_match.value,
-            sample_count,
+            limits,
         )?;
     }
     Ok(fields)

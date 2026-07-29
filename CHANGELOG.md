@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.0.80 - 2026-07-29
+
+- Classify every input from a sample drawn across the whole file instead of its opening rows, so a column whose sensitive values begin later is no longer classified from the placeholders that precede them, left out of auto-selection, and copied verbatim into output believed to be anonymized; CSV rows and every pasted field format now draw through one bounded spread sampler whose choice of rows has no period to align with a flattened export's own.
+- Give analyze, preflight, preview, and the run the same detection sample size, so the column table a user selects from cannot promise a classification the run does not apply, and keep the display row count separate from the classification basis it was previously mistaken for.
+- Correct the privacy vocabulary so surrogate keys report as record identifiers and postal codes as address regions rather than as bank accounts and home addresses, keeping both auto-selected and redacted by default while restoring meaning to the high-risk quick action, and stop redaction placeholders naming a specific type on evidence the risk model has itself declined to trust.
+- Detect phone numbers written with extensions such as `ext 45` and `x89`, while keeping ordinary prose out of the libphonenumber region sweep whose cost made wide files unusable.
+- Validate inline email, URL, and phone spans rather than trusting their patterns, table-drive the header detectors onto one shared rule, share regex bodies between the column and span paths, and consolidate detection into a single numbered precedence order.
+- Extend the frontend contract check to the desktop settings, job, and Local AI types and to the sample limits the settings panel enforces, add a scored held-out detection corpus whose baselines fail in both directions, and make a new data type fail to compile until its two risk mappings are proven to agree.
+
 ## v1.0.79 - 2026-07-29
 
 - Supersede the failed v1.0.78 tag without moving it, preserving the Playwright CI preview fix and all v1.0.77 modernization changes while restoring release packaging to the latest published compatible Tauri CLI, v2.11.4.

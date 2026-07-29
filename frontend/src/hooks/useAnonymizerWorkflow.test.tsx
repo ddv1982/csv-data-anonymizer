@@ -133,6 +133,7 @@ describe('useAnonymizerWorkflow', () => {
       [0, 1],
       [{ columnIndex: 1, typeOverride: null, strategy: 'mask' }],
       5,
+      100,
       { enabled: false, model: 'gemma3:4b' },
     )
   })

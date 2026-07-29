@@ -2,8 +2,14 @@ use crate::types::{Confidence, DataType, PrivacyFinding, PrivacyFindingKind};
 use regex::Regex;
 use std::sync::OnceLock;
 
+use super::patterns;
 use super::utf16_index_for_byte;
-use super::validators::{is_iban, is_payment_card_number, is_tax_id, is_vat_id};
+use super::validators::{
+    is_email, is_formatted_phone_span, is_iban, is_payment_card_number, is_tax_id, is_url,
+    is_vat_id,
+};
+#[cfg(test)]
+use super::value;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PrivacySpan<'a> {
@@ -30,6 +36,17 @@ struct SpanSpec {
     detector: &'static str,
     reason: &'static str,
     priority: usize,
+    /// Confirms that the matched text really is an instance of the type.
+    ///
+    /// Every spec claiming High confidence has one. The column path will not
+    /// call a match High without a validator behind it, and a span that reports
+    /// High off a bare regex hit claims more certainty than a regex can give —
+    /// which then feeds a High privacy risk and an auto-selection. Specs whose
+    /// shape is inherently self-validating (UUID, MAC) or deliberately tentative
+    /// (a date that may or may not be private) stay `None`, and their confidence
+    /// reflects that. `high_confidence_span_specs_are_validator_backed` pins the
+    /// rule.
+    validator: Option<fn(&str) -> bool>,
 }
 
 pub fn collect_privacy_spans(content: &str) -> Vec<PrivacySpan<'_>> {
@@ -43,7 +60,7 @@ pub fn collect_privacy_spans(content: &str) -> Vec<PrivacySpan<'_>> {
     select_non_overlapping_spans(candidates)
 }
 
-fn pattern_span_specs() -> [SpanSpec; 7] {
+fn pattern_span_specs() -> [SpanSpec; 8] {
     [
         SpanSpec {
             field_name: "email",
@@ -52,9 +69,10 @@ fn pattern_span_specs() -> [SpanSpec; 7] {
             regex: inline_email_pattern(),
             confidence: Confidence::High,
             score: 96,
-            detector: "pattern:email",
-            reason: "Email address pattern.",
+            detector: "validator:email",
+            reason: "Email address passed validator.",
             priority: 20,
+            validator: Some(is_email),
         },
         SpanSpec {
             field_name: "url",
@@ -63,9 +81,10 @@ fn pattern_span_specs() -> [SpanSpec; 7] {
             regex: inline_url_pattern(),
             confidence: Confidence::Medium,
             score: 78,
-            detector: "pattern:url",
-            reason: "URL pattern.",
+            detector: "validator:url",
+            reason: "URL passed validator.",
             priority: 30,
+            validator: Some(is_url),
         },
         SpanSpec {
             field_name: "uuid",
@@ -77,6 +96,7 @@ fn pattern_span_specs() -> [SpanSpec; 7] {
             detector: "pattern:uuid",
             reason: "UUID-like identifier pattern.",
             priority: 40,
+            validator: None,
         },
         SpanSpec {
             field_name: "date",
@@ -88,6 +108,7 @@ fn pattern_span_specs() -> [SpanSpec; 7] {
             detector: "pattern:date",
             reason: "Date or timestamp pattern; review context before treating it as private.",
             priority: 50,
+            validator: None,
         },
         SpanSpec {
             field_name: "ipAddress",
@@ -99,6 +120,7 @@ fn pattern_span_specs() -> [SpanSpec; 7] {
             detector: "pattern:ip",
             reason: "IPv4 address pattern.",
             priority: 60,
+            validator: None,
         },
         SpanSpec {
             field_name: "macAddress",
@@ -110,6 +132,7 @@ fn pattern_span_specs() -> [SpanSpec; 7] {
             detector: "pattern:mac",
             reason: "MAC address pattern.",
             priority: 70,
+            validator: None,
         },
         SpanSpec {
             field_name: "phone",
@@ -121,12 +144,38 @@ fn pattern_span_specs() -> [SpanSpec; 7] {
             detector: "pattern:phone",
             reason: "Formatted phone number pattern.",
             priority: 90,
+            validator: Some(is_formatted_phone_span),
+        },
+        // The same shape without the formatting: a bare run of ten-plus digits.
+        // It is reported rather than dropped, because a phone number typed
+        // without separators is still a phone number and free text is still
+        // redacted span by span. But it is only Low confidence, because a bare
+        // digit run is more often an order or account number, and `pii_risk`
+        // ignores Low findings — so this recovers the redaction without letting a
+        // regex hit escalate a column to High risk on its own. The formatted spec
+        // above has the lower priority number, so it wins wherever both match.
+        SpanSpec {
+            field_name: "phone",
+            kind: PrivacyFindingKind::Contact,
+            data_type: DataType::Phone,
+            regex: inline_phone_pattern(),
+            confidence: Confidence::Low,
+            score: 55,
+            detector: "pattern:phone-digits",
+            reason: "Unformatted digit run in phone-number shape; may be an identifier.",
+            priority: 95,
+            validator: None,
         },
     ]
 }
 
 fn push_pattern_spans<'a>(content: &'a str, candidates: &mut Vec<PrivacySpan<'a>>, spec: SpanSpec) {
     for regex_match in spec.regex.find_iter(content) {
+        if let Some(validator) = spec.validator
+            && !validator(regex_match.as_str())
+        {
+            continue;
+        }
         candidates.push(PrivacySpan {
             field_name: spec.field_name,
             kind: spec.kind,
@@ -334,37 +383,27 @@ fn inline_url_pattern() -> &'static Regex {
 
 fn inline_uuid_pattern() -> &'static Regex {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| {
-        Regex::new(
-            r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b",
-        )
-        .unwrap()
-    })
+    PATTERN.get_or_init(|| patterns::inside_text(patterns::UUID))
 }
 
 fn inline_timestamp_pattern() -> &'static Regex {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| {
-        Regex::new(r"\b\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?)?\b").unwrap()
-    })
+    PATTERN.get_or_init(|| patterns::inside_text(patterns::TIMESTAMP))
 }
 
 fn inline_ip_address_pattern() -> &'static Regex {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| {
-        Regex::new(r"\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b")
-            .unwrap()
-    })
+    PATTERN.get_or_init(|| patterns::inside_text(patterns::IPV4))
 }
 
 fn inline_mac_address_pattern() -> &'static Regex {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| Regex::new(r"\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b").unwrap())
+    PATTERN.get_or_init(|| patterns::inside_text(patterns::MAC_ADDRESS))
 }
 
 fn inline_tax_id_pattern() -> &'static Regex {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| Regex::new(r"\b(?:\d{3}-\d{2}-\d{4}|\d{2}-\d{7})\b").unwrap())
+    PATTERN.get_or_init(|| patterns::inside_text(patterns::US_TAX_ID))
 }
 
 fn inline_phone_pattern() -> &'static Regex {
@@ -409,4 +448,162 @@ fn vat_candidate_pattern() -> &'static Regex {
     PATTERN.get_or_init(|| {
         Regex::new(r"(?i)\b[A-Z]{2,3}[\s./-]?[A-Z0-9](?:[\s./-]?[A-Z0-9]){6,14}\b").unwrap()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A span reporting High confidence feeds a High privacy risk, which drives
+    /// auto-selection. A regex alone cannot justify that, so every High spec has
+    /// to name a validator; the column path holds itself to the same bar.
+    #[test]
+    fn high_confidence_span_specs_are_validator_backed() {
+        for spec in pattern_span_specs() {
+            if spec.confidence == Confidence::High {
+                assert!(
+                    spec.validator.is_some(),
+                    "span spec {} claims High confidence with no validator behind it",
+                    spec.field_name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn email_spans_require_a_valid_address() {
+        let spans = collect_privacy_spans("write to ada@example.com about it");
+        assert!(
+            spans
+                .iter()
+                .any(|span| span.data_type == DataType::Email && span.value == "ada@example.com")
+        );
+
+        // Shape-only look-alikes the regex accepts but the validator rejects.
+        for content in ["contact user@localhost now", "see foo@bar.c for details"] {
+            assert!(
+                !spans_contain_type(content, DataType::Email),
+                "{content} should not yield an email span"
+            );
+        }
+    }
+
+    /// Formatting decides a phone span's *confidence*, not whether it exists.
+    ///
+    /// Only High-confidence findings feed `pii_risk`, so reporting the
+    /// unformatted case at Low keeps free text redacted without letting a bare
+    /// digit run — far more often an order or account number — escalate a column
+    /// to High risk off nothing but a regex hit.
+    #[test]
+    fn phone_span_confidence_follows_formatting() {
+        for content in ["call (415) 555-0100 tomorrow", "call +1 415 555 0100 now"] {
+            assert_eq!(
+                phone_span_confidence(content),
+                Some(Confidence::High),
+                "a formatted number should be a High-confidence phone span: {content}"
+            );
+        }
+
+        assert_eq!(
+            phone_span_confidence("order reference 4155550100 shipped"),
+            Some(Confidence::Low),
+            "an unformatted digit run should still be found, but only at Low confidence"
+        );
+    }
+
+    /// A Low-confidence span is still a span: the free-text transform redacts
+    /// every span it is handed, so downgrading the unformatted case must not have
+    /// quietly stopped it being reported at all.
+    #[test]
+    fn unformatted_phone_runs_are_still_reported_as_spans() {
+        let spans = collect_privacy_spans("bel 0612345678 voor info");
+
+        assert!(
+            spans
+                .iter()
+                .any(|span| span.data_type == DataType::Phone && span.value == "0612345678"),
+            "got {:?}",
+            spans.iter().map(|span| span.value).collect::<Vec<_>>()
+        );
+    }
+
+    /// The column path and the span path must agree on what an IPv4 octet is.
+    ///
+    /// They used to disagree in both directions: the column path's hand-rolled
+    /// parser accepted `001.002.003.004` where the span regex found nothing, and
+    /// the regex accepted a `00` octet the parser's `u8` round-trip also let
+    /// through. Both now compile the same shared body.
+    ///
+    /// Only the *shape* has to match. Where a value sits is a separate question the
+    /// two paths answer differently on purpose — a column detector asks whether the
+    /// whole value is an address, a span scanner asks whether one appears anywhere
+    /// inside — so arity cases like `1.2.3.4.5` belong to the anchoring test below,
+    /// not here.
+    #[test]
+    fn ipv4_octets_are_read_identically_by_the_column_and_span_paths() {
+        let addresses = ["192.168.1.20", "8.8.8.8", "255.255.255.255", "0.0.0.0"];
+        let not_addresses = [
+            // Leading zeros: ambiguous between decimal and octal, so not an address.
+            "001.002.003.004",
+            "010.0.0.1",
+            "00.0.0.0",
+            "01.2.3.4",
+            // Out of range, too few octets, non-numeric.
+            "256.1.1.1",
+            "1.2.3",
+            "1.2.3.a",
+        ];
+
+        for value in addresses {
+            assert!(
+                value::is_ip_address_for_tests(value),
+                "the column path should accept {value}"
+            );
+            assert!(
+                spans_contain_type(value, DataType::IpAddress),
+                "the span path should find {value}"
+            );
+        }
+
+        for value in not_addresses {
+            assert!(
+                !value::is_ip_address_for_tests(value),
+                "the column path should reject {value}"
+            );
+            assert!(
+                !spans_contain_type(value, DataType::IpAddress),
+                "the span path should not find an address in {value}"
+            );
+        }
+    }
+
+    /// Anchoring is where the two paths are meant to differ.
+    ///
+    /// `1.2.3.4.5` is not an address, and the column path says so. The span scanner
+    /// still reports the `1.2.3.4` inside it, because its job is to find addresses
+    /// embedded in longer text and it cannot tell a trailing `.5` from a following
+    /// sentence. Pinned so that the shared pattern body is never "fixed" into
+    /// whole-value matching on the span side.
+    #[test]
+    fn span_scanning_finds_addresses_inside_longer_text() {
+        assert!(!value::is_ip_address_for_tests("1.2.3.4.5"));
+        assert!(spans_contain_type("1.2.3.4.5", DataType::IpAddress));
+        assert!(spans_contain_type(
+            "connected from 192.168.1.20 at noon",
+            DataType::IpAddress
+        ));
+    }
+
+    fn phone_span_confidence(content: &str) -> Option<Confidence> {
+        collect_privacy_spans(content)
+            .iter()
+            .find(|span| span.data_type == DataType::Phone)
+            .map(|span| span.confidence)
+    }
+
+    fn spans_contain_type(content: &str, data_type: DataType) -> bool {
+        collect_privacy_spans(content)
+            .iter()
+            .any(|span| span.data_type == data_type)
+    }
 }

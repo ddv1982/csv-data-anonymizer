@@ -1,6 +1,25 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// The largest detection basis any entry point accepts, for any input kind.
+///
+/// One limit rather than one per workflow, because the figure comes from one
+/// setting. "Sample rows" is not per-workflow: a user who raises it to work on a
+/// large CSV file has raised it for the paste workflow too, so a value that reaches
+/// the setting has to be a value every entry point will honour. The paste path used
+/// to cap itself an order of magnitude lower and reject the rest, which made a
+/// perfectly valid setting break pasted input while files kept working.
+///
+/// Enforced twice, and both sites read this: `settings::sanitize_settings` clamps
+/// what can be stored, and the paste entry points reject an oversized request
+/// outright, since they are reachable by callers that never went through settings.
+pub const MAX_SAMPLE_ROW_COUNT: usize = 10_000;
+
+/// The largest display window any entry point accepts, for any input kind. One
+/// limit for the same reason as [`MAX_SAMPLE_ROW_COUNT`] — it comes from the
+/// "Preview rows" setting, which is likewise not per-workflow.
+pub const MAX_PREVIEW_SAMPLE_COUNT: usize = 100;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DataType {
@@ -46,15 +65,19 @@ impl DataType {
                 "Column type indicates private address data.",
             )),
             DataType::PostalCode => Some((
-                PrivacyFindingKind::PrivateAddress,
+                PrivacyFindingKind::AddressRegion,
                 "Column type indicates postal address context.",
             )),
             DataType::TaxId => Some((
                 PrivacyFindingKind::GovernmentId,
                 "Column type indicates government or tax identifier data.",
             )),
+            // Identifier-shaped, but nothing here says *what* it identifies. A
+            // financial classification needs evidence: the `account_number` header
+            // kind, or the IBAN or payment-card validator. Absent that, this is a
+            // surrogate key.
             DataType::NumericId => Some((
-                PrivacyFindingKind::AccountOrFinancialId,
+                PrivacyFindingKind::RecordIdentifier,
                 "Column type indicates identifier-shaped values; review context.",
             )),
             DataType::Uuid | DataType::IpAddress | DataType::MacAddress => Some((
@@ -149,7 +172,12 @@ impl DataType {
             }
             DataType::Address | DataType::PostalCode => Some(RedactionPlaceholder::Address),
             DataType::Timestamp => Some(RedactionPlaceholder::Date),
-            DataType::NumericId | DataType::Uuid => Some(RedactionPlaceholder::AccountId),
+            // Neither is an account. A bare identifier column is a record key, and
+            // a UUID is a machine-generated handle — which is also what its privacy
+            // finding says (`NetworkOrDeviceId`), so redacting it as an account id
+            // contradicted the classification shown next to it in the report.
+            DataType::NumericId => Some(RedactionPlaceholder::RecordId),
+            DataType::Uuid => Some(RedactionPlaceholder::NetworkId),
             DataType::TaxId => Some(RedactionPlaceholder::GovernmentId),
             DataType::Url => Some(RedactionPlaceholder::Url),
             DataType::IpAddress | DataType::MacAddress => Some(RedactionPlaceholder::NetworkId),
@@ -171,6 +199,13 @@ pub(crate) enum ReportIdentifierClass {
     Quasi,
 }
 
+/// Placeholders a column's *detected type* can justify on its own.
+///
+/// Deliberately has no account variant. "This is a bank account" is a claim about
+/// what a value means, not about its shape, so it can only come from evidence — the
+/// IBAN or card validator, or an `account_number` header — which reaches
+/// `[ACCOUNT_ID]` through `placeholder_from_evidence` instead. A column of plain
+/// integers gets `[RECORD_ID]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RedactionPlaceholder {
     Email,
@@ -178,7 +213,7 @@ pub(crate) enum RedactionPlaceholder {
     Person,
     Address,
     Date,
-    AccountId,
+    RecordId,
     GovernmentId,
     Url,
     NetworkId,
@@ -206,8 +241,25 @@ pub enum PrivacyFindingKind {
     Person,
     Contact,
     PrivateAddress,
+    /// An address component that narrows someone down to an area rather than to a
+    /// doorstep: a postal code on its own.
+    ///
+    /// Separate from [`PrivacyFindingKind::PrivateAddress`] because a street address
+    /// locates a person and a postal code locates a neighbourhood. Both matter, but
+    /// only one is a direct identifier, and reporting a zip column as a private
+    /// address overstated what the file actually contains.
+    AddressRegion,
     PrivateDate,
     AccountOrFinancialId,
+    /// A key that identifies a row without being sensitive in itself: an order
+    /// number, a record id, a customer sequence number.
+    ///
+    /// Distinct from [`PrivacyFindingKind::AccountOrFinancialId`], which is for
+    /// bank accounts, cards and IBANs. Both are identifiers, but only one exposes
+    /// a payment instrument, and collapsing them made every column of order
+    /// numbers report as financial data. A surrogate key still re-identifies a
+    /// row, so it is Medium rather than Low.
+    RecordIdentifier,
     GovernmentId,
     CredentialOrSecret,
     NetworkOrDeviceId,
@@ -287,6 +339,28 @@ pub struct PrivacyEvidenceSummary {
     pub detectors: Vec<String>,
 }
 
+impl PrivacyEvidenceSummary {
+    /// Whether the app may act on this finding.
+    ///
+    /// A Low-confidence finding is a shape that resembles the thing more often than
+    /// it is the thing — `pattern:phone-digits` fires on any bare digit run, and most
+    /// bare digit runs are order numbers. Such a finding is worth *recording*, so a
+    /// reviewer can see it and so free text still gets redacted span by span, but it
+    /// is not worth *asserting*: it may not raise a column's risk and it may not put
+    /// a specific type's name in the output.
+    ///
+    /// This lives on the summary because two modules decide it and they have to agree.
+    /// `analyze_column_privacy` folds risk over the evidence; `placeholder_from_evidence`
+    /// names the redaction placeholder from the same list. When only the risk fold
+    /// filtered, a column the risk model had explicitly declined to trust still
+    /// redacted to `[PHONE]` — the output file asserting a phone number was there on
+    /// the evidence the app had just rejected. One predicate, so the next change to
+    /// the threshold cannot reach one consumer and miss the other.
+    pub(crate) fn is_actionable(&self) -> bool {
+        self.confidence != Confidence::Low
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ColumnMetadata {
@@ -334,7 +408,13 @@ pub struct ColumnControl {
 pub struct ParsedSample {
     pub headers: Vec<String>,
     pub rows: Vec<Vec<String>>,
-    pub is_complete: bool,
+    /// Data rows read while building the sample. This is the input's full
+    /// data-row count only when `scanned_entire_input` is true; it is always
+    /// >= `rows.len()`, because a spread sample thins what it keeps.
+    pub data_rows_scanned: usize,
+    /// Whether every data row was read. False only for a head window that hit
+    /// its cap; detection samples always scan the whole input.
+    pub scanned_entire_input: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -442,6 +522,8 @@ pub struct PasteTransformParams {
     pub columns: Vec<usize>,
     #[serde(default)]
     pub controls: Vec<ColumnControl>,
+    /// Rows to classify on, matching the figure paste analyze was given.
+    pub sample_row_count: usize,
     #[serde(default)]
     pub preview_smart_replacements: Vec<SmartReplacementEntry>,
 }
@@ -454,7 +536,10 @@ pub struct PastePreviewParams {
     pub columns: Vec<usize>,
     #[serde(default)]
     pub controls: Vec<ColumnControl>,
+    /// Rows to display. A window on the paste, not evidence about it.
     pub sample_count: usize,
+    /// Rows to classify on, matching the figure paste analyze was given.
+    pub sample_row_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -566,7 +651,12 @@ pub struct PreviewParams {
     pub columns: Vec<usize>,
     #[serde(default)]
     pub controls: Vec<ColumnControl>,
+    /// Rows to display. A window on the input, not evidence about it.
     pub sample_count: usize,
+    /// Rows to classify on — the same figure analyze and the run are given, so the
+    /// preview shows the strategies the run will apply rather than the ones a
+    /// display-sized sample happens to imply.
+    pub sample_row_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -16,18 +16,206 @@ fn analyzes_csv_headers_and_default_output_path() {
 }
 
 #[test]
-fn sampled_analysis_defers_full_row_count() {
+fn sampled_analysis_still_reports_the_exact_row_count() {
     let service = AnonymizerService::new("test-version");
     let result = service
-        .analyze_csv_sampled(fixture("large.csv"), 25)
+        .analyze_csv_with_sample_rows(fixture("large.csv"), 25)
         .unwrap();
 
-    assert_eq!(result.row_count, 25);
-    assert!(!result.row_count_is_complete);
+    // The sample is capped at 25 rows, but detection streams every row, so the
+    // count is exact rather than deferred to a second pass.
+    assert_eq!(result.row_count, 10_500);
+    assert!(result.row_count_is_complete);
     assert_eq!(
         service.count_csv_rows(fixture("large.csv")).unwrap(),
-        10_500
+        result.row_count
     );
+}
+
+/// A head-anchored detection window makes the analyzer blind to PII that only
+/// starts partway down the file, while the transform still streams every row.
+/// The column then looks benign, is never auto-selected, and its real values are
+/// copied verbatim into the "anonymized" output. Detection must sample across
+/// the whole file, not just its opening rows.
+#[test]
+fn detects_pii_that_only_starts_after_the_sample_window() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("late-pii.csv");
+
+    let mut content = String::from("flag\n");
+    for row in 0..1_000 {
+        if row < 100 {
+            content.push_str(if row % 2 == 0 { "true\n" } else { "false\n" });
+        } else {
+            content.push_str(&format!("user{row}@example.com\n"));
+        }
+    }
+    fs::write(&input_path, &content).unwrap();
+
+    let result = service
+        .analyze_csv_with_sample_rows(&input_path, 100)
+        .unwrap();
+    let column = &result.columns[0];
+
+    assert_eq!(result.row_count, 1_000);
+    assert_eq!(column.detected_type, DataType::Email);
+    assert_eq!(column.pii_risk, PiiRisk::High);
+    assert!(
+        crate::should_auto_select_column(column),
+        "a column that is 90% email addresses must be offered for anonymization"
+    );
+}
+
+/// Flattened exports are periodic: one logical record per k rows, each field on a
+/// fixed row of the block. Detection samples a bounded number of rows out of the
+/// whole file, so if the choice of rows is a fixed period of its own — every nth row
+/// — the two periods align and the sample lands on one phase of the record block.
+/// A column holding one real email address per block is then classified entirely off
+/// the filler rows: benign type, Low risk, not auto-selected, and the addresses are
+/// copied verbatim into the "anonymized" output.
+///
+/// Four rows per record and a stride that is always a power of two is the case that
+/// bit: 100 email addresses, none of them sampled. See `csv_io::spread_priority`.
+#[test]
+fn detects_pii_that_repeats_on_a_power_of_two_period() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+
+    for period in [2, 3, 4, 5, 8, 16] {
+        let input_path = temp_dir.path().join(format!("record-blocks-{period}.csv"));
+        let mut content = String::from("value\n");
+        for row in 0..period * 100 {
+            if row % period == period - 1 {
+                content.push_str(&format!("user{row}@example.com\n"));
+            } else {
+                content.push_str(&format!("field {row}\n"));
+            }
+        }
+        fs::write(&input_path, &content).unwrap();
+
+        let result = service.analyze_csv(&input_path).unwrap();
+        let column = &result.columns[0];
+
+        assert_eq!(
+            column.pii_risk,
+            PiiRisk::High,
+            "a {period}-row record block hid 100 email addresses: {:?} at {:?} risk",
+            column.detected_type,
+            column.pii_risk
+        );
+        assert!(
+            crate::should_auto_select_column(column),
+            "a {period}-row record block left its email column unselected"
+        );
+    }
+}
+
+/// The "Sample rows" setting may ask detection to look at more values. It may not
+/// ask it to look at fewer.
+///
+/// Analyze fills the column table the user selects from; preflight, preview and the
+/// run classify the same file through their own entry points. Detection votes on the
+/// ratio of matching values in its sample, so a column that is part one type and
+/// part another genuinely lands on different answers at different sample sizes —
+/// the fixture below reads as Email at two rows and as String at a hundred. Whichever
+/// is right, a setting that lowers only *some* of those entry points makes the table
+/// promise a classification the run does not apply.
+///
+/// `detection_sample_rows` is the floor that prevents it, and this is the test that
+/// notices if it is removed: without it the two assertions below disagree.
+#[test]
+fn a_small_sample_row_request_cannot_lower_the_detection_basis() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("partly-email.csv");
+
+    let mut content = String::from("note\n");
+    for row in 0..400 {
+        if row % 3 == 0 {
+            content.push_str(&format!("user{row}@example.com\n"));
+        } else {
+            content.push_str(&format!("plain note {row}\n"));
+        }
+    }
+    fs::write(&input_path, &content).unwrap();
+
+    let floored = service
+        .analyze_csv_with_sample_rows(&input_path, 100)
+        .unwrap();
+
+    for requested in [1, 2, 3, 5, 10, 50] {
+        let result = service
+            .analyze_csv_with_sample_rows(&input_path, requested)
+            .unwrap();
+
+        assert_eq!(
+            result.columns[0].detected_type, floored.columns[0].detected_type,
+            "a request of {requested} rows classified the column as {:?} where the \
+             default basis says {:?}; the run would apply the second one",
+            result.columns[0].detected_type, floored.columns[0].detected_type,
+        );
+        assert_eq!(
+            result.columns[0].confidence, floored.columns[0].confidence,
+            "a request of {requested} rows changed the reported confidence"
+        );
+    }
+}
+
+/// Raising "Sample rows" has to raise it for the preview too.
+///
+/// A larger basis is worth asking for because it finds PII the default basis is too
+/// small to see: rare values. The fixture below is a free-text column with a dozen
+/// email addresses buried in two thousand notes, which the default hundred-row
+/// sample almost certainly misses and a whole-file sample cannot. Analyze took the
+/// setting; the preview derived its basis from the *display* count, which is capped
+/// at a hundred, so it classified on the smaller sample no matter what the setting
+/// said — the column table offered a redaction the preview then contradicted.
+#[test]
+fn preview_classifies_on_the_same_basis_the_setting_gave_analyze() {
+    const SAMPLE_ROWS: usize = 2_000;
+
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("rare-pii.csv");
+
+    let mut content = String::from("note\n");
+    for row in 0..SAMPLE_ROWS {
+        if row % 167 == 3 {
+            content.push_str(&format!("reached them at user{row}@example.com\n"));
+        } else {
+            content.push_str(&format!("internal note {row}\n"));
+        }
+    }
+    fs::write(&input_path, &content).unwrap();
+
+    let analyzed = service
+        .analyze_csv_with_sample_rows(&input_path, SAMPLE_ROWS)
+        .unwrap();
+    assert_eq!(
+        analyzed.columns[0].pii_risk,
+        PiiRisk::High,
+        "the fixture is meant to read as PII only on the larger basis"
+    );
+
+    let preview = service
+        .preview_anonymization(PreviewParams {
+            file_path: input_path,
+            columns: vec![0],
+            controls: Vec::new(),
+            sample_count: 3,
+            sample_row_count: SAMPLE_ROWS,
+        })
+        .unwrap();
+
+    for sample in &preview.previews[0].samples {
+        assert_eq!(
+            sample.anonymized, "[EMAIL]",
+            "analyze offered this column as High-risk contact data, so the preview \
+             must show the redaction the run will apply, not {:?}",
+            sample.anonymized
+        );
+    }
 }
 
 #[test]
@@ -51,6 +239,7 @@ fn preview_reuses_repeated_values_within_one_run() {
                 strategy: AnonymizationStrategy::Auto,
             }],
             sample_count: 3,
+            sample_row_count: 100,
         })
         .unwrap();
 
@@ -82,6 +271,7 @@ fn preview_preserves_short_numeric_code_shape() {
                 strategy: AnonymizationStrategy::Auto,
             }],
             sample_count: 3,
+            sample_row_count: 100,
         })
         .unwrap();
 
@@ -107,6 +297,7 @@ fn preview_preserves_decimal_numeric_shape() {
             columns: vec![0],
             controls: vec![],
             sample_count: 3,
+            sample_row_count: 100,
         })
         .unwrap();
 
@@ -137,6 +328,7 @@ fn preview_skips_empty_and_null_samples() {
             columns: vec![0],
             controls: vec![],
             sample_count: 3,
+            sample_row_count: 100,
         })
         .unwrap();
 
@@ -182,6 +374,7 @@ fn preview_uses_type_specific_phone_and_name_strategies() {
                 },
             ],
             sample_count: 1,
+            sample_row_count: 100,
         })
         .unwrap();
 
@@ -214,6 +407,7 @@ fn people_names_fixture_previews_name_like_full_names() {
                 strategy: AnonymizationStrategy::Auto,
             }],
             sample_count: 5,
+            sample_row_count: 100,
         })
         .unwrap();
 
@@ -271,6 +465,7 @@ fn people_names_fixture_treats_single_token_name_column_as_name() {
                 },
             ],
             sample_count: 5,
+            sample_row_count: 100,
         })
         .unwrap();
 
@@ -340,6 +535,7 @@ fn preview_name_mappings_are_consistent_within_previewed_rows() {
             columns: vec![0, 1, 2],
             controls: controls.clone(),
             sample_count: 2,
+            sample_row_count: 100,
         })
         .unwrap();
 
@@ -372,6 +568,7 @@ fn preview_applies_per_column_type_and_strategy_controls() {
                 strategy: AnonymizationStrategy::Mask,
             }],
             sample_count: 1,
+            sample_row_count: 100,
         })
         .unwrap();
 
@@ -475,6 +672,7 @@ fn preview_warns_for_pass_through_and_no_op_columns() {
                 strategy: AnonymizationStrategy::PassThrough,
             }],
             sample_count: 1,
+            sample_row_count: 100,
         })
         .unwrap();
 

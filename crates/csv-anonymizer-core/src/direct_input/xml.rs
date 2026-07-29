@@ -12,17 +12,18 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use super::shared::{
-    FieldSamples, PreviewSelection, bounded_analysis_sample_count, bounded_preview_sample_count,
-    fields_to_rows, format_path, metadata_from_fields, next_row_index, prepare_selected_metadata,
+    FieldSampleLimits, FieldSamples, FieldWindow, PreviewSelection, bounded_preview_sample_count,
+    escape_path_key, fields_to_rows, format_path, metadata_from_fields, next_row_index,
+    paste_detection_sample_rows, prepare_selected_metadata, preview_field_sample_limits,
     preview_from_fields_with_smart_provider, preview_smart_replacements_for_transform,
     push_identified_field_sample, selected_columns_by_source,
     transform_state_for_smart_replacements,
 };
 
 pub(super) fn analyze_xml(content: &str, sample_row_count: usize) -> Result<PasteAnalyzeData> {
-    let sample_row_count = bounded_analysis_sample_count(sample_row_count)?;
-    let fields = collect_xml_fields(content, sample_row_count)?;
-    let (headers, rows) = fields_to_rows(&fields, sample_row_count);
+    let sample_row_count = paste_detection_sample_rows(sample_row_count)?;
+    let fields = collect_xml_fields(content, FieldSampleLimits::detection_only(sample_row_count))?;
+    let (headers, rows) = fields_to_rows(&fields, FieldWindow::Detection);
     let columns = metadata_from_fields(&fields, &headers, &rows);
 
     Ok(PasteAnalyzeData {
@@ -38,7 +39,11 @@ pub(super) fn preview_xml_with_smart_provider(
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<PreviewData> {
     let sample_count = bounded_preview_sample_count(input.sample_count)?;
-    let fields = collect_xml_fields(&input.content, sample_count.saturating_mul(2).max(1))?;
+    let detection_sample_rows = paste_detection_sample_rows(input.sample_row_count)?;
+    let fields = collect_xml_fields(
+        &input.content,
+        preview_field_sample_limits(sample_count, detection_sample_rows),
+    )?;
     preview_from_fields_with_smart_provider(
         &fields,
         PreviewSelection {
@@ -54,7 +59,7 @@ pub(super) fn transform_xml_with_smart_provider(
     input: PasteTransformParams,
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<PasteTransformData> {
-    let analysis = analyze_xml(&input.content, 100)?;
+    let analysis = analyze_xml(&input.content, input.sample_row_count)?;
     let metadata = prepare_selected_metadata(&analysis.columns, &input.columns, &input.controls)?;
     let selected_by_path = selected_columns_by_source(&metadata);
     let smart_replacements = prepare_xml_smart_replacements(&input, &metadata, provider)?;
@@ -76,8 +81,11 @@ fn prepare_xml_smart_replacements(
     metadata: &[ColumnMetadata],
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<crate::smart::SmartReplacementMap> {
-    let fields = collect_xml_fields(&input.content, usize::MAX)?;
-    let (_headers, rows) = fields_to_rows(&fields, usize::MAX);
+    let fields = collect_xml_fields(
+        &input.content,
+        FieldSampleLimits::detection_only(usize::MAX),
+    )?;
+    let (_headers, rows) = fields_to_rows(&fields, FieldWindow::Detection);
     let existing_smart_replacements = preview_smart_replacements_for_transform(input, metadata);
     prepare_smart_replacements_from_rows(
         &rows,
@@ -87,37 +95,35 @@ fn prepare_xml_smart_replacements(
     )
 }
 
-pub(super) fn collect_xml_fields(content: &str, sample_count: usize) -> Result<Vec<FieldSamples>> {
+pub(super) fn collect_xml_fields(
+    content: &str,
+    limits: FieldSampleLimits,
+) -> Result<Vec<FieldSamples>> {
     let mut reader = Reader::from_str(content);
     reader.config_mut().trim_text(false);
     let mut path = Vec::new();
     let mut fields = Vec::new();
 
     loop {
-        match reader
-            .read_event()
-            .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?
-        {
+        match reader.read_event().map_err(xml_error)? {
             Event::Start(event) => {
                 path.push(xml_name(event.name().as_ref()));
-                collect_xml_attributes(&reader, &event, &path, &mut fields, sample_count)?;
+                collect_xml_attributes(&reader, &event, &path, &mut fields, limits)?;
             }
             Event::Empty(event) => {
                 path.push(xml_name(event.name().as_ref()));
-                collect_xml_attributes(&reader, &event, &path, &mut fields, sample_count)?;
+                collect_xml_attributes(&reader, &event, &path, &mut fields, limits)?;
                 path.pop();
             }
             Event::Text(event) => {
                 let value = event
                     .xml_content(XmlVersion::Implicit1_0)
-                    .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?;
-                push_xml_text_sample(&mut fields, &path, value.trim(), sample_count)?;
+                    .map_err(xml_error)?;
+                push_xml_text_sample(&mut fields, &path, value.trim(), limits)?;
             }
             Event::CData(event) => {
-                let value = event
-                    .decode()
-                    .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?;
-                push_xml_text_sample(&mut fields, &path, value.trim(), sample_count)?;
+                let value = event.decode().map_err(xml_error)?;
+                push_xml_text_sample(&mut fields, &path, value.trim(), limits)?;
             }
             Event::End(_) => {
                 path.pop();
@@ -134,7 +140,7 @@ fn push_xml_text_sample(
     fields: &mut Vec<FieldSamples>,
     path: &[String],
     value: &str,
-    sample_count: usize,
+    limits: FieldSampleLimits,
 ) -> Result<()> {
     if value.is_empty() {
         return Ok(());
@@ -142,7 +148,7 @@ fn push_xml_text_sample(
 
     let source_path = xml_text_source_path(path);
     let label = xml_text_label(path);
-    push_identified_field_sample(fields, Some(&source_path), &label, value, sample_count)
+    push_identified_field_sample(fields, Some(&source_path), &label, value, limits)
 }
 
 fn collect_xml_attributes(
@@ -150,27 +156,20 @@ fn collect_xml_attributes(
     event: &quick_xml::events::BytesStart<'_>,
     path: &[String],
     fields: &mut Vec<FieldSamples>,
-    sample_count: usize,
+    limits: FieldSampleLimits,
 ) -> Result<()> {
     for attribute in event.attributes().with_checks(false) {
-        let attribute =
-            attribute.map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?;
+        let attribute = attribute.map_err(xml_error)?;
         let value = attribute
             .decoded_and_normalized_value(XmlVersion::Implicit1_0, reader.decoder())
-            .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?;
+            .map_err(xml_error)?;
         if value.trim().is_empty() {
             continue;
         }
         let key = xml_name(attribute.key.as_ref());
         let source_path = xml_attribute_source_path(path, &key);
         let label = xml_attribute_label(path, &key);
-        push_identified_field_sample(
-            fields,
-            Some(&source_path),
-            &label,
-            value.trim(),
-            sample_count,
-        )?;
+        push_identified_field_sample(fields, Some(&source_path), &label, value.trim(), limits)?;
     }
 
     Ok(())
@@ -193,116 +192,100 @@ fn transform_xml_content(
     };
 
     loop {
-        let event = reader
-            .read_event()
-            .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?;
+        let event = reader.read_event().map_err(xml_error)?;
         match event {
             Event::Start(event) => {
                 path.push(xml_name(event.name().as_ref()));
                 let event =
                     transform_xml_attributes(&reader, event, &path, &mut transform_context)?;
-                writer
-                    .write_event(Event::Start(event))
-                    .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?;
+                writer.write_event(Event::Start(event)).map_err(xml_error)?;
             }
             Event::Empty(event) => {
                 path.push(xml_name(event.name().as_ref()));
                 let event =
                     transform_xml_attributes(&reader, event, &path, &mut transform_context)?;
-                writer
-                    .write_event(Event::Empty(event))
-                    .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?;
+                writer.write_event(Event::Empty(event)).map_err(xml_error)?;
                 path.pop();
             }
+            // Text and CDATA decode before the path is checked, so a node that
+            // cannot be decoded fails the run even when it was never selected.
+            // That is safe only because `collect_xml_fields` decodes every node
+            // unconditionally too, and `transform_xml_with_smart_provider` always
+            // analyzes before it transforms — so an undecodable document has
+            // already been rejected by the time it reaches here.
             Event::Text(event) => {
-                let path_name = xml_text_source_path(&path);
-                if let Some(column) = transform_context.selected_by_path.get(&path_name) {
-                    let value = event
-                        .xml_content(XmlVersion::Implicit1_0)
-                        .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?;
-                    if value.trim().is_empty() {
-                        writer.write_event(Event::Text(event)).map_err(|error| {
-                            AnonymizerError::input_parse("XML", error.to_string())
-                        })?;
-                    } else {
-                        let row_index = next_row_index(transform_context.row_indices, &path_name);
-                        let context = TransformContext {
-                            column_name: &column.name,
-                            column_index: column.index,
-                            row_index,
-                            empty_format: column.empty_format,
-                        };
-                        let anonymized = transform_value_with_state(
-                            value.trim(),
-                            column,
-                            &context,
-                            transform_context.state,
-                        );
-                        writer
-                            .write_event(Event::Text(BytesText::new(&anonymized)))
-                            .map_err(|error| {
-                                AnonymizerError::input_parse("XML", error.to_string())
-                            })?;
-                    }
-                } else {
-                    writer
-                        .write_event(Event::Text(event))
-                        .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?;
-                }
+                let raw = event
+                    .xml_content(XmlVersion::Implicit1_0)
+                    .map_err(xml_error)?;
+                let replacement = xml_text_replacement(&path, &raw, &mut transform_context);
+                let event = match replacement.as_deref() {
+                    Some(anonymized) => Event::Text(BytesText::new(anonymized)),
+                    None => Event::Text(event),
+                };
+                writer.write_event(event).map_err(xml_error)?;
             }
             Event::CData(event) => {
-                let path_name = xml_text_source_path(&path);
-                if let Some(column) = transform_context.selected_by_path.get(&path_name) {
-                    let value = event
-                        .decode()
-                        .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?;
-                    if value.trim().is_empty() {
-                        writer.write_event(Event::CData(event)).map_err(|error| {
-                            AnonymizerError::input_parse("XML", error.to_string())
-                        })?;
-                    } else {
-                        let row_index = next_row_index(transform_context.row_indices, &path_name);
-                        let context = TransformContext {
-                            column_name: &column.name,
-                            column_index: column.index,
-                            row_index,
-                            empty_format: column.empty_format,
-                        };
-                        let anonymized = transform_value_with_state(
-                            value.trim(),
-                            column,
-                            &context,
-                            transform_context.state,
-                        );
-                        writer
-                            .write_event(Event::CData(BytesCData::new(&anonymized)))
-                            .map_err(|error| {
-                                AnonymizerError::input_parse("XML", error.to_string())
-                            })?;
-                    }
-                } else {
-                    writer
-                        .write_event(Event::CData(event))
-                        .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?;
-                }
+                let raw = event.decode().map_err(xml_error)?;
+                let replacement = xml_text_replacement(&path, &raw, &mut transform_context);
+                let event = match replacement.as_deref() {
+                    Some(anonymized) => Event::CData(BytesCData::new(anonymized)),
+                    None => Event::CData(event),
+                };
+                writer.write_event(event).map_err(xml_error)?;
             }
             Event::End(event) => {
-                writer
-                    .write_event(Event::End(event))
-                    .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?;
+                writer.write_event(Event::End(event)).map_err(xml_error)?;
                 path.pop();
             }
             Event::Eof => break,
             other => {
-                writer
-                    .write_event(other)
-                    .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?;
+                writer.write_event(other).map_err(xml_error)?;
             }
         }
     }
 
-    String::from_utf8(writer.into_inner())
-        .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))
+    String::from_utf8(writer.into_inner()).map_err(xml_error)
+}
+
+/// Wraps any XML reader/writer failure as an input-parse error.
+///
+/// Every fallible XML call reports the same way, so the message stays uniform
+/// and the call sites stay readable.
+fn xml_error(error: impl std::fmt::Display) -> AnonymizerError {
+    AnonymizerError::input_parse("XML", error.to_string())
+}
+
+/// The anonymized replacement for a text or CDATA node, or `None` when the node
+/// must be written through untouched — either its path is not selected or it
+/// holds only whitespace.
+///
+/// Text and CDATA differ only in how they decode and how they are written back;
+/// the decision and the transform are identical, so they live here once.
+fn xml_text_replacement(
+    path: &[String],
+    raw: &str,
+    context: &mut XmlTransformContext<'_>,
+) -> Option<String> {
+    let path_name = xml_text_source_path(path);
+    let column = context.selected_by_path.get(&path_name)?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let row_index = next_row_index(context.row_indices, &path_name);
+    let value_context = TransformContext {
+        column_name: &column.name,
+        column_index: column.index,
+        row_index,
+        empty_format: column.empty_format,
+    };
+    Some(transform_value_with_state(
+        trimmed,
+        column,
+        &value_context,
+        context.state,
+    ))
 }
 
 struct XmlTransformContext<'a> {
@@ -322,34 +305,26 @@ fn transform_xml_attributes(
         .attributes()
         .with_checks(false)
         .map(|attribute| {
-            attribute
-                .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))
-                .and_then(|attribute| {
-                    let key = xml_name(attribute.key.as_ref());
-                    let value = attribute
-                        .decoded_and_normalized_value(XmlVersion::Implicit1_0, reader.decoder())
-                        .map_err(|error| AnonymizerError::input_parse("XML", error.to_string()))?;
-                    let path_name = xml_attribute_source_path(path, &key);
-                    let next_value = if let Some(column) = context.selected_by_path.get(&path_name)
-                    {
-                        let row_index = next_row_index(context.row_indices, &path_name);
-                        let value_context = TransformContext {
-                            column_name: &column.name,
-                            column_index: column.index,
-                            row_index,
-                            empty_format: column.empty_format,
-                        };
-                        transform_value_with_state(
-                            value.trim(),
-                            column,
-                            &value_context,
-                            context.state,
-                        )
-                    } else {
-                        value.into_owned()
+            attribute.map_err(xml_error).and_then(|attribute| {
+                let key = xml_name(attribute.key.as_ref());
+                let value = attribute
+                    .decoded_and_normalized_value(XmlVersion::Implicit1_0, reader.decoder())
+                    .map_err(xml_error)?;
+                let path_name = xml_attribute_source_path(path, &key);
+                let next_value = if let Some(column) = context.selected_by_path.get(&path_name) {
+                    let row_index = next_row_index(context.row_indices, &path_name);
+                    let value_context = TransformContext {
+                        column_name: &column.name,
+                        column_index: column.index,
+                        row_index,
+                        empty_format: column.empty_format,
                     };
-                    Ok((key, next_value))
-                })
+                    transform_value_with_state(value.trim(), column, &value_context, context.state)
+                } else {
+                    value.into_owned()
+                };
+                Ok((key, next_value))
+            })
         })
         .collect::<Result<Vec<_>>>()?;
 
@@ -361,10 +336,13 @@ fn transform_xml_attributes(
     Ok(owned)
 }
 
+/// The record count is the longest field's, counted over the whole document rather
+/// than over what the sample kept — the sample is bounded, the count reported to the
+/// user is not.
 fn infer_xml_row_count(fields: &[FieldSamples]) -> usize {
     fields
         .iter()
-        .map(|field| field.values.len())
+        .map(|field| field.value_count())
         .max()
         .unwrap_or(0)
 }
@@ -425,10 +403,6 @@ fn xml_label_segment(segment: &str) -> String {
             serde_json::to_string(segment).unwrap_or_else(|_| "\"?\"".to_string())
         )
     }
-}
-
-fn escape_path_key(key: &str) -> String {
-    key.replace('~', "~0").replace('/', "~1")
 }
 
 fn is_plain_xml_label_segment(segment: &str) -> bool {

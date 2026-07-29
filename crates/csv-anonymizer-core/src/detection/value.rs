@@ -8,6 +8,7 @@ use crate::types::{Confidence, DataType, DetectionResult, DetectionTraceItem};
 use super::candidate::{DetectorCandidate, DetectorCandidateSpec, DetectorEvidence};
 use super::locale::LocaleContext;
 use super::national_id::is_national_id;
+use super::patterns;
 use super::scoring::{DetectorDecision, calculate_confidence, detection_result, trace_item};
 use super::validators::{is_email, is_iban, is_phone_in_context, is_tax_id, is_url, is_vat_id};
 
@@ -56,10 +57,11 @@ pub(in crate::detection) fn detect_priority_pattern(
     total_non_empty: usize,
     locale: &LocaleContext,
 ) -> PatternOutcome {
+    // Candidates keep `detection_priority()` order; `DetectorDecision::select`
+    // uses that position as its final tie-breaker.
     let candidates = detection_priority()
         .into_iter()
-        .enumerate()
-        .map(|(order, (data_type, matches, reason))| {
+        .map(|(data_type, matches, reason)| {
             let match_count = values.iter().filter(|value| matches(value, locale)).count();
             let confidence = calculate_confidence(match_count, total_non_empty);
 
@@ -71,7 +73,6 @@ pub(in crate::detection) fn detect_priority_pattern(
                 confidence,
                 evidence: evidence_for(data_type),
                 specificity: specificity_for(data_type),
-                order,
             })
         })
         .collect();
@@ -310,14 +311,18 @@ fn is_numeric_value(value: &str) -> bool {
 }
 
 fn is_ip_address(value: &str) -> bool {
-    let parts: Vec<&str> = value.split('.').collect();
-    parts.len() == 4
-        && parts.iter().all(|part| {
-            !part.is_empty()
-                && part.len() <= 3
-                && part.chars().all(|character| character.is_ascii_digit())
-                && part.parse::<u8>().is_ok()
-        })
+    ip_address_pattern().is_match(value)
+}
+
+/// Lets `spans`' tests check that both paths answer the same way about IPv4.
+#[cfg(test)]
+pub(in crate::detection) fn is_ip_address_for_tests(value: &str) -> bool {
+    is_ip_address(value)
+}
+
+fn ip_address_pattern() -> &'static Regex {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN.get_or_init(|| patterns::whole_value(patterns::IPV4))
 }
 
 fn is_mac_address(value: &str) -> bool {
@@ -345,16 +350,12 @@ fn is_country_code(value: &str) -> bool {
 
 fn uuid_pattern() -> &'static Regex {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| {
-        Regex::new(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
-            .unwrap()
-    })
+    PATTERN.get_or_init(|| patterns::whole_value(patterns::UUID))
 }
 
 fn timestamp_pattern() -> &'static Regex {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN
-        .get_or_init(|| Regex::new(r"^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}:\d{2}(\.\d+)?)?$").unwrap())
+    PATTERN.get_or_init(|| patterns::whole_value(patterns::TIMESTAMP))
 }
 
 fn numeric_id_pattern() -> &'static Regex {
@@ -374,7 +375,7 @@ fn numeric_value_pattern() -> &'static Regex {
 
 fn mac_address_pattern() -> &'static Regex {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
-    PATTERN.get_or_init(|| Regex::new(r"^(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$").unwrap())
+    PATTERN.get_or_init(|| patterns::whole_value(patterns::MAC_ADDRESS))
 }
 
 fn currency_pattern() -> &'static Regex {

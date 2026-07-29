@@ -1,4 +1,4 @@
-use crate::csv_io::{count_csv_data_rows, read_sample};
+use crate::csv_io::{count_csv_data_rows, read_detection_sample, read_sample};
 use crate::error::Result;
 use crate::metadata::{apply_column_selection, build_column_metadata};
 use crate::smart::{
@@ -29,6 +29,33 @@ pub(crate) use privacy_report::{build_privacy_report, count_transforming_selecte
 
 const DEFAULT_SAMPLE_ROWS: usize = 100;
 
+/// Rows to classify on, given what a caller asked for.
+///
+/// [`DEFAULT_SAMPLE_ROWS`] is a floor rather than a default: every entry point that
+/// classifies a file routes its figure through here, so the "Sample rows" setting
+/// can only ask for *more* evidence than the default, never less.
+///
+/// The floor is only half of what makes the four entry points agree, and the weaker
+/// half. They are separate commands answering questions about one file — analyze
+/// fills the column table the user selects from, preflight judges whether the run
+/// may proceed, preview shows what it will do, and the run does it — so they also
+/// have to be *given* the same figure. Detection votes on the ratio of matching
+/// values in the sample, so two entry points sampling differently can genuinely land
+/// on different types: measured on a column that is one-third email addresses, the
+/// detected type moves through Email, String and Enum as the sample grows from 1 row
+/// to 100. Whichever of those is right, the four commands disagreeing about it means
+/// the table promises a classification the run does not apply. Preview used to reach
+/// this floor with its *display* row count, which is capped below the floor, so at
+/// any "Sample rows" above the default it classified on less than analyze had.
+/// [`PreviewParams::sample_row_count`] is how it now hears the same figure.
+///
+/// A floor rather than a fixed value because a caller asking for more evidence is
+/// always safe: the sample is drawn from the whole input either way, so a larger
+/// figure refines the same estimate rather than shifting where it looks.
+fn detection_sample_rows(requested: usize) -> usize {
+    DEFAULT_SAMPLE_ROWS.max(requested).max(1)
+}
+
 #[derive(Debug, Clone)]
 pub struct AnonymizerService {
     version: String,
@@ -49,52 +76,44 @@ impl AnonymizerService {
         self.analyze_csv_with_sample_rows(file_path, DEFAULT_SAMPLE_ROWS)
     }
 
+    /// Detection reads the whole file in one streaming pass and keeps
+    /// `sample_rows` values spread across it, so the exact row count falls out
+    /// of the same pass that classifies the columns.
+    ///
+    /// `sample_rows` is a request, floored by [`detection_sample_rows`].
     pub fn analyze_csv_with_sample_rows(
         &self,
         file_path: impl AsRef<Path>,
         sample_rows: usize,
     ) -> Result<HeadersData> {
-        self.analyze_csv_with_options(file_path, sample_rows, true)
-    }
-
-    pub fn analyze_csv_sampled(
-        &self,
-        file_path: impl AsRef<Path>,
-        sample_rows: usize,
-    ) -> Result<HeadersData> {
-        self.analyze_csv_with_options(file_path, sample_rows, false)
-    }
-
-    pub fn preflight_anonymization(&self, input: PreflightParams) -> Result<PreflightData> {
-        let file_path = normalize_path(&input.file_path)?;
-        let headers = self.analyze_csv_sampled(&file_path, input.sample_row_count.max(1))?;
-        run_preflight(&file_path, headers.columns, input)
-    }
-
-    fn analyze_csv_with_options(
-        &self,
-        file_path: impl AsRef<Path>,
-        sample_rows: usize,
-        count_all_rows: bool,
-    ) -> Result<HeadersData> {
         let file_path = normalize_path(file_path.as_ref())?;
-        let sample = read_sample(&file_path, sample_rows.max(1))?;
+        let sample = read_detection_sample(&file_path, detection_sample_rows(sample_rows))?;
         let metadata = build_column_metadata(&sample.headers, &sample.rows);
-        let counted_rows = if count_all_rows {
-            count_csv_data_rows(&file_path).ok()
-        } else {
-            None
-        };
-        let row_count = counted_rows.unwrap_or(sample.rows.len());
-        let row_count_is_complete = counted_rows.is_some() || sample.is_complete;
 
         Ok(HeadersData {
             file_path: file_path.clone(),
-            row_count,
-            row_count_is_complete,
+            row_count: sample.data_rows_scanned,
+            row_count_is_complete: sample.scanned_entire_input,
             default_output_path: generate_default_output_path(&file_path),
             columns: metadata,
         })
+    }
+
+    /// Checks a pending run and reports what would block it.
+    ///
+    /// Classifies through `analyze_csv_with_sample_rows`, so preflight judges the
+    /// run on exactly the types the run will use — see [`detection_sample_rows`]
+    /// for why that has to be arranged rather than assumed.
+    ///
+    /// This costs a streaming pass, and the preview that follows costs another one
+    /// on the same file. Detection cannot be correct without at least one pass, and
+    /// the two commands are separate entry points with no shared state — the client
+    /// calls preflight, reads the verdict, then calls preview — so the second pass
+    /// is the price of that split rather than something to optimize away here.
+    pub fn preflight_anonymization(&self, input: PreflightParams) -> Result<PreflightData> {
+        let file_path = normalize_path(&input.file_path)?;
+        let headers = self.analyze_csv_with_sample_rows(&file_path, input.sample_row_count)?;
+        run_preflight(&file_path, headers.columns, input)
     }
 
     pub fn preview_anonymization(&self, input: PreviewParams) -> Result<PreviewData> {
@@ -107,20 +126,21 @@ impl AnonymizerService {
         provider: Option<&mut dyn SmartReplacementProvider>,
     ) -> Result<PreviewData> {
         let file_path = normalize_path(&input.file_path)?;
-        // Detect on the same sample basis as analyze/anonymize (DEFAULT_SAMPLE_ROWS)
-        // so the preview cannot show a different detected type than the final run.
-        let sample = read_sample(
-            &file_path,
-            DEFAULT_SAMPLE_ROWS.max(input.sample_count).max(1),
-        )?;
-        let metadata = build_column_metadata(&sample.headers, &sample.rows);
-        // Smart replacement and preview samples stay limited to the display
-        // window; only type detection above uses the larger sample.
+        // Detect on `sample_row_count`, the figure analyze and the run are given,
+        // so the preview cannot show a different detected type — and therefore a
+        // different strategy — than the final run. Not on `sample_count`: that is
+        // how many rows to *display*, which says nothing about how much evidence
+        // detection needs, and is capped well below what "Sample rows" allows.
+        let detection_sample =
+            read_detection_sample(&file_path, detection_sample_rows(input.sample_row_count))?;
+        let metadata = build_column_metadata(&detection_sample.headers, &detection_sample.rows);
+        // Displayed rows are a separate, head-anchored window: the user expects
+        // the preview to show the file's opening rows, not the detection spread.
         let display_row_count = input.sample_count.saturating_mul(2).max(1);
-        let display_rows = &sample.rows[..sample.rows.len().min(display_row_count)];
+        let display = read_sample(&file_path, display_row_count)?;
         preview::preview_rows_with_smart_provider(
             &metadata,
-            display_rows,
+            &display.rows,
             &input.columns,
             &input.controls,
             input.sample_count,
@@ -177,7 +197,7 @@ impl AnonymizerService {
         let input_path = normalize_path(&input.file_path)?;
         ensure_output_differs_from_input(&input_path, &input.output_path)?;
         let output_path = validate_output_path(&input.output_path, input.force)?;
-        let sample = read_sample(&input_path, sample_rows.max(1))?;
+        let sample = read_detection_sample(&input_path, detection_sample_rows(sample_rows))?;
         let metadata = build_column_metadata(&sample.headers, &sample.rows);
         validate_column_indices(&metadata, &input.columns)?;
         let controlled_metadata = apply_column_controls(&metadata, &input.controls)?;

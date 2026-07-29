@@ -20,8 +20,6 @@
     { "kind": "account_number", "concept": "account.financial_identifier", "dataType": "numericId", "lang": "en", "text": "account number", "weight": 91, "matchMode": "suffix" },
     { "kind": "account_number", "concept": "account.financial_identifier", "dataType": "numericId", "lang": "en", "text": "acct id", "weight": 88, "matchMode": "suffix" },
     { "kind": "account_number", "concept": "account.financial_identifier", "dataType": "numericId", "lang": "en", "text": "acct number", "weight": 90, "matchMode": "suffix" },
-    { "kind": "account_number", "concept": "account.financial_identifier", "dataType": "numericId", "lang": "en", "text": "customer id", "weight": 82, "matchMode": "suffix" },
-    { "kind": "account_number", "concept": "account.financial_identifier", "dataType": "numericId", "lang": "en", "text": "user id", "weight": 80, "matchMode": "suffix" },
     { "kind": "account_number", "concept": "account.financial_identifier", "dataType": "numericId", "lang": "en", "text": "iban", "weight": 96, "matchMode": "token" },
     { "kind": "account_number", "concept": "account.financial_identifier", "dataType": "numericId", "lang": "en", "text": "routing number", "weight": 92, "matchMode": "suffix" },
     { "kind": "account_number", "concept": "account.financial_identifier", "dataType": "numericId", "lang": "en", "text": "card number", "weight": 91, "matchMode": "suffix" },

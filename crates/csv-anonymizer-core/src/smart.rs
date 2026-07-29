@@ -156,7 +156,7 @@ impl SmartReplacementMap {
         self.replacements
             .values()
             .filter(|replacement| replacement.column_index == column_index)
-            .map(|replacement| normalized_value_key(&replacement.replacement))
+            .map(|replacement| value_identity_key(&replacement.replacement))
             .collect()
     }
 }
@@ -178,7 +178,7 @@ impl SmartReplacementKey {
     fn new(column_index: usize, value: &str) -> Self {
         Self {
             column_index,
-            normalized_value: normalized_value_key(value),
+            normalized_value: value_identity_key(value),
         }
     }
 }
@@ -221,21 +221,32 @@ pub fn missing_smart_replacement_values_from_csv(
     Ok(has_missing_smart_replacement_values(batches, existing))
 }
 
-fn collect_unique_values_from_rows(
-    rows: &[Vec<String>],
-    columns: &[ColumnMetadata],
-) -> BTreeMap<usize, Vec<String>> {
-    let mut values_by_column = selected_smart_columns(columns)
-        .map(|column| (column.index, BTreeSet::new()))
-        .collect::<BTreeMap<_, _>>();
+/// Accumulates the distinct non-empty values of each Local AI column.
+///
+/// The row source differs between the paste path (rows already in memory) and
+/// the file path (streamed records), but which values are collected must not:
+/// the preview and the final run have to request replacements for the same set,
+/// or the run discards the preview's work and re-queries the model.
+struct SmartValueCollector {
+    values_by_column: BTreeMap<usize, BTreeSet<String>>,
+}
 
-    if values_by_column.is_empty() {
-        return BTreeMap::new();
+impl SmartValueCollector {
+    fn new(columns: &[ColumnMetadata]) -> Self {
+        Self {
+            values_by_column: selected_smart_columns(columns)
+                .map(|column| (column.index, BTreeSet::new()))
+                .collect(),
+        }
     }
 
-    for row in rows {
-        for (column_index, values) in &mut values_by_column {
-            let Some(value) = row.get(*column_index) else {
+    fn is_empty(&self) -> bool {
+        self.values_by_column.is_empty()
+    }
+
+    fn push_row<'a>(&mut self, cell_at: impl Fn(usize) -> Option<&'a str>) {
+        for (column_index, values) in &mut self.values_by_column {
+            let Some(value) = cell_at(*column_index) else {
                 continue;
             };
             if !is_empty_value(value) {
@@ -244,10 +255,28 @@ fn collect_unique_values_from_rows(
         }
     }
 
-    values_by_column
-        .into_iter()
-        .map(|(index, values)| (index, values.into_iter().collect()))
-        .collect()
+    fn into_batches(self) -> BTreeMap<usize, Vec<String>> {
+        self.values_by_column
+            .into_iter()
+            .map(|(index, values)| (index, values.into_iter().collect()))
+            .collect()
+    }
+}
+
+fn collect_unique_values_from_rows(
+    rows: &[Vec<String>],
+    columns: &[ColumnMetadata],
+) -> BTreeMap<usize, Vec<String>> {
+    let mut collector = SmartValueCollector::new(columns);
+    if collector.is_empty() {
+        return BTreeMap::new();
+    }
+
+    for row in rows {
+        collector.push_row(|index| row.get(index).map(String::as_str));
+    }
+
+    collector.into_batches()
 }
 
 fn collect_unique_values_from_csv(
@@ -255,11 +284,8 @@ fn collect_unique_values_from_csv(
     columns: &[ColumnMetadata],
     mut control: Option<&mut ProcessControl<'_>>,
 ) -> Result<BTreeMap<usize, Vec<String>>> {
-    let mut values_by_column = selected_smart_columns(columns)
-        .map(|column| (column.index, BTreeSet::new()))
-        .collect::<BTreeMap<_, _>>();
-
-    if values_by_column.is_empty() {
+    let mut collector = SmartValueCollector::new(columns);
+    if collector.is_empty() {
         return Ok(BTreeMap::new());
     }
 
@@ -283,20 +309,10 @@ fn collect_unique_values_from_csv(
             continue;
         }
 
-        for (column_index, values) in &mut values_by_column {
-            let Some(value) = record.get(*column_index) else {
-                continue;
-            };
-            if !is_empty_value(value) {
-                insert_unique_smart_value(values, value);
-            }
-        }
+        collector.push_row(|index| record.get(index));
     }
 
-    Ok(values_by_column
-        .into_iter()
-        .map(|(index, values)| (index, values.into_iter().collect()))
-        .collect())
+    Ok(collector.into_batches())
 }
 
 fn build_replacement_map(
@@ -370,7 +386,7 @@ fn validated_replacements(
 ) -> ValidatedSmartReplacements {
     let expected_by_key = expected_values
         .iter()
-        .map(|value| (normalized_value_key(value), value.clone()))
+        .map(|value| (value_identity_key(value), value.clone()))
         .collect::<HashMap<_, _>>();
     let mut seen_expected_originals = BTreeSet::new();
     let mut accepted_originals = BTreeSet::new();
@@ -378,7 +394,7 @@ fn validated_replacements(
     let mut rejection_reasons = Vec::new();
 
     for replacement in replacements {
-        let original_key = normalized_value_key(&replacement.original);
+        let original_key = value_identity_key(&replacement.original);
         let Some(original) = expected_by_key.get(&original_key) else {
             rejection_reasons.push(SmartReplacementRejectionReason::UnexpectedOriginal);
             continue;
@@ -393,7 +409,7 @@ fn validated_replacements(
             rejection_reasons.push(reason);
             continue;
         }
-        let output_key = normalized_value_key(cleaned);
+        let output_key = value_identity_key(cleaned);
         if !used_outputs.insert(output_key) {
             rejection_reasons.push(SmartReplacementRejectionReason::DuplicateOutput);
             continue;
@@ -403,7 +419,7 @@ fn validated_replacements(
     }
 
     for value in expected_values {
-        let key = normalized_value_key(value);
+        let key = value_identity_key(value);
         if !accepted_originals.contains(&key) && !seen_expected_originals.contains(&key) {
             rejection_reasons.push(SmartReplacementRejectionReason::MissingOutput);
         }
@@ -432,8 +448,8 @@ fn invalid_replacement_reason(
         return Some(SmartReplacementRejectionReason::ControlCharacter);
     }
 
-    let original_key = normalized_value_key(original);
-    if original_key.len() >= 3 && normalized_value_key(replacement).contains(&original_key) {
+    let original_key = value_identity_key(original);
+    if original_key.len() >= 3 && value_identity_key(replacement).contains(&original_key) {
         return Some(SmartReplacementRejectionReason::ContainsOriginal);
     }
 
@@ -457,6 +473,20 @@ fn insert_unique_smart_value(values: &mut BTreeSet<String>, value: &str) {
     }
 }
 
-fn normalized_value_key(value: &str) -> String {
+/// The key a source value is remembered under for the duration of a run.
+///
+/// This is what makes `Ada Lovelace`, `  Ada Lovelace  ` and `ada lovelace` one
+/// value rather than three: a run gives them one replacement, so the output stays
+/// internally consistent for a person the input spelled inconsistently.
+///
+/// Every per-run replacement map keys on this — the Local AI map in this module and
+/// the pseudonym maps in `strategies::state`. They hold separate key spaces and
+/// never query each other, so a divergence would not cause a cross-map miss; each
+/// map would simply stop recognizing its own values as repeats. That is the quieter
+/// failure, which is why the rule lives in one place rather than being restated per
+/// map: a map that stopped trimming still returns a perfectly plausible replacement,
+/// just a second one for a value it has already seen. For Local AI it does not even
+/// look like a miss, only an unexplained bump in `smart_replacement_fallbacks`.
+pub(crate) fn value_identity_key(value: &str) -> String {
     value.trim().to_ascii_lowercase()
 }

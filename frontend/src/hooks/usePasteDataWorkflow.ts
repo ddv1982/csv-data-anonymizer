@@ -120,6 +120,7 @@ export function usePasteDataWorkflow({
         selection.selectedColumns,
         selection.controlsForColumns(selection.selectedColumns),
         settings.previewSampleCount,
+        settings.sampleRowCount,
         localAi.request,
       )
       if (sequence === operationSequence.current) setPreview(nextPreview)
@@ -146,6 +147,7 @@ export function usePasteDataWorkflow({
         analysis.format,
         selection.selectedColumns,
         selection.controlsForColumns(selection.selectedColumns),
+        settings.sampleRowCount,
         preview?.smartReplacements ?? [],
         localAi.request,
       )

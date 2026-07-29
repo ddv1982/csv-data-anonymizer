@@ -96,7 +96,9 @@ fn identifier_class_for_privacy_kind(kind: PrivacyFindingKind) -> Option<ReportI
         | PrivacyFindingKind::CredentialOrSecret
         | PrivacyFindingKind::MixedSensitiveText => Some(ReportIdentifierClass::Direct),
         PrivacyFindingKind::PrivateDate
+        | PrivacyFindingKind::AddressRegion
         | PrivacyFindingKind::AccountOrFinancialId
+        | PrivacyFindingKind::RecordIdentifier
         | PrivacyFindingKind::NetworkOrDeviceId
         | PrivacyFindingKind::Url => Some(ReportIdentifierClass::Quasi),
     }

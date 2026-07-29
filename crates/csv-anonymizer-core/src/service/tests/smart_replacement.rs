@@ -131,6 +131,7 @@ fn preview_uses_local_ai_provider_for_smart_replacement_columns() {
                     strategy: AnonymizationStrategy::LocalAi,
                 }],
                 sample_count: 2,
+                sample_row_count: 100,
             },
             Some(&mut provider),
         )
@@ -204,6 +205,7 @@ fn anonymize_reuses_preview_smart_replacements_and_generates_missing_values() {
                 columns: vec![0],
                 controls: controls.clone(),
                 sample_count: 1,
+                sample_row_count: 100,
             },
             Some(&mut preview_provider),
         )
@@ -434,6 +436,7 @@ fn local_ai_strategy_requires_provider_before_processing() {
                 strategy: AnonymizationStrategy::LocalAi,
             }],
             sample_count: 1,
+            sample_row_count: 100,
         })
         .unwrap_err();
 

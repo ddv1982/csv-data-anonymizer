@@ -127,6 +127,7 @@ describe('usePasteDataWorkflow', () => {
       [1],
       [],
       expect.any(Number),
+      defaultSettings.sampleRowCount,
       expect.any(Object),
     )
     expect(tauriMocks.transformPasteData).toHaveBeenCalledWith(
@@ -134,6 +135,7 @@ describe('usePasteDataWorkflow', () => {
       'json',
       [1],
       [],
+      defaultSettings.sampleRowCount,
       expect.any(Array),
       expect.any(Object),
     )

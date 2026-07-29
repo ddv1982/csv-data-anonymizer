@@ -28,8 +28,10 @@ export type PrivacyFindingKind =
   | 'person'
   | 'contact'
   | 'privateAddress'
+  | 'addressRegion'
   | 'privateDate'
   | 'accountOrFinancialId'
+  | 'recordIdentifier'
   | 'governmentId'
   | 'credentialOrSecret'
   | 'networkOrDeviceId'
@@ -230,6 +232,32 @@ export interface PreflightParams {
   previewSmartReplacements: SmartReplacementEntry[]
   localAiReady: boolean
   localAiMessage?: string | null
+}
+
+export interface PreviewParams {
+  filePath: string
+  columns: number[]
+  controls: ColumnControl[]
+  sampleCount: number
+  sampleRowCount: number
+}
+
+export interface PastePreviewParams {
+  content: string
+  format: PasteDataFormat
+  columns: number[]
+  controls: ColumnControl[]
+  sampleCount: number
+  sampleRowCount: number
+}
+
+export interface PasteTransformParams {
+  content: string
+  format: PasteDataFormat
+  columns: number[]
+  controls: ColumnControl[]
+  sampleRowCount: number
+  previewSmartReplacements: SmartReplacementEntry[]
 }
 
 export interface PreflightData {

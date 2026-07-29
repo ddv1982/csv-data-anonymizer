@@ -28,10 +28,14 @@ export function privacyFindingKindLabel(kind: PrivacyFindingKind) {
       return 'Contact'
     case 'privateAddress':
       return 'Address'
+    case 'addressRegion':
+      return 'Address region'
     case 'privateDate':
       return 'Private date'
     case 'accountOrFinancialId':
       return 'Account ID'
+    case 'recordIdentifier':
+      return 'Record ID'
     case 'governmentId':
       return 'Government ID'
     case 'credentialOrSecret':
@@ -49,13 +53,23 @@ export function detectorConfidenceLabel(confidence: Confidence) {
   return confidence === 'high' ? 'High' : confidence === 'medium' ? 'Medium' : 'Low'
 }
 
+/**
+ * Human label for a detector identifier emitted by the Rust detection pipeline.
+ *
+ * The exact-match arms below have to correspond to labels Rust actually
+ * produces; `detectorEvidence.test.ts` pins the current set so a label renamed
+ * on the Rust side shows up as a failing test rather than as a generic
+ * "Detector" in the UI. The `startsWith` arms are deliberate fallbacks that also
+ * cover identifiers Rust does not emit yet (`header:` for a future non-taxonomy
+ * header rule, `pattern:tax-id` for a second country-specific tax pattern).
+ */
 export function detectorSourceLabel(detector: string | undefined) {
   if (!detector) return 'Detector'
   if (detector.startsWith('header:taxonomy')) return 'Header taxonomy'
   if (detector.startsWith('header:')) return 'Header rule'
   if (detector === 'validator:iban') return 'IBAN validator'
   if (detector === 'validator:phone') return 'Phone validator'
-  if (detector === 'validator:luhn' || detector === 'validator:card') return 'Payment card validator'
+  if (detector === 'validator:card') return 'Payment card validator'
   if (detector.startsWith('validator:vat')) return 'VAT validator'
   if (detector === 'validator:tax-id:us') return 'US tax ID validator'
   if (detector === 'pattern:tax-id:nl-btw-tax-number') return 'Dutch BTW pattern'

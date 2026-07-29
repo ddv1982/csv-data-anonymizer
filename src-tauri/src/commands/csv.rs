@@ -36,6 +36,7 @@ pub struct PreviewRequest {
     #[serde(default)]
     pub controls: Vec<ColumnControl>,
     pub sample_count: usize,
+    pub sample_row_count: usize,
     pub local_ai: Option<LocalAiRequest>,
 }
 
@@ -101,7 +102,7 @@ pub async fn analyze_csv(
     run_blocking(move || {
         let service = service();
         let headers = service
-            .analyze_csv_sampled(&file_path, sample_row_count)
+            .analyze_csv_with_sample_rows(&file_path, sample_row_count)
             .map_err(|error| error.to_string())?;
         let selected_columns = headers
             .columns
@@ -132,6 +133,13 @@ pub async fn preview_anonymization(
         MAX_PREVIEW_SAMPLE_COUNT,
         "Preview sample count",
     )?;
+    // The preview classifies on the same figure analyze and the run are given, so
+    // it is bounded by that limit rather than by the display one.
+    validate_sample_count(
+        request.sample_row_count,
+        MAX_SAMPLE_ROW_COUNT,
+        "Sample row count",
+    )?;
     let file_path = path_access.authorize_input_file(request.file_path)?;
     let local_ai_enabled = load_local_ai_enabled(&settings)?;
     run_blocking(move || {
@@ -151,6 +159,7 @@ pub async fn preview_anonymization(
                     columns: request.columns,
                     controls: request.controls,
                     sample_count: request.sample_count,
+                    sample_row_count: request.sample_row_count,
                 },
                 provider,
             )
