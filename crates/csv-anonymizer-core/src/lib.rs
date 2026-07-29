@@ -3,12 +3,13 @@ pub mod detection;
 pub mod direct_input;
 pub mod error;
 mod file_ops;
-mod hash;
 pub mod metadata;
 mod preview;
 mod process_control;
+mod random;
 mod release_report;
 mod report_notes;
+mod sampling;
 pub mod service;
 pub mod smart;
 pub mod strategies;
@@ -23,13 +24,13 @@ pub use smart::{
 pub use types::{
     AnonymizationStrategy, AnonymizeData, AnonymizeParams, ColumnControl, ColumnMetadata,
     ColumnPreview, ColumnReleaseReport, Confidence, DataType, DetectionResult, DetectionTrace,
-    DetectionTraceItem, EmptyFormat, HeadersData, ParsedSample, PasteAnalyzeData,
-    PasteAnalyzeParams, PasteDataFormat, PastePreviewParams, PasteTransformData,
-    PasteTransformParams, PiiRisk, PreflightData, PreflightMode, PreflightParams, PreviewData,
-    PreviewParams, PreviewWarning, PrivacyEvidenceSummary, PrivacyFinding, PrivacyFindingKind,
-    PrivacyReport, ProcessControl, ProcessOptions, ProcessProgress, ProcessResult,
-    QuickGenerateParams, QuickTransformData, QuickTransformParams, ReleaseEvidenceItem,
-    ReleaseEvidenceStatus, ReleaseReadiness, ReleaseReadinessStatus, SampleTransform,
-    SmartReplacementEntry, SmartReplacementRejectionCount, SmartReplacementRejectionReason,
-    TransformReport, UtilityMetric, WarningSeverity,
+    DetectionTraceItem, EmptyFormat, HeadersData, MAX_PREVIEW_SAMPLE_COUNT, MAX_SAMPLE_ROW_COUNT,
+    ParsedSample, PasteAnalyzeData, PasteAnalyzeParams, PasteDataFormat, PastePreviewParams,
+    PasteTransformData, PasteTransformParams, PiiRisk, PreflightData, PreflightMode,
+    PreflightParams, PreviewData, PreviewParams, PreviewWarning, PrivacyEvidenceSummary,
+    PrivacyFinding, PrivacyFindingKind, PrivacyReport, ProcessControl, ProcessOptions,
+    ProcessProgress, ProcessResult, QuickGenerateParams, QuickTransformData, QuickTransformParams,
+    ReleaseEvidenceItem, ReleaseEvidenceStatus, ReleaseReadiness, ReleaseReadinessStatus,
+    SampleTransform, SmartReplacementEntry, SmartReplacementRejectionCount,
+    SmartReplacementRejectionReason, TransformReport, UtilityMetric, WarningSeverity,
 };

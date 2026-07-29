@@ -382,6 +382,7 @@ describe('App input mode tabs', () => {
       'json',
       [0],
       [],
+      100,
       [{ columnIndex: 0, original: 'ada@example.com', replacement: 'masked@example.com' }],
       { enabled: false, model: 'gemma3:4b' },
     )

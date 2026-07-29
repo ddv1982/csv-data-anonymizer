@@ -5,8 +5,12 @@ use std::path::PathBuf;
 pub(super) const SETTINGS_SCHEMA_VERSION: u32 = 10;
 pub(super) const DEFAULT_OUTPUT_SUFFIX: &str = "_private_output";
 pub(super) const LEGACY_OUTPUT_SUFFIX: &str = "_anonymized";
-pub const MAX_SAMPLE_ROW_COUNT: usize = 10_000;
-pub const MAX_PREVIEW_SAMPLE_COUNT: usize = 100;
+
+/// The stored settings are bounded by what the engine will accept, so the limits
+/// come from the engine rather than being restated here. Two numbers that had to
+/// agree and did not is how a valid "Sample rows" setting came to break the paste
+/// workflow while files kept working.
+pub use csv_anonymizer_core::{MAX_PREVIEW_SAMPLE_COUNT, MAX_SAMPLE_ROW_COUNT};
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]

@@ -74,7 +74,7 @@ export function usePreviewWorkflow({
         columnsToPreview,
         controls,
         false,
-        settings.previewSampleCount,
+        settings.sampleRowCount,
         [],
         localAiRequest,
       )
@@ -89,6 +89,7 @@ export function usePreviewWorkflow({
         columnsToPreview,
         controls,
         settings.previewSampleCount,
+        settings.sampleRowCount,
         localAiRequest,
       )
       setPreview(nextPreview)

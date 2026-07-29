@@ -16,6 +16,128 @@ fn reads_sample_and_strips_bom() {
 }
 
 #[test]
+fn head_sample_keeps_the_opening_rows_and_reports_it_stopped_early() {
+    let content = build_numbered_csv(50);
+    let sample = read_csv_sample_from_str(&content, 10).unwrap();
+
+    assert_eq!(sample.rows.len(), 10);
+    assert_eq!(sample.rows[0][0], "0");
+    assert_eq!(sample.rows[9][0], "9");
+    assert!(!sample.scanned_entire_input);
+}
+
+#[test]
+fn detection_sample_spans_the_whole_input_in_input_order() {
+    let content = build_numbered_csv(1_000);
+    let sample = read_csv_detection_sample_from_str(&content, 100).unwrap();
+
+    assert_eq!(sample.rows.len(), 100);
+    assert_eq!(sample.data_rows_scanned, 1_000);
+    assert!(sample.scanned_entire_input);
+
+    let kept = kept_row_numbers(&sample);
+    assert!(
+        kept.windows(2).all(|pair| pair[0] < pair[1]),
+        "the sample must come back in input order, got {kept:?}"
+    );
+
+    // Every tenth of the input contributes. A 100-row sample of 1,000 rows draws
+    // about 10 from each, so an empty tenth would mean the sample is reading a
+    // window of the input rather than the whole of it.
+    for tenth in 0..10 {
+        let range = tenth * 100..(tenth + 1) * 100;
+        assert!(
+            kept.iter().any(|row| range.contains(row)),
+            "rows {range:?} contributed nothing to {kept:?}"
+        );
+    }
+}
+
+/// The choice of rows must not correlate with position modulo anything, because
+/// real inputs are periodic: a flattened export writes one logical record per k
+/// rows and puts each field on a fixed row of the block. Sampling such a file at a
+/// fixed phase — which is what keeping every nth row does, k and n being powers of
+/// two often enough — either sees a field on every sampled row or never sees it at
+/// all. The second case classifies the column off filler values, which is a column
+/// of real PII detected as `String` and left unselected.
+#[test]
+fn detection_sample_does_not_align_with_a_periodic_input() {
+    const WANTED: usize = 200;
+
+    for period in [2usize, 3, 4, 5, 8, 16] {
+        let sample =
+            read_csv_detection_sample_from_str(&build_numbered_csv(period * 500), WANTED).unwrap();
+        let kept = kept_row_numbers(&sample);
+
+        for phase in 0..period {
+            let hits = kept.iter().filter(|row| *row % period == phase).count();
+            assert!(
+                hits >= WANTED / (period * 4),
+                "phase {phase} of {period} got {hits} of {WANTED} sampled rows"
+            );
+        }
+    }
+}
+
+fn kept_row_numbers(sample: &ParsedSample) -> Vec<usize> {
+    sample
+        .rows
+        .iter()
+        .map(|row| row[0].parse().unwrap())
+        .collect()
+}
+
+#[test]
+fn detection_sample_is_deterministic() {
+    let content = build_numbered_csv(777);
+    let first = read_csv_detection_sample_from_str(&content, 32).unwrap();
+    let second = read_csv_detection_sample_from_str(&content, 32).unwrap();
+
+    assert_eq!(first.rows, second.rows);
+}
+
+#[test]
+fn detection_sample_keeps_every_row_of_a_short_input() {
+    let content = build_numbered_csv(20);
+    let sample = read_csv_detection_sample_from_str(&content, 100).unwrap();
+
+    assert_eq!(sample.rows.len(), 20);
+    assert_eq!(sample.data_rows_scanned, 20);
+    assert!(sample.scanned_entire_input);
+}
+
+/// The kept count must be exactly what the caller asked for, at any input length.
+/// Detection votes on match ratios, so a sample that quietly varies in size with
+/// where the input's length happens to fall is a vote of varying and unstated
+/// confidence. An earlier thinning sampler returned between half the request and
+/// all of it for that reason — 200 rows yielded 50, a million yielded 62.
+#[test]
+fn detection_sample_keeps_exactly_the_requested_row_count() {
+    const WANTED: usize = 100;
+
+    for row_count in [150, 200, 300, 512, 1_000, 4_097, 10_500, 65_536] {
+        let sample = read_csv_detection_sample_from_str(&build_numbered_csv(row_count), WANTED)
+            .expect("sample reads");
+
+        assert_eq!(
+            sample.rows.len(),
+            WANTED,
+            "a {row_count}-row input yielded {} of {WANTED} requested rows",
+            sample.rows.len()
+        );
+        assert_eq!(sample.data_rows_scanned, row_count);
+    }
+}
+
+fn build_numbered_csv(row_count: usize) -> String {
+    let mut content = String::from("n\n");
+    for row in 0..row_count {
+        content.push_str(&format!("{row}\n"));
+    }
+    content
+}
+
+#[test]
 fn reads_csv_sample_from_str() {
     let sample = read_csv_sample_from_str("email\nada@example.com\n", 10).unwrap();
 

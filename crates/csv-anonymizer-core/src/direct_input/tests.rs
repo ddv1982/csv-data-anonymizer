@@ -1,8 +1,8 @@
 use super::*;
 use crate::smart::{SmartReplacement, SmartReplacementProvider, SmartReplacementRequest};
 use crate::types::{
-    AnonymizationStrategy, ColumnControl, DataType, PiiRisk, SmartReplacementEntry,
-    SmartReplacementRejectionCount, SmartReplacementRejectionReason,
+    AnonymizationStrategy, ColumnControl, DataType, MAX_SAMPLE_ROW_COUNT, PiiRisk,
+    SmartReplacementEntry, SmartReplacementRejectionCount, SmartReplacementRejectionReason,
 };
 
 mod redaction;
@@ -28,6 +28,7 @@ fn transforms_csv_text_with_existing_csv_rules() {
         format: PasteDataFormat::Csv,
         columns: selected,
         controls: Vec::new(),
+        sample_row_count: 100,
         preview_smart_replacements: Vec::new(),
     })
     .unwrap();
@@ -49,6 +50,7 @@ fn csv_text_type_override_preserves_direct_identifier_reporting() {
             type_override: Some(DataType::String),
             strategy: AnonymizationStrategy::Redact,
         }],
+        sample_row_count: 100,
         preview_smart_replacements: Vec::new(),
     })
     .unwrap();
@@ -94,6 +96,315 @@ fn analyze_paste_data_auto_selects_columns_with_core_policy() {
     ));
 }
 
+/// The paste preview must classify on the same spread sample as the transform.
+///
+/// It used to detect on the display window — `sample_count * 2` head rows — so a
+/// long paste whose PII starts past that window previewed as one type and
+/// transformed as another. The `@localhost` values below are the probe: they hold
+/// an `@` but fail the email validator, so a head-only window sees no email
+/// column at all, while a window that reaches the real addresses further down
+/// classifies the column as Email — and Email redacts to a typed marker, which is
+/// the difference this asserts.
+#[test]
+fn direct_input_preview_classifies_on_the_whole_paste_not_the_display_window() {
+    let mut content = String::from("contact\n");
+    for row in 0..6 {
+        content.push_str(&format!("user{row}@localhost\n"));
+    }
+    for row in 6..400 {
+        content.push_str(&format!("user{row}@example.com\n"));
+    }
+
+    let preview = preview_paste_data(PastePreviewParams {
+        content,
+        format: PasteDataFormat::Csv,
+        columns: vec![0],
+        controls: vec![],
+        sample_count: 3,
+        sample_row_count: 100,
+    })
+    .unwrap();
+
+    let samples = &preview.previews[0].samples;
+    assert!(!samples.is_empty(), "the preview should show display rows");
+    for sample in samples {
+        assert!(
+            sample.original.ends_with("@localhost"),
+            "the display window should still be the paste's opening rows, got {:?}",
+            sample.original
+        );
+        assert_eq!(
+            sample.anonymized, "[EMAIL]",
+            "the column is 98% email addresses, so the preview must classify it as \
+             Email; {:?} means it classified on the display window instead",
+            sample.anonymized
+        );
+    }
+}
+
+/// Paste analyze reaches the same detection floor as paste preview and transform.
+///
+/// The floor lives in `paste_detection_sample_rows`, which every format's analyze,
+/// preview and transform entry point routes through, so a small "Sample rows"
+/// setting can no longer give the column table a narrower basis than the run that
+/// follows it. The probe is the same one the CSV preview test uses: `@localhost`
+/// values hold an `@` but fail the email validator, so a basis that stops short of
+/// the real addresses sees no email column at all.
+#[test]
+fn paste_analysis_classifies_on_the_detection_floor_not_the_requested_sample() {
+    let mut content = String::from("contact\n");
+    for row in 0..6 {
+        content.push_str(&format!("user{row}@localhost\n"));
+    }
+    for row in 6..400 {
+        content.push_str(&format!("user{row}@example.com\n"));
+    }
+
+    for sample_row_count in [1, 3, 6, 100] {
+        let analysis = analyze_paste_data(PasteAnalyzeParams {
+            content: content.clone(),
+            format: PasteDataFormat::Csv,
+            sample_row_count,
+        })
+        .unwrap();
+
+        assert_eq!(
+            analysis.columns[0].detected_type,
+            DataType::Email,
+            "a request of {sample_row_count} rows classified the column as {:?}",
+            analysis.columns[0].detected_type
+        );
+    }
+}
+
+/// And a large "Sample rows" setting raises all three paste entry points, not just
+/// analyze.
+///
+/// A larger basis is worth asking for because it finds rare values — the field below
+/// is a thousand notes with six email addresses buried in them, which a hundred-row
+/// basis is too small to be likely to see. Preview and transform used to read the
+/// floor as a constant while analyze rose above it, so the column table promised a
+/// redaction that neither the preview nor the run applied.
+#[test]
+fn paste_preview_and_transform_follow_a_raised_sample_row_count() {
+    const SAMPLE_ROWS: usize = 1_000;
+
+    let mut content = String::from("note\n");
+    for row in 0..SAMPLE_ROWS {
+        if row % 167 == 3 {
+            content.push_str(&format!("reached them at user{row}@example.com\n"));
+        } else {
+            content.push_str(&format!("internal note {row}\n"));
+        }
+    }
+
+    let analysis = analyze_paste_data(PasteAnalyzeParams {
+        content: content.clone(),
+        format: PasteDataFormat::Csv,
+        sample_row_count: SAMPLE_ROWS,
+    })
+    .unwrap();
+    assert_eq!(
+        analysis.columns[0].pii_risk,
+        PiiRisk::High,
+        "the fixture is meant to read as PII only on the larger basis"
+    );
+
+    let preview = preview_paste_data(PastePreviewParams {
+        content: content.clone(),
+        format: PasteDataFormat::Csv,
+        columns: vec![0],
+        controls: vec![],
+        sample_count: 3,
+        sample_row_count: SAMPLE_ROWS,
+    })
+    .unwrap();
+    for sample in &preview.previews[0].samples {
+        assert_eq!(
+            sample.anonymized, "[EMAIL]",
+            "the preview classified on the floor rather than the requested basis"
+        );
+    }
+
+    let result = transform_paste_data(PasteTransformParams {
+        content,
+        format: PasteDataFormat::Csv,
+        columns: vec![0],
+        controls: Vec::new(),
+        sample_row_count: SAMPLE_ROWS,
+        preview_smart_replacements: Vec::new(),
+    })
+    .unwrap();
+    assert!(
+        !result.output.contains("@example.com"),
+        "the transform classified on the floor rather than the requested basis, \
+         leaving email addresses in the output"
+    );
+}
+
+/// A field of a field-shaped paste is classified on a sample of *all* its values,
+/// not on its opening ones.
+///
+/// Collection used to keep the first N values per field, so a field whose PII started
+/// past the detection basis was classified off whatever came before it: a log or
+/// export where a field is a placeholder for its first few hundred records came back
+/// `String` at Low risk and was not offered for anonymization, while the transform
+/// walked every record and copied the real values out. The display window is a
+/// separate window and stays head-anchored, which is what the second half asserts —
+/// the two must not be collapsed back into one.
+#[test]
+fn field_shaped_paste_detects_pii_that_starts_past_the_detection_basis() {
+    for (format, build) in [
+        (
+            PasteDataFormat::Xml,
+            xml_records as fn(usize, usize) -> String,
+        ),
+        (PasteDataFormat::Json, json_records),
+    ] {
+        let content = build(2_000, 500);
+
+        let analysis = analyze_paste_data(PasteAnalyzeParams {
+            content: content.clone(),
+            format,
+            sample_row_count: 100,
+        })
+        .unwrap();
+        let column = &analysis.columns[0];
+
+        assert_eq!(
+            column.detected_type,
+            DataType::Email,
+            "{format:?}: a field of 1,500 email addresses read as {:?}",
+            column.detected_type
+        );
+        assert_eq!(column.pii_risk, PiiRisk::High, "{format:?}");
+        assert!(
+            column.is_selected,
+            "{format:?}: the field was not offered for anonymization"
+        );
+
+        let preview = preview_paste_data(PastePreviewParams {
+            content,
+            format,
+            columns: vec![0],
+            controls: vec![],
+            sample_count: 3,
+            sample_row_count: 100,
+        })
+        .unwrap();
+        for sample in &preview.previews[0].samples {
+            assert!(
+                sample.original.starts_with("ref-"),
+                "{format:?}: the display window must stay the paste's opening values, \
+                 got {:?}",
+                sample.original
+            );
+            assert_eq!(
+                sample.anonymized, "[EMAIL]",
+                "{format:?}: the preview classified on the display window"
+            );
+        }
+    }
+}
+
+/// The record count reported for an XML paste is the document's, not the sample's.
+///
+/// It was read off the retained value count, which the detection basis caps, so a
+/// 2,000-record paste reported 100 records — and `rowCountIsComplete` said that was
+/// exact.
+#[test]
+fn xml_paste_reports_the_documents_record_count_not_the_sample_size() {
+    let analysis = analyze_paste_data(PasteAnalyzeParams {
+        content: xml_records(2_000, 2_000),
+        format: PasteDataFormat::Xml,
+        sample_row_count: 100,
+    })
+    .unwrap();
+
+    assert_eq!(analysis.row_count, 2_000);
+    assert!(analysis.row_count_is_complete);
+}
+
+fn xml_records(total: usize, pii_starts_at: usize) -> String {
+    let mut content = String::from("<rows>\n");
+    for row in 0..total {
+        content.push_str(&format!(
+            "  <row><contact>{}</contact></row>\n",
+            record_value(row, pii_starts_at)
+        ));
+    }
+    content.push_str("</rows>\n");
+    content
+}
+
+fn json_records(total: usize, pii_starts_at: usize) -> String {
+    let records = (0..total)
+        .map(|row| format!(r#"{{"contact":"{}"}}"#, record_value(row, pii_starts_at)))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("[{records}]")
+}
+
+fn record_value(row: usize, pii_starts_at: usize) -> String {
+    if row < pii_starts_at {
+        format!("ref-{row}")
+    } else {
+        format!("user{row}@example.com")
+    }
+}
+
+/// The field-shaped formats split detection from display exactly as the CSV paste
+/// path does.
+///
+/// XML, JSON/YAML and free text all preview through
+/// `preview_from_fields_with_smart_provider`, which used to classify the display
+/// window — `sample_count * 2` values — so a preview of three rows decided a
+/// column's type from six values while the transform decided it from a hundred. The
+/// `@localhost` prefix below is the discriminator: classify on the display window
+/// and the column is a plain string, classify on the detection floor and it is an
+/// Email that redacts to a typed marker.
+#[test]
+fn field_shaped_preview_classifies_on_the_detection_floor_not_the_display_window() {
+    let mut content = String::from("<rows>\n");
+    for row in 0..6 {
+        content.push_str(&format!(
+            "  <row><contact>user{row}@localhost</contact></row>\n"
+        ));
+    }
+    for row in 6..400 {
+        content.push_str(&format!(
+            "  <row><contact>user{row}@example.com</contact></row>\n"
+        ));
+    }
+    content.push_str("</rows>\n");
+
+    let preview = preview_paste_data(PastePreviewParams {
+        content,
+        format: PasteDataFormat::Xml,
+        columns: vec![0],
+        controls: vec![],
+        sample_count: 3,
+        sample_row_count: 100,
+    })
+    .unwrap();
+
+    let samples = &preview.previews[0].samples;
+    assert!(!samples.is_empty(), "the preview should show display rows");
+    for sample in samples {
+        assert!(
+            sample.original.ends_with("@localhost"),
+            "the display window should still be the paste's opening values, got {:?}",
+            sample.original
+        );
+        assert_eq!(
+            sample.anonymized, "[EMAIL]",
+            "the field is 98% email addresses, so the preview must classify it as \
+             Email; {:?} means it classified on the display window instead",
+            sample.anonymized
+        );
+    }
+}
+
 #[test]
 fn direct_input_preview_includes_selected_column_warnings() {
     let preview = preview_paste_data(PastePreviewParams {
@@ -113,6 +424,7 @@ fn direct_input_preview_includes_selected_column_warnings() {
             },
         ],
         sample_count: 3,
+        sample_row_count: 100,
     })
     .unwrap();
 
@@ -269,6 +581,7 @@ fn transforms_xml_attributes_and_text() {
         format: PasteDataFormat::Xml,
         columns: selected,
         controls: Vec::new(),
+        sample_row_count: 100,
         preview_smart_replacements: Vec::new(),
     })
     .unwrap();
@@ -301,6 +614,7 @@ fn transforms_selected_xml_cdata() {
             type_override: Some(DataType::FullName),
             strategy: AnonymizationStrategy::Redact,
         }],
+        sample_row_count: 100,
         preview_smart_replacements: Vec::new(),
     })
     .unwrap();
@@ -353,6 +667,7 @@ fn json_paths_distinguish_literal_dotted_keys_from_nested_keys() {
         format: PasteDataFormat::Json,
         columns: vec![nested.index, array_value.index],
         controls: Vec::new(),
+        sample_row_count: 100,
         preview_smart_replacements: Vec::new(),
     })
     .unwrap();
@@ -410,6 +725,7 @@ fn json_transform_preserves_scalar_value_types() {
                 strategy: AnonymizationStrategy::Auto,
             },
         ],
+        sample_row_count: 100,
         preview_smart_replacements: Vec::new(),
     })
     .unwrap();
@@ -433,12 +749,27 @@ fn rejects_oversized_pasted_payloads() {
     assert!(error.to_string().contains("at most 5 MiB"));
 }
 
+/// The paste ceiling is the same one the "Sample rows" setting is clamped to, so
+/// every value the setting can hold is a value paste analysis accepts. A lower
+/// paste-only ceiling made a valid setting fail on pasted input while files kept
+/// working, which is why the accepting half is asserted here too.
 #[test]
-fn rejects_excessive_paste_sample_counts() {
+fn paste_sample_counts_accept_the_settings_ceiling_and_reject_more() {
+    let content = "email\nada@example.com\n".to_string();
+
+    assert!(
+        analyze_paste_data(PasteAnalyzeParams {
+            content: content.clone(),
+            format: PasteDataFormat::Csv,
+            sample_row_count: MAX_SAMPLE_ROW_COUNT,
+        })
+        .is_ok()
+    );
+
     let error = analyze_paste_data(PasteAnalyzeParams {
-        content: "email\nada@example.com\n".to_string(),
+        content,
         format: PasteDataFormat::Csv,
-        sample_row_count: super::shared::PASTE_MAX_SAMPLE_ROWS + 1,
+        sample_row_count: MAX_SAMPLE_ROW_COUNT + 1,
     })
     .unwrap_err();
 
@@ -489,6 +820,7 @@ fn xml_paths_distinguish_dotted_element_names_from_nested_elements() {
         format: PasteDataFormat::Xml,
         columns: vec![nested.index],
         controls: Vec::new(),
+        sample_row_count: 100,
         preview_smart_replacements: Vec::new(),
     })
     .unwrap();
@@ -526,6 +858,7 @@ fn xml_paths_distinguish_dotted_attribute_names_from_nested_paths() {
         format: PasteDataFormat::Xml,
         columns: vec![nested_attribute.index],
         controls: Vec::new(),
+        sample_row_count: 100,
         preview_smart_replacements: Vec::new(),
     })
     .unwrap();
@@ -556,6 +889,7 @@ fn previews_pasted_json_fields() {
         columns: vec![email.index],
         controls: Vec::new(),
         sample_count: 5,
+        sample_row_count: 100,
     })
     .unwrap();
 
@@ -603,6 +937,7 @@ fn assert_shared_smart_preview(input: &str, format: PasteDataFormat) {
                 strategy: AnonymizationStrategy::LocalAi,
             }],
             sample_count: 5,
+            sample_row_count: 100,
         },
         Some(&mut provider),
     )
@@ -644,6 +979,7 @@ fn previews_and_transforms_paste_data_with_smart_replacements() {
             columns: vec![name.index],
             controls: controls.clone(),
             sample_count: 5,
+            sample_row_count: 100,
         },
         Some(&mut preview_provider),
     )
@@ -664,6 +1000,7 @@ fn previews_and_transforms_paste_data_with_smart_replacements() {
         format: PasteDataFormat::Json,
         columns: vec![name.index],
         controls,
+        sample_row_count: 100,
         preview_smart_replacements: preview.smart_replacements,
     })
     .unwrap();
@@ -706,6 +1043,7 @@ fn paste_transform_reuses_preview_smart_replacements_and_generates_missing_value
             columns: vec![name.index],
             controls: controls.clone(),
             sample_count: 1,
+            sample_row_count: 100,
         },
         Some(&mut preview_provider),
     )
@@ -718,6 +1056,7 @@ fn paste_transform_reuses_preview_smart_replacements_and_generates_missing_value
             format: PasteDataFormat::Json,
             columns: vec![name.index],
             controls,
+            sample_row_count: 100,
             preview_smart_replacements: preview.smart_replacements,
         },
         Some(&mut transform_provider),
@@ -764,6 +1103,7 @@ fn paste_transform_rejects_invalid_preview_smart_replacements() {
             format: PasteDataFormat::Json,
             columns: vec![name.index],
             controls,
+            sample_row_count: 100,
             preview_smart_replacements: vec![SmartReplacementEntry {
                 column_index: name.index,
                 original: "Ada Lovelace".to_string(),
@@ -847,6 +1187,7 @@ fn transforms_plain_text_and_preserves_surrounding_text() {
         format: PasteDataFormat::PlainText,
         columns: selected,
         controls: Vec::new(),
+        sample_row_count: 100,
         preview_smart_replacements: Vec::new(),
     })
     .unwrap();
@@ -883,6 +1224,7 @@ fn plain_text_detection_keeps_overlapping_tokens_single_pass() {
         format: PasteDataFormat::PlainText,
         columns: vec![url.index],
         controls: Vec::new(),
+        sample_row_count: 100,
         preview_smart_replacements: Vec::new(),
     })
     .unwrap();
@@ -913,6 +1255,7 @@ fn auto_detects_logs_and_replaces_inline_values() {
         format: analysis.format,
         columns: selected,
         controls: Vec::new(),
+        sample_row_count: 100,
         preview_smart_replacements: Vec::new(),
     })
     .unwrap();

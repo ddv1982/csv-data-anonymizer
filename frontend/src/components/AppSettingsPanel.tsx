@@ -1,4 +1,5 @@
 import { ChevronDown } from 'lucide-react'
+import { maxPreviewSampleCount, maxSampleRowCount } from '../defaults'
 import type { AppSettings } from '../types'
 import { clampNumber } from '../utils/numbers'
 import { SwitchRow } from './SwitchRow'
@@ -56,11 +57,14 @@ export function AppSettingsPanel({
                 id="sample-rows"
                 type="number"
                 min={1}
-                max={10000}
+                max={maxSampleRowCount}
                 value={settings.sampleRowCount}
                 disabled={disabled}
                 onChange={(event) =>
-                  onUpdateSetting('sampleRowCount', clampNumber(event.target.valueAsNumber, 1, 10000))
+                  onUpdateSetting(
+                    'sampleRowCount',
+                    clampNumber(event.target.valueAsNumber, 1, maxSampleRowCount),
+                  )
                 }
               />
             </div>
@@ -70,11 +74,14 @@ export function AppSettingsPanel({
                 id="preview-rows"
                 type="number"
                 min={1}
-                max={100}
+                max={maxPreviewSampleCount}
                 value={settings.previewSampleCount}
                 disabled={disabled}
                 onChange={(event) =>
-                  onUpdateSetting('previewSampleCount', clampNumber(event.target.valueAsNumber, 1, 100))
+                  onUpdateSetting(
+                    'previewSampleCount',
+                    clampNumber(event.target.valueAsNumber, 1, maxPreviewSampleCount),
+                  )
                 }
               />
             </div>

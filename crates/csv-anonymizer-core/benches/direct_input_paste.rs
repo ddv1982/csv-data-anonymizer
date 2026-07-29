@@ -39,6 +39,7 @@ fn bench_pasted_json(c: &mut Criterion) {
                 format: PasteDataFormat::Json,
                 columns: selected_columns.clone(),
                 controls: controls.clone(),
+                sample_row_count: 1_000,
                 preview_smart_replacements: Vec::new(),
             })
             .expect("JSON transform should succeed")
@@ -79,6 +80,7 @@ fn bench_pasted_xml(c: &mut Criterion) {
                 format: PasteDataFormat::Xml,
                 columns: selected_columns.clone(),
                 controls: controls.clone(),
+                sample_row_count: 1_000,
                 preview_smart_replacements: Vec::new(),
             })
             .expect("XML transform should succeed")
@@ -118,6 +120,7 @@ fn bench_pasted_logs(c: &mut Criterion) {
                 format: PasteDataFormat::Logs,
                 columns: selected_columns.clone(),
                 controls: controls.clone(),
+                sample_row_count: 1_000,
                 preview_smart_replacements: Vec::new(),
             })
             .expect("log transform should succeed")

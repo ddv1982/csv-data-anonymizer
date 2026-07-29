@@ -1,18 +1,17 @@
 use crate::types::{Confidence, DataType, DetectionResult};
 
-use super::candidate::{DetectorCandidate, DetectorCandidateSpec, DetectorEvidence};
 use super::header;
 use super::locale::LocaleContext;
 use super::postal::postal_match_country;
-use super::scoring::{calculate_confidence, detection_result};
+use super::scoring::{calculate_confidence, detection_result, trace_item};
 use super::validators::{
-    is_dutch_btw_tax_number, is_formatted_phone_fallback, is_tax_id, is_unformatted_tax_id,
-    is_us_ein, is_us_ssn, is_valid_phone_number, is_vat_id,
+    is_dutch_btw_tax_number, is_phone_value, is_tax_id, is_unformatted_tax_id, is_us_ein,
+    is_us_ssn, is_vat_id,
 };
 use super::value::is_unsigned_integer;
 
 pub(in crate::detection) type HeaderDetector =
-    fn(&str, &[&String], usize, &LocaleContext) -> Option<HeaderDetection>;
+    fn(&header::HeaderAnalysis, &[&String], usize, &LocaleContext) -> Option<HeaderDetection>;
 
 pub(in crate::detection) struct HeaderDetection {
     result: DetectionResult,
@@ -52,32 +51,18 @@ pub(in crate::detection) fn early_header_detection_rules() -> [HeaderDetectionRu
 }
 
 pub(in crate::detection) fn first_header_detection(
-    column_name: &str,
+    header: &header::HeaderAnalysis,
     non_empty_values: &[&String],
     total_samples: usize,
     total_non_empty: usize,
     rules: &[HeaderDetectionRule],
     locale: &LocaleContext,
 ) -> Option<DetectionResult> {
+    // The first matching rule wins outright: header rules are not scored against
+    // each other, so this reports the match directly as a trace item rather than
+    // building a candidate for a selection that never happens.
     rules.iter().find_map(|rule| {
-        (rule.detect)(column_name, non_empty_values, total_samples, locale).map(|detection| {
-            let trace_candidate = DetectorCandidate::from_spec(DetectorCandidateSpec {
-                data_type: detection.result.data_type,
-                reason: format!(
-                    "{}: {} ({:?}, {:?} confidence)",
-                    rule.trace_reason,
-                    detection.signal.concept,
-                    detection.signal.data_type,
-                    detection.signal.confidence
-                ),
-                match_count: detection.result.sample_matches,
-                total_considered: total_non_empty,
-                confidence: detection.result.confidence,
-                evidence: DetectorEvidence::Header,
-                specificity: specificity_for_header(detection.result.data_type),
-                order: 0,
-            });
-
+        (rule.detect)(header, non_empty_values, total_samples, locale).map(|detection| {
             detection_result(
                 detection.result.data_type,
                 detection.result.confidence,
@@ -85,210 +70,181 @@ pub(in crate::detection) fn first_header_detection(
                 detection.result.total_samples,
                 total_non_empty,
                 format!("{} {}", detection.signal.reason, rule.selected_reason),
-                vec![trace_candidate.trace_item()],
+                vec![trace_item(
+                    detection.result.data_type,
+                    format!(
+                        "{}: {} ({:?}, {:?} confidence)",
+                        rule.trace_reason,
+                        detection.signal.concept,
+                        detection.signal.data_type,
+                        detection.signal.confidence
+                    ),
+                    detection.result.sample_matches,
+                    total_non_empty,
+                    detection.result.confidence,
+                    detection.result.confidence != Confidence::Low,
+                )],
             )
         })
     })
 }
 
-fn specificity_for_header(data_type: DataType) -> u8 {
-    match data_type {
-        DataType::TaxId => 100,
-        DataType::Address => 90,
-        DataType::Phone => 80,
-        DataType::PostalCode => 70,
-        DataType::NumericId => 60,
-        DataType::FullName | DataType::FirstName | DataType::LastName => 50,
-        _ => 20,
+/// The shape every fixed-type header rule shares.
+///
+/// A taxonomy signal for `kinds` gates the rule — no signal, no detection. A
+/// value predicate then decides how many sampled values corroborate the header,
+/// and the column is classified as `data_type` only if that ratio clears Low.
+/// Header evidence boosts and disambiguates; it never classifies on its own.
+///
+/// `count_matches` receives the parsed header terms because some rules widen
+/// their predicate based on further header context (Dutch BTW, US tax IDs).
+fn header_signal_detection(
+    header: &header::HeaderAnalysis,
+    non_empty_values: &[&String],
+    total_samples: usize,
+    kinds: &[&str],
+    data_type: DataType,
+    count_matches: impl Fn(&header::HeaderTerms, &[&String]) -> usize,
+) -> Option<HeaderDetection> {
+    let signal = header.best_for_kinds(kinds)?;
+
+    let match_count = count_matches(header.terms(), non_empty_values);
+    let confidence = calculate_confidence(match_count, non_empty_values.len());
+    if confidence == Confidence::Low {
+        return None;
     }
+
+    Some(HeaderDetection {
+        result: DetectionResult {
+            data_type,
+            confidence,
+            sample_matches: match_count,
+            total_samples,
+            trace: None,
+        },
+        signal,
+    })
+}
+
+fn count_matching<'a>(values: &[&'a String], predicate: impl Fn(&'a str) -> bool) -> usize {
+    values.iter().filter(|value| predicate(value)).count()
 }
 
 pub(in crate::detection) fn detect_header_numeric_id(
-    column_name: &str,
+    header: &header::HeaderAnalysis,
     non_empty_values: &[&String],
     total_samples: usize,
     _locale: &LocaleContext,
 ) -> Option<HeaderDetection> {
-    let header_terms = header::terms(column_name);
-    let signal = header::best_signal_for_kinds(&header_terms, &["numeric_id", "account_number"])?;
-
-    let match_count = non_empty_values
-        .iter()
-        .filter(|value| is_unsigned_integer(value))
-        .count();
-    let confidence = calculate_confidence(match_count, non_empty_values.len());
-
-    if confidence == Confidence::Low {
-        return None;
-    }
-
-    Some(HeaderDetection {
-        result: DetectionResult {
-            data_type: DataType::NumericId,
-            confidence,
-            sample_matches: match_count,
-            total_samples,
-            trace: None,
-        },
-        signal,
-    })
+    header_signal_detection(
+        header,
+        non_empty_values,
+        total_samples,
+        &["numeric_id", "account_number"],
+        DataType::NumericId,
+        |_, values| count_matching(values, is_unsigned_integer),
+    )
 }
 
 fn detect_header_phone(
-    column_name: &str,
+    header: &header::HeaderAnalysis,
     non_empty_values: &[&String],
     total_samples: usize,
     _locale: &LocaleContext,
 ) -> Option<HeaderDetection> {
-    let header_terms = header::terms(column_name);
-    let signal = header::best_signal_for_kinds(&header_terms, &["phone"])?;
-
-    let match_count = non_empty_values
-        .iter()
-        .filter(|value| is_header_phone_value(value))
-        .count();
-    let confidence = calculate_confidence(match_count, non_empty_values.len());
-    if confidence == Confidence::Low {
-        return None;
-    }
-
-    Some(HeaderDetection {
-        result: DetectionResult {
-            data_type: DataType::Phone,
-            confidence,
-            sample_matches: match_count,
-            total_samples,
-            trace: None,
-        },
-        signal,
-    })
+    header_signal_detection(
+        header,
+        non_empty_values,
+        total_samples,
+        &["phone"],
+        DataType::Phone,
+        |_, values| count_matching(values, is_phone_value),
+    )
 }
 
 fn detect_header_postal_code(
-    column_name: &str,
+    header: &header::HeaderAnalysis,
     non_empty_values: &[&String],
     total_samples: usize,
     locale: &LocaleContext,
 ) -> Option<HeaderDetection> {
-    let header_terms = header::terms(column_name);
-    let signal = header::best_signal_for_kinds(&header_terms, &["postal_code"])?;
-
-    // With a known file locale, header-labeled postal columns are held to the
-    // per-country formats: when any sample matches a country format, only
-    // those matches count. Without locale context (the default), the loose
-    // shape check stands unchanged, preserving columns that mix unambiguous
-    // formats with unlabeled bare-digit zips (e.g. GB + US).
-    let context_match_count = if locale.countries().is_empty() {
-        0
-    } else {
-        non_empty_values
-            .iter()
-            .filter(|value| postal_match_country(value, locale).is_some())
-            .count()
-    };
-    let match_count = if context_match_count > 0 {
-        context_match_count
-    } else {
-        non_empty_values
-            .iter()
-            .filter(|value| is_postal_code(value))
-            .count()
-    };
-    let confidence = calculate_confidence(match_count, non_empty_values.len());
-    if confidence == Confidence::Low {
-        return None;
-    }
-
-    Some(HeaderDetection {
-        result: DetectionResult {
-            data_type: DataType::PostalCode,
-            confidence,
-            sample_matches: match_count,
-            total_samples,
-            trace: None,
+    header_signal_detection(
+        header,
+        non_empty_values,
+        total_samples,
+        &["postal_code"],
+        DataType::PostalCode,
+        |_, values| {
+            // With a known file locale, header-labeled postal columns are held to
+            // the per-country formats: when any sample matches a country format,
+            // only those matches count. Without locale context (the default), the
+            // loose shape check stands unchanged, preserving columns that mix
+            // unambiguous formats with unlabeled bare-digit zips (e.g. GB + US).
+            let context_match_count = if locale.countries().is_empty() {
+                0
+            } else {
+                count_matching(values, |value| {
+                    postal_match_country(value, locale).is_some()
+                })
+            };
+            if context_match_count > 0 {
+                context_match_count
+            } else {
+                count_matching(values, is_postal_code)
+            }
         },
-        signal,
-    })
+    )
 }
 
 fn detect_header_address(
-    column_name: &str,
+    header: &header::HeaderAnalysis,
     non_empty_values: &[&String],
     total_samples: usize,
     _locale: &LocaleContext,
 ) -> Option<HeaderDetection> {
-    let header_terms = header::terms(column_name);
-    let signal = header::best_signal_for_kinds(&header_terms, &["address"])?;
-
-    let match_count = non_empty_values
-        .iter()
-        .filter(|value| is_plausible_address(value))
-        .count();
-    let confidence = calculate_confidence(match_count, non_empty_values.len());
-    if confidence == Confidence::Low {
-        return None;
-    }
-
-    Some(HeaderDetection {
-        result: DetectionResult {
-            data_type: DataType::Address,
-            confidence,
-            sample_matches: match_count,
-            total_samples,
-            trace: None,
-        },
-        signal,
-    })
+    header_signal_detection(
+        header,
+        non_empty_values,
+        total_samples,
+        &["address"],
+        DataType::Address,
+        |_, values| count_matching(values, is_plausible_address),
+    )
 }
 
 fn detect_header_tax_id(
-    column_name: &str,
+    header: &header::HeaderAnalysis,
     non_empty_values: &[&String],
     total_samples: usize,
     _locale: &LocaleContext,
 ) -> Option<HeaderDetection> {
-    let header_terms = header::terms(column_name);
-    let signal = header::best_signal_for_kinds(&header_terms, &["tax_id"])?;
-    let allow_dutch_btw_number = has_dutch_btw_context(&header_terms);
-    let tax_id_context = tax_id_header_context(&header_terms);
-
-    let match_count = non_empty_values
-        .iter()
-        .filter(|value| {
-            is_tax_id(value)
-                || is_contextual_unformatted_us_tax_id(value, tax_id_context)
-                || is_vat_id(value)
-                || (allow_dutch_btw_number && is_dutch_btw_tax_number(value))
-        })
-        .count();
-    let confidence = calculate_confidence(match_count, non_empty_values.len());
-    if confidence == Confidence::Low {
-        return None;
-    }
-
-    Some(HeaderDetection {
-        result: DetectionResult {
-            data_type: DataType::TaxId,
-            confidence,
-            sample_matches: match_count,
-            total_samples,
-            trace: None,
+    header_signal_detection(
+        header,
+        non_empty_values,
+        total_samples,
+        &["tax_id"],
+        DataType::TaxId,
+        |header_terms, values| {
+            let allow_dutch_btw_number = has_dutch_btw_context(header_terms);
+            let tax_id_context = tax_id_header_context(header_terms);
+            count_matching(values, |value| {
+                is_tax_id(value)
+                    || is_contextual_unformatted_us_tax_id(value, tax_id_context)
+                    || is_vat_id(value)
+                    || (allow_dutch_btw_number && is_dutch_btw_tax_number(value))
+            })
         },
-        signal,
-    })
+    )
 }
 
 pub(in crate::detection) fn detect_name_type(
-    column_name: &str,
+    header: &header::HeaderAnalysis,
     non_empty_values: &[&String],
     total_samples: usize,
     _locale: &LocaleContext,
 ) -> Option<HeaderDetection> {
-    let header_terms = header::terms(column_name);
-    let signal = header::best_signal_for_kinds(
-        &header_terms,
-        &["first_name", "last_name", "full_name", "generic_name"],
-    )?;
+    let signal =
+        header.best_for_kinds(&["first_name", "last_name", "full_name", "generic_name"])?;
     let data_type = signal.data_type;
     let mut match_count = non_empty_values
         .iter()
@@ -302,7 +258,7 @@ pub(in crate::detection) fn detect_name_type(
     let confidence = calculate_confidence(match_count, non_empty_values.len());
 
     if confidence == Confidence::Low {
-        if data_type == DataType::FullName && header::infer_generic_name(column_name) {
+        if data_type == DataType::FullName && header.matches_kind("generic_name") {
             match_count = non_empty_values
                 .iter()
                 .filter(|value| is_plausible_generic_single_name(value))
@@ -336,11 +292,6 @@ pub(in crate::detection) fn detect_name_type(
         },
         signal,
     })
-}
-
-fn is_header_phone_value(value: &str) -> bool {
-    let trimmed = value.trim();
-    is_valid_phone_number(trimmed) || is_formatted_phone_fallback(trimmed, 7, true)
 }
 
 fn is_postal_code(value: &str) -> bool {

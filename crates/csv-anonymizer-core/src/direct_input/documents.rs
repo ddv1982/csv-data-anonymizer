@@ -11,8 +11,9 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use super::shared::{
-    FieldSamples, PreviewSelection, bounded_analysis_sample_count, bounded_preview_sample_count,
-    fields_to_rows, metadata_from_fields, next_row_index, prepare_selected_metadata,
+    FieldSampleLimits, FieldSamples, FieldWindow, PreviewSelection, bounded_preview_sample_count,
+    escape_path_key, fields_to_rows, metadata_from_fields, next_row_index,
+    paste_detection_sample_rows, prepare_selected_metadata, preview_field_sample_limits,
     preview_from_fields_with_smart_provider, preview_smart_replacements_for_transform,
     push_identified_field_sample, selected_columns_by_source,
     transform_state_for_smart_replacements,
@@ -25,13 +26,14 @@ pub(super) fn preview_value_document_with_smart_provider(
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<PreviewData> {
     let sample_count = bounded_preview_sample_count(input.sample_count)?;
+    let detection_sample_rows = paste_detection_sample_rows(input.sample_row_count)?;
     let mut fields = Vec::new();
     collect_json_fields(
         &value,
         format,
         &mut Vec::new(),
         &mut fields,
-        sample_count.saturating_mul(2).max(1),
+        preview_field_sample_limits(sample_count, detection_sample_rows),
     )?;
     preview_from_fields_with_smart_provider(
         &fields,
@@ -72,7 +74,7 @@ fn transform_value_document(
     format: PasteDataFormat,
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<(Value, PasteTransformData)> {
-    let analysis = analyze_value_document(format, &value, 100)?;
+    let analysis = analyze_value_document(format, &value, input.sample_row_count)?;
     let metadata = prepare_selected_metadata(&analysis.columns, &input.columns, &input.controls)?;
     let selected_by_path = selected_columns_by_source(&metadata);
     let smart_replacements =
@@ -110,8 +112,14 @@ fn prepare_value_smart_replacements(
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<crate::smart::SmartReplacementMap> {
     let mut fields = Vec::new();
-    collect_json_fields(value, format, &mut Vec::new(), &mut fields, usize::MAX)?;
-    let (_headers, rows) = fields_to_rows(&fields, usize::MAX);
+    collect_json_fields(
+        value,
+        format,
+        &mut Vec::new(),
+        &mut fields,
+        FieldSampleLimits::detection_only(usize::MAX),
+    )?;
+    let (_headers, rows) = fields_to_rows(&fields, FieldWindow::Detection);
     let existing_smart_replacements = preview_smart_replacements_for_transform(input, metadata);
     prepare_smart_replacements_from_rows(
         &rows,
@@ -126,16 +134,16 @@ pub(super) fn analyze_value_document(
     value: &Value,
     sample_row_count: usize,
 ) -> Result<PasteAnalyzeData> {
-    let sample_row_count = bounded_analysis_sample_count(sample_row_count)?;
+    let sample_row_count = paste_detection_sample_rows(sample_row_count)?;
     let mut fields = Vec::new();
     collect_json_fields(
         value,
         format,
         &mut Vec::new(),
         &mut fields,
-        sample_row_count,
+        FieldSampleLimits::detection_only(sample_row_count),
     )?;
-    let (headers, rows) = fields_to_rows(&fields, sample_row_count);
+    let (headers, rows) = fields_to_rows(&fields, FieldWindow::Detection);
     let columns = metadata_from_fields(&fields, &headers, &rows);
 
     Ok(PasteAnalyzeData {
@@ -166,6 +174,11 @@ fn transform_json_value(
                 path.pop();
             }
         }
+        // Null passes through untransformed. `collect_json_fields` still records
+        // it as a "null" sample, which looks like a disagreement but is not:
+        // `detection::is_empty_value` treats that literal as empty, so it is
+        // excluded from classification either way, and keeping the sample is
+        // what lets `detect_empty_format` see that this column uses nulls.
         Value::Null => {}
         Value::Bool(_) | Value::Number(_) | Value::String(_) => {
             let path_name = value_path_id(context.format, path);
@@ -211,27 +224,27 @@ fn collect_json_fields(
     format: PasteDataFormat,
     path: &mut Vec<ValuePathSegment>,
     fields: &mut Vec<FieldSamples>,
-    sample_count: usize,
+    limits: FieldSampleLimits,
 ) -> Result<()> {
     match value {
         Value::Array(items) => {
             path.push(ValuePathSegment::Array);
             for item in items {
-                collect_json_fields(item, format, path, fields, sample_count)?;
+                collect_json_fields(item, format, path, fields, limits)?;
             }
             path.pop();
         }
         Value::Object(map) => {
             for (key, child) in map {
                 path.push(ValuePathSegment::Key(key.clone()));
-                collect_json_fields(child, format, path, fields, sample_count)?;
+                collect_json_fields(child, format, path, fields, limits)?;
                 path.pop();
             }
         }
-        Value::Null => push_value_field_sample(fields, format, path, "null", sample_count)?,
+        Value::Null => push_value_field_sample(fields, format, path, "null", limits)?,
         Value::Bool(_) | Value::Number(_) | Value::String(_) => {
             if let Some(value) = json_scalar_to_string(value) {
-                push_value_field_sample(fields, format, path, &value, sample_count)?;
+                push_value_field_sample(fields, format, path, &value, limits)?;
             }
         }
     }
@@ -249,11 +262,11 @@ fn push_value_field_sample(
     format: PasteDataFormat,
     path: &[ValuePathSegment],
     value: &str,
-    sample_count: usize,
+    limits: FieldSampleLimits,
 ) -> Result<()> {
     let source_path = value_path_id(format, path);
     let label = value_path_label(path);
-    push_identified_field_sample(fields, Some(&source_path), &label, value, sample_count)
+    push_identified_field_sample(fields, Some(&source_path), &label, value, limits)
 }
 
 fn value_path_id(format: PasteDataFormat, path: &[ValuePathSegment]) -> String {
@@ -299,10 +312,6 @@ fn value_path_label(path: &[ValuePathSegment]) -> String {
     } else {
         label
     }
-}
-
-fn escape_path_key(key: &str) -> String {
-    key.replace('~', "~0").replace('/', "~1")
 }
 
 fn is_plain_label_segment(key: &str) -> bool {

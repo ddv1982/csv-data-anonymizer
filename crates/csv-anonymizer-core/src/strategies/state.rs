@@ -1,4 +1,5 @@
-use crate::smart::SmartReplacementMap;
+use crate::random::random_string;
+use crate::smart::{SmartReplacementMap, value_identity_key};
 use crate::types::TransformReport;
 use rand::Rng;
 use std::collections::HashMap;
@@ -52,7 +53,7 @@ impl TransformState {
         candidates: &[&str],
         excluded_tokens: &[&str],
     ) -> String {
-        let source_key = normalized_identity(value);
+        let source_key = value_identity_key(value);
         if let Some(existing) = self
             .mapper_mut(domain)
             .source_to_output
@@ -102,11 +103,18 @@ impl TransformState {
         self.register_exhausted_assignment(domain, &source_key, fallback)
     }
 
+    /// Maps `source_key` to a freshly generated output, reusing the existing
+    /// mapping if this source was already seen.
+    ///
+    /// `generate` is called repeatedly until it produces a non-empty value that
+    /// no other source already owns. It takes no arguments: every generator is
+    /// random, so retrying is what breaks a collision, and none of them ever
+    /// needed to know which attempt they were on.
     pub(super) fn assign_generated(
         &mut self,
         domain: PseudonymDomain,
         source_key: &str,
-        mut generate: impl FnMut(usize) -> String,
+        mut generate: impl FnMut() -> String,
     ) -> String {
         if let Some(existing) = self
             .mapper_mut(domain)
@@ -119,8 +127,8 @@ impl TransformState {
         }
 
         let mut collided = false;
-        for attempt in 0..GENERATED_ATTEMPT_LIMIT {
-            let candidate = generate(attempt);
+        for _ in 0..GENERATED_ATTEMPT_LIMIT {
+            let candidate = generate();
             if candidate.is_empty() {
                 continue;
             }
@@ -133,7 +141,7 @@ impl TransformState {
         }
 
         self.report.exhausted_pseudonym_pools += 1;
-        self.register_exhausted_assignment(domain, source_key, generate(GENERATED_ATTEMPT_LIMIT))
+        self.register_exhausted_assignment(domain, source_key, generate())
     }
 
     fn output_is_used_by_other_source(
@@ -226,21 +234,6 @@ pub(super) enum PseudonymDomain {
     LastName,
     GenericString,
     OpaqueToken,
-}
-
-pub(super) fn normalized_identity(value: &str) -> String {
-    value.trim().to_ascii_lowercase()
-}
-
-pub(super) fn random_string(length: usize, charset: &str) -> String {
-    let chars: Vec<char> = charset.chars().collect();
-    if chars.is_empty() {
-        return String::new();
-    }
-    let mut rng = rand::thread_rng();
-    (0..length)
-        .map(|_| chars[rng.gen_range(0..chars.len())])
-        .collect()
 }
 
 fn generated_name_suffix() -> String {

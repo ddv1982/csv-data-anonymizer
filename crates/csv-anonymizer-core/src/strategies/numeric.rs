@@ -1,6 +1,6 @@
 use super::state::{PseudonymDomain, TransformState};
+use crate::random::{LEADING_DIGIT_CHARSET, random_digits, random_string};
 use crate::types::TransformContext;
-use rand::Rng;
 
 pub(super) fn transform_numeric_id(
     value: &str,
@@ -8,12 +8,12 @@ pub(super) fn transform_numeric_id(
     state: &mut TransformState,
 ) -> String {
     let source_key = format!("{}:{}", value.len(), value);
-    state.assign_generated(PseudonymDomain::NumericId, &source_key, |attempt| {
-        transform_numeric_id_candidate(value, attempt)
+    state.assign_generated(PseudonymDomain::NumericId, &source_key, || {
+        transform_numeric_id_candidate(value)
     })
 }
 
-fn transform_numeric_id_candidate(value: &str, attempt: usize) -> String {
+fn transform_numeric_id_candidate(value: &str) -> String {
     let digit_count = value.len();
     if digit_count == 0 {
         return value.to_string();
@@ -24,31 +24,24 @@ fn transform_numeric_id_candidate(value: &str, attempt: usize) -> String {
         .take_while(|character| *character == '0')
         .count();
     let candidate = if leading_zero_count > 0 && leading_zero_count < digit_count {
-        let generated = generate_numeric_id(digit_count - leading_zero_count, attempt);
+        let generated = generate_numeric_id(digit_count - leading_zero_count);
         format!("{}{}", "0".repeat(leading_zero_count), generated)
     } else if leading_zero_count == digit_count {
-        generate_zero_width_numeric_id(digit_count, attempt)
+        // An all-zeros value has no significant digits to preserve, so the
+        // replacement may start with any digit including zero.
+        random_digits(digit_count)
     } else {
-        generate_numeric_id(digit_count, attempt)
+        generate_numeric_id(digit_count)
     };
 
     ensure_numeric_replacement_diff(candidate, value)
 }
 
-fn generate_zero_width_numeric_id(length: usize, _attempt: usize) -> String {
-    let mut rng = rand::thread_rng();
-    (0..length)
-        .map(|_| rng.gen_range(0..=9).to_string())
-        .collect()
-}
-
-fn generate_numeric_id(length: usize, _attempt: usize) -> String {
-    let mut rng = rand::thread_rng();
-    let first_digit = rng.gen_range(1..=9).to_string();
-    let rest: String = (1..length)
-        .map(|_| rng.gen_range(0..=9).to_string())
-        .collect();
-    format!("{first_digit}{rest}")
+/// `length` digits that do not start with zero, so the replacement keeps the
+/// original's digit count when read back as a number.
+fn generate_numeric_id(length: usize) -> String {
+    let first_digit = random_string(1, LEADING_DIGIT_CHARSET);
+    format!("{first_digit}{}", random_digits(length.saturating_sub(1)))
 }
 
 pub(super) fn transform_numeric_value(
@@ -57,29 +50,30 @@ pub(super) fn transform_numeric_value(
     state: &mut TransformState,
 ) -> String {
     let source_key = format!("{}:{}", value.len(), value);
-    state.assign_generated(PseudonymDomain::NumericValue, &source_key, |attempt| {
-        transform_numeric_value_candidate(value, attempt)
+    state.assign_generated(PseudonymDomain::NumericValue, &source_key, || {
+        transform_numeric_value_candidate(value)
     })
 }
 
-fn transform_numeric_value_candidate(value: &str, attempt: usize) -> String {
+fn transform_numeric_value_candidate(value: &str) -> String {
     let (sign, unsigned) = match value.as_bytes().first() {
         Some(b'+') | Some(b'-') => (&value[..1], &value[1..]),
         _ => ("", value),
     };
 
     let candidate = if let Some((integer_part, fractional_part)) = unsigned.split_once('.') {
-        let integer = generate_numeric_component(integer_part, attempt);
-        let fraction = generate_fractional_component(fractional_part, attempt);
+        let integer = generate_numeric_component(integer_part);
+        // Fractional digits keep their exact width and may lead with zero.
+        let fraction = random_digits(fractional_part.len());
         format!("{sign}{integer}.{fraction}")
     } else {
-        format!("{sign}{}", generate_numeric_component(unsigned, attempt))
+        format!("{sign}{}", generate_numeric_component(unsigned))
     };
 
     ensure_numeric_replacement_diff(candidate, value)
 }
 
-fn generate_numeric_component(component: &str, attempt: usize) -> String {
+fn generate_numeric_component(component: &str) -> String {
     if component.is_empty() {
         return String::new();
     }
@@ -92,19 +86,8 @@ fn generate_numeric_component(component: &str, attempt: usize) -> String {
         return component.to_string();
     }
 
-    let generated = generate_numeric_id(component.len() - leading_zero_count, attempt);
+    let generated = generate_numeric_id(component.len() - leading_zero_count);
     format!("{}{}", "0".repeat(leading_zero_count), generated)
-}
-
-fn generate_fractional_component(component: &str, _attempt: usize) -> String {
-    if component.is_empty() {
-        return String::new();
-    }
-
-    let mut rng = rand::thread_rng();
-    (0..component.len())
-        .map(|_| rng.gen_range(0..=9).to_string())
-        .collect()
 }
 
 fn ensure_numeric_replacement_diff(candidate: String, original: &str) -> String {

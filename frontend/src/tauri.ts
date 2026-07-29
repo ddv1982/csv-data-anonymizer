@@ -12,20 +12,31 @@ import type {
   LocalAiStatus,
   PasteAnalyzeData,
   PasteDataFormat,
+  PastePreviewParams,
   PasteTransformData,
+  PasteTransformParams,
   PreflightData,
   PreflightMode,
   PreflightParams,
   PreviewData,
+  PreviewParams,
   QuickTransformData,
   SmartReplacementEntry,
 } from './types'
 
 type TauriTheme = 'light' | 'dark'
 type TestInvoke = (command: string, args?: Record<string, unknown>) => unknown
-type PreflightCommandRequest = Omit<PreflightParams, 'localAiReady' | 'localAiMessage'> & {
-  localAi: LocalAiRequest
-}
+// Every command request is its params struct plus the Local AI consent the shell
+// resolves, so `invokeCommand`'s untyped payload cannot drift from the Rust struct
+// unnoticed: the params interfaces are compared against it by
+// `scripts/check-contracts.mjs`.
+type WithLocalAi<Params> = Params & { localAi: LocalAiRequest }
+type PreflightCommandRequest = WithLocalAi<
+  Omit<PreflightParams, 'localAiReady' | 'localAiMessage'>
+>
+type PreviewCommandRequest = WithLocalAi<PreviewParams>
+type PastePreviewCommandRequest = WithLocalAi<PastePreviewParams>
+type PasteTransformCommandRequest = WithLocalAi<PasteTransformParams>
 
 declare global {
   interface Window {
@@ -82,18 +93,19 @@ export function previewPasteData(
   columns: number[],
   controls: ColumnControl[],
   sampleCount: number,
+  sampleRowCount: number,
   localAi: LocalAiRequest,
 ): Promise<PreviewData> {
-  return invokeCommand('preview_pasted_data', {
-    request: {
-      content,
-      format,
-      columns,
-      controls,
-      sampleCount,
-      localAi,
-    },
-  })
+  const request: PastePreviewCommandRequest = {
+    content,
+    format,
+    columns,
+    controls,
+    sampleCount,
+    sampleRowCount,
+    localAi,
+  }
+  return invokeCommand('preview_pasted_data', { request })
 }
 
 export function transformPasteData(
@@ -101,19 +113,20 @@ export function transformPasteData(
   format: PasteDataFormat,
   columns: number[],
   controls: ColumnControl[],
+  sampleRowCount: number,
   previewSmartReplacements: SmartReplacementEntry[],
   localAi: LocalAiRequest,
 ): Promise<PasteTransformData> {
-  return invokeCommand('anonymize_pasted_data', {
-    request: {
-      content,
-      format,
-      columns,
-      controls,
-      previewSmartReplacements,
-      localAi,
-    },
-  })
+  const request: PasteTransformCommandRequest = {
+    content,
+    format,
+    columns,
+    controls,
+    sampleRowCount,
+    previewSmartReplacements,
+    localAi,
+  }
+  return invokeCommand('anonymize_pasted_data', { request })
 }
 
 export function generateQuickValues(
@@ -137,17 +150,18 @@ export function previewAnonymization(
   columns: number[],
   controls: ColumnControl[],
   sampleCount: number,
+  sampleRowCount: number,
   localAi: LocalAiRequest,
 ): Promise<PreviewData> {
-  return invokeCommand('preview_anonymization', {
-    request: {
-      filePath,
-      columns,
-      controls,
-      sampleCount,
-      localAi,
-    },
-  })
+  const request: PreviewCommandRequest = {
+    filePath,
+    columns,
+    controls,
+    sampleCount,
+    sampleRowCount,
+    localAi,
+  }
+  return invokeCommand('preview_anonymization', { request })
 }
 
 export function preflightAnonymization(

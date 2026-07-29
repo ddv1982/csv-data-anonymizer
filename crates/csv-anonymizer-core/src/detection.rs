@@ -5,6 +5,7 @@ mod header;
 mod header_rules;
 mod locale;
 mod national_id;
+mod patterns;
 mod postal;
 mod privacy;
 mod scoring;
@@ -113,35 +114,34 @@ pub fn detect_column_type_in_context(
         );
     }
 
-    // 1. Value battery first. Checksum/validator-backed selections (VAT, IBAN,
-    //    and validator-evidence priority patterns such as national IDs) are
-    //    final: the column *is* that sensitive type. The header may only
-    //    agree-and-boost (contributing its richer taxonomy trace and raising
-    //    confidence one tier); it can never suppress or replace the selection.
     let early_header_rules = header_rules::early_header_detection_rules();
-
-    if let Some(result) = detect_vat_value_type(&sampled, values.len(), total_non_empty) {
-        return finalize_validator(
-            column_name,
+    // One taxonomy scan for this column, shared by every header rule below and
+    // by `finalize_validator`. Each rule used to rescan the taxonomy itself.
+    let header = header::analyze(column_name);
+    let finalize_validator_selection = |result| {
+        finalize_validator(
+            &header,
             result,
             &sampled,
             values.len(),
             total_non_empty,
             &early_header_rules,
             locale,
-        );
+        )
+    };
+
+    // STAGE 1 — Validator-backed value evidence, and it is final: the column
+    // *is* that sensitive type. The header may only agree-and-boost (adding its
+    // richer taxonomy trace and raising confidence one tier); it can never
+    // suppress or replace the selection. VAT and IBAN run before the pattern
+    // battery so that the battery's cost is skipped when they already claim the
+    // column.
+    if let Some(result) = detect_vat_value_type(&sampled, values.len(), total_non_empty) {
+        return finalize_validator_selection(result);
     }
 
     if let Some(result) = detect_iban_value_type(&sampled, values.len(), total_non_empty) {
-        return finalize_validator(
-            column_name,
-            result,
-            &sampled,
-            values.len(),
-            total_non_empty,
-            &early_header_rules,
-            locale,
-        );
+        return finalize_validator_selection(result);
     }
 
     let pattern = detect_priority_pattern(&sampled, values.len(), total_non_empty, locale);
@@ -150,21 +150,13 @@ pub fn detect_column_type_in_context(
             .result()
             .expect("validator selection yields a result");
         label_national_id_country(&mut result, &pattern, &sampled);
-        return finalize_validator(
-            column_name,
-            result,
-            &sampled,
-            values.len(),
-            total_non_empty,
-            &early_header_rules,
-            locale,
-        );
+        return finalize_validator_selection(result);
     }
 
-    // 2. No validator claimed the column: the header rules run exactly as
-    //    before (early rules, numeric-id, name).
+    // STAGE 2 — Header rules whose value evidence is a shape rather than a
+    // validator: phone, postal code, address, tax ID.
     if let Some(result) = first_header_detection(
-        column_name,
+        &header,
         &sampled,
         values.len(),
         total_non_empty,
@@ -174,34 +166,34 @@ pub fn detect_column_type_in_context(
         return result;
     }
 
-    // 3a. Context-backed postal codes: when the file establishes a country
-    //     whose postal format is bare-digit (DE/FR/US/IT/ES/SE/JP...), those
-    //     values collide with the numeric-id shape (`^\d{4,}$`). Run the
-    //     context-gated postal voter *before* the deferred numeric-id pattern
-    //     selection so a genuine postal column in a locale-tagged file is
-    //     classified as PostalCode rather than NumericId. This is safe: the
-    //     voter only counts values matching a *context-present* country format
-    //     (see `postal_match_country`'s `requires_context` gate), so a file
-    //     without matching context — or a bare-digit column in a file whose
-    //     context format it does not match — falls straight through to the
-    //     numeric-id rule unchanged. Guarded on non-empty context so
-    //     context-free files keep their exact prior behavior.
-    if !locale.countries().is_empty()
+    // STAGE 3 — Postal codes that the file's locale context vouches for. Where
+    // a country's postal format is bare digits (DE/FR/US/IT/ES/SE/JP...), those
+    // values also match the numeric-id shape (`^\d{4,}$`), so this has to come
+    // before the pattern battery's own selection in stage 4 or a genuine postal
+    // column in a locale-tagged file would be classified as NumericId. It is
+    // safe to put it first: the voter only counts values matching a
+    // *context-present* country format (see `postal_match_country`'s
+    // `requires_context` gate), so a file without matching context — or a
+    // bare-digit column whose context format it does not match — falls straight
+    // through. Gated on non-empty context so context-free files are unaffected;
+    // for them the voter runs at its lower precedence in stage 8 instead.
+    let locale_vouches_for_postal = !locale.countries().is_empty();
+    if locale_vouches_for_postal
         && let Some(result) =
             detect_postal_value_type(&sampled, values.len(), total_non_empty, locale)
     {
         return result;
     }
 
-    // 3. The deferred non-validator pattern selection keeps its original slot,
-    //    after the early header rules and before the numeric-id / numeric /
-    //    name rules.
+    // STAGE 4 — The pattern battery's non-validator selection.
     if let Some(result) = pattern.result() {
         return result;
     }
 
+    // STAGE 5 — Numeric identifiers, header-gated so that a bare integer column
+    // is only called an identifier when its header says so.
     if let Some(result) = first_header_detection(
-        column_name,
+        &header,
         &sampled,
         values.len(),
         total_non_empty,
@@ -215,6 +207,7 @@ pub fn detect_column_type_in_context(
         return result;
     }
 
+    // STAGE 6 — Plain measurements, once every identifier rule has declined.
     if let Some(result) = detect_numeric_value_type(&sampled, values.len(), total_non_empty) {
         return attach_single_trace(
             result,
@@ -224,8 +217,11 @@ pub fn detect_column_type_in_context(
         );
     }
 
+    // STAGE 7 — Person names. Header-gated: the name gazetteer was withdrawn on
+    // data-minimization grounds, so there is no value-level name evidence to
+    // vote with (see docs/value-first-detection-design.md).
     if let Some(result) = first_header_detection(
-        column_name,
+        &header,
         &sampled,
         values.len(),
         total_non_empty,
@@ -239,11 +235,17 @@ pub fn detect_column_type_in_context(
         return result;
     }
 
-    // 4. Postal and address value voters: pure value evidence, running after
-    //    the header name rule so shape-based winners keep priority, but before
-    //    the enum check so a genuine postal-code or street-address column
-    //    doesn't get swallowed by the finite-repeated-values heuristic.
-    if let Some(result) = detect_postal_value_type(&sampled, values.len(), total_non_empty, locale)
+    // STAGE 8 — Postal and address on value evidence alone. After the name rule
+    // so shape-based winners keep priority, but before the enum check so a real
+    // postal-code or street-address column is not swallowed by the
+    // finite-repeated-values heuristic.
+    //
+    // Skipped when the locale already vouched for postal codes: stage 3 asked
+    // this exact question with these exact arguments and got no for an answer,
+    // so asking again can only produce the same no.
+    if !locale_vouches_for_postal
+        && let Some(result) =
+            detect_postal_value_type(&sampled, values.len(), total_non_empty, locale)
     {
         return result;
     }
@@ -251,6 +253,8 @@ pub fn detect_column_type_in_context(
     if let Some(result) = detect_address_value_type(&sampled, values.len(), total_non_empty) {
         return result;
     }
+
+    // STAGE 9 — Categorical, then the unclassified fallback.
 
     if detect_enum_type(&sampled) {
         return detection_result(
@@ -291,7 +295,7 @@ pub fn detect_column_type_in_context(
 /// it can never suppress or replace the selection; absent header agreement, the
 /// validator result stands unchanged.
 fn finalize_validator(
-    column_name: &str,
+    header: &header::HeaderAnalysis,
     validator_result: crate::types::DetectionResult,
     sampled: &[&String],
     total_samples: usize,
@@ -300,7 +304,7 @@ fn finalize_validator(
     locale: &LocaleContext,
 ) -> crate::types::DetectionResult {
     let Some(mut agreeing) = first_header_detection(
-        column_name,
+        header,
         sampled,
         total_samples,
         total_non_empty,
@@ -454,16 +458,31 @@ fn detect_address_value_type(
     ))
 }
 
+/// The risk a column carries on the strength of its type alone.
+///
+/// This is a floor. Callers combine it with `analyze_column_privacy`'s findings
+/// through [`max_pii_risk`], and a finding can only raise the result — so the
+/// answer here is a lower bound on what the app acts on, never an upper one.
+///
+/// It must nonetheless agree with the risk of the type's own
+/// `privacy_finding_kind_and_reason`. Where the two disagree the lower one is
+/// unreachable, which makes it dead code that still reads as the rule — and the
+/// dead branch is the one a reader trusts. `every_data_type_gets_one_consistent_risk_from_both_sources`
+/// fails when that happens.
 pub fn classify_pii_risk(data_type: DataType) -> PiiRisk {
     match data_type {
+        // A column of given names or of surnames is personal data about identifiable
+        // people, which is why each one already carries a `Person` finding at High.
+        // These used to say Medium here, so the mapping and the finding disagreed and
+        // the Medium never survived `max_pii_risk`.
         DataType::Email
         | DataType::Phone
+        | DataType::FirstName
+        | DataType::LastName
         | DataType::FullName
         | DataType::Address
         | DataType::TaxId => PiiRisk::High,
-        DataType::FirstName
-        | DataType::LastName
-        | DataType::Uuid
+        DataType::Uuid
         | DataType::NumericId
         | DataType::PostalCode
         | DataType::IpAddress

@@ -1,6 +1,7 @@
 use crate::error::{AnonymizerError, Result, csv_error};
 use crate::file_ops::replace_file_atomically;
 use crate::process_control::{check_canceled, report_progress};
+use crate::sampling::SpreadSampler;
 use crate::strategies::{TransformState, transform_row_with_state};
 use crate::types::{ColumnMetadata, ParsedSample, ProcessControl, ProcessOptions, ProcessResult};
 use csv::{ReaderBuilder, StringRecord, Trim, WriterBuilder};
@@ -19,7 +20,43 @@ pub fn validate_file(file_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Which data rows survive when the input holds more rows than the caller wants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SampleWindow {
+    /// Keep the first `row_count` data rows and stop reading. Display windows
+    /// want the input's opening rows, not a representative spread.
+    Head,
+    /// Read every data row and keep `row_count` of them drawn from across the
+    /// whole input. Detection must use this: the transform streams every row, so
+    /// a head window would leave detection blind to PII that only starts partway
+    /// down the input, and unseen PII is never auto-selected.
+    Spread,
+}
+
+/// Reads the header row plus the input's first `row_count` data rows.
+///
+/// Only for display and for reading back small outputs. Anything that feeds
+/// detection must use [`read_detection_sample`] instead.
 pub fn read_sample(file_path: &Path, row_count: usize) -> Result<ParsedSample> {
+    read_file_sample(file_path, row_count, SampleWindow::Head)
+}
+
+/// Reads the header row plus a `row_count`-row sample of the whole file, and
+/// reports the file's exact data-row count.
+///
+/// The sample is drawn from every part of the file rather than from a window of
+/// it — see [`RowSampler`] for how, and for why the choice of rows has to be
+/// pseudorandom. Costs one streaming pass; memory stays bounded by `row_count`
+/// rows.
+pub fn read_detection_sample(file_path: &Path, row_count: usize) -> Result<ParsedSample> {
+    read_file_sample(file_path, row_count, SampleWindow::Spread)
+}
+
+fn read_file_sample(
+    file_path: &Path,
+    row_count: usize,
+    window: SampleWindow,
+) -> Result<ParsedSample> {
     validate_file(file_path)?;
 
     let mut reader = ReaderBuilder::new()
@@ -29,31 +66,80 @@ pub fn read_sample(file_path: &Path, row_count: usize) -> Result<ParsedSample> {
         .from_path(file_path)
         .map_err(csv_error)?;
 
-    read_sample_from_csv_reader(&mut reader, row_count)
+    read_sample_from_csv_reader(&mut reader, row_count, window)
 }
 
-pub fn read_sample_from_reader(reader: impl Read, row_count: usize) -> Result<ParsedSample> {
+/// CSV-text counterpart of [`read_sample`]: the first `row_count` data rows.
+pub fn read_csv_sample_from_str(input: &str, row_count: usize) -> Result<ParsedSample> {
+    read_str_sample(input, row_count, SampleWindow::Head)
+}
+
+/// CSV-text counterpart of [`read_detection_sample`]: a `row_count`-row sample of
+/// the whole input, plus the exact data-row count.
+pub fn read_csv_detection_sample_from_str(input: &str, row_count: usize) -> Result<ParsedSample> {
+    read_str_sample(input, row_count, SampleWindow::Spread)
+}
+
+fn read_str_sample(input: &str, row_count: usize, window: SampleWindow) -> Result<ParsedSample> {
     let mut reader = ReaderBuilder::new()
         .has_headers(false)
         .flexible(true)
         .trim(Trim::All)
-        .from_reader(reader);
+        .from_reader(input.as_bytes());
 
-    read_sample_from_csv_reader(&mut reader, row_count)
+    read_sample_from_csv_reader(&mut reader, row_count, window)
 }
 
-pub fn read_csv_sample_from_str(input: &str, row_count: usize) -> Result<ParsedSample> {
-    read_sample_from_reader(input.as_bytes(), row_count)
+/// Collects `wanted` data rows under a [`SampleWindow`], over a [`SpreadSampler`].
+///
+/// The sampler is the whole rule; this adds only the early stop, which is specific
+/// to reading a file: once a head window is full, nothing later can enter it, so
+/// there is no reason to keep parsing rows.
+struct RowSampler {
+    window: SampleWindow,
+    rows: SpreadSampler<Vec<String>>,
+}
+
+impl RowSampler {
+    fn new(window: SampleWindow, wanted: usize) -> Self {
+        // A zero-row sample carries no information; one row is the floor.
+        let wanted = wanted.max(1);
+        Self {
+            window,
+            rows: match window {
+                SampleWindow::Head => SpreadSampler::head(wanted),
+                SampleWindow::Spread => SpreadSampler::spread(wanted),
+            },
+        }
+    }
+
+    /// Offers one data row. Returns `false` once the caller can stop reading,
+    /// which only happens for a head window that has filled its buffer.
+    fn push(&mut self, row: Vec<String>) -> bool {
+        if self.window == SampleWindow::Head && self.rows.is_full() {
+            return false;
+        }
+        self.rows.push(row);
+        true
+    }
+
+    fn scanned(&self) -> usize {
+        self.rows.offered()
+    }
+
+    fn into_rows(self) -> Vec<Vec<String>> {
+        self.rows.into_items()
+    }
 }
 
 fn read_sample_from_csv_reader<R: Read>(
     reader: &mut csv::Reader<R>,
     row_count: usize,
+    window: SampleWindow,
 ) -> Result<ParsedSample> {
     let mut headers: Vec<String> = Vec::new();
-    let mut rows: Vec<Vec<String>> = Vec::new();
-
-    let mut is_complete = true;
+    let mut sampler = RowSampler::new(window, row_count);
+    let mut stopped_early = false;
 
     for result in reader.records() {
         let record = result.map_err(csv_error)?;
@@ -79,11 +165,10 @@ fn read_sample_from_csv_reader<R: Read>(
 
         row = normalize_data_row(row, headers.len(), record.position().map(|pos| pos.line()))?;
 
-        if rows.len() >= row_count {
-            is_complete = false;
+        if !sampler.push(row) {
+            stopped_early = true;
             break;
         }
-        rows.push(row);
     }
 
     if headers.is_empty() {
@@ -95,11 +180,16 @@ fn read_sample_from_csv_reader<R: Read>(
 
     Ok(ParsedSample {
         headers,
-        rows,
-        is_complete,
+        data_rows_scanned: sampler.scanned(),
+        scanned_entire_input: !stopped_early,
+        rows: sampler.into_rows(),
     })
 }
 
+/// Counts data rows without keeping any of them.
+///
+/// Only for callers that want the count alone; anything that also needs values
+/// gets the count for free from [`read_detection_sample`].
 pub fn count_csv_data_rows(file_path: &Path) -> Result<usize> {
     validate_file(file_path)?;
     let mut reader = ReaderBuilder::new()
@@ -109,20 +199,6 @@ pub fn count_csv_data_rows(file_path: &Path) -> Result<usize> {
         .from_path(file_path)
         .map_err(csv_error)?;
 
-    count_csv_data_rows_from_csv_reader(&mut reader)
-}
-
-pub fn count_csv_data_rows_from_reader(reader: impl Read) -> Result<usize> {
-    let mut reader = ReaderBuilder::new()
-        .has_headers(false)
-        .flexible(true)
-        .trim(Trim::All)
-        .from_reader(reader);
-
-    count_csv_data_rows_from_csv_reader(&mut reader)
-}
-
-fn count_csv_data_rows_from_csv_reader<R: Read>(reader: &mut csv::Reader<R>) -> Result<usize> {
     let mut header_processed = false;
     let mut row_count = 0;
 

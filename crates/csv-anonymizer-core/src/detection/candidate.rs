@@ -1,8 +1,10 @@
 use crate::types::{Confidence, DataType, DetectionTraceItem};
 
+/// How a candidate was established, strongest first. Column classification is
+/// value-first, so header agreement is not an evidence tier here — it adjusts a
+/// value-backed selection elsewhere rather than competing with one.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::detection) enum DetectorEvidence {
-    Header,
     Validator,
     Pattern,
     Shape,
@@ -11,8 +13,7 @@ pub(in crate::detection) enum DetectorEvidence {
 impl DetectorEvidence {
     pub(in crate::detection) fn rank(self) -> u8 {
         match self {
-            DetectorEvidence::Validator => 4,
-            DetectorEvidence::Header => 3,
+            DetectorEvidence::Validator => 3,
             DetectorEvidence::Pattern => 2,
             DetectorEvidence::Shape => 1,
         }
@@ -29,9 +30,6 @@ pub(in crate::detection) struct DetectorCandidate {
     pub accepted: bool,
     pub evidence: DetectorEvidence,
     pub specificity: u8,
-    pub order: usize,
-    pub span_start: usize,
-    pub span_len: usize,
 }
 
 pub(in crate::detection) struct DetectorCandidateSpec {
@@ -42,7 +40,6 @@ pub(in crate::detection) struct DetectorCandidateSpec {
     pub confidence: Confidence,
     pub evidence: DetectorEvidence,
     pub specificity: u8,
-    pub order: usize,
 }
 
 impl DetectorCandidate {
@@ -56,17 +53,7 @@ impl DetectorCandidate {
             accepted: spec.confidence != Confidence::Low,
             evidence: spec.evidence,
             specificity: spec.specificity,
-            order: spec.order,
-            span_start: usize::MAX,
-            span_len: 0,
         }
-    }
-
-    #[cfg(test)]
-    pub(in crate::detection) fn with_span(mut self, span_start: usize, span_len: usize) -> Self {
-        self.span_start = span_start;
-        self.span_len = span_len;
-        self
     }
 
     pub(in crate::detection) fn trace_item(&self) -> DetectionTraceItem {

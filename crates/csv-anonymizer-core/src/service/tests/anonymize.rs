@@ -23,6 +23,64 @@ fn anonymizes_selected_columns_without_web_runtime() {
     assert_eq!(result.columns_anonymized, 1);
 }
 
+/// End-to-end guard for the sampling-window leak.
+///
+/// Detection samples the file; the transform streams all of it. When detection
+/// only looked at the file's opening rows, a column whose PII started later
+/// looked benign, so `should_auto_select_column` never offered it, the user never
+/// selected it, and every real value was copied verbatim into the file labelled
+/// "anonymized". Detection-level coverage is not enough to prove that is fixed —
+/// this checks the bytes that actually reach disk.
+#[test]
+fn late_starting_pii_is_offered_for_selection_and_not_written_to_the_output() {
+    let service = AnonymizerService::new("test-version");
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("late-pii.csv");
+    let output_path = temp_dir.path().join("late-pii-anonymized.csv");
+
+    // The first 100 rows — exactly one default sample window — are benign.
+    let mut content = String::from("flag\n");
+    for row in 0..1_000 {
+        if row < 100 {
+            content.push_str(if row % 2 == 0 { "true\n" } else { "false\n" });
+        } else {
+            content.push_str(&format!("user{row}@example.com\n"));
+        }
+    }
+    fs::write(&input_path, &content).unwrap();
+
+    // Select exactly the columns the app would offer to anonymize by default.
+    let headers = service.analyze_csv(&input_path).unwrap();
+    let auto_selected: Vec<usize> = headers
+        .columns
+        .iter()
+        .filter(|column| crate::should_auto_select_column(column))
+        .map(|column| column.index)
+        .collect();
+    assert_eq!(
+        auto_selected,
+        vec![0],
+        "the email column must be offered for anonymization"
+    );
+
+    service
+        .anonymize_csv(AnonymizeParams {
+            file_path: input_path,
+            output_path: output_path.clone(),
+            columns: auto_selected,
+            controls: vec![],
+            force: false,
+            preview_smart_replacements: vec![],
+        })
+        .unwrap();
+
+    let output = fs::read_to_string(&output_path).unwrap();
+    let leaked = (100..1_000)
+        .filter(|row| output.contains(&format!("user{row}@example.com")))
+        .count();
+    assert_eq!(leaked, 0, "{leaked} original addresses reached the output");
+}
+
 #[test]
 fn anonymize_csv_with_control_reports_progress() {
     let service = AnonymizerService::new("test-version");

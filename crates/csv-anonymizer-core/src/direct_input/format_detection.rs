@@ -3,6 +3,7 @@ use crate::types::PasteDataFormat;
 use serde_json::Value;
 
 use super::documents::{parse_json, parse_yaml};
+use super::shared::FieldSampleLimits;
 use super::text::looks_like_logs;
 use super::xml::collect_xml_fields;
 
@@ -21,7 +22,9 @@ fn detect_paste_format(content: &str) -> PasteDataFormat {
     if parse_json(trimmed).is_ok() {
         return PasteDataFormat::Json;
     }
-    if trimmed.starts_with('<') && collect_xml_fields(trimmed, 1).is_ok() {
+    if trimmed.starts_with('<')
+        && collect_xml_fields(trimmed, FieldSampleLimits::detection_only(1)).is_ok()
+    {
         return PasteDataFormat::Xml;
     }
     if looks_like_csv(trimmed) {

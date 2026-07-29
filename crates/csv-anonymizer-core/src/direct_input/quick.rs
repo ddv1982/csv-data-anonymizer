@@ -1,6 +1,6 @@
 use crate::detection::{classify_pii_risk, detect_column_type_with_name, detect_empty_format};
 use crate::error::{AnonymizerError, Result};
-use crate::hash::random_uuid_v4;
+use crate::random::{random_string, random_uuid_v4};
 use crate::service::build_privacy_report;
 use crate::smart::{SmartReplacementProvider, prepare_smart_replacements_from_rows};
 use crate::strategies::transform_value_with_state;
@@ -271,11 +271,7 @@ fn generated_quick_hex_pair() -> String {
 }
 
 fn generated_quick_string(length: usize) -> String {
-    let chars = HEX_CHARSET.as_bytes();
-    let mut rng = rand::thread_rng();
-    (0..length)
-        .map(|_| chars[rng.gen_range(0..chars.len())] as char)
-        .collect()
+    random_string(length, HEX_CHARSET)
 }
 
 fn generated_uuid() -> String {

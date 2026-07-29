@@ -46,14 +46,17 @@ pub fn analyze_column_privacy(
         }
     }
 
+    // One taxonomy scan for the whole column: the branches below consult it
+    // several times over, and rescanning per branch was a measurable cost.
+    let header = header::analyze(column_name);
     add_full_cell_findings_from_detection(
         &mut findings,
-        column_name,
+        &header,
         values,
         detected_type,
         detection_confidence,
     );
-    add_full_cell_findings_from_header(&mut findings, column_name, values);
+    add_full_cell_findings_from_header(&mut findings, &header, values);
 
     let sample_count = values.iter().filter(|value| !is_empty_value(value)).count();
     let evidence = summarize_privacy_findings(&findings, sample_count);
@@ -69,7 +72,7 @@ pub fn analyze_column_privacy(
         });
     let pii_risk = evidence
         .iter()
-        .filter(|summary| summary.confidence != Confidence::Low)
+        .filter(|summary| summary.is_actionable())
         .map(|summary| risk_for_privacy_kind(summary.kind))
         .fold(PiiRisk::Low, max_pii_risk);
 
@@ -83,13 +86,13 @@ pub fn analyze_column_privacy(
 
 fn add_full_cell_findings_from_detection(
     findings: &mut Vec<PrivacyFinding>,
-    column_name: &str,
+    header: &header::HeaderAnalysis,
     values: &[String],
     detected_type: DataType,
     detection_confidence: Confidence,
 ) {
     if detected_type == DataType::Timestamp
-        && (header::infer_private_date(column_name) || header::infer_user_event_date(column_name))
+        && (header.matches_kind("private_date") || header.matches_kind("user_event_date"))
     {
         promote_findings(
             findings,
@@ -103,9 +106,9 @@ fn add_full_cell_findings_from_detection(
         return;
     };
     let fallback_detector = detector_for_detected_type(detected_type);
-    let header_terms = header::terms(column_name);
-    let allow_dutch_btw_number = has_dutch_btw_context(&header_terms);
-    let tax_id_context = tax_id_header_context(&header_terms);
+    let header_terms = header.terms();
+    let allow_dutch_btw_number = has_dutch_btw_context(header_terms);
+    let tax_id_context = tax_id_header_context(header_terms);
     for (row_index, value) in values.iter().enumerate() {
         if is_empty_value(value) || has_row_finding(findings, row_index, kind) {
             continue;
@@ -133,11 +136,10 @@ fn add_full_cell_findings_from_detection(
 
 fn add_full_cell_findings_from_header(
     findings: &mut Vec<PrivacyFinding>,
-    column_name: &str,
+    header: &header::HeaderAnalysis,
     values: &[String],
 ) {
-    let header = header::terms(column_name);
-    let header_signal = if let Some(signal) = header::best_signal_for_kinds(&header, &["secret"]) {
+    let header_signal = if let Some(signal) = header.best_for_kinds(&["secret"]) {
         Some((
             PrivacyFindingKind::CredentialOrSecret,
             DataType::String,
@@ -146,7 +148,7 @@ fn add_full_cell_findings_from_header(
             signal.detector,
             signal.reason,
         ))
-    } else if let Some(signal) = header::best_signal_for_kinds(&header, &["account_number"]) {
+    } else if let Some(signal) = header.best_for_kinds(&["account_number"]) {
         Some((
             PrivacyFindingKind::AccountOrFinancialId,
             DataType::NumericId,
@@ -155,7 +157,7 @@ fn add_full_cell_findings_from_header(
             signal.detector,
             signal.reason,
         ))
-    } else if let Some(signal) = header::best_signal_for_kinds(&header, &["private_date"]) {
+    } else if let Some(signal) = header.best_for_kinds(&["private_date"]) {
         Some((
             PrivacyFindingKind::PrivateDate,
             DataType::Timestamp,
@@ -164,7 +166,7 @@ fn add_full_cell_findings_from_header(
             signal.detector,
             signal.reason,
         ))
-    } else if let Some(signal) = header::best_signal_for_kinds(&header, &["user_event_date"]) {
+    } else if let Some(signal) = header.best_for_kinds(&["user_event_date"]) {
         Some((
             PrivacyFindingKind::PrivateDate,
             DataType::Timestamp,
@@ -173,7 +175,7 @@ fn add_full_cell_findings_from_header(
             signal.detector,
             signal.reason,
         ))
-    } else if let Some(signal) = header::best_signal_for_kinds(&header, &["account_identifier"]) {
+    } else if let Some(signal) = header.best_for_kinds(&["account_identifier"]) {
         Some((
             PrivacyFindingKind::AccountOrFinancialId,
             DataType::String,
@@ -422,6 +424,12 @@ fn confidence_rank(confidence: Confidence) -> u8 {
     }
 }
 
+/// Lets the risk-consistency test compare this mapping against `classify_pii_risk`.
+#[cfg(test)]
+pub(crate) fn risk_for_privacy_kind_in_tests(kind: PrivacyFindingKind) -> PiiRisk {
+    risk_for_privacy_kind(kind)
+}
+
 fn risk_for_privacy_kind(kind: PrivacyFindingKind) -> PiiRisk {
     match kind {
         PrivacyFindingKind::Person
@@ -431,7 +439,12 @@ fn risk_for_privacy_kind(kind: PrivacyFindingKind) -> PiiRisk {
         | PrivacyFindingKind::GovernmentId
         | PrivacyFindingKind::CredentialOrSecret
         | PrivacyFindingKind::MixedSensitiveText => PiiRisk::High,
+        // Medium, not Low: these do not expose a person directly, but each one
+        // narrows who a row could belong to, and Medium is still auto-selected and
+        // still redacted by default — see `should_auto_select_column`.
         PrivacyFindingKind::PrivateDate
+        | PrivacyFindingKind::AddressRegion
+        | PrivacyFindingKind::RecordIdentifier
         | PrivacyFindingKind::NetworkOrDeviceId
         | PrivacyFindingKind::Url => PiiRisk::Medium,
     }
@@ -465,6 +478,8 @@ fn value_matches_header_signal(value: &str, kind: PrivacyFindingKind) -> bool {
         | PrivacyFindingKind::Contact
         | PrivacyFindingKind::PrivateAddress
         | PrivacyFindingKind::GovernmentId
+        | PrivacyFindingKind::AddressRegion
+        | PrivacyFindingKind::RecordIdentifier
         | PrivacyFindingKind::NetworkOrDeviceId
         | PrivacyFindingKind::Url
         | PrivacyFindingKind::MixedSensitiveText => true,

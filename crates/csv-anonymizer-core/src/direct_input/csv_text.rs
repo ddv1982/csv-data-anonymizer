@@ -1,4 +1,6 @@
-use crate::csv_io::{count_csv_data_rows_from_reader, process_csv_text, read_csv_sample_from_str};
+use crate::csv_io::{
+    process_csv_text, read_csv_detection_sample_from_str, read_csv_sample_from_str,
+};
 use crate::error::Result;
 use crate::metadata::build_column_metadata;
 use crate::service::{build_privacy_report, count_transforming_selected_columns};
@@ -10,21 +12,23 @@ use crate::types::{
 use std::time::Instant;
 
 use super::shared::{
-    PreviewSelection, bounded_analysis_sample_count, bounded_preview_sample_count,
+    PreviewSelection, bounded_preview_sample_count, display_row_count, paste_detection_sample_rows,
     prepare_selected_metadata, preview_rows_with_smart_provider,
     preview_smart_replacements_for_transform,
 };
 
 pub(super) fn analyze_csv_text(content: &str, sample_row_count: usize) -> Result<PasteAnalyzeData> {
-    let sample_row_count = bounded_analysis_sample_count(sample_row_count)?;
-    let sample = read_csv_sample_from_str(content, sample_row_count)?;
-    let row_count = count_csv_data_rows_from_reader(content.as_bytes())?;
+    let sample_row_count = paste_detection_sample_rows(sample_row_count)?;
+    // Spread the sample over the whole paste: pasted content can exceed the
+    // sample cap, and a head window would leave detection blind to values that
+    // only appear in the tail.
+    let sample = read_csv_detection_sample_from_str(content, sample_row_count)?;
     let columns = build_column_metadata(&sample.headers, &sample.rows);
 
     Ok(PasteAnalyzeData {
         format: PasteDataFormat::Csv,
-        row_count,
-        row_count_is_complete: true,
+        row_count: sample.data_rows_scanned,
+        row_count_is_complete: sample.scanned_entire_input,
         columns,
     })
 }
@@ -34,10 +38,21 @@ pub(super) fn preview_csv_text_with_smart_provider(
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<PreviewData> {
     let sample_count = bounded_preview_sample_count(input.sample_count)?;
-    let sample = read_csv_sample_from_str(&input.content, sample_count.saturating_mul(2).max(1))?;
-    let metadata = build_column_metadata(&sample.headers, &sample.rows);
+    // Detect on the same rows, and the same number of them, as `analyze_csv_text`
+    // and the transform. A head window here would classify only the paste's
+    // opening rows, and the display count is no basis for classifying at all, so
+    // either one lets a preview of a long paste show a different type — and
+    // therefore a different strategy — than the run then applies.
+    let detection_sample = read_csv_detection_sample_from_str(
+        &input.content,
+        paste_detection_sample_rows(input.sample_row_count)?,
+    )?;
+    let metadata = build_column_metadata(&detection_sample.headers, &detection_sample.rows);
+    // Displayed rows stay head-anchored: the user expects the preview to show
+    // the paste's opening rows, not the detection spread.
+    let display = read_csv_sample_from_str(&input.content, display_row_count(sample_count))?;
     preview_rows_with_smart_provider(
-        &sample.rows,
+        &display.rows,
         &metadata,
         PreviewSelection {
             columns: &input.columns,
@@ -52,7 +67,7 @@ pub(super) fn transform_csv_text_with_smart_provider(
     input: PasteTransformParams,
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<PasteTransformData> {
-    let analysis = analyze_csv_text(&input.content, 100)?;
+    let analysis = analyze_csv_text(&input.content, input.sample_row_count)?;
     let metadata = prepare_selected_metadata(&analysis.columns, &input.columns, &input.controls)?;
     let rows = read_csv_sample_from_str(&input.content, usize::MAX)?.rows;
     let existing_smart_replacements = preview_smart_replacements_for_transform(&input, &metadata);
