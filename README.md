@@ -11,7 +11,7 @@ Read the generated project wiki at [github.com/ddv1982/csv-data-anonymizer/wiki]
 - Detects common sensitive fields: emails, names, phone numbers, UUIDs, timestamps, numeric IDs, addresses, postal codes, IPs, URLs, MAC addresses, tax IDs, VAT/BTW numbers, and more.
 - Auto-selects high and medium risk columns while still letting you choose exactly which columns to transform.
 - Shows a preview before writing output. Rule-based preview replacements are examples; final output gets its own randomized run.
-- Streams CSV file transformations instead of loading the whole file into memory.
+- Streams CSV file transformations instead of loading the whole file into memory, though peak memory still grows with the number of distinct values in the columns you transform — see [Memory and large files](#memory-and-large-files).
 - Supports lightweight paste workflows for CSV, JSON, XML, YAML, plain text, and logs up to 5 MiB; larger CSV inputs should use the streaming file workflow.
 - Includes Quick by Data Type generation for creating protected sample values without first providing input data.
 - Keeps repeated source values consistent within each run.
@@ -56,16 +56,60 @@ It does not produce formal anonymity, differential privacy aggregates, or synthe
 
 ## Strategies
 
-| Strategy | Use |
-| --- | --- |
-| Redact | Replace values with typed placeholders such as `[EMAIL]`, `[PERSON]`, or `[DATE]`. |
-| Mask | Replace values with simple masked output. |
-| Pseudonymize | Generate readable or shape-preserving fake values. |
-| Tokenize | Replace values with opaque `tok_...` tokens that stay consistent within the current run. |
-| Smart replacement (Local AI) | Use a local LLM through Ollama for more realistic fake replacements. |
-| Pass through | Leave values unchanged. |
+| Strategy | Use | Keeps repeats linkable |
+| --- | --- | --- |
+| Redact | Replace values with typed placeholders such as `[EMAIL]`, `[PERSON]`, or `[DATE]`. | No |
+| Mask | Replace values with simple masked output. | No |
+| Pseudonymize | Generate readable or shape-preserving fake values. | Yes |
+| Tokenize | Replace values with opaque `tok_...` tokens that stay consistent within the current run. | Yes |
+| Label with column name | Replace values with a placeholder naming the column and numbering each distinct value, such as `[CUSTOMER_NOTES_1]`. Useful when detection cannot identify the values but you still want to see which rows shared one. Columns sharing a header carry their position, as `[NOTES_0_1]`, so unrelated values never share a label. | Yes |
+| Smart replacement (Local AI) | Use a local LLM through Ollama for more realistic fake replacements. | Yes |
+| Pass through | Leave values unchanged. | n/a |
 
 Examples of format preservation include email domains, UUID shape, timestamp precision, numeric width and decimals, phone separators, and full-name token count.
+
+### Pseudonymized is not anonymized
+
+The strategies in the last column above give the same source value the same replacement every time it appears. That is what keeps a dataset useful — you can still tell that two rows referred to one person — but it also means records stay linkable to each other, so the output is *pseudonymized* rather than anonymized and remains personal data under the GDPR. Redaction and masking do not preserve that link.
+
+Consistent replacement also preserves the shape of a column's value distribution, which is enough to work against the mapping: if a column holds only a handful of distinct values, anyone who knows how the real field is distributed can match the replacements back by how often each one occurs. The column table warns before a run when a column you have put on one of these strategies repeats few enough values for that to be practical, and the privacy report names those columns after it.
+
+High and medium risk columns default to Redact, so this only arises for columns you deliberately move onto a linkable strategy.
+
+### Memory and large files
+
+File transformation streams rows — the reader holds one row at a time and detection keeps a bounded sample — so memory does not grow with file size. It grows with the number of **distinct** values in the columns you transform, because keeping repeated values consistent means remembering every distinct value and its replacement until the run ends.
+
+Measured with one selected column over 1,000,000 rows from a 20.9 MB input, peak resident memory:
+
+| Column contents | Redact / Mask | Label | Pseudonymize / Tokenize |
+| --- | --- | --- | --- |
+| 1,000 distinct values | 9 MB | 9 MB | 10 MB |
+| every value distinct | 9 MB | 164 MB | 487 MB |
+
+That is roughly 500 bytes per distinct value per column on the strategies that keep repeats linkable, and nothing at all on Redact and Mask, which keep no mapping. Four all-distinct columns in a 63 MB file reach about 1.8 GB. So the expensive case is not a large file, it is a large number of distinct values on a linkable strategy; Redact and Mask stay flat at any cardinality.
+
+Re-measured independently at 11 MB, 162 MB and 477 MB for the second row of that table, which agrees with it to within a few percent. Broken down per mapping entry — one entry per distinct value on Label, three on Pseudonymize and Tokenize, since those also store the replacement in both directions — it is a consistent 158 to 163 bytes each.
+
+Preflight projects this before the run. It scales each selected column's sampled distinct count to the file's real row count, sums the mapping entries the selected strategies would hold, and reports the total as a review item once it passes about 3,000,000 entries — roughly 480 MB — naming the column that contributes most. Projected from a sample of about a hundred values per column, so it is an upper bound on what the run will really hold rather than a measurement: a column whose values repeat in a way a sample that size cannot see is projected high, never low.
+
+Nothing is capped behind your back, and that is deliberate: dropping mapping entries part-way through a run would break two things invisibly — repeated source values would stop keeping one replacement, and the privacy report's distinct and singleton counts would stop being the real ones. So the mapping is allowed to grow and the run is warned about instead.
+
+There is a hard ceiling, and it refuses rather than degrades. A run that passes 32,000,000 mapping entries — about 5 GB, and roughly 2.7 times the largest case measured above — stops with an error naming the figure it reached, the ceiling, and the remedy, instead of being killed by the operating system with no message. Below that ceiling a machine with less memory than the run needs can still run out, which is what the preflight review item is for: moving the widest columns to Redact or Mask removes the cost entirely, and selecting fewer columns reduces it proportionally.
+
+A run that fails part-way through leaves no half-written output. File output is written to a temporary file beside the destination and renamed into place only once the run has finished, so a failure — for any reason — deletes the temporary file and leaves the destination as it was.
+
+Re-measure the throughput side with:
+
+```bash
+cargo bench -p csv-anonymizer-core --bench csv_streaming -- cardinality
+```
+
+Peak memory is measured separately, by the ignored harness in `crates/csv-anonymizer-core/src/strategies/tests/mapping_budget.rs`, which reads `VmHWM` after a full run and prints the bytes per mapping entry. Each case has to run in its own process, since peak resident memory is a process-wide high water mark:
+
+```bash
+cargo test -p csv-anonymizer-core --release strategies::tests::mapping_budget::peak_rss_pseudonymize_all_distinct -- --ignored --exact --nocapture
+```
 
 ## Install
 
@@ -124,6 +168,7 @@ npm run typecheck
 npm run frontend:typecheck:compat
 npm run deadcode:required
 npm run docs:check
+npm run docs:rustdoc
 ```
 
 Focused release, browser, packaging, and supply-chain checks:
@@ -149,7 +194,7 @@ cargo bench -p csv-anonymizer-core --bench csv_streaming
 cargo bench -p csv-anonymizer-core --bench detector_matrix -- --sample-size 10
 ```
 
-The root `fmt`, `lint`, `test`, `typecheck`, `frontend:typecheck:compat`, `deadcode:required`, and `docs:check` scripts are the canonical local gates. The native TypeScript 7 compiler is authoritative; the compatibility check is temporary and exists only for TypeScript 6 API consumers. The dead-code scans use Knip for the frontend and cargo-machete for Rust dependency drift. CI installs exact versions of cargo-audit (`0.22.2`) and cargo-machete (`0.9.2`); use `cargo:audit:required` when a missing audit tool must fail rather than skip. The detector matrix benchmark measures the built-in detector only; the external PII library comparison is archived in `docs/detector-library-evaluation.md`.
+The root `fmt`, `lint`, `test`, `typecheck`, `frontend:typecheck:compat`, `deadcode:required`, `docs:check`, and `docs:rustdoc` scripts are the canonical local gates. `docs:check` validates the commands documented in markdown; `docs:rustdoc` builds the workspace's rustdoc with warnings denied, so a doc comment cannot keep linking to an item that was renamed, made private, or deleted. It builds twice on purpose: the public pass also reports links from public docs into private items, which render as dead text for a reader, and the `--document-private-items` pass checks links *inside* private items, which the public pass never looks at. Neither pass alone catches both. The native TypeScript 7 compiler is authoritative; the compatibility check is temporary and exists only for TypeScript 6 API consumers. The dead-code scans use Knip for the frontend and cargo-machete for Rust dependency drift. CI installs exact versions of cargo-audit (`0.22.2`) and cargo-machete (`0.9.2`); use `cargo:audit:required` when a missing audit tool must fail rather than skip. The detector matrix benchmark measures the built-in detector only; the external PII library comparison is archived in `docs/detector-library-evaluation.md`.
 
 ## Architecture And Lifecycle Boundaries
 

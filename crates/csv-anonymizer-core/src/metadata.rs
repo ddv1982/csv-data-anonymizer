@@ -2,8 +2,9 @@ use crate::detection::{
     LocaleContext, analyze_column_privacy, classify_pii_risk, detect_column_type_in_context,
     detect_empty_format, infer_locale_context, max_pii_risk,
 };
-use crate::types::{AnonymizationStrategy, ColumnMetadata, PiiRisk};
-use std::collections::HashSet;
+use crate::strategies::base_column_label;
+use crate::types::{AnonymizationStrategy, ColumnMetadata, ColumnValueDistribution, PiiRisk};
+use std::collections::{HashMap, HashSet};
 
 const DEFAULT_SAMPLE_COUNT: usize = 5;
 
@@ -12,7 +13,7 @@ pub fn build_column_metadata(headers: &[String], samples: &[Vec<String>]) -> Vec
         .map(|index| extract_column_values(samples, index))
         .collect();
     let locale = infer_locale_context(&column_values);
-    headers
+    let mut metadata: Vec<ColumnMetadata> = headers
         .iter()
         .enumerate()
         .map(|(index, header)| {
@@ -24,7 +25,30 @@ pub fn build_column_metadata(headers: &[String], samples: &[Vec<String>]) -> Vec
                 &locale,
             )
         })
-        .collect()
+        .collect();
+    mark_ambiguous_header_labels(&mut metadata);
+    metadata
+}
+
+/// Flags the columns whose headers reduce to a label some other column also claims.
+///
+/// Lives here rather than in the strategy because it is the only stage that sees the
+/// whole column set — a strategy is handed one column at a time and cannot know
+/// whether its header is shared. Every entry point that classifies input builds its
+/// columns through [`build_column_metadata`], file and pasted alike, so there is no
+/// path that can reach a label without having been compared.
+fn mark_ambiguous_header_labels(metadata: &mut [ColumnMetadata]) {
+    let mut label_counts: HashMap<String, usize> = HashMap::new();
+    for column in metadata.iter() {
+        *label_counts
+            .entry(base_column_label(&column.name, column.index))
+            .or_insert(0) += 1;
+    }
+    for column in metadata.iter_mut() {
+        let label = base_column_label(&column.name, column.index);
+        column.header_label_is_ambiguous =
+            label_counts.get(&label).copied().unwrap_or_default() > 1;
+    }
 }
 
 pub fn apply_column_selection(
@@ -98,6 +122,9 @@ fn build_single_column_metadata(
 
     ColumnMetadata {
         name: name.to_string(),
+        // Set by `mark_ambiguous_header_labels` once the whole set is built; a single
+        // column compared against nothing is unambiguous by definition.
+        header_label_is_ambiguous: false,
         source_path: None,
         index,
         detected_type,
@@ -107,6 +134,7 @@ fn build_single_column_metadata(
         privacy_evidence: privacy.evidence,
         pii_risk,
         sample_values,
+        sample_value_distribution: ColumnValueDistribution::from_values(index, values),
         empty_format,
         is_selected: false,
         strategy: default_strategy_for_pii_risk(pii_risk),

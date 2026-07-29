@@ -79,6 +79,7 @@ fn does_not_detect_names_without_header_context() {
 #[test]
 fn applies_column_selection_without_mutating_source() {
     let metadata = vec![ColumnMetadata {
+        header_label_is_ambiguous: false,
         name: "email".to_string(),
         source_path: None,
         index: 0,
@@ -89,6 +90,7 @@ fn applies_column_selection_without_mutating_source() {
         privacy_evidence: Vec::new(),
         pii_risk: PiiRisk::High,
         sample_values: vec![],
+        sample_value_distribution: Default::default(),
         empty_format: crate::types::EmptyFormat::EmptyString,
         is_selected: false,
         strategy: AnonymizationStrategy::Auto,
@@ -194,6 +196,7 @@ fn default_strategy_redacts_medium_and_high_risk_columns() {
 
 fn column_metadata(pii_risk: PiiRisk, sample_values: Vec<String>) -> ColumnMetadata {
     ColumnMetadata {
+        header_label_is_ambiguous: false,
         name: "field".to_string(),
         source_path: None,
         index: 0,
@@ -204,6 +207,7 @@ fn column_metadata(pii_risk: PiiRisk, sample_values: Vec<String>) -> ColumnMetad
         privacy_evidence: Vec::new(),
         pii_risk,
         sample_values,
+        sample_value_distribution: Default::default(),
         empty_format: crate::types::EmptyFormat::EmptyString,
         is_selected: false,
         strategy: AnonymizationStrategy::Auto,
@@ -473,4 +477,72 @@ fn dutch_postcodes_detected_via_iban_locale_context() {
     .collect();
     let metadata = build_column_metadata(&headers, &rows);
     assert_eq!(metadata[1].detected_type, DataType::PostalCode);
+}
+
+/// Only the columns that actually share a label are flagged. Detection stage, not
+/// strategy stage, because this is the one place the whole column set is visible.
+#[test]
+fn duplicated_headers_are_flagged_and_unique_ones_are_left_alone() {
+    let headers = vec![
+        "notes".to_string(),
+        "email".to_string(),
+        "notes".to_string(),
+    ];
+    let samples = vec![vec![
+        "alpha".to_string(),
+        "john@example.com".to_string(),
+        "zulu".to_string(),
+    ]];
+
+    let metadata = build_column_metadata(&headers, &samples);
+
+    assert!(metadata[0].header_label_is_ambiguous);
+    assert!(!metadata[1].header_label_is_ambiguous);
+    assert!(metadata[2].header_label_is_ambiguous);
+}
+
+/// The comparison is on the label, not the raw header, because that is where the
+/// collision happens: casing and punctuation are dropped on the way to a label, so
+/// headers that differ only in those still collide.
+#[test]
+fn headers_differing_only_in_case_or_punctuation_are_ambiguous() {
+    let headers = vec![
+        "Notes".to_string(),
+        "notes!".to_string(),
+        "customer notes".to_string(),
+    ];
+    let samples = vec![vec![
+        "alpha".to_string(),
+        "beta".to_string(),
+        "gamma".to_string(),
+    ]];
+
+    let metadata = build_column_metadata(&headers, &samples);
+
+    assert!(metadata[0].header_label_is_ambiguous);
+    assert!(metadata[1].header_label_is_ambiguous);
+    // A longer header is a different label, not a collision.
+    assert!(!metadata[2].header_label_is_ambiguous);
+}
+
+/// Unnamed columns already fall back to their position, so their labels differ
+/// without any qualifier and flagging them would add a redundant one.
+#[test]
+fn unnamed_columns_are_not_ambiguous_because_their_labels_already_differ() {
+    let headers = vec![String::new(), "  ".to_string(), "---".to_string()];
+    let samples = vec![vec![
+        "alpha".to_string(),
+        "beta".to_string(),
+        "gamma".to_string(),
+    ]];
+
+    let metadata = build_column_metadata(&headers, &samples);
+
+    for column in &metadata {
+        assert!(
+            !column.header_label_is_ambiguous,
+            "column {} was flagged",
+            column.index
+        );
+    }
 }

@@ -16,6 +16,7 @@ export function transformationSummary(privacyReport: PrivacyReport) {
     metricPart(privacyReport.maskedColumns, 'masked'),
     metricPart(privacyReport.pseudonymizedColumns, 'pseudonymized'),
     metricPart(privacyReport.opaqueTokenColumns, 'tokenized'),
+    metricPart(privacyReport.labelledColumns, 'labelled'),
     metricPart(privacyReport.smartReplacementColumns, 'smart replacement'),
   ].filter(Boolean)
 

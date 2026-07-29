@@ -4,6 +4,7 @@ use crate::types::{
 use std::collections::{HashMap, HashSet};
 
 use super::header;
+use super::header_rules::is_plausible_full_name;
 use super::spans::finding_from_span;
 use super::validators::{is_dutch_btw_tax_number, is_tax_id, is_vat_id};
 use super::{
@@ -184,6 +185,32 @@ fn add_full_cell_findings_from_header(
             signal.detector,
             signal.reason,
         ))
+    } else if header.best_for_kinds(&["possible_name"]).is_some()
+        && column_values_look_like_person_names(values)
+    {
+        Some((
+            PrivacyFindingKind::Person,
+            // `String`, not `FullName`, and both halves of that are load-bearing.
+            // `suggested_data_type` above only proposes a retype for a data type other
+            // than `String`, so naming `FullName` here would offer to reclassify the
+            // column — and `classify_pii_risk(FullName)` is High, which auto-selects it
+            // and defaults it to Redact. That is the behaviour this branch deliberately
+            // does not have.
+            DataType::String,
+            // Low, so `is_actionable()` is false. The risk fold above skips
+            // non-actionable evidence, which is what keeps the column out of the
+            // auto-selected set, and `placeholder_from_evidence` will not name a
+            // redaction placeholder from it either. Both are correct: what this branch
+            // knows is that the values are confidently names *of something*, and it
+            // cannot tell a person from a city. Claiming High would assert evidence it
+            // does not have; staying silent would hide a column of names. So it records
+            // the finding and lets `possible_person_name_warning_for_column` surface it
+            // for review.
+            Confidence::Low,
+            54,
+            POSSIBLE_PERSON_NAME_DETECTOR.to_string(),
+            "Header ends in a name term and the sampled values are shaped like names.".to_string(),
+        ))
     } else {
         None
     };
@@ -231,6 +258,48 @@ fn add_full_cell_findings_from_header(
             },
         ));
     }
+}
+
+/// Names the detector behind a possible-person-name finding.
+///
+/// A constant rather than the taxonomy signal's own detector string, so that
+/// `service::controls` can recognise this finding to raise its review warning without
+/// matching on prose. The coupling is then a compile error if this moves, instead of a
+/// warning that silently stops firing.
+pub(crate) const POSSIBLE_PERSON_NAME_DETECTOR: &str = "possible person name";
+
+/// Share of a column's non-empty values that must be shaped like a full name before a
+/// `name`-suffixed header is treated as possibly holding people.
+///
+/// Three quarters, matching the spirit of the ratio in `calculate_confidence`: a real
+/// name column carries the odd `N/A`, initial-only entry or organisation acting as a
+/// party, and one such value must not disqualify the column. Conversely a column of
+/// order references with two capitalised words in a couple of rows cannot reach it.
+const MIN_NAME_SHAPED_SHARE_NUMERATOR: usize = 3;
+const MIN_NAME_SHAPED_SHARE_DENOMINATOR: usize = 4;
+
+/// Minimum non-empty values before the ratio above is allowed to decide anything.
+///
+/// Below this a single value dominates the share — one name-shaped value out of one is
+/// 100% — and `<word> name` headers are common enough that a two-row preview would
+/// warn about columns nobody has evidence against.
+const MIN_NAME_SHAPED_VALUES: usize = 4;
+
+/// Whether enough of `values` are shaped like full names to corroborate the header.
+fn column_values_look_like_person_names(values: &[String]) -> bool {
+    let considered = values
+        .iter()
+        .filter(|value| !is_empty_value(value))
+        .collect::<Vec<_>>();
+    if considered.len() < MIN_NAME_SHAPED_VALUES {
+        return false;
+    }
+    let name_shaped = considered
+        .iter()
+        .filter(|value| is_plausible_full_name(value))
+        .count();
+    name_shaped * MIN_NAME_SHAPED_SHARE_DENOMINATOR
+        >= considered.len() * MIN_NAME_SHAPED_SHARE_NUMERATOR
 }
 
 fn detected_type_privacy_kind(data_type: DataType) -> Option<(PrivacyFindingKind, &'static str)> {

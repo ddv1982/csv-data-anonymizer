@@ -54,6 +54,8 @@ pub(super) fn preview_csv_text_with_smart_provider(
     preview_rows_with_smart_provider(
         &display.rows,
         &metadata,
+        // A pasted CSV is read whole, so this is the paste's true row count.
+        detection_sample.data_rows_scanned,
         PreviewSelection {
             columns: &input.columns,
             controls: &input.controls,
@@ -86,6 +88,7 @@ pub(super) fn transform_csv_text_with_smart_provider(
         &metadata,
         ProcessOptions {
             smart_replacements: smart_replacements.as_ref(),
+            mapping_entry_ceiling: None,
         },
     )?;
 

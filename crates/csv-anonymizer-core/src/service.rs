@@ -18,8 +18,8 @@ mod preview;
 mod privacy_report;
 
 pub(crate) use controls::{
-    apply_column_controls, preview_warning_for_column, redaction_changes_structured_scalar_type,
-    validate_column_indices,
+    apply_column_controls, cardinality_warning_for_column, possible_person_name_warning_for_column,
+    preview_warning_for_column, redaction_changes_structured_scalar_type, validate_column_indices,
 };
 pub use path_validation::generate_default_output_path;
 use path_validation::{ensure_output_differs_from_input, normalize_path, validate_output_path};
@@ -80,7 +80,7 @@ impl AnonymizerService {
     /// `sample_rows` values spread across it, so the exact row count falls out
     /// of the same pass that classifies the columns.
     ///
-    /// `sample_rows` is a request, floored by [`detection_sample_rows`].
+    /// `sample_rows` is a request, floored by `detection_sample_rows`.
     pub fn analyze_csv_with_sample_rows(
         &self,
         file_path: impl AsRef<Path>,
@@ -102,7 +102,7 @@ impl AnonymizerService {
     /// Checks a pending run and reports what would block it.
     ///
     /// Classifies through `analyze_csv_with_sample_rows`, so preflight judges the
-    /// run on exactly the types the run will use — see [`detection_sample_rows`]
+    /// run on exactly the types the run will use — see `detection_sample_rows`
     /// for why that has to be arranged rather than assumed.
     ///
     /// This costs a streaming pass, and the preview that follows costs another one
@@ -144,6 +144,10 @@ impl AnonymizerService {
             &input.columns,
             &input.controls,
             input.sample_count,
+            // The file's row count, from the pass that just classified it — not the
+            // sample size, which is what made the cardinality warning miss columns
+            // whose values repeat across a file far larger than the sample.
+            detection_sample.data_rows_scanned,
             provider,
         )
     }
@@ -223,6 +227,7 @@ impl AnonymizerService {
             &selected_metadata,
             ProcessOptions {
                 smart_replacements: smart_replacements.as_ref(),
+                mapping_entry_ceiling: None,
             },
             control,
             input.force,

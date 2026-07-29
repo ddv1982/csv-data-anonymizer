@@ -372,11 +372,13 @@ async function installTauriMock(page: Page) {
     ): ColumnMetadata {
       return {
         name,
+        headerLabelIsAmbiguous: false,
         index,
         detectedType,
         confidence: 'high',
         piiRisk,
         sampleValues: ['sample'],
+        sampleValueDistribution: { columnIndex: 0, distinctValues: 0, totalValues: 0, singletonValues: 0, doubletonValues: 0, maxValueOccurrences: 0 },
         emptyFormat: 'emptyString',
         isSelected: true,
         strategy: 'auto',
@@ -391,6 +393,7 @@ async function installTauriMock(page: Page) {
         smartReplacementColumns: 0,
         opaqueTokenColumns: 0,
         maskedColumns: 0,
+        labelledColumns: 0,
         redactedColumns: 0,
         passThroughColumns: 0,
         uniquePseudonymValues: 1,
@@ -403,6 +406,7 @@ async function installTauriMock(page: Page) {
         smartReplacementRejectionReasons: [],
         smartReplacementFallbacks: 0,
         shapeFallbackValues: 0,
+        columnValueDistributions: [],
         readiness: {
           status: 'verified',
           blockers: [],

@@ -5,8 +5,8 @@ use crate::service::build_privacy_report;
 use crate::smart::{SmartReplacementProvider, prepare_smart_replacements_from_rows};
 use crate::strategies::transform_value_with_state;
 use crate::types::{
-    AnonymizationStrategy, ColumnMetadata, DataType, QuickGenerateParams, QuickTransformData,
-    SampleTransform, TransformContext,
+    AnonymizationStrategy, ColumnMetadata, ColumnValueDistribution, DataType, QuickGenerateParams,
+    QuickTransformData, SampleTransform, TransformContext,
 };
 use rand::Rng;
 
@@ -93,6 +93,9 @@ fn quick_column(
     let detection = detect_column_type_with_name("value", values);
     ColumnMetadata {
         name: "value".to_string(),
+        // Quick generate synthesizes one column, so there is no second header to
+        // collide with.
+        header_label_is_ambiguous: false,
         source_path: None,
         index: 0,
         detected_type: data_type,
@@ -107,6 +110,7 @@ fn quick_column(
             .take(5)
             .cloned()
             .collect(),
+        sample_value_distribution: ColumnValueDistribution::from_values(0, values),
         empty_format: detect_empty_format(values),
         is_selected: true,
         strategy,

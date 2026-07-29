@@ -44,6 +44,7 @@ export type AnonymizationStrategy =
   | 'tokenize'
   | 'localAi'
   | 'mask'
+  | 'label'
   | 'redact'
   | 'passThrough'
 export type ThemeMode = 'system' | 'light' | 'dark'
@@ -82,6 +83,8 @@ export interface AppSettings {
 
 export interface ColumnMetadata {
   name: string
+  /** Another column's header reduces to the same label, so labels carry the index. */
+  headerLabelIsAmbiguous: boolean
   sourcePath?: string | null
   index: number
   detectedType: DataType
@@ -91,6 +94,8 @@ export interface ColumnMetadata {
   privacyEvidence?: PrivacyEvidenceSummary[]
   piiRisk: PiiRisk
   sampleValues: string[]
+  /** Distribution of the detection sample, not of the whole input. */
+  sampleValueDistribution: ColumnValueDistribution
   emptyFormat: EmptyFormat
   isSelected: boolean
   strategy: AnonymizationStrategy
@@ -274,6 +279,7 @@ export interface PrivacyReport {
   smartReplacementColumns: number
   opaqueTokenColumns: number
   maskedColumns: number
+  labelledColumns: number
   redactedColumns: number
   passThroughColumns: number
   uniquePseudonymValues: number
@@ -289,6 +295,7 @@ export interface PrivacyReport {
   readiness: ReleaseReadiness
   evidence: ReleaseEvidenceItem[]
   columnReports: ColumnReleaseReport[]
+  columnValueDistributions: ColumnValueDistribution[]
   utilityMetrics: UtilityMetric[]
   notes: string[]
 }
@@ -324,6 +331,23 @@ export interface UtilityMetric {
   value: string
   status: ReleaseEvidenceStatus
   detail?: string | null
+}
+
+/**
+ * What one column's consistent pseudonyms reveal about the values behind them.
+ *
+ * Few `distinctValues` over many `totalValues` means the mapping can be relabelled
+ * by frequency; a `singletonValues` entry is a pseudonym covering exactly one row,
+ * which singles that record out however opaque the token looks.
+ */
+export interface ColumnValueDistribution {
+  columnIndex: number
+  distinctValues: number
+  totalValues: number
+  singletonValues: number
+  /** With `singletonValues`, what lets a sampled distribution estimate the whole column. */
+  doubletonValues: number
+  maxValueOccurrences: number
 }
 
 export type AnonymizeJobState = 'running' | 'succeeded' | 'failed' | 'canceled'

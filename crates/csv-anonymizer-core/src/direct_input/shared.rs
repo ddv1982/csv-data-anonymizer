@@ -38,9 +38,10 @@ pub(super) struct PreviewSelection<'a, 'provider> {
 pub(super) fn preview_rows_with_smart_provider(
     rows: &[Vec<String>],
     metadata: &[ColumnMetadata],
+    population_values: usize,
     selection: PreviewSelection<'_, '_>,
 ) -> Result<PreviewData> {
-    preview_from_rows_with_smart_provider(metadata, rows, selection)
+    preview_from_rows_with_smart_provider(metadata, rows, population_values, selection)
 }
 
 /// Previews a field-shaped paste (XML, JSON/YAML, free text).
@@ -57,7 +58,11 @@ pub(super) fn preview_from_fields_with_smart_provider(
     let (headers, detection_rows) = fields_to_rows(fields, FieldWindow::Detection);
     let metadata = metadata_from_fields(fields, &headers, &detection_rows);
     let (_, display_rows) = fields_to_rows(fields, FieldWindow::Display);
-    preview_from_rows_with_smart_provider(&metadata, &display_rows, selection)
+    // A field-shaped paste knows how many values it sampled, not how many the source
+    // document holds, so the cardinality warning here rests on the absolute test
+    // alone — the behaviour every path had before the row count was available.
+    let population_values = detection_rows.len();
+    preview_from_rows_with_smart_provider(&metadata, &display_rows, population_values, selection)
 }
 
 /// The two windows a field-shaped preview collects.
@@ -82,6 +87,7 @@ pub(super) fn display_row_count(sample_count: usize) -> usize {
 pub(super) fn preview_from_rows_with_smart_provider(
     metadata: &[ColumnMetadata],
     rows: &[Vec<String>],
+    population_values: usize,
     selection: PreviewSelection<'_, '_>,
 ) -> Result<PreviewData> {
     build_preview_from_rows(
@@ -90,6 +96,7 @@ pub(super) fn preview_from_rows_with_smart_provider(
         selection.columns,
         selection.controls,
         selection.sample_count,
+        population_values,
         selection.provider,
     )
 }

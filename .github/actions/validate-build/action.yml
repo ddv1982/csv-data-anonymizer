@@ -116,6 +116,10 @@ runs:
       shell: bash
       run: cargo clippy --workspace --all-targets -- -D warnings
 
+    - name: Check Rust doc links
+      shell: bash
+      run: npm run docs:rustdoc
+
     - name: Build Rust workspace
       shell: bash
       run: cargo build --workspace

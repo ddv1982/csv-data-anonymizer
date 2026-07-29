@@ -1,15 +1,31 @@
 use super::state::{PseudonymDomain, TransformState};
 use crate::random::{LEADING_DIGIT_CHARSET, random_digits, random_string};
+use crate::smart::value_identity_key;
 use crate::types::TransformContext;
 
+/// Keyed on [`value_identity_key`], and the generated width is taken from the folded
+/// value rather than the raw one.
+///
+/// Both matter, and the earlier key — `format!("{}:{}", value.len(), value)` — got both
+/// wrong in the same way. The transform ledger folds padding and case before counting, so
+/// a key that does not fold makes the two disagree: `"42"` and `" 42 "` were one value to
+/// the ledger and two to the mapper, which handed out two different replacements while
+/// the privacy report stated that one distinct value had been consistently replaced. That
+/// is the "repeated source values stay consistent within each run" guarantee failing
+/// silently, and being *reported* as holding. CSV input is read with `Trim::All` so it
+/// cannot reach here padded; JSON, XML and YAML scalars can.
+///
+/// Taking the width from the folded value also stops the padding inflating the pseudonym:
+/// `" 42 "` is a two-digit number, and generating from the raw length produced a
+/// four-digit replacement for it.
 pub(super) fn transform_numeric_id(
     value: &str,
     _context: &TransformContext<'_>,
     state: &mut TransformState,
 ) -> String {
-    let source_key = format!("{}:{}", value.len(), value);
-    state.assign_generated(PseudonymDomain::NumericId, &source_key, || {
-        transform_numeric_id_candidate(value)
+    let identity = value_identity_key(value);
+    state.assign_generated(PseudonymDomain::NumericId, &identity, || {
+        transform_numeric_id_candidate(&identity)
     })
 }
 
@@ -49,9 +65,9 @@ pub(super) fn transform_numeric_value(
     _context: &TransformContext<'_>,
     state: &mut TransformState,
 ) -> String {
-    let source_key = format!("{}:{}", value.len(), value);
-    state.assign_generated(PseudonymDomain::NumericValue, &source_key, || {
-        transform_numeric_value_candidate(value)
+    let identity = value_identity_key(value);
+    state.assign_generated(PseudonymDomain::NumericValue, &identity, || {
+        transform_numeric_value_candidate(&identity)
     })
 }
 

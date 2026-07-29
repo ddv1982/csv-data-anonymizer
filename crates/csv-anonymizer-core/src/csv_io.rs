@@ -45,9 +45,9 @@ pub fn read_sample(file_path: &Path, row_count: usize) -> Result<ParsedSample> {
 /// reports the file's exact data-row count.
 ///
 /// The sample is drawn from every part of the file rather than from a window of
-/// it — see [`RowSampler`] for how, and for why the choice of rows has to be
-/// pseudorandom. Costs one streaming pass; memory stays bounded by `row_count`
-/// rows.
+/// it — see `RowSampler` in this module for how, and for why the choice of rows
+/// has to be pseudorandom. Costs one streaming pass; memory stays bounded by
+/// `row_count` rows.
 pub fn read_detection_sample(file_path: &Path, row_count: usize) -> Result<ParsedSample> {
     read_file_sample(file_path, row_count, SampleWindow::Spread)
 }
@@ -381,6 +381,17 @@ fn process_csv_reader_to_writer<R: Read, W: Write>(
 
         let transformed_row =
             transform_row_with_state(&row, columns, row_count, &mut transform_state);
+        // After the transform, because that is when the mapping grows, and before the
+        // write, so a refused run leaves nothing half-written: every file run lands
+        // through `replace_file_atomically`, which discards the temporary file and
+        // leaves the destination untouched on any `Err`. Without this call the ceiling
+        // in `TransformState` would be unreachable code and the process would still be
+        // OOM-killed, so this line is the whole guard.
+        transform_state.check_mapping_budget_against(
+            options
+                .mapping_entry_ceiling
+                .unwrap_or(TransformState::MAPPING_ENTRY_CEILING),
+        )?;
         write_csv_output_record(writer, transformed_row.iter().map(String::as_str))?;
         row_count += 1;
         report_progress(&mut control, row_count);
