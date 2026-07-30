@@ -2,14 +2,12 @@ import type { ReactNode } from 'react'
 
 export function Card({
   title,
-  titleHelp,
   action,
   children,
   disabled = false,
   contentClassName = '',
 }: {
   title?: ReactNode
-  titleHelp?: ReactNode
   action?: ReactNode
   children: ReactNode
   disabled?: boolean
@@ -17,12 +15,11 @@ export function Card({
 }) {
   return (
     <section className={disabled ? 'card section-disabled' : 'card'}>
-      {title || titleHelp || action ? (
+      {title || action ? (
         <div className={action ? 'card-header card-header-row' : 'card-header'}>
-          {title || titleHelp ? (
+          {title ? (
             <div className="card-title-row">
-              {title ? <h2>{title}</h2> : null}
-              {titleHelp}
+              <h2>{title}</h2>
             </div>
           ) : (
             <span />

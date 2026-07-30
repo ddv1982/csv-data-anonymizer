@@ -57,11 +57,13 @@ export const enumContracts = [
   'EmptyFormat',
   'AnonymizationStrategy',
   'PasteDataFormat',
+  'DetectionCoverageUnit',
   'WarningSeverity',
   'SmartReplacementRejectionReason',
   'PreflightMode',
   'ReleaseReadinessStatus',
   'ReleaseEvidenceStatus',
+  'MatchedPart',
   'ThemeMode',
   'AnonymizeJobState',
   'LocalAiDownloadState',
@@ -75,6 +77,7 @@ export const structContracts = [
   'PrivacyEvidenceSummary',
   'ColumnMetadata',
   'HeadersData',
+  'DetectionCoverageSummary',
   'PasteAnalyzeData',
   'PasteTransformData',
   'QuickTransformData',
@@ -95,6 +98,9 @@ export const structContracts = [
   'ReleaseEvidenceItem',
   'ColumnReleaseReport',
   'ColumnValueDistribution',
+  'RowUniquenessSummary',
+  'MatchedColumn',
+  'DropColumnEffect',
   'UtilityMetric',
   'AppSettings',
   'AnalyzeResponse',
@@ -106,6 +112,10 @@ export const structContracts = [
 
 export function checkContracts(root) {
   const errors = []
+  // Memoized because three callers want the same interface body and `matchBody` reports a
+  // missing one. Without the cache, renaming a single TypeScript interface printed the same
+  // "Missing TypeScript interface" line three times over the one that needed acting on.
+  const tsInterfaceCache = new Map()
 
   // Read the sources individually and remember where each one lands in the blob,
   // so a declaration found in the blob can still be reported as file:line.
@@ -169,6 +179,7 @@ export function checkContracts(root) {
     const tsFields = tsInterfaceFields(structName)
     if (site) {
       compareSets(`${structName} fields`, rustFields, tsFields)
+      compareNullability(structName, site)
     }
   }
 
@@ -267,12 +278,118 @@ export function checkContracts(root) {
   }
 
   function rustStructFields(name, site) {
-    return rustDeclarationBody('struct', name, site, `Rust struct ${name} body`)
+    return [...rustStructFieldTypes(name, site).keys()]
+  }
+
+  /// Every field of a Rust struct, with its type text and the attributes above it.
+  ///
+  /// Declarations are accumulated across lines rather than matched one line at a time,
+  /// because rustfmt wraps `pub field:` and its type onto separate lines once the
+  /// declaration passes `max_width`. A single-line pattern skips such a field silently, and
+  /// a field this function does not return is invisible to the *name* comparison too — so
+  /// the wrapped field would reach neither check and could drift out of TypeScript
+  /// unnoticed, which is the one thing this gate exists to prevent.
+  function rustStructFieldTypes(name, site) {
+    const fields = new Map()
+    let attributes = []
+    let attribute = ''
+    let declaration = ''
+
+    const flush = () => {
+      const match = declaration.match(/^pub (?:r#)?([a-z][a-z0-9_]*)\s*:\s*(.+?),?$/)
+      if (match) {
+        const field = camelCase(match[1])
+        assertSupportedSerdeAttributes(name, field, attributes)
+        fields.set(field, { type: match[2].trim(), attributes })
+      }
+      attributes = []
+      declaration = ''
+    }
+
+    for (const line of rustDeclarationBody('struct', name, site, `Rust struct ${name} body`)
       .split('\n')
-      .map((line) => line.replace(/\/\/.*$/, '').trim())
-      .map((line) => line.match(/^pub (?:r#)?([a-z][a-z0-9_]*)\s*:/)?.[1])
-      .filter(Boolean)
-      .map(camelCase)
+      .map((line) => line.replace(/\/\/.*$/, '').trim())) {
+      if (line === '') {
+        continue
+      }
+      // Attributes only ever precede a declaration, so they accumulate until one completes.
+      // Accumulated across lines for the same reason declarations are: rustfmt wraps a long
+      // `#[serde(...)]` onto several lines, and reading only the first swallowed the rest as
+      // a declaration, discarded the pending attributes, and lost the field from BOTH checks.
+      if (declaration === '' && (attribute !== '' || line.startsWith('#['))) {
+        attribute = attribute === '' ? line : `${attribute} ${line}`
+        if (bracketDepth(attribute) === 0) {
+          attributes.push(attribute)
+          attribute = ''
+        }
+        continue
+      }
+      declaration = declaration === '' ? line : `${declaration} ${line}`
+      // Complete once the generic brackets balance and the comma arrives. Field types hold
+      // no `<` or `>` of their own beyond generics, so counting is enough here and a real
+      // parser would be more machinery than the shapes in these files justify.
+      if (angleDepth(declaration) === 0 && declaration.endsWith(',')) {
+        flush()
+      }
+    }
+    // A final field without its trailing comma is not something rustfmt emits, but reading
+    // it costs one line and losing it silently would cost a contract.
+    flush()
+
+    return fields
+  }
+
+  // Bracket nesting of an accumulating `#[...]`, so a wrapped attribute is one unit.
+  function bracketDepth(text) {
+    return [...text].reduce(
+      (open, character) =>
+        character === '[' || character === '('
+          ? open + 1
+          : character === ']' || character === ')'
+            ? open - 1
+            : open,
+      0,
+    )
+  }
+
+  // Generic nesting of an accumulating field declaration. Field types in these files hold no
+  // `<` or `>` of their own beyond generics; a real parser would be more machinery than the
+  // shapes here justify, and `assertSupportedSerdeAttributes` refuses the cases where a
+  // guess would be silently wrong rather than loudly missing.
+  function angleDepth(text) {
+    return [...text].reduce(
+      (open, character) =>
+        character === '<' ? open + 1 : character === '>' ? open - 1 : open,
+      0,
+    )
+  }
+
+  /// Refuses the serde attributes this gate cannot reason about.
+  ///
+  /// `compareNullability` answers one question — can TypeScript hold everything the wire can
+  /// send? — from `skip_serializing_if` and `Option`. Four attributes change the answer and
+  /// are invisible to it: `skip` and `skip_serializing` drop the key unconditionally,
+  /// field-level `rename` changes the key's name, and `flatten` hoists a whole struct's keys
+  /// in place of its own. Each would make the gate demand a declaration that lies about the
+  /// wire, which is the exact failure this check exists to prevent — so an unrecognised one
+  /// is a hard error rather than a wrong verdict. None is present in a registered struct
+  /// today; this is what keeps that true.
+  function assertSupportedSerdeAttributes(name, field, attributes) {
+    const serde = attributes.filter((line) => line.startsWith('#[serde'))
+    for (const [pattern, why] of [
+      [/\bskip\s*[,)\]]/, 'skip'],
+      [/\bskip_serializing\s*[,)\]]/, 'skip_serializing'],
+      [/\brename\s*=/, 'rename'],
+      [/\bflatten\b/, 'flatten'],
+    ]) {
+      if (serde.some((line) => pattern.test(line))) {
+        errors.push(
+          `${name}.${field} carries #[serde(${why})], which this gate cannot reason about; ` +
+            'the wire key it produces is not derivable from the field name and type, so the ' +
+            'nullability rule would be applied to the wrong key',
+        )
+      }
+    }
   }
 
   function assertSerdeCamelCase(kind, name, site) {
@@ -303,16 +420,96 @@ export function checkContracts(root) {
     }
   }
 
+  /// Fields TypeScript declares narrower than the wire can actually deliver.
+  ///
+  /// The set comparison above checks names and nothing else, which is enough to catch a
+  /// field added on one side only and blind to the change that breaks a running app: a
+  /// field the engine may omit, declared in TypeScript as always present. Nothing fails
+  /// until a report arrives without it and the view reads a property off `undefined`.
+  ///
+  /// The question is deliberately one-directional — **can TypeScript hold everything the
+  /// wire can send?** — and it is answered from the serde attributes rather than from the
+  /// Rust type alone, because the type alone gets it wrong in both directions:
+  ///
+  /// - `#[serde(skip_serializing_if = ...)]` omits the key entirely, so the field arrives
+  ///   as `undefined` and TypeScript must mark it `?`. `Vec` fields do this too, which is
+  ///   how an earlier version of this check came to *demand* the unsound declaration: it
+  ///   read only `Option<...>`, saw a plain `Vec`, and reported three correctly-optional
+  ///   TypeScript fields as guarding against "a value that can never arrive" — a value
+  ///   that arrives absent on every report with an empty list.
+  /// - `Option<T>` without that attribute sends the key as `null`, which is present. Those
+  ///   need a `| null` in the union and do not need the `?`.
+  ///
+  /// Optionality only. Comparing `usize` against `number` properly would mean parsing two
+  /// type languages, and a half-parser that silently passes what it cannot read is worse
+  /// than the honest gap it replaces.
+  function compareNullability(name, site) {
+    const rustFields = rustStructFieldTypes(name, site)
+    const tsFields = tsInterfaceFieldTypes(name)
+
+    for (const [field, rust] of rustFields) {
+      const declared = tsFields.get(field)
+      if (declared === undefined) {
+        // Already reported by the set comparison, with a better label.
+        continue
+      }
+      const skipCondition = rust.attributes
+        .join(' ')
+        .match(/skip_serializing_if\s*=\s*"([^"]+)"/)?.[1]
+      const tsAdmitsNull = /(^|\|)\s*(null|undefined)\s*(\||$)/.test(declared.type)
+
+      if (skipCondition) {
+        if (!declared.optional) {
+          errors.push(
+            `${name}.${field} is skipped on serialization when ${skipCondition}, so the key is ` +
+              'absent from the JSON, but TypeScript declares it as always present; the view would ' +
+              'read a property off undefined',
+          )
+        }
+        continue
+      }
+      if (/^Option\s*</.test(rust.type)) {
+        if (!tsAdmitsNull) {
+          errors.push(
+            `${name}.${field} is Option<...> in Rust and is serialized as null when None, but the ` +
+              'TypeScript type does not admit null',
+          )
+        }
+        continue
+      }
+      if (declared.optional || tsAdmitsNull) {
+        errors.push(
+          `${name}.${field} is always present and never null on the wire, but TypeScript declares ` +
+            'it optional or nullable; the view guards against a value that cannot arrive, so the ' +
+            'guard can never be exercised',
+        )
+      }
+    }
+  }
+
   function tsInterfaceFields(name) {
+    return [...tsInterfaceFieldTypes(name).keys()]
+  }
+
+  function tsInterfaceFieldTypes(name) {
+    const cached = tsInterfaceCache.get(name)
+    if (cached) {
+      return cached
+    }
     const body = matchBody(
       new RegExp(`export interface ${name} \\{([\\s\\S]*?)\\n\\}`),
       tsTypes,
       `TypeScript interface ${name}`,
     )
-    return body
-      .split('\n')
-      .map((line) => line.trim().match(/^([A-Za-z][A-Za-z0-9_]*)\??\s*:/)?.[1])
-      .filter(Boolean)
+    const fields = new Map()
+    for (const line of body.split('\n').map((line) => line.trim())) {
+      const match = line.match(/^([A-Za-z][A-Za-z0-9_]*)(\?)?\s*:\s*(.+?)$/)
+      if (match) {
+        fields.set(match[1], { optional: match[2] === '?', type: match[3].trim() })
+      }
+    }
+    tsInterfaceCache.set(name, fields)
+    return fields
   }
 
   function rustConstValue(name, site) {

@@ -6,9 +6,7 @@ use std::path::PathBuf;
 /// One limit rather than one per workflow, because the figure comes from one
 /// setting. "Sample rows" is not per-workflow: a user who raises it to work on a
 /// large CSV file has raised it for the paste workflow too, so a value that reaches
-/// the setting has to be a value every entry point will honour. The paste path used
-/// to cap itself an order of magnitude lower and reject the rest, which made a
-/// perfectly valid setting break pasted input while files kept working.
+/// the setting has to be a value every entry point will honour.
 ///
 /// Enforced twice, and both sites read this: `settings::sanitize_settings` clamps
 /// what can be stored, and the paste entry points reject an oversized request
@@ -20,7 +18,37 @@ pub const MAX_SAMPLE_ROW_COUNT: usize = 10_000;
 /// "Preview rows" setting, which is likewise not per-workflow.
 pub const MAX_PREVIEW_SAMPLE_COUNT: usize = 100;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// The smallest detection basis any entry point classifies on, for any input kind.
+///
+/// A floor rather than a default: `service::detection_sample_rows` and
+/// `direct_input::shared::paste_detection_sample_rows` both raise a caller's "Sample
+/// rows" to at least this, so the setting can only ask for more evidence than the
+/// default, never less.
+///
+/// One constant rather than one per workflow, because the file and paste workflows
+/// promise the user that they classify on the same basis. Two literals held that
+/// promise by coincidence: changing either alone left a pasted CSV and the same file
+/// on disk detecting different types, and so being offered different strategies, with
+/// nothing failing to say so.
+pub(crate) const DETECTION_SAMPLE_ROW_FLOOR: usize = 100;
+
+/// What `strategies::structured::transform_generic_string` keeps of a value.
+///
+/// Named once because two callers state it about the same transform: the detected
+/// types that have no transformer of their own, and the Local AI fallback for a
+/// pass-through type, which lands on the same function. See
+/// [`DataType::pseudonymization_preserves_structure`].
+pub(crate) const GENERIC_STRING_STRUCTURE_DISCLOSURE: &str = "the replacement is random text of roughly the original's length (within about 20%), so value length survives approximately";
+
+/// The default is [`DataType::Unknown`], and it is the only variant that may be one.
+///
+/// A default is reached when nothing said what a column holds, so it has to be the
+/// answer that claims nothing. Every other variant is a claim, and the ones that would
+/// tempt a reader — `String`, `Enum` — are claims in the wrong direction: `Enum` is
+/// pass-through, so a defaulted column would be described as deliberately kept
+/// unchanged. `Unknown` takes the generic-string transform and states no structure it
+/// preserves, which is the honest reading of a column nobody classified.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DataType {
     Email,
@@ -44,6 +72,7 @@ pub enum DataType {
     FullName,
     Enum,
     String,
+    #[default]
     Unknown,
 }
 
@@ -135,6 +164,77 @@ impl DataType {
         )
     }
 
+    /// What a rule-based pseudonym for this type keeps of the original value, or
+    /// `None` when it keeps nothing worth disclosing.
+    ///
+    /// Every transformer in `strategies` is format-preserving on purpose: a
+    /// pseudonymized timestamp has to parse as a timestamp, a pseudonymized amount has
+    /// to stay a number, or the output is unusable. This sentence is what the release
+    /// report states about the part of the source that comes through intact.
+    ///
+    /// The sharpest case is `Timestamp`: `strategies::structured::transform_timestamp`
+    /// splits the value at its ten-byte ISO date prefix and concatenates the remainder
+    /// verbatim, so `2024-06-15 10:30:45.123450` keeps `10:30:45.123450` exactly. In an
+    /// event log a microsecond time-of-day is very nearly a primary key, so the
+    /// "anonymized" file joins straight back to the source on a column the report
+    /// marked verified. The date moves by at most 365 days, which also means a date of
+    /// birth keeps its year to within one and the subject keeps their age.
+    ///
+    /// Returning a sentence rather than a bool because the sentence is the point: a
+    /// caller cannot write one wording that is true of "keeps the domain after @" and
+    /// of "keeps the digit count and sign" at once.
+    ///
+    /// No wildcard arm. A data type added to the enum has to be classified here rather
+    /// than defaulting into the silent half — silence is the defect this closes.
+    pub(crate) fn pseudonymization_preserves_structure(self) -> Option<&'static str> {
+        match self {
+            DataType::Email => Some(
+                "the local part is replaced but the domain after @ is kept verbatim, so recipients of a rare or personal domain stay identifiable",
+            ),
+            DataType::Timestamp => Some(
+                "the time of day is kept exactly — including sub-second digits, which are close to unique per event — and only the date moves, by at most a year, so an age or a year of birth survives",
+            ),
+            DataType::Phone => Some(
+                "only the digits are redrawn: the digit count, country prefix punctuation and separator layout are kept",
+            ),
+            DataType::NumericId => Some(
+                "the digit count and any leading zeros are kept, so the magnitude of the identifier is preserved",
+            ),
+            DataType::NumericValue => Some(
+                "the sign, digit count and number of decimal places are kept, so the magnitude of the value is preserved",
+            ),
+            DataType::FirstName | DataType::LastName | DataType::FullName => Some(
+                "replacements are drawn from a fixed name pool and the number of name parts is kept",
+            ),
+            // Generic-string pseudonymization draws a random value of 80–120% of the
+            // original's length, so the length survives approximately. Everything that
+            // is not handled by a transformer of its own lands here.
+            DataType::Address
+            | DataType::PostalCode
+            | DataType::IpAddress
+            | DataType::Url
+            | DataType::MacAddress
+            | DataType::TaxId
+            | DataType::String
+            | DataType::Unknown => Some(GENERIC_STRING_STRUCTURE_DISCLOSURE),
+            // A UUID is machine-generated and carries no structure about its subject;
+            // the transform keeps only the UUID format and the original's letter case,
+            // neither of which narrows anyone down.
+            DataType::Uuid => None,
+            // Returned unchanged under Auto and Pseudonymize, so there is no transform
+            // to describe — `uses_default_pass_through` is what the report says about
+            // these, and it says it plainly. Under a rejected Local AI candidate they
+            // take the generic-string path instead; the Local AI column report states
+            // that separately, because it is a property of the strategy rather than of
+            // the type.
+            DataType::Enum
+            | DataType::CountryCode
+            | DataType::Boolean
+            | DataType::Currency
+            | DataType::Percentage => None,
+        }
+    }
+
     pub(crate) fn transforms_generated_quick_value(self) -> bool {
         matches!(
             self,
@@ -219,23 +319,67 @@ pub(crate) enum RedactionPlaceholder {
     NetworkId,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// The default is [`Confidence::Low`], the only reading that asserts nothing.
+///
+/// `is_actionable` is false at Low, so a detection nobody measured cannot act as
+/// evidence. Defaulting to High or Medium would let an unmeasured column carry the
+/// weight of a measured one.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Confidence {
     High,
     Medium,
+    #[default]
     Low,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// How much a finding exposes, most severe first.
+///
+/// Declaration order is load-bearing: `Ord` is derived, so `High < Medium < Low` and sorting
+/// ascending puts the most severe finding first. The privacy report relies on that when it
+/// breaks ties between findings — a report that shows a Medium above a High has under-sold
+/// what it found, which is the one direction these figures may not be wrong in.
+///
+/// The default is [`PiiRisk::High`], deliberately the most severe rather than the most
+/// common. A default stands in for "nobody assessed this column", and the only reading
+/// of that which cannot make a file look safer than it is, is the worst case. `Low`
+/// would silently un-flag a column: `is_elevated` is what auto-selects a column,
+/// defaults it to Redact, and names it when it is released unchanged, and a defaulted
+/// `Low` turns all three off without anything having decided so.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PiiRisk {
+    #[default]
     High,
     Medium,
     Low,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+impl PiiRisk {
+    /// Whether this risk is one the app acts on: auto-selects the column, defaults it
+    /// to Redact, and names it when it is released unchanged.
+    ///
+    /// Named once because it is the app's privacy threshold rather than a comparison.
+    /// Spelled out at each site, the five copies could be changed apart, and a site
+    /// left behind would go on treating a Medium-risk column as ordinary — selecting
+    /// it out of the run, or leaving it out of the report that says what the released
+    /// file still exposes.
+    pub(crate) fn is_elevated(self) -> bool {
+        match self {
+            Self::High | Self::Medium => true,
+            Self::Low => false,
+        }
+    }
+}
+
+/// The categories of privacy evidence the report can attribute to a column.
+///
+/// Declaration order is load-bearing, but it is the *last* word rather than the first: the
+/// privacy report breaks a tie on score and match count by `PiiRisk` first, so a High finding
+/// always leads a Medium one, and only then by kind, which on a derived enum is declaration
+/// order. Reordering these variants therefore changes which of two equally-risky findings a
+/// reader sees first, so treat the order as user-facing output rather than as a free choice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PrivacyFindingKind {
     Person,
@@ -267,9 +411,14 @@ pub enum PrivacyFindingKind {
     MixedSensitiveText,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// The default is [`EmptyFormat::EmptyString`], which is also what
+/// [`crate::detection::detect_empty_format`] answers for a column in which nothing
+/// null-shaped was seen. It carries no privacy claim either way — it decides how a blank
+/// cell is written, not what survives in it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum EmptyFormat {
+    #[default]
     EmptyString,
     Null,
     Mixed,
@@ -361,7 +510,20 @@ impl PrivacyEvidenceSummary {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// `Default` is for constructing one, not for accepting one.
+///
+/// Fifteen fields of which a given caller varies two or three is what
+/// `crate::test_support::column` exists to absorb, and `Default` is what lets it. It
+/// widens nothing on the deserialization side: the serde contract is unchanged, so a
+/// field this struct requires on the wire is still required — only the fields already
+/// carrying `#[serde(default)]`, each with its own reason stated below, may be absent.
+///
+/// Every defaulted field is the least-privileged reading of "nobody decided this":
+/// `PiiRisk::High`, `DataType::Unknown`, `Confidence::Low`,
+/// `AnonymizationStrategy::PassThrough`, `is_selected: false`, and a zeroed
+/// distribution. A default may leave a column looking more exposed than it is; it may
+/// never leave one looking safer.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ColumnMetadata {
     pub name: String,
@@ -416,7 +578,17 @@ pub struct ColumnMetadata {
     pub strategy: AnonymizationStrategy,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// The default is [`AnonymizationStrategy::PassThrough`], which is the variant that
+/// claims the least rather than the one a user most often ends on.
+///
+/// A default stands in for "no strategy was chosen", and the report has to read that
+/// as "nothing was done to this column". `PassThrough` does exactly that: the release
+/// report calls it Review and says the values are kept unchanged, and
+/// `uniqueness::LinkableProjection::for_column` treats it as `WholeValue`, the most
+/// linkable projection there is. Every other variant would be a claim in the opposite
+/// direction — `Redact` is reported Verified, so a defaulted column would carry a green
+/// tick nobody earned for it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AnonymizationStrategy {
     Auto,
@@ -426,6 +598,7 @@ pub enum AnonymizationStrategy {
     Mask,
     Label,
     Redact,
+    #[default]
     PassThrough,
 }
 
@@ -449,6 +622,154 @@ pub struct ParsedSample {
     /// Whether every data row was read. False only for a head window that hit
     /// its cap; detection samples always scan the whole input.
     pub scanned_entire_input: bool,
+}
+
+/// What the two figures in a detection-coverage disclosure count.
+///
+/// The unit is carried rather than assumed because "rows" is only true for the two
+/// tabular entry points. A field-based paste — JSON, YAML, XML, or free text scanned
+/// for privacy spans — has no rows to sample: `direct_input::shared::detection_coverage`
+/// counts the values of the busiest field, and `PasteAnalyzeData::row_count` is derived
+/// separately and can disagree outright. A pasted `{"users": [500 objects]}` shows one
+/// row in the UI, and free text shows a match count that is neither its line count nor
+/// its row count, so a disclosure hard-coded to "rows" states a figure the user cannot
+/// find anywhere on screen and cannot check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DetectionCoverageUnit {
+    Rows,
+    Values,
+}
+
+impl DetectionCoverageUnit {
+    /// The noun a disclosure sentence uses for these figures.
+    pub(crate) fn plural_noun(self) -> &'static str {
+        match self {
+            Self::Rows => "rows",
+            Self::Values => "values",
+        }
+    }
+}
+
+/// How much of an input detection actually classified.
+///
+/// Detection votes on a bounded sample, so a value occurring in few rows can be
+/// missed — and a column whose sensitive values were all missed is never
+/// auto-selected, so it is written unchanged. That is a deliberate trade for
+/// bounded memory on inputs of any size, but it is only an honest one if the user
+/// is told the verdict rests on a sample. This carries the figures needed to say so
+/// and the unit they are counted in.
+///
+/// Not a DTO. It is `pub(crate)` on purpose: [`Self::new`] is the only place the
+/// `examined <= total` invariant is established, and a `Deserialize` impl would let
+/// a wire value walk straight past it and report a sample larger than the input it
+/// was drawn from. What crosses the IPC boundary is [`DetectionCoverageSummary`],
+/// a flat snapshot taken after clamping, plus the report notes and preflight review
+/// item built from this.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DetectionCoverage {
+    /// Rows or values kept for classification.
+    examined: usize,
+    /// Rows or values the input holds.
+    total: usize,
+    unit: DetectionCoverageUnit,
+}
+
+impl DetectionCoverage {
+    /// Coverage of the sample a detection pass actually kept.
+    ///
+    /// Read off the sample rather than recomputed from the requested row count,
+    /// because the request is a ceiling and the sample is what happened: a file with
+    /// fewer rows than the request is fully covered, and asking the request would
+    /// claim otherwise.
+    pub(crate) fn from_detection_sample(sample: &ParsedSample) -> Self {
+        Self::rows(sample.rows.len(), sample.data_rows_scanned)
+    }
+
+    /// Coverage for an input that has nothing to sample.
+    ///
+    /// Both figures are zero, which is not a missing figure but the only truthful
+    /// pair here: quick-generate has no source input, so no row went unexamined and
+    /// none was examined either. Only [`Self::is_partial`] is consulted for such an
+    /// input, and it answers false — the disclosure stays silent, which is right,
+    /// because there is no sampling to disclose. Nothing may print
+    /// [`Self::examined`] and [`Self::total`] without gating on
+    /// [`Self::is_partial`] first, or this constructor renders as "0 of 0".
+    pub(crate) fn complete() -> Self {
+        Self::rows(0, 0)
+    }
+
+    /// Coverage counted in data rows: the two tabular entry points, CSV file and
+    /// pasted CSV text.
+    pub(crate) fn rows(examined: usize, total: usize) -> Self {
+        Self::new(examined, total, DetectionCoverageUnit::Rows)
+    }
+
+    /// Coverage counted in field values: JSON, YAML, XML and free-text pastes, which
+    /// have fields rather than rows. See [`DetectionCoverageUnit`].
+    pub(crate) fn values(examined: usize, total: usize) -> Self {
+        Self::new(examined, total, DetectionCoverageUnit::Values)
+    }
+
+    fn new(examined: usize, total: usize, unit: DetectionCoverageUnit) -> Self {
+        Self {
+            examined: examined.min(total),
+            total,
+            unit,
+        }
+    }
+
+    /// Whether some of the input went unclassified.
+    pub(crate) fn is_partial(self) -> bool {
+        self.examined < self.total
+    }
+
+    pub(crate) fn examined(self) -> usize {
+        self.examined
+    }
+
+    pub(crate) fn total(self) -> usize {
+        self.total
+    }
+
+    pub(crate) fn unit(self) -> DetectionCoverageUnit {
+        self.unit
+    }
+
+    /// The IPC-facing snapshot of this coverage.
+    pub(crate) fn summary(self) -> DetectionCoverageSummary {
+        DetectionCoverageSummary {
+            examined: self.examined,
+            total: self.total,
+            unit: self.unit,
+            is_partial: self.is_partial(),
+        }
+    }
+}
+
+/// What detection classified, as the paste analyze result reports it.
+///
+/// This exists so a paste user learns that detection sampled before choosing
+/// columns, not after the output already exists. The file workflow gets the same
+/// disclosure from preflight; the paste workflow has no preflight, so until this
+/// crossed the boundary the only place it appeared was the post-transform privacy
+/// report — advice ("raise Sample rows") that by then costs a whole second run.
+///
+/// Counts only. No value, column name or excerpt goes on the wire here, so the
+/// disclosure cannot itself leak what detection missed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DetectionCoverageSummary {
+    pub examined: usize,
+    pub total: usize,
+    pub unit: DetectionCoverageUnit,
+    /// `examined < total`, decided here rather than in the client.
+    ///
+    /// The comparison is trivial, which is exactly why it would drift: a client that
+    /// re-derives it is free to write `<=` or to compare against a row count from a
+    /// different field, and either mistake silences the warning rather than
+    /// producing a visible error.
+    pub is_partial: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -488,7 +809,6 @@ impl ProcessControl<'_> {
 #[serde(rename_all = "camelCase")]
 pub struct ProcessResult {
     pub row_count: usize,
-    pub success: bool,
     pub output_path: PathBuf,
     pub duration_ms: u128,
     pub transform_report: TransformReport,
@@ -575,145 +895,19 @@ const MAX_INVERTIBLE_DISTINCT_VALUES: usize = 10;
 const MAX_INVERTIBLE_DISTINCT_RATIO: f64 = 0.05;
 
 /// Sample coverage below which a *sampled* distribution is treated as saying nothing
-/// about the input's distinct count, so the ratio test is skipped.
-///
-/// Good–Turing coverage, `1 - singletons/values`: the estimated share of the column's
-/// values that belong to groups the sample has already seen. Near 1 the sample has
-/// found essentially every group and its distinct count is the column's; near 0 every
-/// value seen was new, so the sample has learned nothing except that there are many.
-///
-/// This gate is what makes the ratio test safe on sampled data, and without it the
-/// test is actively wrong. Simulated 100-value samples drawn evenly across columns of
-/// known shape:
-///
-/// | column | coverage | Chao1 / rows | should warn |
-/// | --- | --- | --- | --- |
-/// | 3 statuses in 5k rows | 1.00 | 0.0006 | yes |
-/// | 30 departments in 5k rows | 0.95 | 0.0066 | yes |
-/// | 50 job titles in 100k rows | 0.87 | 0.0005 | yes |
-/// | 200 cities in 5k rows | 0.40 | 0.0412 | no — 25-row groups |
-/// | 1000 names in 5k rows | 0.12 | 0.1478 | no |
-/// | unique in 5k rows | 0.04 | 0.4804 | no |
-/// | **unique in 1M rows** | **0.00** | **0.0051** | **no** |
-///
-/// The last row is the reason this constant exists: a fully unique column in a large
-/// file passes the ratio test outright, because 100 sampled values can never look
-/// like a million distinct ones. Coverage is the statistic that separates it, and it
-/// separates every case above — the data pins this constant only to the interval
-/// (0.40, 0.87], and 0.75 sits inside it with margin at both ends.
-///
-/// The table above was measured on *uniform* draws, and the claim that skew only moves
-/// coverage upward was an argument rather than a measurement. Re-measured on Zipf draws
-/// with `zipf_column_file` in `service::tests::cardinality`: 100-value samples of a
-/// 5000-row column, 20 draws per cell, worst (lowest) coverage of the 20:
-///
-/// | labels | s=0.5 | s=0.8 | s=1.0 | s=1.2 | s=1.5 | s=2.0 |
-/// | --- | --- | --- | --- | --- | --- | --- |
-/// | 200 | 0.32 | 0.48 | 0.60 | 0.68 | 0.78 | 0.87 |
-/// | 1000 | 0.08 | 0.21 | 0.40 | 0.59 | 0.75 | 0.86 |
-/// | 5000 | 0.00 | 0.10 | 0.24 | 0.47 | 0.74 | 0.88 |
-///
-/// The constant survives: coverage does rise monotonically with skew at every label
-/// count, so the gate opens as a column becomes more invertible, and it stays shut on
-/// every diverse column here — a Zipf-1.0 column over 1000 labels holds around 750
-/// distinct values in 5000 rows and must not be flagged.
-///
-/// It does not open in time on its own, though. At 5000 labels a Zipf-1.5 column, whose
-/// top value already takes 39% of the rows, still draws samples below the gate. And the
-/// case that pushed hardest is one the uniform draws could not produce at all: skew
-/// raises coverage only while the skew is in the *body* of the distribution. One dominant
-/// value over a long unique tail is severely skewed and has *low* coverage, because
-/// coverage counts singletons and the tail is all singletons. Measured with
-/// `dominant_value_column_file` on one value covering `q` of a 5000-row column, the rest
-/// spread over 5000 others, 20 draws per cell:
-///
-/// | q | 0.2 | 0.3 | 0.4 | 0.5 | 0.6 | 0.8 |
-/// | --- | --- | --- | --- | --- | --- | --- |
-/// | coverage | 0.15–0.28 | 0.23–0.40 | 0.33–0.51 | 0.46–0.59 | 0.54–0.70 | 0.71–0.86 |
-///
-/// At 20 draws per cell every draw up to q=0.6 sat below 0.75. Re-run at 400 draws per
-/// cell the bound is not quite absolute: 0 of 2400 draws at q=0.5 reached the gate, and at
-/// q=0.6 six did — and those six are exactly the six on which the ratio term fired, out of
-/// 2400 columns where one value covered three fifths of the rows.
-///
-/// That is why [`MIN_INVERTIBLE_DOMINANT_SHARE`] is checked *before* this gate rather than
-/// behind it: gating the dominant-value term on coverage would have silenced all but a
-/// quarter of a percent of the shape the term exists for. This constant is right for what
-/// it gates — a distinct-count estimate, which a singleton-heavy sample genuinely cannot
-/// make — and carries no authority over anything else.
-///
-/// Still not tested: draws from real production data, non-Zipf skew (bimodal columns, a
-/// few large groups with no tail at all), and columns sitting near the gate itself, where
-/// coverage moves by several hundredths between draws of the same column and the gate's
-/// answer is therefore a coin flip rather than a verdict.
+/// about the input's distinct count, so the ratio test is skipped. Good–Turing coverage,
+/// `1 - singletons/values`; the measurements pin it only to the interval (0.40, 0.87] and
+/// 0.75 sits inside with margin at both ends. Not measured on real production data,
+/// non-Zipf skew, or columns sitting near the gate itself.
+/// See docs/calibration.md#min_sample_coverage for the measurements behind this.
 const MIN_SAMPLE_COVERAGE: f64 = 0.75;
 
-/// Share of a column's values carried by its single most common value, at or above
-/// which the mapping is treated as frequency-invertible.
-///
-/// The failure this closes: a column with thousands of distinct values, one of which
-/// covers most of the rows. Neither other term sees it. `distinct < 10` is nowhere near
-/// true, and the Chao1 ratio is high precisely *because* the column is diverse — so a
-/// column where one value covers 60% of five million rows drew no warning at all, even
-/// though inverting that single pseudonym hands back 60% of the column to anyone who
-/// knows which value is the common one. Measured with the dominant-value generator in
-/// `service::tests::cardinality`: across 120 draws each at every combination of 1000 and
-/// 5000 tail values and 1000, 5000 and 100000 rows, the absolute term fired 0 times and
-/// the ratio term fired 0 times for every q from 0.2 to 0.6 inclusive.
-///
-/// A share and not a count. `max_value_occurrences > 5000` is nonsense in a 200-row file
-/// and nearly always true in a 5-million-row one; the share is the quantity that means
-/// the same thing at both sizes, and it is also the quantity with the direct reading —
-/// the fraction of the column one inversion recovers.
-///
-/// Calibrated on the pre-run path, which is the hard case: the post-run report measures
-/// every row and the share is exact, but the preview measures a 100-value sample, so the
-/// share is an estimate with real variance. Fire rate of each candidate threshold, 4000
-/// independent 100-value samples per configuration, given as the range over every column
-/// size tested — 200/1000/5000 labels for the Zipf rows, 1000/5000 tail values for the
-/// dominant ones, and 1000/5000/100000 rows for both:
-///
-/// | true dominant share | T=0.25 | T=0.30 | **T=1/3** | T=0.35 | T=0.40 | T=0.50 |
-/// | --- | --- | --- | --- | --- | --- | --- |
-/// | Zipf s=1.0 (0.11–0.17) | .000–.031 | .000–.001 | **.000** | .000 | .000 | .000 |
-/// | Zipf s=1.1 (0.16–0.21) | .010–.212 | .000–.028 | **.000–.002** | .000–.001 | .000 | .000 |
-/// | Zipf s=1.2 (0.21–0.26) | .215–.624 | .025–.210 | **.001–.047** | .001–.031 | .000–.002 | .000 |
-/// | one value over 50% | 1.000 | 1.000 | **.999–1.000** | .999–1.000 | .979–.983 | .537–.542 |
-/// | one value over 60% | 1.000 | 1.000 | **1.000** | 1.000 | 1.000 | .980–.985 |
-///
-/// Two requirements pick the constant from that table. A Zipf column with exponent up to
-/// 1.1 must stay silent: Zipf with s near 1 is the ordinary shape of real categorical
-/// data, its top value takes a fifth of the rows at most, and a warning that fires there
-/// fires on most text columns in most files — the same noise argument that keeps
-/// singleton counts out of the predicate entirely. A column where one value genuinely
-/// covers half the rows must be caught. The data pins the constant to the interval
-/// **[1/3, 0.35]**: at 0.30 a Zipf-1.1 column false-fires on 2.8% of samples, and at 0.40
-/// a truly 50%-dominant column is missed on 2% of them. 1/3 rather than 0.35 because the
-/// two are indistinguishable on every measurement here and 1/3 states the rule the
-/// warning is making — one value in every three rows.
-///
-/// The interval is narrow because both requirements are strict, and it should be read as
-/// what the measurements happen to admit rather than as a discovered boundary. Relaxing
-/// the second requirement to "caught on 95% of samples" moves its upper end past 0.40,
-/// where the rate is .979, but not as far as 0.45, where it is .859. Tightening either
-/// requirement — ten times the replicates, or demanding the false-positive rate hold at
-/// Zipf s=1.2 as well — would narrow the interval or empty it; that is an extrapolation
-/// from the trend across the table, not a measurement.
-///
-/// The honest summary: a 100-value sample cannot reliably separate a 26%-dominant column
-/// from a 40%-dominant one — at 1/3 the first fires on up to 4.7% of samples and the
-/// second on 90% of them — and no choice of constant makes it able to. What the
-/// measurements do establish is that 1/3 separates the shapes at the two *ends* — ordinary
-/// skew and one-value dominance — with a false-positive rate at or below 0.2% and a miss
-/// rate at or below 0.1%.
-///
-/// Not tested: real production columns, tails that are not uniform, columns whose second
-/// value is nearly as common as the first (where inverting the top pseudonym is a coin
-/// flip rather than a certainty, so this term over-warns by construction), samples larger
-/// than 100 values — the "Sample rows" setting can only raise that figure, which shrinks
-/// the variance above and so can only move the fire rates toward the exact post-run
-/// answer — and the interaction with a column that is *also* low-cardinality, which the
-/// absolute term answers first.
+/// Share of a column's values carried by its single most common value, at or above which
+/// the mapping is treated as frequency-invertible. Catches the shape neither other term
+/// sees: thousands of distinct values, one of them covering most of the rows. A share and
+/// not a count, so it means the same in a 200-row file and a 5-million-row one. The
+/// measurements pin it to [1/3, 0.35]; not measured on real production columns.
+/// See docs/calibration.md#min_invertible_dominant_share for the measurements behind this.
 const MIN_INVERTIBLE_DOMINANT_SHARE: f64 = 1.0 / 3.0;
 
 /// Which of the three tests judged a distribution frequency-invertible.
@@ -721,10 +915,10 @@ const MIN_INVERTIBLE_DOMINANT_SHARE: f64 = 1.0 / 3.0;
 /// Exists so a warning can name the evidence it actually has. The three terms catch
 /// genuinely different shapes — a handful of values, one value dominating a diverse
 /// column, and many small groups across a large one — and a single wording cannot
-/// describe all three without describing at least two of them wrongly. A column of
-/// 101 values where one covers half the rows was previously reported as holding
-/// "only 101 distinct value(s)", which is true, reads as reassuring, and names a risk
-/// the column does not have while staying silent about the one it does.
+/// describe all three without describing at least two of them wrongly. Reporting a
+/// column of 101 values where one covers half the rows as holding "only 101 distinct
+/// value(s)" would be true, would read as reassuring, and would name a risk the column
+/// does not have while staying silent about the one it does.
 ///
 /// Each variant carries the figure its wording needs, computed at the point the test
 /// fires, because [`ColumnValueDistribution::estimated_distinct_values`] and
@@ -827,12 +1021,9 @@ impl ColumnValueDistribution {
     /// The dominant-value term needs no equivalent adjustment, and that is the reason it
     /// sits where it does. It compares two figures the distribution measured *itself* —
     /// a share of its own values — so `population_values` never enters. A share is also
-    /// the one statistic here a small sample can actually estimate: over 2400 draws, a
-    /// 100-value spread sample of a column whose top value covers half the rows reported a
-    /// share between 0.36 and 0.69, while the same samples' distinct counts under-reported
-    /// the columns' by one to two orders of magnitude. That asymmetry is why the
-    /// distinct-count term needs both a population figure and a coverage gate while this
-    /// one needs neither.
+    /// the one statistic a small sample can estimate here, unlike its distinct count,
+    /// which is why only the distinct-count term needs a population figure and a gate.
+    /// See docs/calibration.md#sample-share-vs-distinct-count for the measurements.
     ///
     /// The order of the three tests is the order of decreasing certainty, and it is
     /// also what each variant means: a later variant implies the earlier tests
@@ -852,7 +1043,7 @@ impl ColumnValueDistribution {
         // Deliberately ahead of the coverage gate. The shape this catches — one dominant
         // value over a long tail of near-unique ones — is singleton-heavy and therefore
         // *low*-coverage, so behind the gate this term would be silent on exactly the
-        // columns it was added for. See [`MIN_SAMPLE_COVERAGE`] for the figures.
+        // See docs/calibration.md#min_sample_coverage for the figures.
         let share = self.dominant_value_share();
         if share >= MIN_INVERTIBLE_DOMINANT_SHARE {
             return Some(FrequencyInversionRisk::DominantValue { share });
@@ -944,6 +1135,168 @@ pub struct TransformReport {
     pub smart_replacement_fallbacks: usize,
     pub shape_fallback_values: usize,
     pub column_value_distributions: Vec<ColumnValueDistribution>,
+    pub row_uniqueness: Option<RowUniquenessSummary>,
+}
+
+/// How exposed the released rows are once every column is read together.
+///
+/// The rest of this crate's privacy figures are per column, so a file can be reported as
+/// having no unselected high or medium risk column while postcode, birth date and job
+/// title jointly single out a third of its rows. This is the figure that says so.
+///
+/// Measured over the columns an outsider could match against data they already hold —
+/// see `crate::uniqueness::LinkableProjection` for how that subset is decided and what it
+/// deliberately leaves out. Every count here is over that subset except
+/// `distinct_rows_all_columns`.
+///
+/// Absent rather than zeroed where there are no rows: unstructured text and single pasted
+/// values never populate it, and a summary claiming zero unique rows would read as a clean
+/// result from a check that never ran.
+///
+/// A DTO, like [`DetectionCoverageSummary`] and unlike the private `DetectionCoverage`: a flat
+/// snapshot with no invariant of its own to protect, so `Deserialize` costs nothing here.
+/// The relationships between these figures — that the counts are over the columns named,
+/// that a stopped measurement zeroes the rest — are established in
+/// `crate::uniqueness::RowUniquenessTracker::summary`, which is the only thing that builds
+/// one outside tests.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RowUniquenessSummary {
+    /// Data rows hashed. Blank rows are written through untransformed and are not counted.
+    pub rows_measured: usize,
+    /// The columns the measure read, each with what an outsider could match it on, in
+    /// column order. Empty means nothing released is matchable — a statement about how the
+    /// columns were transformed, not a finding that the data is anonymous.
+    ///
+    /// Only columns that actually yielded something are listed. A column whose projection
+    /// came back empty on every row contributed nothing to any class and is named nowhere,
+    /// so no claim here can rest on a column that in fact carried no signal.
+    pub matched_columns: Vec<MatchedColumn>,
+    /// Distinct equivalence classes over the subset.
+    pub distinct_classes: usize,
+    /// Rows alone in their class: someone holding those columns for a person finds
+    /// exactly their row.
+    pub unique_rows: usize,
+    /// The k-anonymity floor — the smallest class present. One freak record sets it, which
+    /// is why `fifth_percentile_class_size` is reported beside it.
+    pub smallest_class: usize,
+    /// The class size at or below which the most exposed 5% of rows sit.
+    pub fifth_percentile_class_size: usize,
+    /// Distinct rows over *every* released column, subset rule not applied. Answers the
+    /// separate and simpler question of whether the file could be shuffled or aggregated,
+    /// and acts as a check on the subset rule: a wide gap between this and
+    /// `distinct_classes` means the rule is doing a lot of work and deserves a look.
+    ///
+    /// `None` when this histogram alone outgrew what the check keeps. It fills faster than
+    /// the other one by construction — whole rows against projections of a subset of them —
+    /// so it is suppressed on its own rather than taking the joint measure down with it.
+    pub distinct_rows_all_columns: Option<usize>,
+    /// The *joint* measurement stopped early because the file held more classes than the
+    /// check keeps. Every count above is then a lower bound, and no verified claim may rest
+    /// on them. Set only by the linkable histogram: `distinct_rows_all_columns` going
+    /// absent does not make the joint figures incomplete.
+    pub measurement_incomplete: bool,
+    /// What `unique_rows` would have been with each matched column dropped, ascending by
+    /// that count, then by column index.
+    ///
+    /// The only figure here a reader can act on. `unique_rows` says how exposed the file is;
+    /// this says which column to change to fix it, which is the difference between a report
+    /// and an alarm.
+    ///
+    /// Empty when `drop_attribution_incomplete` is set, and also when the file has no matched
+    /// column to drop. The two are told apart by that flag rather than by the emptiness of
+    /// this list, because "we did not measure" and "there is nothing to drop" are opposite
+    /// findings that would otherwise look identical.
+    pub drop_column_effects: Vec<DropColumnEffect>,
+    /// The attribution was not run, or was stopped, so `drop_column_effects` is empty for a
+    /// reason other than there being nothing to say.
+    ///
+    /// Set when the joint measurement itself is incomplete (there is no baseline to compare
+    /// against), when the file has more columns than the attribution tracks, or when the
+    /// leave-one-out histograms outgrew their shared budget. Reported rather than hidden: a
+    /// reader who is told nothing about which column to drop should know whether that is
+    /// because no column would help or because nobody looked.
+    pub drop_attribution_incomplete: bool,
+}
+
+/// What dropping one column would do to the count of rows that stand alone.
+///
+/// Exact, not an estimate: the count is read off a second equivalence-class histogram built
+/// over the same rows with this column's contribution removed, in the same single pass. That
+/// matters because the intuitive estimate is wrong in both directions — dropping a column
+/// whose projection is nearly constant changes almost nothing however revealing the column
+/// looks, and dropping one of two correlated columns can change almost nothing either.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DropColumnEffect {
+    /// `ColumnMetadata::index`, as everywhere else.
+    pub column_index: usize,
+    /// Rows that would still be alone in their class with this column dropped, every other
+    /// column unchanged. Compare against `RowUniquenessSummary::unique_rows`; it can never
+    /// be larger, since removing a column only ever merges classes.
+    pub unique_rows_without: usize,
+}
+
+/// One column the joint measure read, and what it was matched on.
+///
+/// The pairing is the point, and it must not be split back into two lists of column
+/// indices — value-carrying and format-only. Two categories cannot express three kinds of
+/// contribution, and the missing one is the partial match, the most common kind on a
+/// pseudonymized file: a report built from two lists tells the reader that rows "share their
+/// combination of birth_date, email" when what they share is a decade and a domain.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MatchedColumn {
+    /// `ColumnMetadata::index`, which is how every other report structure names a column.
+    pub column_index: usize,
+    pub matched_on: MatchedPart,
+    /// Whether every measured row actually carried `matched_on`, or only some of them did.
+    ///
+    /// `matched_on` is decided once per column, from the column's strategy and detected type
+    /// alone — no cell value can change it. The values can still disagree with it: a cell
+    /// that does not fit its column's detected shape is pseudonymized generically, and the
+    /// projection returns nothing for that row. So a `Timestamp` column where one value in a
+    /// hundred parses is `DateDecadeAndTime`, and the finding said the rows "share the decade
+    /// and time of birth_date" of ninety-nine rows that carry no decade.
+    ///
+    /// A `bool` and not a count, because the report needs to know only whether to qualify the
+    /// phrase. Quoting "matched on 1 of 100 rows" would invite the reader to weigh a number
+    /// that is not the one that matters: those rows were counted as sharing nothing there,
+    /// so the arithmetic is already right and only the wording was over-claiming.
+    pub matched_every_row: bool,
+}
+
+/// What survived a column that an outsider holding the original could match against.
+///
+/// Written so each variant completes the sentence "rows share **…** with each other", which
+/// is what forces the distinction: `WholeValue` licenses naming the column bare, and
+/// nothing else does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MatchedPart {
+    /// The released cell is the original, or a skeleton of it anyone can derive. The column
+    /// may be named on its own.
+    WholeValue,
+    /// Everything from the last `@`: the employer, not the person.
+    EmailDomain,
+    /// The decade of the released date, and the time of day exactly. Approximate on the date
+    /// half by construction — see `crate::uniqueness::LinkableProjection` — and named as an
+    /// approximation so a reader is not told their rows share a birth date when they share a
+    /// decade.
+    DateDecadeAndTime,
+    /// No part of the value, only a format property: a digit count, a separator layout, a
+    /// number of name parts, a mask's word and letter counts. Counted like any other,
+    /// because a joint measure is where individually weak signals combine, but never named
+    /// as though it were the value.
+    SurvivingFormat,
+    /// Not the cell at all — only whether it was blank, and with which blank token.
+    ///
+    /// A cell the engine reads as empty is written through verbatim before any strategy
+    /// runs, so even a redacted column publishes its missingness pattern, and someone
+    /// holding the original record knows which of its fields were blank. Named apart because
+    /// "the blank-cell pattern of address" and "address" are wildly different claims, and
+    /// because the remedy differs too: no strategy fixes this one.
+    BlankPattern,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -952,6 +1305,25 @@ pub struct TransformContext<'a> {
     pub column_index: usize,
     pub row_index: usize,
     pub empty_format: EmptyFormat,
+}
+
+impl<'a> TransformContext<'a> {
+    /// The context for one cell of `column`.
+    ///
+    /// Every caller wants exactly this: the column's own name, index and empty
+    /// format, plus where the value sits. Assembled by hand at each site, the fields
+    /// are three same-shaped values a mistake can silently swap — a context built
+    /// with another column's index makes the transform key its mapping under the
+    /// wrong column, so two columns share replacements and a value redacted in one
+    /// reappears in the other.
+    pub fn for_column(column: &'a ColumnMetadata, row_index: usize) -> Self {
+        Self {
+            column_name: &column.name,
+            column_index: column.index,
+            row_index,
+            empty_format: column.empty_format,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -990,6 +1362,12 @@ pub struct PasteAnalyzeData {
     pub format: PasteDataFormat,
     pub row_count: usize,
     pub row_count_is_complete: bool,
+    /// How much of the paste the detected types actually rest on.
+    ///
+    /// Carried by the analyze result rather than only by the privacy report so the
+    /// column table can caveat itself *before* the user selects columns and
+    /// transforms. See [`DetectionCoverageSummary`].
+    pub detection_coverage: DetectionCoverageSummary,
     pub columns: Vec<ColumnMetadata>,
 }
 
@@ -1096,6 +1474,16 @@ pub enum SmartReplacementRejectionReason {
     EmptyOutput,
     SameAsOriginal,
     ContainsOriginal,
+    /// The replacement was, or contained, a source value belonging to a *different*
+    /// row of the same column.
+    ///
+    /// Kept apart from [`Self::ContainsOriginal`] because the two describe different
+    /// events and only one of them moves a person's data between rows.
+    /// `ContainsOriginal` means the model echoed back the value it was asked to
+    /// replace, which wastes the request; this means it emitted somebody else's real
+    /// value, which would have published that value against the wrong record. A
+    /// report that merged them could not say which had happened.
+    MatchesOtherOriginal,
     ControlCharacter,
     DuplicateOriginal,
     DuplicateOutput,
@@ -1231,6 +1619,8 @@ pub struct PrivacyReport {
     pub column_reports: Vec<ColumnReleaseReport>,
     #[serde(default)]
     pub column_value_distributions: Vec<ColumnValueDistribution>,
+    #[serde(default)]
+    pub row_uniqueness: Option<RowUniquenessSummary>,
     #[serde(default)]
     pub utility_metrics: Vec<UtilityMetric>,
     pub notes: Vec<String>,
@@ -1461,6 +1851,43 @@ mod tests {
                 doubleton_values: 0,
                 max_value_occurrences: 6,
             }],
+            row_uniqueness: Some(RowUniquenessSummary {
+                rows_measured: 10,
+                matched_columns: vec![
+                    MatchedColumn {
+                        column_index: 0,
+                        matched_on: MatchedPart::WholeValue,
+                        matched_every_row: true,
+                    },
+                    MatchedColumn {
+                        column_index: 2,
+                        matched_on: MatchedPart::DateDecadeAndTime,
+                        matched_every_row: true,
+                    },
+                    MatchedColumn {
+                        column_index: 3,
+                        matched_on: MatchedPart::SurvivingFormat,
+                        matched_every_row: true,
+                    },
+                ],
+                distinct_classes: 7,
+                unique_rows: 4,
+                smallest_class: 1,
+                fifth_percentile_class_size: 1,
+                distinct_rows_all_columns: Some(10),
+                measurement_incomplete: false,
+                drop_column_effects: vec![
+                    DropColumnEffect {
+                        column_index: 2,
+                        unique_rows_without: 1,
+                    },
+                    DropColumnEffect {
+                        column_index: 0,
+                        unique_rows_without: 3,
+                    },
+                ],
+                drop_attribution_incomplete: false,
+            }),
             utility_metrics: vec![UtilityMetric {
                 label: "Rows".to_string(),
                 value: "10".to_string(),

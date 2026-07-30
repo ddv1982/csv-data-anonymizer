@@ -1,8 +1,8 @@
 use crate::detection::collect_privacy_spans;
 use crate::error::{AnonymizerError, Result};
-use crate::service::{build_privacy_report, count_transforming_selected_columns};
-use crate::smart::{SmartReplacementProvider, prepare_smart_replacements_from_rows};
-use crate::strategies::transform_value_with_state;
+use crate::service::select_columns;
+use crate::smart::SmartReplacementProvider;
+use crate::strategies::{TransformState, transform_value_with_state};
 use crate::types::{
     DataType, PasteAnalyzeData, PasteDataFormat, PastePreviewParams, PasteTransformData,
     PasteTransformParams, PreviewData, TransformContext,
@@ -13,11 +13,11 @@ use std::sync::OnceLock;
 use std::time::Instant;
 
 use super::shared::{
-    FieldSampleLimits, FieldSamples, FieldWindow, PASTE_MAX_TEXT_MATCHES, PreviewSelection,
-    bounded_preview_sample_count, fields_to_rows, metadata_from_fields, next_row_index,
-    paste_detection_sample_rows, prepare_selected_metadata, preview_field_sample_limits,
-    preview_from_fields_with_smart_provider, preview_smart_replacements_for_transform,
-    push_typed_field_sample, selected_columns_by_source, transform_state_for_smart_replacements,
+    FieldSampleLimits, FieldSamples, PASTE_MAX_TEXT_MATCHES, PreviewSelection,
+    analysis_from_fields, bounded_preview_sample_count, next_row_index,
+    paste_detection_sample_rows, paste_transform_data, preview_field_sample_limits,
+    preview_from_fields_with_smart_provider, push_typed_field_sample, selected_columns_by_source,
+    smart_replacements_for_fields,
 };
 
 pub(super) fn analyze_text_content(
@@ -31,15 +31,11 @@ pub(super) fn analyze_text_content(
         &matches,
         FieldSampleLimits::detection_only(sample_row_count),
     )?;
-    let (headers, rows) = fields_to_rows(&fields, FieldWindow::Detection);
-    let columns = metadata_from_fields(&fields, &headers, &rows);
-
-    Ok(PasteAnalyzeData {
-        format,
-        row_count: matches.len(),
-        row_count_is_complete: true,
-        columns,
-    })
+    // Free text is the input the coverage disclosure matters most on: a long log whose
+    // detection window is thinned would otherwise report its types with no caveat, and
+    // the user would find out only after the output existed. It comes with the analysis
+    // here rather than being computed separately.
+    Ok(analysis_from_fields(format, &fields, matches.len()).0)
 }
 
 pub(super) fn preview_text_content_with_smart_provider(
@@ -56,12 +52,7 @@ pub(super) fn preview_text_content_with_smart_provider(
     )?;
     preview_from_fields_with_smart_provider(
         &fields,
-        PreviewSelection {
-            columns: &input.columns,
-            controls: &input.controls,
-            sample_count,
-            provider,
-        },
+        PreviewSelection::from_params(&input, sample_count, provider),
     )
 }
 
@@ -76,29 +67,19 @@ pub(super) fn transform_text_with_smart_provider(
         &matches,
         FieldSampleLimits::detection_only(detection_sample_rows),
     )?;
-    let (headers, rows) = fields_to_rows(&fields, FieldWindow::Detection);
-    let analysis = PasteAnalyzeData {
-        format,
-        row_count: matches.len(),
-        row_count_is_complete: true,
-        columns: metadata_from_fields(&fields, &headers, &rows),
-    };
-    let metadata = prepare_selected_metadata(&analysis.columns, &input.columns, &input.controls)?;
+    let (analysis, coverage) = analysis_from_fields(format, &fields, matches.len());
+    let metadata = select_columns(&analysis.columns, &input.columns, &input.controls)?;
     let selected_by_name = selected_columns_by_source(&metadata);
+    // Every match, not the detection window: a span the sample dropped would reach the
+    // transform without a replacement of its own.
     let smart_fields = text_fields_from_matches(
         &matches,
         FieldSampleLimits::detection_only(matches.len().max(1)),
     )?;
-    let (_headers, smart_rows) = fields_to_rows(&smart_fields, FieldWindow::Detection);
-    let existing_smart_replacements = preview_smart_replacements_for_transform(&input, &metadata);
-    let smart_replacements = prepare_smart_replacements_from_rows(
-        &smart_rows,
-        &metadata,
-        existing_smart_replacements.as_ref(),
-        provider,
-    )?;
+    let smart_replacements =
+        smart_replacements_for_fields(&smart_fields, &metadata, &input, provider)?;
     let start_time = Instant::now();
-    let mut state = transform_state_for_smart_replacements(smart_replacements);
+    let mut state = TransformState::with_smart_replacements_if_active(smart_replacements);
     let mut row_indices = HashMap::new();
     let mut output = String::with_capacity(input.content.len());
     let mut last_end = 0;
@@ -107,12 +88,7 @@ pub(super) fn transform_text_with_smart_provider(
         output.push_str(&input.content[last_end..token_match.start]);
         if let Some(column) = selected_by_name.get(token_match.name) {
             let row_index = next_row_index(&mut row_indices, token_match.name);
-            let context = TransformContext {
-                column_name: &column.name,
-                column_index: column.index,
-                row_index,
-                empty_format: column.empty_format,
-            };
+            let context = TransformContext::for_column(column, row_index);
             output.push_str(&transform_value_with_state(
                 token_match.value,
                 column,
@@ -126,13 +102,14 @@ pub(super) fn transform_text_with_smart_provider(
     }
     output.push_str(&input.content[last_end..]);
 
-    Ok(PasteTransformData {
+    Ok(paste_transform_data(
         output,
-        row_count: analysis.row_count,
-        columns_anonymized: count_transforming_selected_columns(&metadata),
-        duration_ms: start_time.elapsed().as_millis(),
-        privacy_report: build_privacy_report(&metadata, state.report()),
-    })
+        analysis.row_count,
+        &metadata,
+        state.report(),
+        coverage,
+        start_time,
+    ))
 }
 struct TextMatch<'a> {
     name: &'static str,

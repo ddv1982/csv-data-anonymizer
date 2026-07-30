@@ -1,38 +1,58 @@
 use crate::detection::{classify_pii_risk, max_pii_risk};
 use crate::error::{AnonymizerError, Result};
-use crate::metadata::{
-    apply_column_selection, build_column_metadata, default_strategy_for_pii_risk,
-};
+use crate::metadata::{build_column_metadata, default_strategy_for_pii_risk};
 use crate::sampling::SpreadSampler;
 use crate::service::{
-    apply_column_controls, preview_rows_with_smart_provider as build_preview_from_rows,
-    validate_column_indices,
+    build_privacy_report, count_transforming_selected_columns, display_row_count,
+    preview_rows_with_smart_provider as build_preview_from_rows,
 };
-use crate::smart::{SmartReplacementMap, SmartReplacementProvider, has_smart_replacement_columns};
-use crate::strategies::TransformState;
+use crate::smart::{
+    SmartReplacementMap, SmartReplacementProvider, prepare_smart_replacements_from_rows,
+    reusable_preview_smart_replacements,
+};
 use crate::types::{
-    ColumnControl, ColumnMetadata, DataType, MAX_PREVIEW_SAMPLE_COUNT, MAX_SAMPLE_ROW_COUNT,
-    PreviewData,
+    ColumnControl, ColumnMetadata, DETECTION_SAMPLE_ROW_FLOOR, DataType, DetectionCoverage,
+    MAX_PREVIEW_SAMPLE_COUNT, MAX_SAMPLE_ROW_COUNT, PasteAnalyzeData, PasteDataFormat,
+    PastePreviewParams, PasteTransformData, PasteTransformParams, PreviewData, TransformReport,
 };
 use std::collections::HashMap;
+use std::time::Instant;
 
 pub(super) const PASTE_MAX_CONTENT_BYTES: usize = 5 * 1024 * 1024;
 pub(super) const PASTE_MAX_FIELDS: usize = 512;
 pub(super) const PASTE_MAX_TEXT_MATCHES: usize = 10_000;
 
-/// Floor on the rows the paste workflow classifies on, drawn from the whole paste.
+/// What a paste preview transforms, and for which columns.
 ///
-/// Analyze, preview and transform must all detect on the same basis, or the column
-/// table and the preview promise a type the run will not apply. All three reach this
-/// figure through [`paste_detection_sample_rows`] with the caller's own "Sample
-/// rows", which may only raise the sample, never lower it.
-pub(super) const PASTE_DETECTION_SAMPLE_ROWS: usize = 100;
-
+/// One shape for all five formats, built one way. Each format previews from a
+/// different reader but makes the same promise about the request it was given, and
+/// assembling the four fields per format is how a preview comes to be shown for a
+/// different column set, or a different number of rows, than the caller asked for.
 pub(super) struct PreviewSelection<'a, 'provider> {
     pub(super) columns: &'a [usize],
     pub(super) controls: &'a [ColumnControl],
     pub(super) sample_count: usize,
     pub(super) provider: Option<&'provider mut dyn SmartReplacementProvider>,
+}
+
+impl<'a, 'provider> PreviewSelection<'a, 'provider> {
+    /// The selection a paste preview request describes.
+    ///
+    /// `sample_count` is passed separately rather than read from `input`, because
+    /// every caller has already put it through [`bounded_preview_sample_count`] and
+    /// the bounded figure is the one the preview must use.
+    pub(super) fn from_params(
+        input: &'a PastePreviewParams,
+        sample_count: usize,
+        provider: Option<&'provider mut dyn SmartReplacementProvider>,
+    ) -> Self {
+        Self {
+            columns: &input.columns,
+            controls: &input.controls,
+            sample_count,
+            provider,
+        }
+    }
 }
 
 pub(super) fn preview_rows_with_smart_provider(
@@ -76,14 +96,6 @@ pub(super) fn preview_field_sample_limits(
     }
 }
 
-/// Rows a preview displays for a requested sample count.
-///
-/// Twice the request, because a preview drops rows that a column's strategy leaves
-/// unchanged and would otherwise run short of samples to show.
-pub(super) fn display_row_count(sample_count: usize) -> usize {
-    sample_count.saturating_mul(2).max(1)
-}
-
 pub(super) fn preview_from_rows_with_smart_provider(
     metadata: &[ColumnMetadata],
     rows: &[Vec<String>],
@@ -101,34 +113,82 @@ pub(super) fn preview_from_rows_with_smart_provider(
     )
 }
 
-pub(super) fn transform_state_for_smart_replacements(
-    smart_replacements: SmartReplacementMap,
-) -> TransformState {
-    if smart_replacements.has_activity() {
-        TransformState::with_smart_replacements(smart_replacements)
-    } else {
-        TransformState::new()
+/// Smart replacements for a run over a field-shaped paste.
+///
+/// `fields` must be the run's own, collected over every value rather than over a
+/// detection window: replacements are looked up per value, so a field sampled for
+/// classification would leave the values it dropped without one, and those values
+/// would fall back to rule-based output in the middle of a Local AI column.
+///
+/// The three field-shaped formats — JSON/YAML, XML and free text — each collect their
+/// fields differently and then do exactly this with them, including reusing what the
+/// preview already produced rather than asking the model again.
+pub(super) fn smart_replacements_for_fields(
+    fields: &[FieldSamples],
+    metadata: &[ColumnMetadata],
+    input: &PasteTransformParams,
+    provider: Option<&mut dyn SmartReplacementProvider>,
+) -> Result<SmartReplacementMap> {
+    let (_headers, rows) = fields_to_rows(fields, FieldWindow::Detection);
+    let existing = reusable_preview_smart_replacements(&input.preview_smart_replacements, metadata);
+    prepare_smart_replacements_from_rows(&rows, metadata, existing.as_ref(), provider)
+}
+
+/// The reply for a completed paste run, in every format.
+///
+/// Assembled once because three of these five fields are claims about privacy — how
+/// many columns were actually transformed, and the whole privacy report with the
+/// detection coverage it rests on — and the five formats have to make them the same
+/// way. Built per format, a format could report the columns *selected* rather than
+/// the columns transforming, or omit the coverage its types were read from, and say
+/// so only on that one format's output.
+pub(super) fn paste_transform_data(
+    output: String,
+    row_count: usize,
+    metadata: &[ColumnMetadata],
+    report: TransformReport,
+    coverage: DetectionCoverage,
+    start_time: Instant,
+) -> PasteTransformData {
+    PasteTransformData {
+        output,
+        row_count,
+        columns_anonymized: count_transforming_selected_columns(metadata),
+        duration_ms: start_time.elapsed().as_millis(),
+        privacy_report: build_privacy_report(metadata, report, coverage),
     }
 }
 
-pub(super) fn preview_smart_replacements_for_transform(
-    input: &crate::types::PasteTransformParams,
-    metadata: &[ColumnMetadata],
-) -> Option<SmartReplacementMap> {
-    let preview_smart_replacements =
-        SmartReplacementMap::from_entries(&input.preview_smart_replacements);
-    (preview_smart_replacements.has_activity() && has_smart_replacement_columns(metadata))
-        .then_some(preview_smart_replacements)
-}
+/// Classifies collected fields, and returns the analysis together with the coverage
+/// it rests on.
+///
+/// The coverage is returned rather than only summarized into the DTO because the
+/// transform path feeds it to `build_privacy_report`, and rebuilding one from the wire
+/// summary would re-open the invariant [`DetectionCoverage`]'s constructor holds.
+///
+/// `row_count` is the caller's, since each format counts records its own way — array
+/// items, the longest XML field, matched spans — but everything downstream of the
+/// count is the same for all of them, including the promise that a field-shaped paste
+/// is read whole.
+pub(super) fn analysis_from_fields(
+    format: PasteDataFormat,
+    fields: &[FieldSamples],
+    row_count: usize,
+) -> (PasteAnalyzeData, DetectionCoverage) {
+    let (headers, rows) = fields_to_rows(fields, FieldWindow::Detection);
+    let columns = metadata_from_fields(fields, &headers, &rows);
+    let coverage = detection_coverage(fields, rows.len());
 
-pub(super) fn prepare_selected_metadata(
-    metadata: &[ColumnMetadata],
-    columns: &[usize],
-    controls: &[ColumnControl],
-) -> Result<Vec<ColumnMetadata>> {
-    validate_column_indices(metadata, columns)?;
-    let controlled = apply_column_controls(metadata, controls)?;
-    Ok(apply_column_selection(&controlled, columns))
+    (
+        PasteAnalyzeData {
+            format,
+            row_count,
+            row_count_is_complete: true,
+            detection_coverage: coverage.summary(),
+            columns,
+        },
+        coverage,
+    )
 }
 
 pub(super) fn selected_columns_by_source(
@@ -172,6 +232,10 @@ pub(super) fn validate_paste_content(content: &str) -> Result<()> {
 
 /// Validates a requested sample size and applies the detection floor.
 ///
+/// The floor is [`DETECTION_SAMPLE_ROW_FLOOR`], the same constant `service::detection_sample_rows`
+/// applies to a file, because the two workflows promise to classify the same input on
+/// the same basis.
+///
 /// Every paste entry point that classifies — analyze, preview and transform, in all
 /// five formats — routes its own "Sample rows" figure through here, so all of them
 /// classify on the same number of rows. Both halves of that matter. Without the
@@ -189,7 +253,7 @@ pub(super) fn validate_paste_content(content: &str) -> Result<()> {
 /// more tightly than the row count does anyway.
 pub(super) fn paste_detection_sample_rows(sample_count: usize) -> Result<usize> {
     let bounded = bounded_sample_count(sample_count, MAX_SAMPLE_ROW_COUNT, "sample row count")?;
-    Ok(bounded.max(PASTE_DETECTION_SAMPLE_ROWS))
+    Ok(bounded.max(DETECTION_SAMPLE_ROW_FLOOR))
 }
 
 pub(super) fn bounded_preview_sample_count(sample_count: usize) -> Result<usize> {
@@ -222,13 +286,12 @@ fn format_byte_limit(bytes: usize) -> String {
 /// How many values a field keeps, per window.
 ///
 /// Two windows rather than one, because the two consumers want different values out
-/// of the same field. This used to be a single head window sized to whichever was
-/// larger, which quietly made the larger one the *only* one: with the display window
-/// under the detection basis, classification read the field's opening values. A field
-/// whose PII started past the basis — a log where a column is a placeholder for the
-/// first few hundred records — was then classified off the placeholders, came back
-/// `String` at Low risk, and was not offered for anonymization, while the transform
-/// walked every record and copied the real values out.
+/// of the same field, and collapsing them into a single head window sized to the
+/// larger makes classification read the field's opening values only. A field whose
+/// PII starts past that opening — a log where a column is a placeholder for the first
+/// few hundred records — is then classified off the placeholders, comes back `String`
+/// at Low risk, and is not offered for anonymization, while the transform walks every
+/// record and copies the real values out.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct FieldSampleLimits {
     /// Values kept for classification, drawn from across the whole input.
@@ -321,6 +384,32 @@ impl FieldSamples {
             FieldWindow::Display => &self.display,
         }
     }
+}
+
+/// How much of a field-based input detection classified.
+///
+/// Aggregated the way [`fields_to_rows`] already lays fields out: the pseudo-row
+/// count is the longest field's, so the totals compared here are the longest
+/// field's too. Taking the maximum rather than a sum keeps the two figures in one
+/// unit, and the longest field is the one most likely to have been thinned.
+///
+/// Counted in *values*, not rows, and the returned coverage says so. These inputs
+/// have no rows: for a top-level JSON object `infer_value_row_count` reports one row
+/// while this counts the busiest field's 500 values, and for free text the busiest
+/// span type's match count matches neither the paste's line count nor the match
+/// total shown as `row_count`. Reporting either figure as "rows" states a number the
+/// user cannot find on screen, which reads as a bug in the tool and gets the whole
+/// disclosure discounted. See [`crate::types::DetectionCoverageUnit`].
+pub(super) fn detection_coverage(
+    fields: &[FieldSamples],
+    examined_values: usize,
+) -> DetectionCoverage {
+    let total = fields
+        .iter()
+        .map(FieldSamples::value_count)
+        .max()
+        .unwrap_or(0);
+    DetectionCoverage::values(examined_values, total)
 }
 
 /// Lays a set of fields out as rows, reading one window of each.

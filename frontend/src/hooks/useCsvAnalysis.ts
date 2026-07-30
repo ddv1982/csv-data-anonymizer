@@ -2,13 +2,12 @@ import type { Dispatch, SetStateAction } from 'react'
 import { analyzeCsv, countCsvRows, pickInputCsv, pickOutputCsv } from '../tauri'
 import type {
   AnalyzeResponse,
-  AnonymizeData,
   AppSettings,
   ColumnControl,
 } from '../types'
 import { messageFrom } from '../utils/errors'
 import { defaultOutputPathWithSuffix, directoryOf } from '../utils/paths'
-import type { BusyState } from './workflowTypes'
+import type { WorkflowShell } from './workflowTypes'
 
 type HeadersState = AnalyzeResponse['headers'] | null
 
@@ -19,13 +18,8 @@ type CsvSelectionState = {
   setColumnControls: Dispatch<SetStateAction<Record<number, ColumnControl>>>
 }
 
-type CsvAnalysisOptions = {
-  settings: AppSettings
+type CsvAnalysisArgs = {
   settingsLoaded: boolean
-  busy: BusyState
-  setBusy: Dispatch<SetStateAction<BusyState>>
-  setError: Dispatch<SetStateAction<string | null>>
-  setResult: Dispatch<SetStateAction<AnonymizeData | null>>
   clearArtifacts: () => void
   persistSettings: (settings: AppSettings) => Promise<void>
   onResetData: () => void
@@ -36,22 +30,22 @@ type CsvAnalysisOptions = {
   selection: CsvSelectionState
 }
 
-export function useCsvAnalysis({
-  settings,
-  settingsLoaded,
-  busy,
-  setBusy,
-  setError,
-  setResult,
-  clearArtifacts,
-  persistSettings,
-  onResetData,
-  inputPath,
-  setInputPath,
-  outputPath,
-  setOutputPath,
-  selection,
-}: CsvAnalysisOptions) {
+export function useCsvAnalysis(
+  shell: WorkflowShell,
+  {
+    settingsLoaded,
+    clearArtifacts,
+    persistSettings,
+    onResetData,
+    inputPath,
+    setInputPath,
+    outputPath,
+    setOutputPath,
+    selection,
+  }: CsvAnalysisArgs,
+) {
+  const { busy, setBusy, setError, setResult, settings } = shell
+
   async function handlePickInput() {
     if (busy !== 'idle' || !settingsLoaded) return
 
@@ -179,9 +173,7 @@ export function useCsvAnalysis({
 
   return {
     handlePickInput,
-    loadCsv,
     handlePickOutput,
-    refreshExactRowCount,
     updateOutputPath,
     updateOutputPathSuffix,
     clearFile,

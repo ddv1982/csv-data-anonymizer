@@ -1,17 +1,18 @@
-import { AlertCircle, Check, Clipboard, Eraser, Loader2, Wand2 } from 'lucide-react'
-import { useEffect, type FocusEvent } from 'react'
-import { directInputStrategies } from '../dataOptions'
-import { usePasteDataWorkflow } from '../hooks/usePasteDataWorkflow'
+import { AlertCircle, Eraser, Loader2, Wand2 } from 'lucide-react'
+import { type FocusEvent } from 'react'
+import type { PasteDataWorkflowState } from '../hooks/usePasteDataWorkflow'
 import { formatByteLimit, MAX_PASTE_CONTENT_BYTES } from '../limits'
-import type { AppSettings, PasteDataFormat, PasteTransformData } from '../types'
-import type { LocalAiState } from '../hooks/useLocalAi'
-import { formatRowCount } from '../utils/format'
+import type { DetectionCoverageSummary, PasteDataFormat } from '../types'
+import { formatRowCount, formatTransformStats } from '../utils/format'
 import { Alert } from './Alert'
 import { Card } from './Card'
 import { ColumnSelectionPanel } from './ColumnSelectionPanel'
+import { ColumnTable } from './ColumnTable'
+import { CopyableOutputCard } from './CopyableOutputCard'
 import { LocalAiBlockedAlert } from './LocalAiBlockedAlert'
 import { PreviewTable } from './PreviewTable'
 import { PrivacyReportSummary } from './PrivacyReportSummary'
+import { SectionHelp } from './SectionHelp'
 
 const formatLabels: Record<PasteDataFormat, string> = {
   auto: 'Auto detect',
@@ -34,28 +35,14 @@ const formatOptions: Array<{ value: PasteDataFormat; label: string }> = [
 ]
 
 export function PasteDataWorkflowView({
-  settings,
-  settingsLoaded,
-  localAi,
+  workflow,
   onOpenLocalAiSettings,
-  onError,
-  onBusyChange,
 }: {
-  settings: AppSettings
-  settingsLoaded: boolean
-  localAi: LocalAiState
+  workflow: PasteDataWorkflowState
   onOpenLocalAiSettings: () => void
-  onError: (message: string | null) => void
-  onBusyChange?: (busy: boolean) => void
 }) {
-  const workflow = usePasteDataWorkflow({ settings, settingsLoaded, localAi, onError })
   const { analysis, busy, content, format, preview, result, selection } = workflow
   const contentLimitLabel = formatByteLimit(MAX_PASTE_CONTENT_BYTES)
-
-  useEffect(() => {
-    onBusyChange?.(busy !== 'idle')
-    return () => onBusyChange?.(false)
-  }, [busy, onBusyChange])
 
   async function handlePasteInputBlur(event: FocusEvent<HTMLTextAreaElement>) {
     if (analysis || isPasteActionTarget(event.relatedTarget)) return
@@ -159,20 +146,13 @@ export function PasteDataWorkflowView({
               onClick: () => workflow.setColumnSelection(selection.detectedRiskColumns),
             },
           ]}
-          columns={selection.visibleColumns}
-          allColumnCount={selection.columns.length}
-          selectedSet={selection.selectedSet}
-          loading={busy === 'analyzing'}
-          disabled={workflow.isBusy}
-          showAllColumns={selection.showAllColumns}
-          hiddenColumnCount={selection.hiddenColumnCount}
-          onToggleColumn={workflow.toggleColumn}
-          controls={selection.columnControls}
-          onStrategyChange={workflow.updateColumnStrategy}
-          onToggleShowAll={() => selection.setShowAllColumns((current) => !current)}
-          availableStrategies={directInputStrategies}
           footer={(
             <>
+              {analysis?.detectionCoverage.isPartial ? (
+                <Alert icon={<AlertCircle aria-hidden="true" />}>
+                  {formatDetectionCoverageWarning(analysis.detectionCoverage)}
+                </Alert>
+              ) : null}
               {workflow.selectedUsesLocalAi && workflow.localAiBlocked ? (
                 <LocalAiBlockedAlert
                   message="Set up Local AI before previewing or anonymizing Smart replacement fields."
@@ -185,52 +165,57 @@ export function PasteDataWorkflowView({
               </p>
             </>
           )}
-        />
+        >
+          <ColumnTable
+            columns={selection.visibleColumns}
+            allColumnCount={selection.columns.length}
+            selectedSet={selection.selectedSet}
+            loading={busy === 'analyzing'}
+            disabled={workflow.isBusy}
+            showAllColumns={selection.showAllColumns}
+            hiddenColumnCount={selection.hiddenColumnCount}
+            onToggleColumn={workflow.toggleColumn}
+            controls={selection.columnControls}
+            onStrategyChange={workflow.updateColumnStrategy}
+            onToggleShowAll={() => selection.setShowAllColumns((current) => !current)}
+          />
+        </ColumnSelectionPanel>
       </Card>
 
       <Card
         title="3. Preview (Optional)"
         disabled={!analysis || selection.selectedColumns.length === 0}
         action={
-          <button type="button" className="button button-outline button-sm" disabled={!workflow.canPreview} onClick={workflow.showPreview}>
+          <button type="button" className="button button-outline button-sm" disabled={!workflow.canRun} onClick={workflow.showPreview}>
             {busy === 'previewing' ? <Loader2 className="spin" aria-hidden="true" /> : null}
             Show Preview
           </button>
         }
       >
+        <div className="table-help-row">
+          <SectionHelp topic="preview" label="What Preview does not prove" />
+        </div>
         <PreviewTable preview={preview} loading={busy === 'previewing'} />
       </Card>
 
       <Card contentClassName="anonymize-card-content">
-        <button type="button" className="button button-primary button-lg full-width" disabled={!workflow.canTransform} onClick={workflow.transform}>
+        <button type="button" className="button button-primary button-lg full-width" disabled={!workflow.canRun} onClick={workflow.transform}>
           {busy === 'transforming' ? <Loader2 className="spin" aria-hidden="true" /> : <Wand2 aria-hidden="true" />}
           Transform pasted sample
         </button>
       </Card>
 
       {result ? (
-        <Card
+        <CopyableOutputCard
           title="Anonymized Output"
-          action={
-            <button type="button" className="button button-outline button-sm" disabled={workflow.isBusy} onClick={workflow.copyOutput}>
-              {busy === 'copying' ? <Loader2 className="spin" aria-hidden="true" /> : <Clipboard aria-hidden="true" />}
-              Copy
-            </button>
-          }
-        >
-          <div className="direct-output-stack">
-            <textarea className="direct-output" value={result.output} readOnly aria-label="Anonymized pasted data" />
-            <div className="direct-output-meta" aria-live="polite">
-              <span className="muted-text text-sm">{formatPasteStats(result)}</span>
-              {workflow.copyStatus ? (
-                <span className="status-pill success">
-                  <Check aria-hidden="true" />
-                  {workflow.copyStatus}
-                </span>
-              ) : null}
-            </div>
-          </div>
-        </Card>
+          outputLabel="Anonymized pasted data"
+          output={result.output}
+          stats={formatTransformStats(result, { unit: 'field' })}
+          copying={busy === 'copying'}
+          disabled={workflow.isBusy}
+          copyStatus={workflow.copyStatus}
+          onCopy={workflow.copyOutput}
+        />
       ) : null}
 
       {result ? <PrivacyReportSummary privacyReport={result.privacyReport} /> : null}
@@ -242,11 +227,20 @@ export function PasteDataWorkflowView({
   )
 }
 
-function formatPasteStats(result: PasteTransformData) {
-  const rows = result.rowCount.toLocaleString()
-  const columns = result.columnsAnonymized === 1 ? 'field' : 'fields'
-  const duration = result.durationMs < 1000 ? `${result.durationMs}ms` : `${(result.durationMs / 1000).toFixed(2)}s`
-  return `${rows} rows processed, ${result.columnsAnonymized} ${columns} transformed in ${duration}`
+// Sits beside the column table, before the transform button, because that is the
+// last moment the disclosure is actionable. The privacy report carries the same
+// caveat, but it is only written once the output exists, so acting on it there means
+// re-running the whole paste. The noun comes from the backend: a JSON or free-text
+// paste is sampled in field values, not rows, and hard-coding "rows" would state a
+// figure the row count beside it contradicts.
+function formatDetectionCoverageWarning(coverage: DetectionCoverageSummary) {
+  const noun = coverage.unit === 'rows' ? 'rows' : 'values'
+  return (
+    `Field types were detected from ${coverage.examined.toLocaleString()} of ` +
+    `${coverage.total.toLocaleString()} ${noun}. A value that appears in only a few ${noun} may have ` +
+    `been missed, so a field can show a low risk and stay unselected on evidence that never saw it. ` +
+    `Raise "Sample rows" in settings and detect again, or select such fields yourself.`
+  )
 }
 
 function formatLabel(format: PasteDataFormat) {

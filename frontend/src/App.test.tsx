@@ -5,55 +5,28 @@ import App from './App'
 import { defaultSettings } from './defaults'
 import { MAX_PASTE_CONTENT_BYTES } from './limits'
 import {
-  columnMetadataFixture,
+  completeDetectionCoverage,
   localAiStatusFixture,
-  privacyReportFixture as basePrivacyReportFixture,
-  verifiedPreflightFixture,
+  partialDetectionCoverage,
 } from './test-utils/builders'
-import type { AppSettings, ColumnMetadata, PrivacyReport } from './types'
+import {
+  columnFixture,
+  resetTauriMocks,
+  settingsFixture,
+  tauriMocks,
+  transformedPrivacyReportFixture,
+} from './test-utils/mocks'
+import type { AppSettings } from './types'
 
-type PreflightLike = { readiness: { blockers: string[] } }
-
-const tauriMocks = vi.hoisted(() => ({
-  loadSettings: vi.fn(),
-  saveSettings: vi.fn(),
-  pickInputCsv: vi.fn(),
-  pickOutputCsv: vi.fn(),
-  analyzeCsv: vi.fn(),
-  analyzePasteData: vi.fn(),
-  previewPasteData: vi.fn(),
-  transformPasteData: vi.fn(),
-  generateQuickValues: vi.fn(),
-  countCsvRows: vi.fn(),
-  preflightAnonymization: vi.fn(),
-  firstPreflightBlocker: vi.fn((preflight: PreflightLike) => preflight.readiness.blockers[0] ?? null),
-  previewAnonymization: vi.fn(),
-  startAnonymizeJob: vi.fn(),
-  getAnonymizeJobStatus: vi.fn(),
-  cancelAnonymizeJob: vi.fn(),
-  openOutputLocation: vi.fn(),
-  getLocalAiStatus: vi.fn(),
-  startLocalAiModelDownload: vi.fn(),
-  getLocalAiModelDownloadStatus: vi.fn(),
-  cancelLocalAiModelDownload: vi.fn(),
-  openLocalAiSetupUrl: vi.fn(),
-  setAppTheme: vi.fn(),
-}))
-
-vi.mock('./tauri', () => tauriMocks)
+// Dynamic, because the factory runs while `./App` pulls in `./tauri` — ahead of this file's
+// own imports, so a plain reference to `tauriMocks` would still be in its dead zone.
+vi.mock('./tauri', async () => (await import('./test-utils/mocks')).tauriMocks)
 
 const clipboardWriteText = vi.fn()
 
 describe('App input mode tabs', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-    tauriMocks.loadSettings.mockResolvedValue(settingsFixture())
-    tauriMocks.saveSettings.mockImplementation(async (settings: AppSettings) => settings)
-    tauriMocks.preflightAnonymization.mockResolvedValue(verifiedPreflightFixture())
-    tauriMocks.firstPreflightBlocker.mockImplementation(
-      (preflight: PreflightLike) => preflight.readiness.blockers[0] ?? null,
-    )
-    tauriMocks.getLocalAiStatus.mockResolvedValue(localAiStatusFixture())
+    resetTauriMocks()
     clipboardWriteText.mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
@@ -87,6 +60,7 @@ describe('App input mode tabs', () => {
       format: 'json',
       rowCount: 1,
       rowCountIsComplete: true,
+      detectionCoverage: completeDetectionCoverage,
       columns: [columnFixture(0, '[].email', 'email', 'high')],
     })
     render(<App />)
@@ -306,6 +280,7 @@ describe('App input mode tabs', () => {
       format: 'json',
       rowCount: 1,
       rowCountIsComplete: true,
+      detectionCoverage: completeDetectionCoverage,
       columns: [columnFixture(0, '[].email', 'email', 'high')],
     })
     render(<App />)
@@ -336,6 +311,7 @@ describe('App input mode tabs', () => {
       format: 'json',
       rowCount: 1,
       rowCountIsComplete: true,
+      detectionCoverage: completeDetectionCoverage,
       columns: [columnFixture(0, '[].email', 'email', 'high')],
     })
     tauriMocks.previewPasteData.mockResolvedValue({
@@ -360,7 +336,7 @@ describe('App input mode tabs', () => {
       rowCount: 1,
       columnsAnonymized: 1,
       durationMs: 4,
-      privacyReport: privacyReportFixture(),
+      privacyReport: transformedPrivacyReportFixture(),
     })
     render(<App />)
 
@@ -400,6 +376,7 @@ describe('App input mode tabs', () => {
       format: 'json',
       rowCount: 1,
       rowCountIsComplete: true,
+      detectionCoverage: completeDetectionCoverage,
       columns: [columnFixture(0, '[].email', 'email', 'high')],
     })
     render(<App />)
@@ -427,12 +404,39 @@ describe('App input mode tabs', () => {
     expect(screen.getByText('Detected: JSON')).toBeInTheDocument()
   })
 
+  // The disclosure has to arrive before the transform button, not with the privacy
+  // report after it: "raise Sample rows" costs a second full run once the output
+  // already exists. The file workflow gets this from preflight; the paste workflow
+  // has no preflight, so the column table is where it belongs.
+  it('warns beside the paste column table when detection only sampled', async () => {
+    const user = userEvent.setup()
+    tauriMocks.analyzePasteData.mockResolvedValue({
+      format: 'csv',
+      rowCount: 400,
+      rowCountIsComplete: true,
+      detectionCoverage: partialDetectionCoverage(),
+      columns: [columnFixture(0, 'phone', 'string', 'low')],
+    })
+    render(<App />)
+
+    await user.click(screen.getByRole('tab', { name: /paste sample/i }))
+    fireEvent.change(screen.getByLabelText(/pasted data/i), {
+      target: { value: 'phone\n0612345678\n' },
+    })
+    await user.click(screen.getByRole('button', { name: /detect fields/i }))
+
+    const warning = await screen.findByText(/Field types were detected from 100 of 400 rows/i)
+    expect(warning).toBeInTheDocument()
+    expect(warning).toHaveTextContent(/stay unselected on evidence that never saw it/i)
+  })
+
   it('clears pasted content and detected state', async () => {
     const user = userEvent.setup()
     tauriMocks.analyzePasteData.mockResolvedValue({
       format: 'json',
       rowCount: 1,
       rowCountIsComplete: true,
+      detectionCoverage: completeDetectionCoverage,
       columns: [columnFixture(0, '[].email', 'email', 'high')],
     })
     render(<App />)
@@ -475,6 +479,7 @@ describe('App input mode tabs', () => {
       format: 'json',
       rowCount: 1,
       rowCountIsComplete: true,
+      detectionCoverage: completeDetectionCoverage,
       columns: [columnFixture(0, '[].email', 'email', 'high')],
     })
     render(<App />)
@@ -500,7 +505,7 @@ describe('App input mode tabs', () => {
       output: 'masked@example.com',
       rowCount: 1,
       values: [{ original: 'person1@example.invalid', anonymized: 'masked@example.com' }],
-      privacyReport: privacyReportFixture(),
+      privacyReport: transformedPrivacyReportFixture(),
     })
     render(<App />)
 
@@ -534,34 +539,3 @@ describe('App input mode tabs', () => {
   })
 
 })
-
-function settingsFixture(overrides: Partial<AppSettings> = {}): AppSettings {
-  return {
-    ...defaultSettings,
-    ...overrides,
-  }
-}
-
-function columnFixture(
-  index: number,
-  name: string,
-  detectedType: ColumnMetadata['detectedType'],
-  piiRisk: ColumnMetadata['piiRisk'],
-): ColumnMetadata {
-  return columnMetadataFixture({
-    name,
-    index,
-    detectedType,
-    piiRisk,
-    isSelected: piiRisk === 'high' || piiRisk === 'medium',
-  })
-}
-
-function privacyReportFixture(overrides: Partial<PrivacyReport> = {}): PrivacyReport {
-  return basePrivacyReportFixture({
-    directIdentifiers: 1,
-    pseudonymizedColumns: 1,
-    uniquePseudonymValues: 1,
-    ...overrides,
-  })
-}

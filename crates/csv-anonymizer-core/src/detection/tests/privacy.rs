@@ -614,3 +614,114 @@ fn all_data_types() -> impl Iterator<Item = DataType> {
         },
     )
 }
+
+/// Evidence that ties on score and match count is ordered by the declaration order of
+/// `PrivacyFindingKind`, not by how its variant names happen to be spelled.
+///
+/// The tie-break compares kinds with `Ord`, which on a derived enum is declaration
+/// order, so the report's ordering is a decision this file records. Without this test a
+/// rename of a variant, or a reshuffle of the enum, silently reorders what a reader of
+/// the privacy report sees first, and nothing in the suite objects: every other
+/// assertion here looks for a kind anywhere in `evidence`, never at its position.
+#[test]
+fn tied_privacy_evidence_is_ordered_by_finding_kind_declaration_order() {
+    use crate::types::PrivacyFinding;
+
+    fn finding(kind: PrivacyFindingKind, data_type: DataType) -> PrivacyFinding {
+        PrivacyFinding {
+            kind,
+            data_type,
+            row_index: 0,
+            start: 0,
+            end: 4,
+            match_value: "tied".to_string(),
+            sample_value: "tied".to_string(),
+            confidence: Confidence::High,
+            score: 88,
+            detector: "test:tie".to_string(),
+            reason: "tie-break fixture".to_string(),
+        }
+    }
+
+    // Declared Person, Contact, ..., GovernmentId; spelled Contact, GovernmentId,
+    // Person. Feeding them in a third order keeps input order out of the answer.
+    let findings = [
+        finding(PrivacyFindingKind::GovernmentId, DataType::TaxId),
+        finding(PrivacyFindingKind::Person, DataType::FullName),
+        finding(PrivacyFindingKind::Contact, DataType::Email),
+    ];
+
+    let ordered = crate::detection::privacy::summarize_privacy_findings_in_tests(&findings, 1);
+
+    assert!(
+        ordered
+            .iter()
+            .all(|summary| summary.score == 88 && summary.match_count == 1),
+        "the fixture must tie on both keys the kind tie-break sits behind: {ordered:?}"
+    );
+    assert_eq!(
+        ordered
+            .iter()
+            .map(|summary| summary.kind)
+            .collect::<Vec<_>>(),
+        vec![
+            PrivacyFindingKind::Person,
+            PrivacyFindingKind::Contact,
+            PrivacyFindingKind::GovernmentId,
+        ]
+    );
+}
+
+/// A tied High-risk finding is shown above a Medium one, whatever the declaration order says.
+///
+/// Risk is compared before kind, and it has to be: `AddressRegion` is declared before
+/// `GovernmentId`, so ordering by kind alone puts a postal code above a tax id on any column
+/// where both are found at High confidence — the two tie at score 88. A reader takes the top
+/// of the list as the worst of it, so leading with the Medium finding under-sells the column,
+/// and under-selling is the one direction these figures may not be wrong in.
+#[test]
+fn a_tied_high_risk_finding_outranks_a_medium_one() {
+    use crate::types::PrivacyFinding;
+
+    fn finding(kind: PrivacyFindingKind, data_type: DataType) -> PrivacyFinding {
+        PrivacyFinding {
+            kind,
+            data_type,
+            row_index: 0,
+            start: 0,
+            end: 4,
+            match_value: "tied".to_string(),
+            sample_value: "tied".to_string(),
+            confidence: Confidence::High,
+            score: 88,
+            detector: "test:risk-tie".to_string(),
+            reason: "risk tie-break fixture".to_string(),
+        }
+    }
+
+    // AddressRegion is Medium and declared fourth; GovernmentId is High and declared eighth.
+    // Fed Medium-first so neither input order nor declaration order produces the answer.
+    let findings = [
+        finding(PrivacyFindingKind::AddressRegion, DataType::PostalCode),
+        finding(PrivacyFindingKind::GovernmentId, DataType::TaxId),
+    ];
+
+    let ordered = crate::detection::privacy::summarize_privacy_findings_in_tests(&findings, 1);
+
+    assert!(
+        ordered
+            .iter()
+            .all(|summary| summary.score == 88 && summary.match_count == 1),
+        "the fixture must tie on both keys the risk tie-break sits behind: {ordered:?}"
+    );
+    assert_eq!(
+        ordered
+            .iter()
+            .map(|summary| summary.kind)
+            .collect::<Vec<_>>(),
+        vec![
+            PrivacyFindingKind::GovernmentId,
+            PrivacyFindingKind::AddressRegion,
+        ]
+    );
+}

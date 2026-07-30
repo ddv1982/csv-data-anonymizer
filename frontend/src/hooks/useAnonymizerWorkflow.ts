@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import type {
-  AnonymizationStrategy,
+  AnonymizeData,
   AppSettings,
-  ColumnMetadata,
+  PreviewData,
 } from '../types'
 import { useAnonymizeJob } from './useAnonymizeJob'
 import { useCsvAnalysis } from './useCsvAnalysis'
@@ -10,8 +10,8 @@ import { useCsvSelection } from './useCsvSelection'
 import { useLocalAi } from './useLocalAi'
 import { usePersistentSettings } from './usePersistentSettings'
 import { usePreviewWorkflow } from './usePreviewWorkflow'
-import { useWorkflowArtifacts } from './useWorkflowArtifacts'
-import type { BusyState } from './workflowTypes'
+import { useWorkflowArtifacts, useSelectionInvalidation } from './useWorkflowArtifacts'
+import type { BusyState, WorkflowShell } from './workflowTypes'
 
 export function useAnonymizerWorkflow() {
   const [inputPath, setInputPath] = useState('')
@@ -45,19 +45,16 @@ export function useAnonymizerWorkflow() {
     updateColumnStrategy: updateCsvColumnStrategy,
     toggleColumn: toggleCsvColumn,
   } = useCsvSelection()
-  const { preview, result, setPreview, setResult, clearArtifacts } = useWorkflowArtifacts()
+  const { preview, result, setPreview, setResult, clearArtifacts } =
+    useWorkflowArtifacts<PreviewData, AnonymizeData>()
   const { settings, settingsLoaded, latestSettingsRef, persistSettings, refreshSettings } =
     usePersistentSettings({
       onError: setError,
     })
   const localAi = useLocalAi(settings, setError)
-  const csvAnalysis = useCsvAnalysis({
-    settings,
+  const shell: WorkflowShell = { busy, setBusy, setError, setResult, settings, localAi }
+  const csvAnalysis = useCsvAnalysis(shell, {
     settingsLoaded,
-    busy,
-    setBusy,
-    setError,
-    setResult,
     clearArtifacts,
     persistSettings,
     onResetData: resetData,
@@ -73,32 +70,22 @@ export function useAnonymizerWorkflow() {
     },
   })
 
-  const localAiSelected = selectionUsesLocalAi(selectedColumns)
-  const localAiReady = localAi.ready
-  const localAiDownloadRunning = localAi.downloadRunning
-
   const hasFile = Boolean(inputPath.trim())
   const isLoading = busy !== 'idle'
   const settingsDisabled = isLoading || !settingsLoaded
-  const localAiBlocked = localAiSelected && (!localAiReady || localAiDownloadRunning)
-  const previewWorkflow = usePreviewWorkflow({
+  const localAiBlocked =
+    selectionUsesLocalAi(selectedColumns) && (!localAi.ready || localAi.downloadRunning)
+  const previewWorkflow = usePreviewWorkflow(shell, {
     inputPath,
     selectedColumns,
     hasColumns,
     hasSelectedColumns,
-    busy,
-    localAiReady,
     localAiBlocked,
-    settings,
-    localAiRequest: localAi.request,
     controlsForColumns,
     selectionUsesLocalAi,
-    setBusy,
-    setError,
     setPreview,
-    setResult,
   })
-  const anonymizeJob = useAnonymizeJob({
+  const anonymizeJob = useAnonymizeJob(shell, {
     inputPath,
     outputPath,
     selectedColumns,
@@ -106,17 +93,15 @@ export function useAnonymizerWorkflow() {
     hasColumns,
     hasSelectedColumns,
     headers,
-    settings,
     previewSmartReplacements: preview?.smartReplacements ?? [],
-    localAiRequest: localAi.request,
     localAiBlocked,
-    busy,
-    setBusy,
-    setError,
-    setResult,
     persistSettings,
     refreshSettings,
   })
+  const invalidatingSelection = useSelectionInvalidation(
+    { setSelectedColumns: setCsvSelectedColumns, toggleColumn: toggleCsvColumn, updateColumnStrategy: updateCsvColumnStrategy },
+    clearArtifacts,
+  )
 
   function updateSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
     if (!settingsLoaded) return
@@ -133,21 +118,6 @@ export function useAnonymizerWorkflow() {
       csvAnalysis.updateOutputPathSuffix(String(value))
     }
     void persistSettings(nextSettings)
-  }
-
-  function setColumnSelection(nextColumns: number[]) {
-    setCsvSelectedColumns(nextColumns)
-    clearArtifacts()
-  }
-
-  function updateColumnStrategy(column: ColumnMetadata, strategy: AnonymizationStrategy) {
-    updateCsvColumnStrategy(column, strategy)
-    clearArtifacts()
-  }
-
-  function toggleColumn(column: ColumnMetadata) {
-    toggleCsvColumn(column)
-    clearArtifacts()
   }
 
   function resetData() {
@@ -172,7 +142,6 @@ export function useAnonymizerWorkflow() {
     settingsOpen,
     showAllColumns,
     localAi,
-    localAiSelected,
     localAiBlocked,
     columns,
     selectedSet,
@@ -198,9 +167,9 @@ export function useAnonymizerWorkflow() {
     previewCsv: previewWorkflow.previewCsv,
     runAnonymization: anonymizeJob.runAnonymization,
     cancelCurrentJob: anonymizeJob.cancelCurrentJob,
-    setColumnSelection,
-    updateColumnStrategy,
-    toggleColumn,
+    setColumnSelection: invalidatingSelection.setColumnSelection,
+    updateColumnStrategy: invalidatingSelection.updateColumnStrategy,
+    toggleColumn: invalidatingSelection.toggleColumn,
     clearFile: csvAnalysis.clearFile,
     handleInputChange: csvAnalysis.handleInputChange,
     maybeLoadManualPath: csvAnalysis.maybeLoadManualPath,

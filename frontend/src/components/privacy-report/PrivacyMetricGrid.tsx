@@ -1,5 +1,5 @@
 import { GlossaryPopover } from '../GlossaryPopover'
-import { formatMetricValue, statusLabel, statusPillClass } from './helpers'
+import { statusLabel, statusPillClass } from './helpers'
 import type { PrivacyMetric } from './types'
 
 export function PrivacyMetricGrid({
@@ -18,7 +18,7 @@ export function PrivacyMetricGrid({
             {metric.glossaryTerm ? <GlossaryPopover term={metric.glossaryTerm} /> : null}
           </span>
           <span className="privacy-metric-value-row">
-            <strong>{formatMetricValue(metric.value)}</strong>
+            <strong>{metric.value}</strong>
             {metric.status ? <span className={statusPillClass(metric.status)}>{statusLabel(metric.status)}</span> : null}
           </span>
           {metric.detail ? <p className="muted-text text-sm">{metric.detail}</p> : null}

@@ -14,7 +14,7 @@ use crate::metadata::should_auto_select_column;
 use crate::smart::SmartReplacementProvider;
 use crate::types::{
     PasteAnalyzeData, PasteAnalyzeParams, PasteDataFormat, PastePreviewParams, PasteTransformData,
-    PasteTransformParams, PreviewData, QuickGenerateParams, QuickTransformData,
+    PasteTransformParams, PreviewData,
 };
 
 pub fn analyze_paste_data(input: PasteAnalyzeParams) -> Result<PasteAnalyzeData> {
@@ -107,13 +107,4 @@ pub fn transform_paste_data_with_smart_provider(
     }
 }
 
-pub fn generate_quick_values(input: QuickGenerateParams) -> Result<QuickTransformData> {
-    quick::generate_quick_values(input)
-}
-
-pub fn generate_quick_values_with_smart_provider(
-    input: QuickGenerateParams,
-    provider: Option<&mut dyn SmartReplacementProvider>,
-) -> Result<QuickTransformData> {
-    quick::generate_quick_values_with_smart_provider(input, provider)
-}
+pub use quick::{generate_quick_values, generate_quick_values_with_smart_provider};

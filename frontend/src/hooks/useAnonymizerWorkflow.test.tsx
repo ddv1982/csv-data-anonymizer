@@ -1,62 +1,28 @@
 import { act, render } from '@testing-library/react'
 import { useEffect } from 'react'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
-import { defaultSettings } from '../defaults'
+import { verifiedPreflightFixture } from '../test-utils/builders'
 import {
-  columnMetadataFixture,
-  localAiStatusFixture,
-  privacyReportFixture as basePrivacyReportFixture,
-  verifiedPreflightFixture,
-} from '../test-utils/builders'
-import type {
-  AnonymizeData,
-  AnonymizeJobStatus,
-  AppSettings,
-  ColumnMetadata,
-  PrivacyReport,
-} from '../types'
+  columnFixture as riskColumnFixture,
+  resetTauriMocks,
+  settingsFixture,
+  tauriMocks,
+  transformedPrivacyReportFixture,
+} from '../test-utils/mocks'
+import type { AnonymizeData, AnonymizeJobStatus, ColumnMetadata } from '../types'
 import { useAnonymizerWorkflow, type AnonymizerWorkflowState } from './useAnonymizerWorkflow'
 
-type PreflightLike = { readiness: { blockers: string[] } }
-
-const tauriMocks = vi.hoisted(() => ({
-  loadSettings: vi.fn(),
-  saveSettings: vi.fn(),
-  pickInputCsv: vi.fn(),
-  pickOutputCsv: vi.fn(),
-  analyzeCsv: vi.fn(),
-  countCsvRows: vi.fn(),
-  preflightAnonymization: vi.fn(),
-  firstPreflightBlocker: vi.fn((preflight: PreflightLike) => preflight.readiness.blockers[0] ?? null),
-  previewAnonymization: vi.fn(),
-  startAnonymizeJob: vi.fn(),
-  getAnonymizeJobStatus: vi.fn(),
-  cancelAnonymizeJob: vi.fn(),
-  openOutputLocation: vi.fn(),
-  getLocalAiStatus: vi.fn(),
-  startLocalAiModelDownload: vi.fn(),
-  getLocalAiModelDownloadStatus: vi.fn(),
-  cancelLocalAiModelDownload: vi.fn(),
-  openLocalAiSetupUrl: vi.fn(),
-  setAppTheme: vi.fn(),
-}))
-
-vi.mock('../tauri', () => tauriMocks)
+// Dynamic, because the factory runs while the hook under test pulls in `../tauri` — ahead of
+// this file's own imports, so a plain reference to `tauriMocks` would still be in its dead zone.
+vi.mock('../tauri', async () => (await import('../test-utils/mocks')).tauriMocks)
 
 describe('useAnonymizerWorkflow', () => {
   beforeEach(() => {
     vi.useRealTimers()
-    vi.clearAllMocks()
-    tauriMocks.loadSettings.mockResolvedValue(settingsFixture())
-    tauriMocks.saveSettings.mockImplementation(async (settings: AppSettings) => settings)
-    tauriMocks.getLocalAiStatus.mockResolvedValue(localAiStatusFixture())
+    resetTauriMocks()
     tauriMocks.pickInputCsv.mockResolvedValue('/data/input.csv')
     tauriMocks.pickOutputCsv.mockResolvedValue('/data/custom-output.csv')
     tauriMocks.countCsvRows.mockResolvedValue(2)
-    tauriMocks.preflightAnonymization.mockResolvedValue(verifiedPreflightFixture())
-    tauriMocks.firstPreflightBlocker.mockImplementation(
-      (preflight: PreflightLike) => preflight.readiness.blockers[0] ?? null,
-    )
     tauriMocks.previewAnonymization.mockResolvedValue({
       previews: [],
       warnings: [],
@@ -291,62 +257,211 @@ describe('useAnonymizerWorkflow', () => {
     expect(tauriMocks.cancelAnonymizeJob).not.toHaveBeenCalled()
   })
 
-  it('gives up after consecutive poll failures and attempts a best-effort cancel', async () => {
+  it('keeps polling through transient failures and never cancels the job itself', async () => {
     vi.useFakeTimers()
     tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())
     tauriMocks.startAnonymizeJob.mockResolvedValue(runningJobStatus())
-    tauriMocks.getAnonymizeJobStatus.mockRejectedValue(new Error('Simulated poll failure'))
-    tauriMocks.cancelAnonymizeJob.mockResolvedValue({
-      ...runningJobStatus(),
-      state: 'canceled',
-      cancelRequested: true,
-    })
-    const harness = renderWorkflow()
-    await flushPromises()
-
-    await act(async () => {
-      await harness.workflow.handlePickInput()
-    })
-    await act(async () => {
-      await harness.workflow.runAnonymization()
-    })
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(300)
-    })
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(300)
-    })
-
-    expect(tauriMocks.getAnonymizeJobStatus).toHaveBeenCalledTimes(2)
-    expect(tauriMocks.cancelAnonymizeJob).toHaveBeenCalledWith('job-1')
-    expect(harness.workflow.error).toBe('Simulated poll failure')
-    expect(harness.workflow.busy).toBe('idle')
-  })
-
-  it('stays busy until poll-failure cancellation is confirmed', async () => {
-    vi.useFakeTimers()
-    const pendingCancel = deferred<AnonymizeJobStatus>()
-    tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())
-    tauriMocks.startAnonymizeJob.mockResolvedValue(runningJobStatus())
-    tauriMocks.getAnonymizeJobStatus.mockRejectedValue(new Error('Simulated poll failure'))
-    tauriMocks.cancelAnonymizeJob.mockReturnValue(pendingCancel.promise)
+    // Four failures, past the reporting threshold, then contact returns. A run that
+    // recovers has to be allowed to finish: the old behaviour cancelled it after two.
+    tauriMocks.getAnonymizeJobStatus
+      .mockRejectedValueOnce(new Error('Simulated poll failure'))
+      .mockRejectedValueOnce(new Error('Simulated poll failure'))
+      .mockRejectedValueOnce(new Error('Simulated poll failure'))
+      .mockRejectedValueOnce(new Error('Simulated poll failure'))
+      .mockResolvedValue(succeededJobStatus())
     const harness = renderWorkflow()
     await flushPromises()
 
     await act(async () => harness.workflow.handlePickInput())
     await act(async () => harness.workflow.runAnonymization())
-    await act(async () => vi.advanceTimersByTimeAsync(600))
+    // Long enough to cover the backoff between the failed polls and the retry that
+    // succeeds, rather than a fixed multiple of the poll interval.
+    await act(async () => vi.advanceTimersByTimeAsync(20_000))
 
-    expect(tauriMocks.cancelAnonymizeJob).toHaveBeenCalledWith('job-1')
+    expect(tauriMocks.cancelAnonymizeJob).not.toHaveBeenCalled()
+    expect(harness.workflow.result?.outputPath).toBe('/out/final.csv')
+    expect(harness.workflow.busy).toBe('idle')
+    // The lost-contact message is cleared once contact returns.
+    expect(harness.workflow.error).toBeNull()
+  })
+
+  it('reports lost contact while retrying without ending the run', async () => {
+    vi.useFakeTimers()
+    tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())
+    tauriMocks.startAnonymizeJob.mockResolvedValue(runningJobStatus())
+    tauriMocks.getAnonymizeJobStatus.mockRejectedValue(new Error('Simulated poll failure'))
+    const harness = renderWorkflow()
+    await flushPromises()
+
+    await act(async () => harness.workflow.handlePickInput())
+    await act(async () => harness.workflow.runAnonymization())
+    await act(async () => vi.advanceTimersByTimeAsync(20_000))
+
+    expect(harness.workflow.error).toContain('Lost contact with the running job')
+    // Still running, so the user keeps a working Cancel button and the job is not
+    // reported as failed while it may still be streaming rows.
+    expect(harness.workflow.busy).toBe('running')
+    expect(tauriMocks.cancelAnonymizeJob).not.toHaveBeenCalled()
+  })
+
+  it('backs off 300/600/1200 and caps at 5000ms between failed polls', async () => {
+    vi.useFakeTimers()
+    tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())
+    tauriMocks.startAnonymizeJob.mockResolvedValue(runningJobStatus())
+    tauriMocks.getAnonymizeJobStatus.mockRejectedValue(new Error('Simulated poll failure'))
+    const harness = renderWorkflow()
+    await flushPromises()
+
+    await act(async () => harness.workflow.handlePickInput())
+    await act(async () => harness.workflow.runAnonymization())
+
+    // Each pair advances to one tick before the expected poll and then over it, so a
+    // constant delay or a wrong exponent cannot pass: a blanket advance would.
+    const advance = async (ms: number) => {
+      await act(async () => vi.advanceTimersByTimeAsync(ms))
+    }
+    const expectPollCount = (count: number) => {
+      expect(tauriMocks.getAnonymizeJobStatus).toHaveBeenCalledTimes(count)
+    }
+
+    await advance(299)
+    expectPollCount(0)
+    await advance(1)
+    expectPollCount(1) // first poll at the 300ms interval
+
+    await advance(299)
+    expectPollCount(1)
+    await advance(1)
+    expectPollCount(2) // retry 1: 300ms
+
+    await advance(599)
+    expectPollCount(2)
+    await advance(1)
+    expectPollCount(3) // retry 2: 600ms
+
+    await advance(1_199)
+    expectPollCount(3)
+    await advance(1)
+    expectPollCount(4) // retry 3: 1200ms
+
+    await advance(2_399)
+    expectPollCount(4)
+    await advance(1)
+    expectPollCount(5) // retry 4: 2400ms
+
+    await advance(4_799)
+    expectPollCount(5)
+    await advance(1)
+    expectPollCount(6) // retry 5: 4800ms
+
+    await advance(4_999)
+    expectPollCount(6)
+    await advance(1)
+    expectPollCount(7) // retry 6 would be 9600ms, capped to 5000ms
+
+    await advance(4_999)
+    expectPollCount(7)
+    await advance(1)
+    expectPollCount(8) // and stays capped
+
+    expect(harness.workflow.busy).toBe('running')
+  })
+
+  it('stops polling and releases the UI after two minutes of lost contact', async () => {
+    vi.useFakeTimers()
+    tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())
+    tauriMocks.startAnonymizeJob.mockResolvedValue(runningJobStatus())
+    // A permanently failing poll — an unknown job id, or a poisoned registry mutex —
+    // can never succeed on retry, so without a deadline `busy` would stay 'running'
+    // forever and the only recovery would be killing the app.
+    tauriMocks.getAnonymizeJobStatus.mockRejectedValue(new Error('Simulated poll failure'))
+    const harness = renderWorkflow()
+    await flushPromises()
+
+    await act(async () => harness.workflow.handlePickInput())
+    await act(async () => harness.workflow.runAnonymization())
+
+    await act(async () => vi.advanceTimersByTimeAsync(119_000))
     expect(harness.workflow.busy).toBe('running')
 
-    await act(async () => {
-      pendingCancel.resolve({ ...runningJobStatus(), state: 'canceled', cancelRequested: true })
-      await pendingCancel.promise
-    })
+    await act(async () => vi.advanceTimersByTimeAsync(11_000))
 
     expect(harness.workflow.busy).toBe('idle')
-    expect(harness.workflow.error).toBe('Simulated poll failure')
+    expect(harness.workflow.jobStatus).toBeNull()
+    // Not reported as a failure: the job may still be writing, so the message must warn
+    // against reusing the output path rather than invite an immediate retry.
+    expect(harness.workflow.error).toContain('stopped tracking it')
+    expect(harness.workflow.error).toContain('may still be running')
+    expect(tauriMocks.cancelAnonymizeJob).not.toHaveBeenCalled()
+
+    // Polling really stopped, rather than continuing behind an idle UI.
+    const pollsAtDeadline = tauriMocks.getAnonymizeJobStatus.mock.calls.length
+    await act(async () => vi.advanceTimersByTimeAsync(60_000))
+    expect(tauriMocks.getAnonymizeJobStatus).toHaveBeenCalledTimes(pollsAtDeadline)
+  })
+
+  it('requests cancel during an outage and recovers through the lost-contact deadline', async () => {
+    vi.useFakeTimers()
+    tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())
+    tauriMocks.startAnonymizeJob.mockResolvedValue(runningJobStatus())
+    tauriMocks.getAnonymizeJobStatus.mockRejectedValue(new Error('Simulated poll failure'))
+    // What the backend actually returns for cancelling a *running* job: the state stays
+    // Running with cancelRequested set, and the terminal 'canceled' state is only ever
+    // published to a later status poll.
+    tauriMocks.cancelAnonymizeJob.mockResolvedValue({
+      ...runningJobStatus(),
+      cancelRequested: true,
+    })
+    const harness = renderWorkflow()
+    await flushPromises()
+
+    await act(async () => harness.workflow.handlePickInput())
+    await act(async () => harness.workflow.runAnonymization())
+    await act(async () => vi.advanceTimersByTimeAsync(2_000))
+    await act(async () => harness.workflow.cancelCurrentJob())
+
+    expect(tauriMocks.cancelAnonymizeJob).toHaveBeenCalledWith('job-1')
+    // Cancel alone cannot end the wait: the response is non-terminal, and the UI now
+    // disables the Cancel button because cancelRequested is set.
+    expect(harness.workflow.busy).toBe('running')
+    expect(harness.workflow.jobStatus?.cancelRequested).toBe(true)
+
+    await act(async () => vi.advanceTimersByTimeAsync(130_000))
+
+    expect(harness.workflow.busy).toBe('idle')
+    expect(harness.workflow.error).toContain('stopped tracking it')
+  })
+
+  it('keeps an unrelated error when a poll recovers', async () => {
+    vi.useFakeTimers()
+    tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())
+    tauriMocks.startAnonymizeJob.mockResolvedValue(runningJobStatus())
+    tauriMocks.getAnonymizeJobStatus
+      .mockRejectedValueOnce(new Error('Simulated poll failure'))
+      .mockRejectedValueOnce(new Error('Simulated poll failure'))
+      .mockRejectedValueOnce(new Error('Simulated poll failure'))
+      .mockResolvedValue(succeededJobStatus())
+    tauriMocks.cancelAnonymizeJob.mockRejectedValue(new Error('Cancel request was rejected.'))
+    const harness = renderWorkflow()
+    await flushPromises()
+
+    await act(async () => harness.workflow.handlePickInput())
+    await act(async () => harness.workflow.runAnonymization())
+    await act(async () => vi.advanceTimersByTimeAsync(1_200))
+
+    expect(harness.workflow.error).toContain('Lost contact with the running job')
+
+    // The user hits Cancel while out of contact and the request itself fails.
+    await act(async () => harness.workflow.cancelCurrentJob())
+    expect(harness.workflow.error).toBe('Cancel request was rejected.')
+
+    await act(async () => vi.advanceTimersByTimeAsync(1_200))
+
+    // Contact returned, but the message on screen is no longer ours to retract: the
+    // user must still learn that the cancel never took.
+    expect(tauriMocks.getAnonymizeJobStatus).toHaveBeenCalledTimes(4)
+    expect(harness.workflow.error).toBe('Cancel request was rejected.')
+    expect(harness.workflow.busy).toBe('idle')
   })
 
   it('recomputes the suggested output path when the suffix setting changes', async () => {
@@ -397,21 +512,6 @@ async function flushPromises() {
   })
 }
 
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((nextResolve) => {
-    resolve = nextResolve
-  })
-  return { promise, resolve }
-}
-
-function settingsFixture(overrides: Partial<AppSettings> = {}): AppSettings {
-  return {
-    ...defaultSettings,
-    ...overrides,
-  }
-}
-
 function analyzeResponseFixture(overrides: Partial<ReturnType<typeof headersFixture>> = {}) {
   const headers = headersFixture(overrides)
   return {
@@ -438,20 +538,14 @@ function headersFixture(overrides: Partial<{
   }
 }
 
-function columnFixture(
+// Both columns arrive selected regardless of their risk: every assertion below is about what
+// the workflow does with a selection, not about how one is arrived at.
+const columnFixture = (
   index: number,
   name: string,
   detectedType: ColumnMetadata['detectedType'],
   piiRisk: ColumnMetadata['piiRisk'],
-): ColumnMetadata {
-  return columnMetadataFixture({
-    name,
-    index,
-    detectedType,
-    piiRisk,
-    isSelected: true,
-  })
-}
+): ColumnMetadata => riskColumnFixture(index, name, detectedType, piiRisk, { isSelected: true })
 
 function runningJobStatus(): AnonymizeJobStatus {
   return {
@@ -480,16 +574,9 @@ function resultFixture(): AnonymizeData {
     rowCount: 2,
     columnsAnonymized: 2,
     durationMs: 10,
-    privacyReport: privacyReportFixture(),
+    privacyReport: transformedPrivacyReportFixture({
+      quasiIdentifiers: 1,
+      uniquePseudonymValues: 2,
+    }),
   }
-}
-
-function privacyReportFixture(overrides: Partial<PrivacyReport> = {}): PrivacyReport {
-  return basePrivacyReportFixture({
-    directIdentifiers: 1,
-    quasiIdentifiers: 1,
-    pseudonymizedColumns: 1,
-    uniquePseudonymValues: 2,
-    ...overrides,
-  })
 }

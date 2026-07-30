@@ -1,6 +1,14 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
-import type { AppSettings, ColumnMetadata, PrivacyReport } from '../src/types'
+import { defaultSettings } from '../src/defaults'
+import {
+  columnMetadataFixture,
+  completeDetectionCoverage,
+  localAiStatusFixture,
+  privacyReportFixture,
+  verifiedPreflightFixture,
+} from '../src/test-utils/builders'
+import type { AppSettings, ColumnMetadata } from '../src/types'
 
 declare global {
   interface Window {
@@ -183,21 +191,80 @@ test('has no automated accessibility violations across input modes @a11y', async
   await expectNoAccessibilityViolations(page)
 })
 
+/**
+ * Everything the in-page mock answers with, built out of the same builders the unit tests use.
+ *
+ * It has to be built out here and passed in: the init script body is serialised and evaluated
+ * inside the browser, where it can close over nothing from this module. Only the data crosses
+ * the boundary — the dispatch below stays in the script, because it is the part that has to
+ * read the arguments of each call.
+ */
+function buildE2eFixtures() {
+  const columnFixture = (
+    index: number,
+    name: string,
+    detectedType: ColumnMetadata['detectedType'],
+    piiRisk: ColumnMetadata['piiRisk'],
+  ): ColumnMetadata =>
+    columnMetadataFixture({
+      name,
+      index,
+      detectedType,
+      piiRisk,
+      isSelected: true,
+      // The workflow's own default, not the risk-derived one: these specs drive the strategy
+      // selects by hand, and starting a column on Redact would change what they are choosing
+      // between.
+      strategy: 'auto',
+    })
+
+  const runningJob = {
+    jobId: 'job-e2e',
+    state: 'running',
+    rowsProcessed: 0,
+    totalRows: 150_000,
+    cancelRequested: false,
+    result: null,
+    error: null,
+  }
+
+  return {
+    settings: defaultSettings,
+    localAiStatus: localAiStatusFixture(),
+    // The readiness of this one is filled in from the request it answers, since the specs read
+    // back the column count it was asked about.
+    preflight: verifiedPreflightFixture(),
+    csvHeaders: {
+      filePath: '/data/input.csv',
+      rowCount: 150_000,
+      rowCountIsComplete: true,
+      defaultOutputPath: '/data/input_private_output.csv',
+      columns: [
+        columnFixture(0, 'email', 'email', 'high'),
+        columnFixture(1, 'country', 'countryCode', 'medium'),
+        columnFixture(2, 'notes', 'string', 'low'),
+      ],
+    },
+    pasteColumns: [columnFixture(0, '[].email', 'email', 'high')],
+    // A one-value paste is examined whole, so this fixture exercises the complete-coverage
+    // branch: no partial-detection warning should render.
+    pasteDetectionCoverage: { ...completeDetectionCoverage, unit: 'values' as const },
+    // A one-row paste has nothing to single out, so `rowUniqueness` stays at the builder's
+    // absent default: the joint re-identifiability block must not render.
+    privacyReport: privacyReportFixture({
+      directIdentifiers: 1,
+      pseudonymizedColumns: 1,
+      uniquePseudonymValues: 1,
+    }),
+    runningJob,
+    pollingJob: { ...runningJob, rowsProcessed: 10 },
+    canceledJob: { ...runningJob, state: 'canceled', rowsProcessed: 10, cancelRequested: true },
+  }
+}
+
 async function installTauriMock(page: Page) {
-  await page.addInitScript(() => {
-    let settings: AppSettings = {
-      schemaVersion: 10,
-      themeMode: 'system',
-      overwriteOutput: false,
-      sampleRowCount: 100,
-      previewSampleCount: 5,
-      defaultOutputSuffix: '_private_output',
-      rememberLastPaths: true,
-      lastInputDirectory: null,
-      lastOutputDirectory: null,
-      localAiEnabled: false,
-      localAiModel: 'gemma3:4b',
-    }
+  await page.addInitScript((fixtures) => {
+    let settings: AppSettings = fixtures.settings
     let previewAttempts = 0
 
     window.__CSV_ANONYMIZER_TEST_CALLS__ = []
@@ -217,49 +284,23 @@ async function installTauriMock(page: Page) {
         settings = (args?.settings ?? settings) as typeof settings
         return settings
       }
-      if (command === 'get_local_ai_status') {
-        return {
-          enabled: false,
-          provider: 'ollama',
-          model: 'gemma3:4b',
-          availableModels: [],
-          endpoint: 'http://127.0.0.1:11434',
-          runtimeAvailable: false,
-          modelInstalled: false,
-          ready: false,
-          runtimeVersion: null,
-          message: 'Local AI is off.',
-        }
-      }
+      if (command === 'get_local_ai_status') return fixtures.localAiStatus
       if (command === 'preflight_anonymization') {
         const request = args?.request as { mode?: string; columns?: unknown[] } | undefined
         return {
+          ...fixtures.preflight,
           mode: request?.mode ?? 'preview',
           readiness: {
-            status: 'verified',
-            blockers: [],
-            reviewItems: [],
+            ...fixtures.preflight.readiness,
             verifiedItems: [`${request?.columns?.length ?? 0} column(s) selected.`],
           },
-          evidence: [],
-          columnReports: [],
         }
       }
       if (command === 'pick_input_csv') return '/data/input.csv'
       if (command === 'pick_output_csv') return '/data/custom-output.csv'
       if (command === 'analyze_csv') {
         return {
-          headers: {
-            filePath: '/data/input.csv',
-            rowCount: 150_000,
-            rowCountIsComplete: true,
-            defaultOutputPath: '/data/input_private_output.csv',
-            columns: [
-              columnFixture(0, 'email', 'email', 'high'),
-              columnFixture(1, 'country', 'countryCode', 'medium'),
-              columnFixture(2, 'notes', 'string', 'low'),
-            ],
-          },
+          headers: fixtures.csvHeaders,
           selectedColumns: [0, 1],
           suggestedOutputPath: '/data/input_private_output.csv',
         }
@@ -285,7 +326,8 @@ async function installTauriMock(page: Page) {
           format: 'json',
           rowCount: 1,
           rowCountIsComplete: true,
-          columns: [columnFixture(0, '[].email', 'email', 'high')],
+          detectionCoverage: fixtures.pasteDetectionCoverage,
+          columns: fixtures.pasteColumns,
         }
       }
       if (command === 'preview_pasted_data') {
@@ -307,7 +349,7 @@ async function installTauriMock(page: Page) {
           rowCount: 1,
           columnsAnonymized: 1,
           durationMs: 4,
-          privacyReport: privacyReportFixture(),
+          privacyReport: fixtures.privacyReport,
         }
       }
       if (command === 'generate_quick_values') {
@@ -324,102 +366,16 @@ async function installTauriMock(page: Page) {
               anonymized: 'tok_e2e_2',
             },
           ],
-          privacyReport: privacyReportFixture(),
+          privacyReport: fixtures.privacyReport,
         }
       }
-      if (command === 'start_anonymize_job') {
-        return {
-          jobId: 'job-e2e',
-          state: 'running',
-          rowsProcessed: 0,
-          totalRows: 150_000,
-          cancelRequested: false,
-          result: null,
-          error: null,
-        }
-      }
-      if (command === 'get_anonymize_job_status') {
-        return {
-          jobId: 'job-e2e',
-          state: 'running',
-          rowsProcessed: 10,
-          totalRows: 150_000,
-          cancelRequested: false,
-          result: null,
-          error: null,
-        }
-      }
-      if (command === 'cancel_anonymize_job') {
-        return {
-          jobId: 'job-e2e',
-          state: 'canceled',
-          rowsProcessed: 10,
-          totalRows: 150_000,
-          cancelRequested: true,
-          result: null,
-          error: null,
-        }
-      }
+      if (command === 'start_anonymize_job') return fixtures.runningJob
+      if (command === 'get_anonymize_job_status') return fixtures.pollingJob
+      if (command === 'cancel_anonymize_job') return fixtures.canceledJob
 
       throw new Error(`Unhandled invoke: ${command}`)
     }
-
-    function columnFixture(
-      index: number,
-      name: string,
-      detectedType: ColumnMetadata['detectedType'],
-      piiRisk: ColumnMetadata['piiRisk'],
-    ): ColumnMetadata {
-      return {
-        name,
-        headerLabelIsAmbiguous: false,
-        index,
-        detectedType,
-        confidence: 'high',
-        piiRisk,
-        sampleValues: ['sample'],
-        sampleValueDistribution: { columnIndex: 0, distinctValues: 0, totalValues: 0, singletonValues: 0, doubletonValues: 0, maxValueOccurrences: 0 },
-        emptyFormat: 'emptyString',
-        isSelected: true,
-        strategy: 'auto',
-      }
-    }
-
-    function privacyReportFixture(): PrivacyReport {
-      return {
-        directIdentifiers: 1,
-        quasiIdentifiers: 0,
-        pseudonymizedColumns: 1,
-        smartReplacementColumns: 0,
-        opaqueTokenColumns: 0,
-        maskedColumns: 0,
-        labelledColumns: 0,
-        redactedColumns: 0,
-        passThroughColumns: 0,
-        uniquePseudonymValues: 1,
-        reusedPseudonymValues: 0,
-        collisionsAvoided: 0,
-        exhaustedPseudonymPools: 0,
-        opaqueTokenValues: 0,
-        smartReplacementValues: 0,
-        smartReplacementRejections: 0,
-        smartReplacementRejectionReasons: [],
-        smartReplacementFallbacks: 0,
-        shapeFallbackValues: 0,
-        columnValueDistributions: [],
-        readiness: {
-          status: 'verified',
-          blockers: [],
-          reviewItems: [],
-          verifiedItems: [],
-        },
-        evidence: [],
-        columnReports: [],
-        utilityMetrics: [],
-        notes: [],
-      }
-    }
-  })
+  }, buildE2eFixtures())
 }
 
 async function expectNoAccessibilityViolations(page: Page) {

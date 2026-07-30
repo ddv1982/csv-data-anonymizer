@@ -44,10 +44,12 @@ impl SettingsStore {
             .save_lock
             .lock()
             .map_err(|_| io::Error::other("Settings save lock is unavailable"))?;
-        let mut session_settings = settings.clone();
-        sanitize_settings(&mut session_settings);
-        save_settings_to_path(&self.path, &session_settings)?;
-        Ok(session_settings)
+        // Sanitization happens once, in `save_settings_to_path`: it is the boundary
+        // every writer passes through, including the migration rewrite in
+        // `load_settings_from_path`. Reading the sanitized value back from there is
+        // what lets this return what was actually persisted rather than a separately
+        // sanitized copy that could drift from it.
+        save_settings_to_path(&self.path, settings)
     }
 }
 
@@ -84,7 +86,14 @@ pub(super) fn load_settings_from_path(path: &Path) -> io::Result<AppSettings> {
     Ok(settings)
 }
 
-pub(super) fn save_settings_to_path(path: &Path, settings: &AppSettings) -> io::Result<()> {
+/// Writes `settings` and returns exactly what was written.
+///
+/// Returns the sanitized value rather than `()` so callers never have to re-derive
+/// it — see [`SettingsStore::save_settings`].
+pub(super) fn save_settings_to_path(
+    path: &Path,
+    settings: &AppSettings,
+) -> io::Result<AppSettings> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -108,7 +117,7 @@ pub(super) fn save_settings_to_path(path: &Path, settings: &AppSettings) -> io::
         let _ = fs::remove_file(&temporary_path);
         return Err(error);
     }
-    Ok(())
+    Ok(settings)
 }
 
 pub(super) fn default_settings_path() -> PathBuf {

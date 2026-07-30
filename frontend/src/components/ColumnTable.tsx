@@ -4,7 +4,7 @@ import type {
   ColumnControl,
   ColumnMetadata,
 } from '../types'
-import { csvStrategies, strategyLabel } from '../dataOptions'
+import { columnStrategies, strategyLabel } from '../dataOptions'
 import {
   detectorConfidenceLabel,
   detectorSourceSummary,
@@ -28,7 +28,6 @@ export function ColumnTable({
   controls,
   onStrategyChange,
   onToggleShowAll,
-  availableStrategies = csvStrategies,
 }: {
   columns: ColumnMetadata[]
   allColumnCount: number
@@ -41,7 +40,6 @@ export function ColumnTable({
   controls: Record<number, ColumnControl>
   onStrategyChange: (column: ColumnMetadata, value: AnonymizationStrategy) => void
   onToggleShowAll: () => void
-  availableStrategies?: AnonymizationStrategy[]
 }) {
   const columnSpan = 7
 
@@ -137,7 +135,7 @@ export function ColumnTable({
                         onClick={(event) => event.stopPropagation()}
                         onChange={(event) => onStrategyChange(column, event.target.value as AnonymizationStrategy)}
                       >
-                        {availableStrategies.map((strategy) => (
+                        {columnStrategies.map((strategy) => (
                           <option key={strategy} value={strategy}>
                             {strategyLabel(strategy)}
                           </option>

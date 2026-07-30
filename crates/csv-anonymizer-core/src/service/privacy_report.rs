@@ -3,13 +3,14 @@ use crate::release_report::{
     standard_notes,
 };
 use crate::types::{
-    AnonymizationStrategy, ColumnMetadata, PrivacyFindingKind, PrivacyReport,
+    AnonymizationStrategy, ColumnMetadata, DetectionCoverage, PrivacyFindingKind, PrivacyReport,
     ReportIdentifierClass, TransformReport,
 };
 
 pub(crate) fn build_privacy_report(
     columns: &[ColumnMetadata],
     transform_report: TransformReport,
+    detection_coverage: DetectionCoverage,
 ) -> PrivacyReport {
     let mut report = PrivacyReport {
         direct_identifiers: 0,
@@ -41,11 +42,12 @@ pub(crate) fn build_privacy_report(
         // ledger's exactness out of reach of the tests that check it, which is the part
         // of this feature most worth being able to check.
         column_value_distributions: transform_report.column_value_distributions.clone(),
+        row_uniqueness: transform_report.row_uniqueness.clone(),
         readiness: Default::default(),
         evidence: Vec::new(),
         column_reports: Vec::new(),
         utility_metrics: Vec::new(),
-        notes: standard_notes(columns, transform_report.clone()),
+        notes: standard_notes(columns, transform_report.clone(), detection_coverage),
     };
 
     for column in columns.iter().filter(|column| column.is_selected) {

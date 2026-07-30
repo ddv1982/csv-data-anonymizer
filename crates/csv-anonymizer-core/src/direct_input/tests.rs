@@ -1,8 +1,9 @@
 use super::*;
 use crate::smart::{SmartReplacement, SmartReplacementProvider, SmartReplacementRequest};
 use crate::types::{
-    AnonymizationStrategy, ColumnControl, DataType, MAX_SAMPLE_ROW_COUNT, PiiRisk,
-    SmartReplacementEntry, SmartReplacementRejectionCount, SmartReplacementRejectionReason,
+    AnonymizationStrategy, ColumnControl, DataType, DetectionCoverageUnit, MAX_SAMPLE_ROW_COUNT,
+    PiiRisk, QuickGenerateParams, SmartReplacementEntry, SmartReplacementRejectionCount,
+    SmartReplacementRejectionReason,
 };
 
 mod redaction;
@@ -1305,4 +1306,137 @@ impl SmartReplacementProvider for RecordingSmartProvider {
             })
             .collect())
     }
+}
+
+/// A pasted CSV larger than the detection floor discloses the sampling before the
+/// user picks columns.
+///
+/// The failure this closes: paste 400 rows, `phone` populated only near the end,
+/// detection spreads 100 rows and misses it, the column table shows String/Low with
+/// no caveat, and the only warning arrives in the privacy report — after the output
+/// exists, when acting on "raise Sample rows" costs the whole run again. The file
+/// workflow gets this from preflight; the paste workflow has no preflight, so the
+/// analyze result has to carry it.
+#[test]
+fn csv_paste_analysis_discloses_that_detection_only_sampled() {
+    let mut content = String::from("id,note\n");
+    for row in 1..=400 {
+        content.push_str(&format!("{row},order shipped ok\n"));
+    }
+
+    let analysis = analyze_paste_data(PasteAnalyzeParams {
+        content,
+        format: PasteDataFormat::Csv,
+        sample_row_count: 10,
+    })
+    .unwrap();
+
+    assert!(analysis.detection_coverage.is_partial);
+    assert_eq!(analysis.detection_coverage.examined, 100);
+    assert_eq!(analysis.detection_coverage.total, 400);
+    assert_eq!(
+        analysis.detection_coverage.unit,
+        DetectionCoverageUnit::Rows
+    );
+}
+
+/// No caveat on a paste detection read in full, so the common small paste is not
+/// given a warning that does not apply to it.
+#[test]
+fn small_csv_paste_analysis_reports_complete_detection_coverage() {
+    let analysis = analyze_paste_data(PasteAnalyzeParams {
+        content: "email\nada@example.com\nbob@example.com\n".to_string(),
+        format: PasteDataFormat::Csv,
+        sample_row_count: 10,
+    })
+    .unwrap();
+
+    assert!(!analysis.detection_coverage.is_partial);
+}
+
+/// A JSON document's coverage is counted in values and says so.
+///
+/// `{"users": [500 objects]}` has one top-level object, so `row_count` is 1 while
+/// detection sampled 100 of the 500 values of the busiest field. Reported as "100 of
+/// 500 rows" that is a figure contradicted by the row count on the same screen; the
+/// unit is what makes it checkable.
+#[test]
+fn json_paste_analysis_counts_detection_coverage_in_values_not_rows() {
+    let records = (0..500)
+        .map(|row| format!(r#"{{"email":"user{row}@example.com"}}"#))
+        .collect::<Vec<_>>()
+        .join(",");
+
+    let analysis = analyze_paste_data(PasteAnalyzeParams {
+        content: format!(r#"{{"users":[{records}]}}"#),
+        format: PasteDataFormat::Json,
+        sample_row_count: 100,
+    })
+    .unwrap();
+
+    assert_eq!(analysis.row_count, 1, "a top-level object is one row");
+    assert!(analysis.detection_coverage.is_partial);
+    assert_eq!(analysis.detection_coverage.examined, 100);
+    assert_eq!(analysis.detection_coverage.total, 500);
+    assert_eq!(
+        analysis.detection_coverage.unit,
+        DetectionCoverageUnit::Values
+    );
+}
+
+/// Free text is counted in values too, and is disclosed at all.
+///
+/// The analyze path here never computed coverage before, so a long log's types were
+/// reported with no caveat whatsoever. Its total is the busiest span type's match
+/// count, which matches neither the paste's line count nor `row_count` — the value
+/// unit is the only truthful noun for it.
+#[test]
+fn free_text_paste_analysis_counts_detection_coverage_in_values_not_rows() {
+    let mut content = String::new();
+    for row in 0..300 {
+        content.push_str(&format!(
+            "2024-01-01T00:00:00 INFO user user{row}@example.com signed in\n"
+        ));
+    }
+
+    let analysis = analyze_paste_data(PasteAnalyzeParams {
+        content,
+        format: PasteDataFormat::PlainText,
+        sample_row_count: 100,
+    })
+    .unwrap();
+
+    assert!(analysis.detection_coverage.is_partial);
+    assert_eq!(analysis.detection_coverage.examined, 100);
+    assert_eq!(analysis.detection_coverage.total, 300);
+    assert_eq!(
+        analysis.detection_coverage.unit,
+        DetectionCoverageUnit::Values
+    );
+}
+
+/// `DetectionCoverage::complete()` reports nothing sampled, not a partial figure.
+///
+/// Quick generate has no source input, so both figures are zero. Only `is_partial`
+/// is consulted, and it must answer false — the alternative reading, that zero of
+/// zero rows were examined, would put a "0 of 0 rows" caveat on every generated
+/// value.
+#[test]
+fn quick_generation_reports_no_sampling_caveat() {
+    let result = generate_quick_values(QuickGenerateParams {
+        data_type: DataType::Email,
+        strategy: AnonymizationStrategy::Pseudonymize,
+        count: 3,
+    })
+    .unwrap();
+
+    assert!(
+        !result
+            .privacy_report
+            .notes
+            .iter()
+            .any(|note| note.starts_with("Detection examined")),
+        "notes were {:?}",
+        result.privacy_report.notes
+    );
 }

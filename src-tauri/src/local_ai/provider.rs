@@ -6,7 +6,7 @@ use reqwest::blocking::Client;
 use serde::Deserialize;
 use serde_json::json;
 
-use super::prompt::{replacement_schema, smart_replacement_prompt};
+use super::prompt::{PreparedPrompt, replacement_schema, smart_replacement_prompt};
 use super::types::LocalAiRequest;
 use super::{DEFAULT_OLLAMA_ENDPOINT, client};
 
@@ -48,7 +48,20 @@ impl SmartReplacementProvider for OllamaSmartReplacementProvider {
         &mut self,
         request: SmartReplacementRequest<'_>,
     ) -> CoreResult<Vec<SmartReplacement>> {
-        let prompt = smart_replacement_prompt(request);
+        let prepared = smart_replacement_prompt(request);
+        if prepared.values.is_empty() {
+            // Every value in this batch was withheld as implausibly long for the
+            // detected type, so there is nothing to ask about. Returning an empty
+            // answer rather than an error keeps the batch on the ordinary path: the
+            // caller records each value as `MissingOutput` and falls back, exactly as
+            // it would for a value the model declined to replace.
+            return Ok(Vec::new());
+        }
+        let PreparedPrompt {
+            prompt,
+            skipped_values,
+            ..
+        } = prepared;
         let options = json!({
             "temperature": 0.35
         });
@@ -89,6 +102,12 @@ impl SmartReplacementProvider for OllamaSmartReplacementProvider {
         Ok(parsed
             .replacements
             .into_iter()
+            // A withheld value was never described to the model, so an answer naming
+            // one is the model reconstructing it from something else in the prompt —
+            // most plausibly from injection text it decided to quote. Dropping it here
+            // keeps that text out of the replacement map; the value then falls back
+            // like any other unanswered one.
+            .filter(|item| !skipped_values.contains(&item.original.as_str()))
             .map(|item| SmartReplacement {
                 original: item.original,
                 replacement: item.replacement,
@@ -97,16 +116,33 @@ impl SmartReplacementProvider for OllamaSmartReplacementProvider {
     }
 }
 
+/// The refusal a caller gets for asking Local AI to run while the persisted consent is off.
+///
+/// Shared so preflight predicts exactly what the run would say, rather than a paraphrase of it:
+/// a preflight that warns in different words than the failure is a preflight users learn to skim.
+pub const LOCAL_AI_DISABLED_MESSAGE: &str =
+    "Local AI is off. Enable it in Settings before choosing Smart replacement.";
+
+/// Whether this selection would send any value to Local AI.
+///
+/// One definition for both callers. Preflight uses it to decide whether to warn, and the run
+/// itself to decide whether to build a provider; if the two ever disagreed, the direction that
+/// matters is preflight saying no while the run says yes — that reports a file as staying local
+/// and then sends it off the box.
+pub fn selection_requires_local_ai(controls: &[ColumnControl], selected_columns: &[usize]) -> bool {
+    controls.iter().any(|control| {
+        selected_columns.contains(&control.column_index)
+            && control.strategy == AnonymizationStrategy::LocalAi
+    })
+}
+
 pub fn smart_provider_for_request(
     request: Option<LocalAiRequest>,
     controls: &[ColumnControl],
     selected_columns: &[usize],
     local_ai_enabled: bool,
 ) -> Result<Option<OllamaSmartReplacementProvider>, String> {
-    if !controls.iter().any(|control| {
-        selected_columns.contains(&control.column_index)
-            && control.strategy == AnonymizationStrategy::LocalAi
-    }) {
+    if !selection_requires_local_ai(controls, selected_columns) {
         return Ok(None);
     }
 
@@ -133,9 +169,7 @@ fn smart_provider_for_enabled_request(
         return Ok(None);
     };
     if !local_ai_enabled {
-        return Err(
-            "Local AI is off. Enable it in Settings before choosing Smart replacement.".to_string(),
-        );
+        return Err(LOCAL_AI_DISABLED_MESSAGE.to_string());
     }
     OllamaSmartReplacementProvider::new(request.model_name())
         .map(Some)
@@ -202,6 +236,44 @@ mod tests {
         .unwrap();
 
         assert!(provider.is_none());
+    }
+
+    /// The predicate preflight warns on and the predicate the run gates on are now the same
+    /// function, so this pins the answer once for both. The case that matters is the last one:
+    /// a Local AI control on a column the user did not select must read as false, or every run
+    /// carrying a leftover control would be announced as leaving the machine when it does not —
+    /// and the case above it, where the selected column does use Local AI, must read as true,
+    /// because that is the warning that stops a file being sent off the box unannounced.
+    #[test]
+    fn selection_requires_local_ai_follows_the_selected_columns() {
+        assert!(selection_requires_local_ai(&[local_ai_control()], &[0]));
+        assert!(!selection_requires_local_ai(&[local_ai_control()], &[]));
+        assert!(!selection_requires_local_ai(&[local_ai_control()], &[1]));
+        assert!(!selection_requires_local_ai(&[], &[0]));
+        assert!(!selection_requires_local_ai(
+            &[ColumnControl {
+                column_index: 0,
+                type_override: None,
+                strategy: AnonymizationStrategy::Mask,
+            }],
+            &[0]
+        ));
+        // One selected Local AI column among others is still a yes.
+        assert!(selection_requires_local_ai(
+            &[
+                ColumnControl {
+                    column_index: 0,
+                    type_override: None,
+                    strategy: AnonymizationStrategy::Mask,
+                },
+                ColumnControl {
+                    column_index: 3,
+                    type_override: None,
+                    strategy: AnonymizationStrategy::LocalAi,
+                },
+            ],
+            &[0, 3]
+        ));
     }
 
     #[test]

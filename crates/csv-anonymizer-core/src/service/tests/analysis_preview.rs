@@ -1,4 +1,5 @@
 use super::*;
+use crate::service::controls::apply_column_controls;
 
 #[test]
 fn analyzes_csv_headers_and_default_output_path() {
@@ -39,9 +40,8 @@ fn sampled_analysis_still_reports_the_exact_row_count() {
 /// the whole file, not just its opening rows.
 #[test]
 fn detects_pii_that_only_starts_after_the_sample_window() {
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
-    let input_path = temp_dir.path().join("late-pii.csv");
+    let workspace = Workspace::new();
+    let input_path = workspace.path("late-pii.csv");
 
     let mut content = String::from("flag\n");
     for row in 0..1_000 {
@@ -53,7 +53,8 @@ fn detects_pii_that_only_starts_after_the_sample_window() {
     }
     fs::write(&input_path, &content).unwrap();
 
-    let result = service
+    let result = workspace
+        .service
         .analyze_csv_with_sample_rows(&input_path, 100)
         .unwrap();
     let column = &result.columns[0];
@@ -79,11 +80,10 @@ fn detects_pii_that_only_starts_after_the_sample_window() {
 /// bit: 100 email addresses, none of them sampled. See `csv_io::spread_priority`.
 #[test]
 fn detects_pii_that_repeats_on_a_power_of_two_period() {
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
+    let workspace = Workspace::new();
 
     for period in [2, 3, 4, 5, 8, 16] {
-        let input_path = temp_dir.path().join(format!("record-blocks-{period}.csv"));
+        let input_path = workspace.path(&format!("record-blocks-{period}.csv"));
         let mut content = String::from("value\n");
         for row in 0..period * 100 {
             if row % period == period - 1 {
@@ -94,7 +94,7 @@ fn detects_pii_that_repeats_on_a_power_of_two_period() {
         }
         fs::write(&input_path, &content).unwrap();
 
-        let result = service.analyze_csv(&input_path).unwrap();
+        let result = workspace.service.analyze_csv(&input_path).unwrap();
         let column = &result.columns[0];
 
         assert_eq!(
@@ -126,9 +126,8 @@ fn detects_pii_that_repeats_on_a_power_of_two_period() {
 /// notices if it is removed: without it the two assertions below disagree.
 #[test]
 fn a_small_sample_row_request_cannot_lower_the_detection_basis() {
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
-    let input_path = temp_dir.path().join("partly-email.csv");
+    let workspace = Workspace::new();
+    let input_path = workspace.path("partly-email.csv");
 
     let mut content = String::from("note\n");
     for row in 0..400 {
@@ -140,12 +139,14 @@ fn a_small_sample_row_request_cannot_lower_the_detection_basis() {
     }
     fs::write(&input_path, &content).unwrap();
 
-    let floored = service
+    let floored = workspace
+        .service
         .analyze_csv_with_sample_rows(&input_path, 100)
         .unwrap();
 
     for requested in [1, 2, 3, 5, 10, 50] {
-        let result = service
+        let result = workspace
+            .service
             .analyze_csv_with_sample_rows(&input_path, requested)
             .unwrap();
 
@@ -175,9 +176,8 @@ fn a_small_sample_row_request_cannot_lower_the_detection_basis() {
 fn preview_classifies_on_the_same_basis_the_setting_gave_analyze() {
     const SAMPLE_ROWS: usize = 2_000;
 
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
-    let input_path = temp_dir.path().join("rare-pii.csv");
+    let workspace = Workspace::new();
+    let input_path = workspace.path("rare-pii.csv");
 
     let mut content = String::from("note\n");
     for row in 0..SAMPLE_ROWS {
@@ -189,7 +189,8 @@ fn preview_classifies_on_the_same_basis_the_setting_gave_analyze() {
     }
     fs::write(&input_path, &content).unwrap();
 
-    let analyzed = service
+    let analyzed = workspace
+        .service
         .analyze_csv_with_sample_rows(&input_path, SAMPLE_ROWS)
         .unwrap();
     assert_eq!(
@@ -198,13 +199,13 @@ fn preview_classifies_on_the_same_basis_the_setting_gave_analyze() {
         "the fixture is meant to read as PII only on the larger basis"
     );
 
-    let preview = service
+    let preview = workspace
+        .service
         .preview_anonymization(PreviewParams {
-            file_path: input_path,
-            columns: vec![0],
             controls: Vec::new(),
             sample_count: 3,
             sample_row_count: SAMPLE_ROWS,
+            ..preview_params(input_path, vec![0])
         })
         .unwrap();
 
@@ -220,26 +221,24 @@ fn preview_classifies_on_the_same_basis_the_setting_gave_analyze() {
 
 #[test]
 fn preview_reuses_repeated_values_within_one_run() {
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
-    let input_path = temp_dir.path().join("repeated-preview-values.csv");
+    let workspace = Workspace::new();
+    let input_path = workspace.path("repeated-preview-values.csv");
     fs::write(
         &input_path,
         "email\nada@example.com\nada@example.com\ngrace@example.com\n",
     )
     .unwrap();
 
-    let preview = service
+    let preview = workspace
+        .service
         .preview_anonymization(PreviewParams {
-            file_path: input_path,
-            columns: vec![0],
-            controls: vec![ColumnControl {
-                column_index: 0,
-                type_override: Some(DataType::Email),
-                strategy: AnonymizationStrategy::Auto,
-            }],
+            controls: vec![typed_control(
+                0,
+                DataType::Email,
+                AnonymizationStrategy::Auto,
+            )],
             sample_count: 3,
-            sample_row_count: 100,
+            ..preview_params(input_path, vec![0])
         })
         .unwrap();
 
@@ -256,22 +255,15 @@ fn preview_reuses_repeated_values_within_one_run() {
 
 #[test]
 fn preview_preserves_short_numeric_code_shape() {
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
-    let input_path = temp_dir.path().join("numeric-looking.csv");
-    fs::write(&input_path, "code\n1\n2\n3\n").unwrap();
+    let workspace = Workspace::new();
+    let input_path = workspace.write_input("numeric-looking.csv", "code\n1\n2\n3\n");
 
-    let preview = service
+    let preview = workspace
+        .service
         .preview_anonymization(PreviewParams {
-            file_path: input_path,
-            columns: vec![0],
-            controls: vec![ColumnControl {
-                column_index: 0,
-                type_override: None,
-                strategy: AnonymizationStrategy::Auto,
-            }],
+            controls: vec![control(0, AnonymizationStrategy::Auto)],
             sample_count: 3,
-            sample_row_count: 100,
+            ..preview_params(input_path, vec![0])
         })
         .unwrap();
 
@@ -286,18 +278,14 @@ fn preview_preserves_short_numeric_code_shape() {
 
 #[test]
 fn preview_preserves_decimal_numeric_shape() {
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
-    let input_path = temp_dir.path().join("decimal-values.csv");
-    fs::write(&input_path, "amount\n-12.50\n0.00\n42.75\n").unwrap();
+    let workspace = Workspace::new();
+    let input_path = workspace.write_input("decimal-values.csv", "amount\n-12.50\n0.00\n42.75\n");
 
-    let preview = service
+    let preview = workspace
+        .service
         .preview_anonymization(PreviewParams {
-            file_path: input_path,
-            columns: vec![0],
-            controls: vec![],
             sample_count: 3,
-            sample_row_count: 100,
+            ..preview_params(input_path, vec![0])
         })
         .unwrap();
 
@@ -317,18 +305,14 @@ fn preview_preserves_decimal_numeric_shape() {
 
 #[test]
 fn preview_skips_empty_and_null_samples() {
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
-    let input_path = temp_dir.path().join("empty-values.csv");
-    fs::write(&input_path, "email\n\nnull\nuser@example.com\n").unwrap();
+    let workspace = Workspace::new();
+    let input_path = workspace.write_input("empty-values.csv", "email\n\nnull\nuser@example.com\n");
 
-    let preview = service
+    let preview = workspace
+        .service
         .preview_anonymization(PreviewParams {
-            file_path: input_path,
-            columns: vec![0],
-            controls: vec![],
             sample_count: 3,
-            sample_row_count: 100,
+            ..preview_params(input_path, vec![0])
         })
         .unwrap();
 
@@ -338,43 +322,25 @@ fn preview_skips_empty_and_null_samples() {
 
 #[test]
 fn preview_uses_type_specific_phone_and_name_strategies() {
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
-    let input_path = temp_dir.path().join("people.csv");
+    let workspace = Workspace::new();
+    let input_path = workspace.path("people.csv");
     fs::write(
         &input_path,
         "phone,first_name,last_name,full_name\n555-867-5309,Alice,Smith,Alice Smith\n",
     )
     .unwrap();
 
-    let preview = service
+    let preview = workspace
+        .service
         .preview_anonymization(PreviewParams {
-            file_path: input_path,
-            columns: vec![0, 1, 2, 3],
             controls: vec![
-                ColumnControl {
-                    column_index: 0,
-                    type_override: None,
-                    strategy: AnonymizationStrategy::Auto,
-                },
-                ColumnControl {
-                    column_index: 1,
-                    type_override: None,
-                    strategy: AnonymizationStrategy::Auto,
-                },
-                ColumnControl {
-                    column_index: 2,
-                    type_override: None,
-                    strategy: AnonymizationStrategy::Auto,
-                },
-                ColumnControl {
-                    column_index: 3,
-                    type_override: None,
-                    strategy: AnonymizationStrategy::Auto,
-                },
+                control(0, AnonymizationStrategy::Auto),
+                control(1, AnonymizationStrategy::Auto),
+                control(2, AnonymizationStrategy::Auto),
+                control(3, AnonymizationStrategy::Auto),
             ],
             sample_count: 1,
-            sample_row_count: 100,
+            ..preview_params(input_path, vec![0, 1, 2, 3])
         })
         .unwrap();
 
@@ -399,15 +365,8 @@ fn people_names_fixture_previews_name_like_full_names() {
 
     let preview = service
         .preview_anonymization(PreviewParams {
-            file_path: fixture("people-names.csv"),
-            columns: vec![2],
-            controls: vec![ColumnControl {
-                column_index: 2,
-                type_override: None,
-                strategy: AnonymizationStrategy::Auto,
-            }],
-            sample_count: 5,
-            sample_row_count: 100,
+            controls: vec![control(2, AnonymizationStrategy::Auto)],
+            ..preview_params(fixture("people-names.csv"), vec![2])
         })
         .unwrap();
 
@@ -440,32 +399,13 @@ fn people_names_fixture_treats_single_token_name_column_as_name() {
 
     let preview = service
         .preview_anonymization(PreviewParams {
-            file_path: fixture("people-names.csv"),
-            columns: vec![0, 1, 2, 3],
             controls: vec![
-                ColumnControl {
-                    column_index: 0,
-                    type_override: None,
-                    strategy: AnonymizationStrategy::Auto,
-                },
-                ColumnControl {
-                    column_index: 1,
-                    type_override: None,
-                    strategy: AnonymizationStrategy::Auto,
-                },
-                ColumnControl {
-                    column_index: 2,
-                    type_override: None,
-                    strategy: AnonymizationStrategy::Auto,
-                },
-                ColumnControl {
-                    column_index: 3,
-                    type_override: None,
-                    strategy: AnonymizationStrategy::Auto,
-                },
+                control(0, AnonymizationStrategy::Auto),
+                control(1, AnonymizationStrategy::Auto),
+                control(2, AnonymizationStrategy::Auto),
+                control(3, AnonymizationStrategy::Auto),
             ],
-            sample_count: 5,
-            sample_row_count: 100,
+            ..preview_params(fixture("people-names.csv"), vec![0, 1, 2, 3])
         })
         .unwrap();
 
@@ -503,39 +443,25 @@ fn people_names_fixture_treats_single_token_name_column_as_name() {
 
 #[test]
 fn preview_name_mappings_are_consistent_within_previewed_rows() {
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
-    let input_path = temp_dir.path().join("preview-full-names.csv");
+    let workspace = Workspace::new();
+    let input_path = workspace.path("preview-full-names.csv");
     fs::write(
         &input_path,
         "first_name,last_name,full_name\nAlice,Smith,Alice Smith\nBianca,Jones,Bianca Jones\n",
     )
     .unwrap();
     let controls = vec![
-        ColumnControl {
-            column_index: 0,
-            type_override: Some(DataType::FirstName),
-            strategy: AnonymizationStrategy::Auto,
-        },
-        ColumnControl {
-            column_index: 1,
-            type_override: Some(DataType::LastName),
-            strategy: AnonymizationStrategy::Auto,
-        },
-        ColumnControl {
-            column_index: 2,
-            type_override: Some(DataType::FullName),
-            strategy: AnonymizationStrategy::Auto,
-        },
+        typed_control(0, DataType::FirstName, AnonymizationStrategy::Auto),
+        typed_control(1, DataType::LastName, AnonymizationStrategy::Auto),
+        typed_control(2, DataType::FullName, AnonymizationStrategy::Auto),
     ];
 
-    let preview = service
+    let preview = workspace
+        .service
         .preview_anonymization(PreviewParams {
-            file_path: input_path.clone(),
-            columns: vec![0, 1, 2],
             controls: controls.clone(),
             sample_count: 2,
-            sample_row_count: 100,
+            ..preview_params(input_path.clone(), vec![0, 1, 2])
         })
         .unwrap();
 
@@ -553,47 +479,209 @@ fn preview_name_mappings_are_consistent_within_previewed_rows() {
 
 #[test]
 fn preview_applies_per_column_type_and_strategy_controls() {
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
-    let input_path = temp_dir.path().join("controls.csv");
-    fs::write(&input_path, "value\n123\n").unwrap();
+    let workspace = Workspace::new();
+    let input_path = workspace.write_input("controls.csv", "value\n123\n");
 
-    let preview = service
+    let preview = workspace
+        .service
         .preview_anonymization(PreviewParams {
-            file_path: input_path,
-            columns: vec![0],
-            controls: vec![ColumnControl {
-                column_index: 0,
-                type_override: Some(DataType::Email),
-                strategy: AnonymizationStrategy::Mask,
-            }],
+            controls: vec![typed_control(
+                0,
+                DataType::Email,
+                AnonymizationStrategy::Mask,
+            )],
             sample_count: 1,
-            sample_row_count: 100,
+            ..preview_params(input_path, vec![0])
         })
         .unwrap();
 
     assert_eq!(preview.previews[0].samples[0].anonymized, "***");
-    assert!(preview.warnings.is_empty());
+    // Masking is not silent any more: it keeps each value's length and word structure,
+    // and the preview is where the user can still choose Redact or Label instead.
+    assert_eq!(preview.warnings.len(), 1, "{:?}", preview.warnings);
+    assert!(
+        preview.warnings[0].message.contains("length, word count"),
+        "{:?}",
+        preview.warnings[0].message
+    );
+}
+
+/// Runs one column end to end and hands back its release-report entry.
+fn column_report_for(
+    content: &str,
+    type_override: Option<DataType>,
+    strategy: AnonymizationStrategy,
+) -> crate::types::ColumnReleaseReport {
+    let workspace = Workspace::new();
+    let input_path = workspace.path("structure.csv");
+    let output_path = workspace.path("structure-output.csv");
+    fs::write(&input_path, content).unwrap();
+
+    let result = workspace
+        .service
+        .anonymize_csv(AnonymizeParams {
+            controls: vec![ColumnControl {
+                column_index: 0,
+                type_override,
+                strategy,
+            }],
+            ..anonymize_params(input_path, output_path, vec![0])
+        })
+        .unwrap();
+
+    result.privacy_report.column_reports[0].clone()
+}
+
+/// Masking is reported as something to review, and the report says what survives it.
+///
+/// `Jan de Vries` masks to `*** ** *****`, which publishes the word count and every
+/// word's letter count exactly — frequently unique against a known roster. The column
+/// table used to read "Masked [Verified] — Selected values are replaced with mask
+/// characters", which is true and reads as a guarantee.
+#[test]
+fn a_masked_column_discloses_the_shape_it_keeps() {
+    let report = column_report_for("value\nJan de Vries\n", None, AnonymizationStrategy::Mask);
+
+    assert_eq!(report.status, crate::types::ReleaseEvidenceStatus::Review);
+    assert!(
+        report.detail.contains("length, word count"),
+        "{:?}",
+        report.detail
+    );
+}
+
+/// The sharpest structure-preserving transform, and the one nothing disclosed.
+///
+/// `transform_timestamp` splits at the ten-byte ISO date prefix and concatenates the
+/// remainder verbatim, so a microsecond time of day survives untouched and is a
+/// near-unique join key back to an event log. The date shift is ±365 days, so a date
+/// of birth also keeps its year to within one.
+#[test]
+fn a_pseudonymized_timestamp_column_discloses_the_surviving_time_of_day() {
+    let report = column_report_for(
+        "value\n2024-06-15 10:30:45.123450\n",
+        Some(DataType::Timestamp),
+        AnonymizationStrategy::Pseudonymize,
+    );
+
+    assert_eq!(report.status, crate::types::ReleaseEvidenceStatus::Review);
+    assert!(
+        report.detail.contains("time of day is kept exactly"),
+        "{:?}",
+        report.detail
+    );
+    assert!(
+        report.detail.contains("at most a year"),
+        "{:?}",
+        report.detail
+    );
+}
+
+/// Numeric and generic-string pseudonymization keep shape too, and say so.
+#[test]
+fn the_other_structure_preserving_pseudonyms_are_disclosed_too() {
+    let numeric = column_report_for(
+        "value\n-12.50\n",
+        Some(DataType::NumericValue),
+        AnonymizationStrategy::Pseudonymize,
+    );
+    assert_eq!(numeric.status, crate::types::ReleaseEvidenceStatus::Review);
+    assert!(
+        numeric.detail.contains("sign, digit count"),
+        "{:?}",
+        numeric.detail
+    );
+
+    let generic = column_report_for(
+        "value\nzeer vertrouwelijk\n",
+        Some(DataType::String),
+        AnonymizationStrategy::Pseudonymize,
+    );
+    assert_eq!(generic.status, crate::types::ReleaseEvidenceStatus::Review);
+    assert!(
+        generic.detail.contains("roughly the original's length"),
+        "{:?}",
+        generic.detail
+    );
+}
+
+/// A transform that keeps nothing keeps its Verified status.
+///
+/// The demotion has to mean something. If every pseudonymized column read Review the
+/// status would carry no information, which is the noise argument this codebase makes
+/// against warnings that always fire. A UUID replacement keeps only the UUID format
+/// and the original's letter case, neither of which narrows anyone down.
+#[test]
+fn a_pseudonym_that_keeps_nothing_stays_verified() {
+    let report = column_report_for(
+        "value\n550e8400-e29b-41d4-a716-446655440000\n",
+        Some(DataType::Uuid),
+        AnonymizationStrategy::Pseudonymize,
+    );
+
+    assert_eq!(report.status, crate::types::ReleaseEvidenceStatus::Verified);
+    assert!(
+        report
+            .detail
+            .contains("keeps nothing of the original value"),
+        "{:?}",
+        report.detail
+    );
+}
+
+/// The preview says it too, while the user can still change strategy.
+///
+/// A disclosure that only appears in the post-run report arrives after the output file
+/// exists, which is the point at which acting on it costs a second run.
+#[test]
+fn the_preview_discloses_structure_preservation_before_the_run() {
+    let workspace = Workspace::new();
+    let input_path = workspace.write_input(
+        "structure-preview.csv",
+        "value\n2024-06-15 10:30:45.123450\n",
+    );
+
+    let preview = workspace
+        .service
+        .preview_anonymization(PreviewParams {
+            controls: vec![typed_control(
+                0,
+                DataType::Timestamp,
+                AnonymizationStrategy::Pseudonymize,
+            )],
+            sample_count: 1,
+            ..preview_params(input_path, vec![0])
+        })
+        .unwrap();
+
+    assert!(
+        preview
+            .warnings
+            .iter()
+            .any(|warning| warning.message.contains("time of day is kept exactly")),
+        "{:?}",
+        preview.warnings
+    );
 }
 
 #[test]
 fn type_override_updates_report_risk_for_effective_type() {
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
-    let input_path = temp_dir.path().join("type-override-risk.csv");
-    let output_path = temp_dir.path().join("type-override-risk-output.csv");
+    let workspace = Workspace::new();
+    let input_path = workspace.path("type-override-risk.csv");
+    let output_path = workspace.path("type-override-risk-output.csv");
     fs::write(&input_path, "value\nnot-an-email\n").unwrap();
 
-    let result = service
+    let result = workspace
+        .service
         .anonymize_csv(AnonymizeParams {
             file_path: input_path,
             output_path,
             columns: vec![0],
-            controls: vec![ColumnControl {
-                column_index: 0,
-                type_override: Some(DataType::Email),
-                strategy: AnonymizationStrategy::Redact,
-            }],
+            controls: vec![typed_control(
+                0,
+                DataType::Email,
+                AnonymizationStrategy::Redact,
+            )],
             force: false,
             preview_smart_replacements: vec![],
         })
@@ -631,11 +719,11 @@ fn type_override_preserves_privacy_evidence_beyond_retained_samples() {
 
     let controlled = apply_column_controls(
         &metadata,
-        &[ColumnControl {
-            column_index: 0,
-            type_override: Some(DataType::String),
-            strategy: AnonymizationStrategy::Redact,
-        }],
+        &[typed_control(
+            0,
+            DataType::String,
+            AnonymizationStrategy::Redact,
+        )],
     )
     .unwrap();
 
@@ -657,22 +745,15 @@ fn type_override_preserves_privacy_evidence_beyond_retained_samples() {
 
 #[test]
 fn preview_warns_for_pass_through_and_no_op_columns() {
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
-    let input_path = temp_dir.path().join("warnings.csv");
-    fs::write(&input_path, "country,email\nUS,user@example.com\n").unwrap();
+    let workspace = Workspace::new();
+    let input_path = workspace.write_input("warnings.csv", "country,email\nUS,user@example.com\n");
 
-    let preview = service
+    let preview = workspace
+        .service
         .preview_anonymization(PreviewParams {
-            file_path: input_path,
-            columns: vec![0, 1],
-            controls: vec![ColumnControl {
-                column_index: 1,
-                type_override: None,
-                strategy: AnonymizationStrategy::PassThrough,
-            }],
+            controls: vec![control(1, AnonymizationStrategy::PassThrough)],
             sample_count: 1,
-            sample_row_count: 100,
+            ..preview_params(input_path, vec![0, 1])
         })
         .unwrap();
 

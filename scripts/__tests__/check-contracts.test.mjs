@@ -263,3 +263,164 @@ test('rejects a contract struct without the camelCase serde attribute', (t) => {
   assert.equal(errors.length, 1)
   assert.match(errors[0], /^Rust struct AppSettings is missing #\[serde\(rename_all = "camelCase"\)\]/)
 })
+
+// Rewrites the first contract struct's body on both sides. The struct is taken from the
+// gate's own list rather than named here, for the same reason the fixture is generated:
+// a hand-picked name rots the day someone reorders the list.
+function withFirstStructBody(rustBody, tsBody) {
+  const name = structContracts[0]
+  const rustSource = generatedRustTypes()
+  const tsSource = generatedTsTypes()
+  const rustTarget = `pub struct ${name} {\n    pub sample_field: String,\n    pub other_field: u32,\n}`
+  const tsTarget = `export interface ${name} {\n  sampleField: string\n  otherField: number\n}`
+
+  // That the substitution found its target, not that it changed the text — several tests
+  // legitimately leave one side at the generated default. A helper that silently matched
+  // nothing would leave every test below asserting against an untouched fixture, some of
+  // them vacuously green; one clear failure here beats several confusing ones there.
+  assert.ok(rustSource.includes(rustTarget), 'the generated Rust struct body changed shape')
+  assert.ok(tsSource.includes(tsTarget), 'the generated TypeScript interface changed shape')
+
+  return fixture({
+    coreTypes: rustSource.replace(rustTarget, `pub struct ${name} {\n${rustBody}\n}`),
+    types: tsSource.replace(tsTarget, `export interface ${name} {\n${tsBody}\n}`),
+  })
+}
+
+test('rejects a skipped field TypeScript declares as always present', (t) => {
+  // The regression this check exists for. `skip_serializing_if` omits the key, so the field
+  // arrives as `undefined` on every payload with an empty list — and an earlier version of
+  // this gate read only `Option<...>`, saw a plain `Vec`, and demanded exactly this unsound
+  // declaration while rejecting the correct one.
+  const root = withFirstStructBody(
+    [
+      '    #[serde(default, skip_serializing_if = "Vec::is_empty")]',
+      '    pub sample_field: Vec<String>,',
+      '    pub other_field: u32,',
+    ].join('\n'),
+    ['  sampleField: string[]', '  otherField: number'].join('\n'),
+  )
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+
+  const { errors } = checkContracts(root)
+  assert.equal(errors.length, 1)
+  assert.match(errors[0], /sampleField is skipped on serialization when Vec::is_empty/)
+})
+
+test('accepts a skipped field TypeScript marks optional', (t) => {
+  const root = withFirstStructBody(
+    [
+      '    #[serde(default, skip_serializing_if = "Vec::is_empty")]',
+      '    pub sample_field: Vec<String>,',
+      '    pub other_field: u32,',
+    ].join('\n'),
+    ['  sampleField?: string[]', '  otherField: number'].join('\n'),
+  )
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+
+  assert.deepEqual(checkContracts(root).errors, [])
+})
+
+test('rejects an Option field whose TypeScript type cannot hold null', (t) => {
+  // Without `skip_serializing_if`, `None` is serialized as a present `null`, so the union
+  // has to admit it. This is the opposite failure from the one above and needs the opposite
+  // declaration, which is why the check reads the attributes and not just the type.
+  const root = withFirstStructBody(
+    ['    pub sample_field: Option<String>,', '    pub other_field: u32,'].join('\n'),
+    ['  sampleField: string', '  otherField: number'].join('\n'),
+  )
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+
+  const { errors } = checkContracts(root)
+  assert.equal(errors.length, 1)
+  assert.match(errors[0], /sampleField is Option<\.\.\.> in Rust .* does not admit null/)
+})
+
+test('rejects a guard against a value the wire cannot send', (t) => {
+  const root = withFirstStructBody(
+    ['    pub sample_field: String,', '    pub other_field: u32,'].join('\n'),
+    ['  sampleField?: string | null', '  otherField: number'].join('\n'),
+  )
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+
+  const { errors } = checkContracts(root)
+  assert.equal(errors.length, 1)
+  assert.match(errors[0], /sampleField is always present and never null on the wire/)
+})
+
+test('sees a field whose serde attribute rustfmt wrapped onto several lines', (t) => {
+  // The round-three signature in a new form. Reading only the first line of the attribute
+  // made `default,` look like a declaration: it flushed as a non-match, discarded the pending
+  // attributes, and glued the rest onto the field line so the `pub …` regex never matched.
+  // The field then reached NEITHER check — the gate failed on the correct declaration and
+  // passed on one with the field deleted outright.
+  const rustBody = [
+    '    #[serde(',
+    '        default,',
+    '        skip_serializing_if = "Option::is_none"',
+    '    )]',
+    '    pub sample_field: Option<String>,',
+    '    pub other_field: u32,',
+  ].join('\n')
+
+  const correct = withFirstStructBody(
+    rustBody,
+    ['  sampleField?: string | null', '  otherField: number'].join('\n'),
+  )
+  t.after(() => fs.rmSync(correct, { recursive: true, force: true }))
+  assert.deepEqual(checkContracts(correct).errors, [])
+
+  // And the unsound one still fails, rather than passing because the field went missing.
+  const deleted = withFirstStructBody(rustBody, ['  otherField: number'].join('\n'))
+  t.after(() => fs.rmSync(deleted, { recursive: true, force: true }))
+  const { errors } = checkContracts(deleted)
+  assert.equal(errors.length, 1)
+  assert.match(errors[0], /fields missing in TypeScript: sampleField$/)
+})
+
+test('refuses the serde attributes it cannot reason about', (t) => {
+  // Each of these changes or removes the wire key, which the nullability rule reads from the
+  // field name and type alone. Guessing would make the gate demand a declaration that lies —
+  // the exact failure it exists to prevent — so it stops instead.
+  for (const [attribute, why] of [
+    ['#[serde(skip)]', 'skip'],
+    ['#[serde(default, skip_serializing)]', 'skip_serializing'],
+    ['#[serde(rename = "wireName")]', 'rename'],
+    ['#[serde(flatten)]', 'flatten'],
+  ]) {
+    const root = withFirstStructBody(
+      [`    ${attribute}`, '    pub sample_field: String,', '    pub other_field: u32,'].join('\n'),
+      ['  sampleField: string', '  otherField: number'].join('\n'),
+    )
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+
+    const { errors } = checkContracts(root)
+    assert.ok(
+      errors.some((error) => error.includes(`#[serde(${why})]`)),
+      `${attribute} must be refused, got: ${JSON.stringify(errors)}`,
+    )
+  }
+})
+
+test('sees a field whose type rustfmt wrapped onto the next line', (t) => {
+  // A field the Rust parser misses is invisible to the *name* comparison as well as to the
+  // nullability one, so it could drift out of TypeScript entirely without failing anything.
+  // rustfmt produces this shape on its own once a declaration passes max_width.
+  const rustBody = [
+    '    pub sample_field:',
+    '        std::collections::HashMap<String, Vec<usize>>,',
+    '    pub other_field: u32,',
+  ].join('\n')
+  const matching = withFirstStructBody(
+    rustBody,
+    ['  sampleField: Record<string, number[]>', '  otherField: number'].join('\n'),
+  )
+  t.after(() => fs.rmSync(matching, { recursive: true, force: true }))
+  assert.deepEqual(checkContracts(matching).errors, [])
+
+  const missing = withFirstStructBody(rustBody, ['  otherField: number'].join('\n'))
+  t.after(() => fs.rmSync(missing, { recursive: true, force: true }))
+  const { errors } = checkContracts(missing)
+  assert.equal(errors.length, 1)
+  assert.match(errors[0], /fields missing in TypeScript: sampleField$/)
+})

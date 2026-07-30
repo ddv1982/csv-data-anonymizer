@@ -6,21 +6,22 @@ import { messageFrom } from '../utils/errors'
 
 type PersistentSettingsOptions = {
   onError: (message: string) => void
-  onAcceptedSettings?: (settings: AppSettings) => void
 }
 
-export function usePersistentSettings({ onError, onAcceptedSettings }: PersistentSettingsOptions) {
+export function usePersistentSettings({ onError }: PersistentSettingsOptions) {
   const [settings, setSettings] = useState<AppSettings>(defaultSettings)
   const [settingsLoaded, setSettingsLoaded] = useState(false)
   const latestSettingsRef = useRef(defaultSettings)
   const settingsLoadedRef = useRef(false)
   const settingsSaveSequenceRef = useRef(0)
   const inFlightSettingsSavesRef = useRef(new Set<number>())
-  const callbacksRef = useRef({ onError, onAcceptedSettings })
+  // Held in a ref so the load effect below can stay dependency-free: it must run once
+  // per mount, not again every time the caller passes a new inline callback.
+  const onErrorRef = useRef(onError)
 
   useEffect(() => {
-    callbacksRef.current = { onError, onAcceptedSettings }
-  }, [onError, onAcceptedSettings])
+    onErrorRef.current = onError
+  }, [onError])
 
   useEffect(() => {
     let isMounted = true
@@ -31,7 +32,6 @@ export function usePersistentSettings({ onError, onAcceptedSettings }: Persisten
             settingsSaveSequenceRef.current += 1
             latestSettingsRef.current = loaded
             setSettings(loaded)
-            callbacksRef.current.onAcceptedSettings?.(loaded)
           }
           settingsLoadedRef.current = true
           setSettingsLoaded(true)
@@ -39,7 +39,7 @@ export function usePersistentSettings({ onError, onAcceptedSettings }: Persisten
       })
       .catch((caught: unknown) => {
         if (isMounted) {
-          callbacksRef.current.onError(messageFrom(caught))
+          onErrorRef.current(messageFrom(caught))
           settingsLoadedRef.current = true
           setSettingsLoaded(true)
         }
@@ -55,14 +55,9 @@ export function usePersistentSettings({ onError, onAcceptedSettings }: Persisten
     setSettings(next)
   }
 
-  function acceptSettings(next: AppSettings) {
-    applySettings(next)
-    callbacksRef.current.onAcceptedSettings?.(next)
-  }
-
   function applyAuthoritativeSettings(next: AppSettings) {
     settingsSaveSequenceRef.current += 1
-    acceptSettings(next)
+    applySettings(next)
   }
 
   async function persistSettings(next: AppSettings) {
@@ -77,13 +72,13 @@ export function usePersistentSettings({ onError, onAcceptedSettings }: Persisten
     try {
       const saved = await saveSettings(next)
       if (saveSequence === settingsSaveSequenceRef.current) {
-        acceptSettings(saved)
+        applySettings(saved)
       } else {
         staleResponseNeedsReconcile = true
       }
     } catch (caught) {
       if (saveSequence === settingsSaveSequenceRef.current) {
-        callbacksRef.current.onError(messageFrom(caught))
+        onErrorRef.current(messageFrom(caught))
       }
     } finally {
       inFlightSettingsSavesRef.current.delete(saveSequence)
@@ -101,7 +96,7 @@ export function usePersistentSettings({ onError, onAcceptedSettings }: Persisten
       const loaded = await loadSettings()
       applyAuthoritativeSettings(loaded)
     } catch (caught) {
-      callbacksRef.current.onError(messageFrom(caught))
+      onErrorRef.current(messageFrom(caught))
     }
   }
 

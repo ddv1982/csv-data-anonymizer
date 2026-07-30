@@ -183,8 +183,16 @@ fn multilingual_detection_matrix_quality_gate_reports_precision_recall_and_entit
         );
     }
 
+    // Deliberately loose. This catches a detector that has gone superlinear or started
+    // recompiling regexes per value — failures that show up as orders of magnitude, not
+    // percentages. The matrix runs in about half a second idle, but a wall clock on a
+    // shared machine measures contention as much as work, and a 2s bound failed this
+    // test at 2.06s while other builds were running. A guard that fires on a busy
+    // machine trains people to rerun until green, which is how a real regression gets
+    // waved through. Timing changes small enough for this bound to miss belong to
+    // `benches/detector_matrix.rs`, which measures instead of asserting.
     assert!(
-        start.elapsed() < Duration::from_secs(2),
+        start.elapsed() < Duration::from_secs(30),
         "detector matrix took {:?} for {} representative columns",
         start.elapsed(),
         positive_fixtures().len() + negative_fixtures().len()

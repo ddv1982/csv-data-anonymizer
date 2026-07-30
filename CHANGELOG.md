@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.0.82 - 2026-07-30
+
+- Measure what a released file still exposes when every column is read together, rather than one column at a time: rows are counted into equivalence classes over only the parts an outsider holding the original could reproduce, so a file whose postcode, birth decade, and job title jointly single out a third of its rows can no longer be reported as having left no high or medium risk column unselected. The report names which columns the rows were matched on and what survived in each — a whole value, an email domain, a date's decade and time, a masked value's skeleton, or which cells are blank — and says which single column would help most to drop.
+- Refuse a UTF-16 CSV export that carries no byte-order mark, which PowerShell's `Out-File` and SQL Server's `bcp -w` produce by default. Such a file is valid UTF-8 once its NUL bytes are read as characters, so nothing errored: headers parsed as `n\0a\0m\0e\0`, no detector matched, and a file of names and email addresses was reported as containing no sensitive data at all. The refusal names the encoding found and how to re-export.
+- Send no value to Local AI that a refused replacement would publish verbatim: the five types that pass through unchanged under ordinary pseudonymization now take the generic-string path when a Smart replacement is rejected, and the joint measure classifies that column by the fallback it would actually get rather than the strategy that was chosen.
+- Frame pasted values to the Local AI model as untrusted data inside a per-request nonce, neutralize marker sequences in column names and values, and hold back values too long to be plausible for their detected type instead of putting them in the prompt.
+- Say the same thing before a run and after it about detection having read a sample, in the stricter of the two wordings that existed, and disclose that masking publishes each value's length, word count, and per-word letter counts wherever a masked column is reported.
+- Publish output with the permissions the destination is entitled to: a file the user had already placed keeps the mode it had, a new one stays owner-only, and a symlink or a file another user left at the destination earns neither.
+- Order privacy findings of equal score by the risk they carry rather than alphabetically by their internal type name, and default every unassessed risk, confidence, strategy, and readiness value to the reading that cannot make a file look safer than it is.
+- Reduce the crate's public surface from seven modules to three so the compiler can see dead code across roughly 2,100 lines that a library crate's `pub` had exempted, remove what it found, and add a comment check to CI that rejects narration of how the code used to behave.
+
 ## v1.0.81 - 2026-07-30
 
 - Warn before a run, and report after it, when a column's consistent replacements could be matched back by how often each value occurs, naming which of the three measured tests fired rather than describing only the distinct-count one; judge the warning against the file's real row count instead of the detection sample's, so a column whose values repeat across a file far larger than the sample is no longer missed, and state plainly in the privacy report that output keeping repeated values linkable is pseudonymized rather than anonymized and remains personal data.

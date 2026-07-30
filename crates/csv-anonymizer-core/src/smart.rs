@@ -53,6 +53,18 @@ impl SmartReplacementMap {
         !self.replacements.is_empty() || self.requested_values > 0 || self.rejected_values > 0
     }
 
+    /// This map when it carries something a run has to account for, `None` otherwise.
+    ///
+    /// Activity is more than "holds replacements": a map that only *requested* values,
+    /// or only had them rejected, still has to reach the report, or a run whose Local
+    /// AI output the leak guard refused would be described as having used no Local AI
+    /// at all. Every caller that decides whether to carry a map asks the question this
+    /// way, so it is asked in one place — spelled out at each site, one site could
+    /// keep the old, narrower test and quietly drop the rejection counts.
+    pub(crate) fn if_active(self) -> Option<Self> {
+        self.has_activity().then_some(self)
+    }
+
     pub fn requested_values(&self) -> usize {
         self.requested_values
     }
@@ -111,9 +123,14 @@ impl SmartReplacementMap {
                 .iter()
                 .map(|replacement| replacement.original.clone())
                 .collect::<Vec<_>>();
+            let column_source_keys = source_keys(&expected_values);
             let mut used_outputs = BTreeSet::new();
-            let validation =
-                validated_replacements(&expected_values, replacements, &mut used_outputs);
+            let validation = validated_replacements(
+                &expected_values,
+                &column_source_keys,
+                replacements,
+                &mut used_outputs,
+            );
             map.record_request_batch(expected_values.len(), &validation.rejection_reasons);
             for (original, replacement) in validation.accepted {
                 map.insert(column_index, &original, replacement);
@@ -159,6 +176,22 @@ impl SmartReplacementMap {
             .map(|replacement| value_identity_key(&replacement.replacement))
             .collect()
     }
+
+    /// The source values this map already holds for `column_index`, identity-keyed.
+    ///
+    /// These come from a preview that ran earlier in the same session, so they are
+    /// real values of the same column and belong in the cross-value leak set even
+    /// though the current request will not ask about them again: a replacement
+    /// generated now that carries one of them still publishes that person's value
+    /// against another record. Leaving them out would make the guard weaker the more
+    /// work the preview had already done, which is exactly backwards.
+    fn source_keys_for_column(&self, column_index: usize) -> BTreeSet<String> {
+        self.replacements
+            .values()
+            .filter(|replacement| replacement.column_index == column_index)
+            .map(|replacement| value_identity_key(&replacement.original))
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -181,6 +214,29 @@ impl SmartReplacementKey {
             normalized_value: value_identity_key(value),
         }
     }
+}
+
+/// The replacements a preview already produced, when the pending run can reuse them.
+///
+/// Two conditions, and both are load-bearing. The entries have to carry activity, or
+/// an empty map would stand in for "preview produced nothing" and suppress the
+/// generation the run still needs. And the selection has to still contain a Local AI
+/// column, or replacements computed for a column the user has since deselected would
+/// be carried into a run that no longer has anywhere to apply them.
+///
+/// Asked in one place because the file run, the paste runs and preflight all have to
+/// reach the same verdict: preflight decides on this basis whether the run needs Local
+/// AI at all, so a preflight that answered differently from the run would clear a run
+/// that then demands a model the user was told it would not need.
+pub(crate) fn reusable_preview_smart_replacements(
+    preview_smart_replacements: &[SmartReplacementEntry],
+    selected_metadata: &[ColumnMetadata],
+) -> Option<SmartReplacementMap> {
+    let replacements = SmartReplacementMap::from_entries(preview_smart_replacements);
+    if !has_smart_replacement_columns(selected_metadata) {
+        return None;
+    }
+    replacements.if_active()
 }
 
 pub fn has_smart_replacement_columns(columns: &[ColumnMetadata]) -> bool {
@@ -344,6 +400,17 @@ fn build_replacement_map(
             ));
         };
         let mut used_outputs = map.output_keys_for_column(column_index);
+        // Built once for the whole column, not per chunk. A column carries up to
+        // `SMART_REPLACEMENT_VALUE_CAP_PER_COLUMN` values and is asked about in
+        // batches of `SMART_REPLACEMENT_BATCH_SIZE`, so a chunk-scoped leak set never
+        // compared the eleventh value's replacement against the first value's source:
+        // a model that answered "Sophie" with "Emma" — a real name it had been shown
+        // in an earlier prompt — was accepted, publishing Emma's name against
+        // Sophie's record. The set is honest but not exhaustive: values dropped by
+        // the per-column cap were never collected, so a replacement echoing one of
+        // those is not detectable here.
+        let mut column_source_keys = map.source_keys_for_column(column_index);
+        column_source_keys.extend(source_keys(&missing_values));
 
         for chunk in missing_values.chunks(SMART_REPLACEMENT_BATCH_SIZE) {
             let requested = chunk.len();
@@ -351,7 +418,8 @@ fn build_replacement_map(
                 column,
                 values: chunk,
             })?;
-            let validation = validated_replacements(chunk, replacements, &mut used_outputs);
+            let validation =
+                validated_replacements(chunk, &column_source_keys, replacements, &mut used_outputs);
             map.record_request_batch(requested, &validation.rejection_reasons);
             for (original, replacement) in validation.accepted {
                 map.insert(column_index, &original, replacement);
@@ -379,8 +447,19 @@ struct ValidatedSmartReplacements {
     rejection_reasons: Vec<SmartReplacementRejectionReason>,
 }
 
+/// Checks one prompt's answers, against two deliberately different sets.
+///
+/// `expected_values` is what *this* prompt asked about and decides whether a returned
+/// original is one of them: an answer naming a value from another prompt is a model
+/// error and stays `UnexpectedOriginal`, so this set must stay request-scoped.
+/// `column_source_keys` is what a replacement is *checked against* for the cross-value
+/// leak, and covers the whole column, because a value's real danger is being echoed
+/// into a row the model was asked about at some other time. Conflating the two either
+/// blinds the leak check to earlier chunks or starts accepting originals nobody asked
+/// for.
 fn validated_replacements(
     expected_values: &[String],
+    column_source_keys: &BTreeSet<String>,
     replacements: Vec<SmartReplacement>,
     used_outputs: &mut BTreeSet<String>,
 ) -> ValidatedSmartReplacements {
@@ -405,7 +484,7 @@ fn validated_replacements(
             continue;
         }
         let cleaned = replacement.replacement.trim();
-        if let Some(reason) = invalid_replacement_reason(original, cleaned) {
+        if let Some(reason) = invalid_replacement_reason(original, cleaned, column_source_keys) {
             rejection_reasons.push(reason);
             continue;
         }
@@ -431,14 +510,33 @@ fn validated_replacements(
     }
 }
 
+/// Why `replacement` may not stand in for `original`, if it may not.
+///
+/// `column_source_keys` is every source value known for the whole column, keyed by
+/// [`value_identity_key`]. It is needed because the dangerous case is not only a
+/// replacement that echoes its *own* original — it is one that carries a *different*
+/// row's value, which would publish that person's data against the wrong record. A
+/// model handed a column's values across several prompts can copy any of them into
+/// any slot, and the reverse-map dedup in `strategies::state` cannot see it: each
+/// source still maps to a distinct output, so nothing downstream looks wrong.
+///
+/// Self-comparisons are ordered first so the more specific reason wins: a replacement
+/// equal to its own original reports `SameAsOriginal`, never `MatchesOtherOriginal`.
 fn invalid_replacement_reason(
     original: &str,
     replacement: &str,
+    column_source_keys: &BTreeSet<String>,
 ) -> Option<SmartReplacementRejectionReason> {
     if replacement.is_empty() {
         return Some(SmartReplacementRejectionReason::EmptyOutput);
     }
-    if replacement.eq_ignore_ascii_case(original) {
+
+    let original_key = value_identity_key(original);
+    let replacement_key = value_identity_key(replacement);
+    // Compared as identity keys rather than with `eq_ignore_ascii_case`, so that a
+    // replacement differing from its original only in non-ASCII case or in internal
+    // spacing is still recognized as the original coming straight back.
+    if replacement_key == original_key {
         return Some(SmartReplacementRejectionReason::SameAsOriginal);
     }
     if replacement
@@ -448,12 +546,84 @@ fn invalid_replacement_reason(
         return Some(SmartReplacementRejectionReason::ControlCharacter);
     }
 
-    let original_key = value_identity_key(original);
-    if original_key.len() >= 3 && value_identity_key(replacement).contains(&original_key) {
+    if contains_source_value(&replacement_key, &original_key) {
         return Some(SmartReplacementRejectionReason::ContainsOriginal);
     }
 
+    if column_source_keys
+        .iter()
+        .filter(|key| *key != &original_key)
+        .any(|key| contains_source_value(&replacement_key, key))
+    {
+        return Some(SmartReplacementRejectionReason::MatchesOtherOriginal);
+    }
+
     None
+}
+
+/// Whether `replacement_key` carries `source_key`, both already identity-keyed.
+///
+/// Exact equality counts at any length, because a two-character value reproduced
+/// whole is still that value — even for a closed domain like country or gender, where
+/// it costs utility, republishing one row's real value against another row is a
+/// genuine quasi-identifier leak and the pseudonymization fallback is the right
+/// answer.
+///
+/// Containment is the arm that has to be careful, because it now runs against every
+/// source value of the column rather than against a single original: a bare substring
+/// test at a three-character floor rejects the honest `Janneke Visser` because some
+/// other row of the same column happens to be called `Jan`. So containment only counts
+/// when the match sits on a token boundary, which keeps the cases that matter —
+/// `alice@corp.com` inside a longer address, a name inside `Anne-Marie` or `O'Brien`,
+/// an id inside `ID-AB12345-X` — while letting a short source key that is merely a
+/// prefix of a longer word pass. The three-character floor stays for the same reason
+/// it was introduced: below it even a whole token like `id` or `nl` is coincidence
+/// more often than leak.
+fn contains_source_value(replacement_key: &str, source_key: &str) -> bool {
+    if source_key.is_empty() {
+        return false;
+    }
+    if replacement_key == source_key {
+        return true;
+    }
+    source_key.chars().count() >= 3 && contains_at_token_boundary(replacement_key, source_key)
+}
+
+/// Whether `haystack` contains `needle` with both ends aligned to a token boundary.
+///
+/// A boundary is the start or end of the string, or a neighbouring character that is
+/// not alphanumeric — which makes `-`, `'`, `@`, `.` and whitespace all separators, so
+/// hyphenated and apostrophed names and the parts of an address or an id are matched
+/// as whole tokens. An edge of `needle` that is itself non-alphanumeric needs no
+/// boundary on that side: `@corp.com` is already delimited by its own `@`.
+fn contains_at_token_boundary(haystack: &str, needle: &str) -> bool {
+    let needle_starts_open = needle.chars().next().is_some_and(char::is_alphanumeric);
+    let needle_ends_open = needle
+        .chars()
+        .next_back()
+        .is_some_and(char::is_alphanumeric);
+
+    haystack.match_indices(needle).any(|(start, matched)| {
+        let before_is_boundary = !needle_starts_open
+            || haystack[..start]
+                .chars()
+                .next_back()
+                .is_none_or(|character| !character.is_alphanumeric());
+        let after_is_boundary = !needle_ends_open
+            || haystack[start + matched.len()..]
+                .chars()
+                .next()
+                .is_none_or(|character| !character.is_alphanumeric());
+        before_is_boundary && after_is_boundary
+    })
+}
+
+/// The identity keys of `values`, the form the cross-value leak check compares against.
+fn source_keys(values: &[String]) -> BTreeSet<String> {
+    values
+        .iter()
+        .map(|value| value_identity_key(value))
+        .collect()
 }
 
 fn selected_smart_columns(columns: &[ColumnMetadata]) -> impl Iterator<Item = &ColumnMetadata> {
@@ -487,6 +657,29 @@ fn insert_unique_smart_value(values: &mut BTreeSet<String>, value: &str) {
 /// map: a map that stopped trimming still returns a perfectly plausible replacement,
 /// just a second one for a value it has already seen. For Local AI it does not even
 /// look like a miss, only an unexplained bump in `smart_replacement_fallbacks`.
+///
+/// The folding must stay Unicode-aware, and it collapses internal whitespace runs.
+/// ASCII-only case folding would leave `MÜLLER` and `Müller` as two different values,
+/// which is a leak and not merely an inconsistency: the smart-replacement checks
+/// compare on this key, so a source value echoed back with different non-ASCII casing
+/// would match neither the equality nor the containment arm and be published. Two
+/// genuinely different source values cannot be merged by either rule — they can only differ by case or by the
+/// width of a whitespace run, and a person written `Jan  de Vries` in one row and
+/// `Jan de Vries` in the next is one person, which is the same judgement trimming
+/// already makes at the ends of the value.
 pub(crate) fn value_identity_key(value: &str) -> String {
-    value.trim().to_ascii_lowercase()
+    let mut key = String::with_capacity(value.len());
+    let mut pending_separator = false;
+    for character in value.trim().chars() {
+        if character.is_whitespace() {
+            pending_separator = true;
+            continue;
+        }
+        if pending_separator {
+            key.push(' ');
+            pending_separator = false;
+        }
+        key.extend(character.to_lowercase());
+    }
+    key
 }

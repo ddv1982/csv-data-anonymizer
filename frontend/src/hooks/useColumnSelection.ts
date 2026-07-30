@@ -14,10 +14,6 @@ export function useColumnSelection(
   const [showAllColumns, setShowAllColumns] = useState(false)
 
   const selectedSet = useMemo(() => new Set(selectedColumns), [selectedColumns])
-  const columnControlList = useMemo(
-    () => Object.values(columnControls).sort((left, right) => left.columnIndex - right.columnIndex),
-    [columnControls],
-  )
   const selectedControls = useMemo(
     () => selectedColumns.map((index) => columnControls[index]).filter(Boolean),
     [columnControls, selectedColumns],
@@ -92,7 +88,6 @@ export function useColumnSelection(
   return {
     selectedColumns,
     columnControls,
-    columnControlList,
     showAllColumns,
     setShowAllColumns,
     columns,

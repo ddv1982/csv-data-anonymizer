@@ -26,6 +26,20 @@ fn head_sample_keeps_the_opening_rows_and_reports_it_stopped_early() {
     assert!(!sample.scanned_entire_input);
 }
 
+/// What this layer owes on top of the sampler: the row bookkeeping, and input order.
+///
+/// The sampler's own statistical properties — that it draws from every part of the
+/// stream, that it does not align with a periodic one, that it is deterministic — are
+/// pinned once in [`crate::sampling`] against `SpreadSampler` directly, which is where
+/// they live now that `read_csv_detection_sample_from_str` delegates to it. Repeating
+/// them here would restate the same arithmetic through a CSV parser and would fail for
+/// the same reason, one layer further from the cause.
+///
+/// `data_rows_scanned` and `scanned_entire_input` are not the sampler's, though: they
+/// are what tells detection whether it read the file or a sample of it, and nothing in
+/// `sampling` can check them. Input order is asserted here as well, because it is the
+/// property this function's callers index against — the preview reads row `n` of the
+/// sample and calls it row `n` of the file.
 #[test]
 fn detection_sample_spans_the_whole_input_in_input_order() {
     let content = build_numbered_csv(1_000);
@@ -40,43 +54,6 @@ fn detection_sample_spans_the_whole_input_in_input_order() {
         kept.windows(2).all(|pair| pair[0] < pair[1]),
         "the sample must come back in input order, got {kept:?}"
     );
-
-    // Every tenth of the input contributes. A 100-row sample of 1,000 rows draws
-    // about 10 from each, so an empty tenth would mean the sample is reading a
-    // window of the input rather than the whole of it.
-    for tenth in 0..10 {
-        let range = tenth * 100..(tenth + 1) * 100;
-        assert!(
-            kept.iter().any(|row| range.contains(row)),
-            "rows {range:?} contributed nothing to {kept:?}"
-        );
-    }
-}
-
-/// The choice of rows must not correlate with position modulo anything, because
-/// real inputs are periodic: a flattened export writes one logical record per k
-/// rows and puts each field on a fixed row of the block. Sampling such a file at a
-/// fixed phase — which is what keeping every nth row does, k and n being powers of
-/// two often enough — either sees a field on every sampled row or never sees it at
-/// all. The second case classifies the column off filler values, which is a column
-/// of real PII detected as `String` and left unselected.
-#[test]
-fn detection_sample_does_not_align_with_a_periodic_input() {
-    const WANTED: usize = 200;
-
-    for period in [2usize, 3, 4, 5, 8, 16] {
-        let sample =
-            read_csv_detection_sample_from_str(&build_numbered_csv(period * 500), WANTED).unwrap();
-        let kept = kept_row_numbers(&sample);
-
-        for phase in 0..period {
-            let hits = kept.iter().filter(|row| *row % period == phase).count();
-            assert!(
-                hits >= WANTED / (period * 4),
-                "phase {phase} of {period} got {hits} of {WANTED} sampled rows"
-            );
-        }
-    }
 }
 
 fn kept_row_numbers(sample: &ParsedSample) -> Vec<usize> {
@@ -85,15 +62,6 @@ fn kept_row_numbers(sample: &ParsedSample) -> Vec<usize> {
         .iter()
         .map(|row| row[0].parse().unwrap())
         .collect()
-}
-
-#[test]
-fn detection_sample_is_deterministic() {
-    let content = build_numbered_csv(777);
-    let first = read_csv_detection_sample_from_str(&content, 32).unwrap();
-    let second = read_csv_detection_sample_from_str(&content, 32).unwrap();
-
-    assert_eq!(first.rows, second.rows);
 }
 
 #[test]
@@ -151,7 +119,7 @@ fn processes_csv_text() {
     let sample = read_csv_sample_from_str(input, 10).unwrap();
     let columns =
         apply_column_selection(&build_column_metadata(&sample.headers, &sample.rows), &[0]);
-    let (output, result) = process_csv_text(
+    let (output, result) = process_csv_data(
         input,
         &columns,
         ProcessOptions {
@@ -207,41 +175,21 @@ fn rejects_non_empty_fields_beyond_headers_without_committing_output() {
 
     assert!(sample.to_string().contains("CSV privacy error"));
 
+    // Only the second column is selected: the run has to reject the ragged row while
+    // transforming something, or the rejection could be an artefact of there being no work.
     let columns = vec![
-        ColumnMetadata {
-            header_label_is_ambiguous: false,
-            name: "id".to_string(),
-            source_path: None,
-            index: 0,
-            detected_type: crate::types::DataType::NumericId,
-            confidence: crate::types::Confidence::High,
-            detection_trace: None,
-            privacy_findings: Vec::new(),
-            privacy_evidence: Vec::new(),
-            pii_risk: crate::types::PiiRisk::High,
-            sample_values: vec![],
-            sample_value_distribution: Default::default(),
-            empty_format: crate::types::EmptyFormat::EmptyString,
-            is_selected: false,
-            strategy: crate::types::AnonymizationStrategy::Auto,
-        },
-        ColumnMetadata {
-            header_label_is_ambiguous: false,
-            name: "email".to_string(),
-            source_path: None,
-            index: 1,
-            detected_type: crate::types::DataType::Email,
-            confidence: crate::types::Confidence::High,
-            detection_trace: None,
-            privacy_findings: Vec::new(),
-            privacy_evidence: Vec::new(),
-            pii_risk: crate::types::PiiRisk::High,
-            sample_values: vec![],
-            sample_value_distribution: Default::default(),
-            empty_format: crate::types::EmptyFormat::EmptyString,
-            is_selected: true,
-            strategy: crate::types::AnonymizationStrategy::Auto,
-        },
+        crate::test_support::column(
+            0,
+            "id",
+            crate::types::DataType::NumericId,
+            crate::types::AnonymizationStrategy::Auto,
+        ),
+        crate::test_support::selected_column(
+            1,
+            "email",
+            crate::types::DataType::Email,
+            crate::types::AnonymizationStrategy::Auto,
+        ),
     ];
 
     let error = process_file(
@@ -367,7 +315,12 @@ fn process_row_count_skips_blank_data_rows_but_preserves_them() {
     )
     .unwrap();
 
+    // All three counts come from separate readers, only some of which trim. They have to
+    // land on the same number: `data_rows_scanned` over `count_csv_data_rows` is the
+    // coverage fraction the user is shown, and a numerator counting the whitespace-only
+    // rows the denominator skipped would claim detection saw more of the file than it did.
     assert_eq!(count_csv_data_rows(&input_path).unwrap(), 3);
+    assert_eq!(sample.data_rows_scanned, 3);
     assert_eq!(result.row_count, 3);
     let output = fs::read_to_string(&output_path).unwrap();
     assert!(output.contains("\n,\n"));
@@ -526,4 +479,251 @@ fn refuses_a_run_that_outgrows_its_mapping_ceiling_without_committing_output() {
     );
     assert!(error.to_string().contains("No output was written"));
     assert!(!output_path.exists());
+}
+
+/// A UTF-16LE export of `name,email` with two data rows, byte for byte.
+///
+/// Written as bytes rather than loaded from a fixture file so CI covers the case
+/// even if a checkout, an editor or a `.gitattributes` rule would have "fixed"
+/// the encoding of a real file on the way in — which is exactly the kind of
+/// silent repair that would leave this regression untested while looking green.
+fn utf16_bytes(text: &str, little_endian: bool) -> Vec<u8> {
+    text.encode_utf16()
+        .flat_map(|unit| {
+            let bytes = if little_endian {
+                unit.to_le_bytes()
+            } else {
+                unit.to_be_bytes()
+            };
+            bytes.into_iter()
+        })
+        .collect()
+}
+
+const ENCODING_SAMPLE_CSV: &str =
+    "name,email\nAlice Smith,alice@example.com\nBob Jones,bob@example.com\n";
+
+fn encoding_refusal(bytes: &[u8]) -> AnonymizerError {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let path = temp_dir.path().join("input.csv");
+    fs::write(&path, bytes).unwrap();
+    validate_file(&path).unwrap_err()
+}
+
+/// An unreadable file is reported as unreadable, not as missing.
+///
+/// The encoding sniff opens the file a second time, after the checks that established it
+/// exists. Mapping every failure of that open to `FileNotFound` told a user whose file was
+/// plainly there that it was not, which sends them looking for a path problem they do not
+/// have. Only a genuine `NotFound` — the file removed between the two opens — keeps that
+/// variant.
+#[cfg(unix)]
+#[test]
+fn an_unreadable_input_is_not_reported_as_missing() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let path = temp_dir.path().join("unreadable.csv");
+    fs::write(&path, ENCODING_SAMPLE_CSV).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+    if fs::File::open(&path).is_ok() {
+        // Running as root, where the mode does not deny anything.
+        return;
+    }
+
+    let error = validate_file(&path).unwrap_err();
+
+    assert!(
+        !matches!(error, AnonymizerError::FileNotFound(_)),
+        "a file that exists but cannot be read is not missing: {error:?}"
+    );
+}
+
+/// BOM-less UTF-16 is *valid UTF-8* — the text bytes simply interleave with NULs
+/// — so nothing in the CSV parser errors on it. Left unchecked, a file of names
+/// and email addresses parsed as headers like `n\0a\0m\0e\0`, matched no
+/// detector, and was reported as containing no sensitive data at all. For a
+/// privacy tool that is the worst possible direction to be wrong in, so the read
+/// has to be refused before it starts.
+#[test]
+fn refuses_bom_less_utf16_input_in_both_byte_orders() {
+    for (little_endian, expected) in [(true, "UTF-16LE"), (false, "UTF-16BE")] {
+        let error = encoding_refusal(&utf16_bytes(ENCODING_SAMPLE_CSV, little_endian));
+        let text = error.to_string();
+        assert!(
+            text.contains(expected) && text.contains("Re-save it as UTF-8"),
+            "expected an actionable {expected} refusal, got {text}"
+        );
+    }
+}
+
+/// UTF-16 *with* a BOM already failed, but with an "invalid utf-8" message that
+/// names no remedy. It routes through the same check so a user who re-saves from
+/// one Windows tool and hits the other spelling reads the same instruction.
+#[test]
+fn refuses_utf16_input_carrying_a_byte_order_mark() {
+    for (bom, little_endian, expected) in [
+        ([0xff, 0xfe], true, "UTF-16LE"),
+        ([0xfe, 0xff], false, "UTF-16BE"),
+    ] {
+        let mut bytes = bom.to_vec();
+        bytes.extend(utf16_bytes(ENCODING_SAMPLE_CSV, little_endian));
+        let error = encoding_refusal(&bytes);
+        assert!(
+            error.to_string().contains(expected),
+            "expected a {expected} refusal, got {error}"
+        );
+    }
+}
+
+/// The refusal must reach the transform, not just the analysis. A refusal that
+/// only fires on the analyze path still lets a user who picks columns by hand
+/// write a corrupt mixed-encoding output.
+#[test]
+fn refuses_utf16_input_on_the_transform_path_with_the_same_message() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let input_path = temp_dir.path().join("utf16.csv");
+    let output_path = temp_dir.path().join("out.csv");
+    fs::write(&input_path, utf16_bytes(ENCODING_SAMPLE_CSV, true)).unwrap();
+
+    let analyze_error = read_detection_sample(&input_path, 100)
+        .unwrap_err()
+        .to_string();
+    let count_error = count_csv_data_rows(&input_path).unwrap_err().to_string();
+    let transform_error = process_file(
+        &input_path,
+        &output_path,
+        &[],
+        ProcessOptions {
+            smart_replacements: None,
+            mapping_entry_ceiling: None,
+        },
+    )
+    .unwrap_err()
+    .to_string();
+
+    assert!(analyze_error.contains("UTF-16LE"), "{analyze_error}");
+    assert_eq!(analyze_error, count_error);
+    assert_eq!(analyze_error, transform_error);
+    assert!(!output_path.exists(), "a refused run must write no output");
+}
+
+/// A NUL-dense input that is not laid out like UTF-16 is not text at all, and
+/// telling the user to change encoding would send them chasing the wrong fix.
+#[test]
+fn refuses_binary_input_with_a_message_about_binary_rather_than_encoding() {
+    let mut bytes = b"name,email\n".to_vec();
+    bytes.extend([0u8; 64]);
+    bytes.extend(b"\x01\x02\x03payload".repeat(8));
+
+    let error = encoding_refusal(&bytes).to_string();
+    assert!(error.contains("binary file"), "{error}");
+    assert!(!error.contains("UTF-16"), "{error}");
+}
+
+/// The one verdict that must never be wrong: no ordinary UTF-8 CSV may be
+/// refused, with or without a BOM, and a lone stray control byte is not enough
+/// evidence to reject a file the parser could otherwise read and report on.
+#[test]
+fn accepts_utf8_input_including_a_bom_and_an_isolated_stray_nul() {
+    let mut with_bom = vec![0xef, 0xbb, 0xbf];
+    with_bom.extend(ENCODING_SAMPLE_CSV.as_bytes());
+    let mut stray_nul = ENCODING_SAMPLE_CSV.as_bytes().to_vec();
+    stray_nul.insert(20, 0);
+
+    for bytes in [
+        ENCODING_SAMPLE_CSV.as_bytes().to_vec(),
+        with_bom,
+        stray_nul,
+        // Non-Latin text is multi-byte in UTF-8 and holds no NULs either.
+        "naam,stad\nJos\u{e9},\u{4e2d}\u{56fd}\n"
+            .as_bytes()
+            .to_vec(),
+    ] {
+        assert_eq!(
+            sniff_unsupported_encoding(&bytes),
+            None,
+            "a readable UTF-8 CSV must never be refused"
+        );
+    }
+}
+
+/// A short input must not be classified on the strength of a couple of bytes:
+/// the density rule needs a sample before its percentages mean anything.
+#[test]
+fn does_not_classify_a_tiny_prefix_as_utf16() {
+    assert_eq!(sniff_unsupported_encoding(b"a\0"), None);
+    assert_eq!(sniff_unsupported_encoding(b""), None);
+}
+
+/// The finding this whole measure exists for, run end to end through the real transform.
+///
+/// A file whose name column is redacted and whose postcode, birth date and job title are
+/// released untouched. Every per-column check is satisfied — the one identifying column is
+/// dealt with — and the three released columns still single two people out between them.
+/// Nothing in this crate could say so before, because nothing looked at more than one
+/// column at a time.
+///
+/// The class structure is written into the fixture rather than discovered: three groups of
+/// six sharing a triple, then two rows holding a triple of their own.
+#[test]
+fn released_quasi_identifiers_are_measured_together() {
+    let groups = [
+        ("1011AB", "1984-02-11", "nurse"),
+        ("2033CD", "1979-07-30", "driver"),
+        ("3055EF", "1991-12-02", "teacher"),
+    ];
+    let mut content = String::from("full_name,postal_code,birth_date,job_title\n");
+    for (row, (postcode, birth_date, job)) in groups.iter().enumerate() {
+        for repeat in 0..6 {
+            content.push_str(&format!(
+                "Person {row}{repeat},{postcode},{birth_date},{job}\n"
+            ));
+        }
+    }
+    content.push_str("Alone One,9099ZZ,1962-01-05,archivist\n");
+    content.push_str("Alone Two,9088YY,1955-06-19,harbourmaster\n");
+
+    let sample = read_csv_detection_sample_from_str(&content, 100).unwrap();
+    let mut columns = build_column_metadata(&sample.headers, &sample.rows);
+    for column in &mut columns {
+        // The name is handled; the other three are released as they stand, which is the
+        // shape of the file this measure was written about.
+        let handled = column.name == "full_name";
+        column.is_selected = handled;
+        column.strategy = crate::types::AnonymizationStrategy::Redact;
+    }
+
+    let (_, result) = process_csv_data(
+        &content,
+        &columns,
+        ProcessOptions {
+            smart_replacements: None,
+            mapping_entry_ceiling: None,
+        },
+    )
+    .unwrap();
+
+    let uniqueness = result
+        .transform_report
+        .row_uniqueness
+        .expect("a CSV run has rows, so it must report a measurement");
+
+    assert_eq!(uniqueness.rows_measured, 20);
+    // The redacted name is not linkable; the other three are.
+    assert_eq!(
+        uniqueness
+            .matched_columns
+            .iter()
+            .map(|matched| matched.column_index)
+            .collect::<Vec<_>>(),
+        vec![1, 2, 3]
+    );
+    assert_eq!(uniqueness.distinct_classes, 5);
+    assert_eq!(uniqueness.unique_rows, 2);
+    assert_eq!(uniqueness.smallest_class, 1);
+    assert!(!uniqueness.measurement_incomplete);
+    // The redacted column collapses to one token, so it cannot be what separates the
+    // rows: the all-column figure has to agree with the linkable one here.
+    assert_eq!(uniqueness.distinct_rows_all_columns, Some(5));
 }

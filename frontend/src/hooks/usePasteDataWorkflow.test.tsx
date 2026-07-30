@@ -2,7 +2,7 @@ import { act, render } from '@testing-library/react'
 import { useEffect } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defaultSettings } from '../defaults'
-import { columnMetadataFixture } from '../test-utils/builders'
+import { columnMetadataFixture, completeDetectionCoverage } from '../test-utils/builders'
 import type { LocalAiState } from './useLocalAi'
 import { usePasteDataWorkflow } from './usePasteDataWorkflow'
 
@@ -23,6 +23,7 @@ describe('usePasteDataWorkflow', () => {
       format: 'json',
       rowCount: 1,
       rowCountIsComplete: true,
+      detectionCoverage: completeDetectionCoverage,
       columns: [columnMetadataFixture({ index: 0, name: '[].email', isSelected: true })],
     })
     tauriMocks.previewPasteData.mockResolvedValue({
@@ -74,6 +75,7 @@ describe('usePasteDataWorkflow', () => {
       format: 'json'
       rowCount: number
       rowCountIsComplete: boolean
+      detectionCoverage: typeof completeDetectionCoverage
       columns: ReturnType<typeof columnMetadataFixture>[]
     }>()
     tauriMocks.analyzePasteData.mockReturnValue(pending.promise)
@@ -90,6 +92,7 @@ describe('usePasteDataWorkflow', () => {
         format: 'json',
         rowCount: 1,
         rowCountIsComplete: true,
+        detectionCoverage: completeDetectionCoverage,
         columns: [columnMetadataFixture({ index: 0, name: '[].email', isSelected: true })],
       })
       await analyzePromise!
@@ -105,6 +108,7 @@ describe('usePasteDataWorkflow', () => {
       format: 'json',
       rowCount: 1,
       rowCountIsComplete: true,
+      detectionCoverage: completeDetectionCoverage,
       columns: [
         columnMetadataFixture({ index: 0, name: '[].email', isSelected: true }),
         columnMetadataFixture({ index: 1, name: '[].city', isSelected: true }),
