@@ -165,13 +165,11 @@ pub(crate) fn preview_warning_for_column(column: &ColumnMetadata) -> Option<Prev
                 // `2024-06-15 10:30:45.123450` with `2023-12-02 10:30:45.123450` has to
                 // notice for themselves that the second half never moved. Naming what
                 // survives is the point of the disclosure.
-                match column.detected_type.pseudonymization_preserves_structure() {
-                    Some(structure) => format!(
-                        "Rule-based replacement for {} preserves structure: {structure}.",
-                        column.name
-                    ),
-                    None => return None,
-                }
+                let structure = column.detected_type.pseudonymization_preserves_structure()?;
+                format!(
+                    "Rule-based replacement for {} preserves structure: {structure}.",
+                    column.name
+                )
             }
         }
     };

@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.83 - 2026-07-30
+
+- Supersede the failed v1.0.82 tag without moving it, preserving every change in that release while replacing a `match` that Rust 1.97's clippy rejects in favour of `?`. The lint is newer than the toolchain the release was prepared on, so release validation failed on a check that had passed locally; no v1.0.82 release was ever drafted or published.
+
 ## v1.0.82 - 2026-07-30
 
 - Measure what a released file still exposes when every column is read together, rather than one column at a time: rows are counted into equivalence classes over only the parts an outsider holding the original could reproduce, so a file whose postcode, birth decade, and job title jointly single out a third of its rows can no longer be reported as having left no high or medium risk column unselected. The report names which columns the rows were matched on and what survived in each — a whole value, an email domain, a date's decade and time, a masked value's skeleton, or which cells are blank — and says which single column would help most to drop.
