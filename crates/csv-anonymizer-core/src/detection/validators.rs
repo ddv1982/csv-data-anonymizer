@@ -130,8 +130,7 @@ pub(super) fn is_valid_phone_number_in_context(value: &str, locale: &LocaleConte
 /// concluding so, and libphonenumber maps letters to digits on the way — meaning
 /// free text is scored as a candidate vanity number, 54 times over. Measured on 20
 /// phone-labeled columns of ordinary prose: **157 seconds**, against 33ms for the
-/// same data under a header the phone rule ignores. That is not a slow path, it is
-/// a frozen application.
+/// same data under a header the phone rule ignores.
 ///
 /// Requiring the value to be free of letters cuts that to the values a sweep could
 /// actually confirm. The cost is vanity numbers written without a country prefix:

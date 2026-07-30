@@ -1,36 +1,57 @@
 use crate::csv_io::{
-    process_csv_text, read_csv_detection_sample_from_str, read_csv_sample_from_str,
+    process_csv_data, read_csv_detection_sample_from_str, read_csv_sample_from_str,
 };
 use crate::error::Result;
 use crate::metadata::build_column_metadata;
-use crate::service::{build_privacy_report, count_transforming_selected_columns};
-use crate::smart::{SmartReplacementProvider, prepare_smart_replacements_from_rows};
+use crate::service::{display_row_count, select_columns};
+use crate::smart::{
+    SmartReplacementProvider, prepare_smart_replacements_from_rows,
+    reusable_preview_smart_replacements,
+};
 use crate::types::{
-    PasteAnalyzeData, PasteDataFormat, PastePreviewParams, PasteTransformData,
+    DetectionCoverage, PasteAnalyzeData, PasteDataFormat, PastePreviewParams, PasteTransformData,
     PasteTransformParams, PreviewData, ProcessOptions,
 };
 use std::time::Instant;
 
 use super::shared::{
-    PreviewSelection, bounded_preview_sample_count, display_row_count, paste_detection_sample_rows,
-    prepare_selected_metadata, preview_rows_with_smart_provider,
-    preview_smart_replacements_for_transform,
+    PreviewSelection, bounded_preview_sample_count, paste_detection_sample_rows,
+    paste_transform_data, preview_rows_with_smart_provider,
 };
 
 pub(super) fn analyze_csv_text(content: &str, sample_row_count: usize) -> Result<PasteAnalyzeData> {
+    analyze_csv_text_with_coverage(content, sample_row_count).map(|(analysis, _)| analysis)
+}
+
+/// [`analyze_csv_text`] plus how much of the paste it classified, in the crate's own
+/// coverage type.
+///
+/// Still split even though the DTO now carries a summary of the same figures: the
+/// transform path feeds `build_privacy_report`, which takes a [`DetectionCoverage`],
+/// and rebuilding one from the wire summary would re-open the invariant that type's
+/// constructor exists to hold.
+fn analyze_csv_text_with_coverage(
+    content: &str,
+    sample_row_count: usize,
+) -> Result<(PasteAnalyzeData, DetectionCoverage)> {
     let sample_row_count = paste_detection_sample_rows(sample_row_count)?;
     // Spread the sample over the whole paste: pasted content can exceed the
     // sample cap, and a head window would leave detection blind to values that
     // only appear in the tail.
     let sample = read_csv_detection_sample_from_str(content, sample_row_count)?;
     let columns = build_column_metadata(&sample.headers, &sample.rows);
+    let coverage = DetectionCoverage::from_detection_sample(&sample);
 
-    Ok(PasteAnalyzeData {
-        format: PasteDataFormat::Csv,
-        row_count: sample.data_rows_scanned,
-        row_count_is_complete: sample.scanned_entire_input,
-        columns,
-    })
+    Ok((
+        PasteAnalyzeData {
+            format: PasteDataFormat::Csv,
+            row_count: sample.data_rows_scanned,
+            row_count_is_complete: sample.scanned_entire_input,
+            detection_coverage: coverage.summary(),
+            columns,
+        },
+        coverage,
+    ))
 }
 
 pub(super) fn preview_csv_text_with_smart_provider(
@@ -56,12 +77,7 @@ pub(super) fn preview_csv_text_with_smart_provider(
         &metadata,
         // A pasted CSV is read whole, so this is the paste's true row count.
         detection_sample.data_rows_scanned,
-        PreviewSelection {
-            columns: &input.columns,
-            controls: &input.controls,
-            sample_count,
-            provider,
-        },
+        PreviewSelection::from_params(&input, sample_count, provider),
     )
 }
 
@@ -69,21 +85,21 @@ pub(super) fn transform_csv_text_with_smart_provider(
     input: PasteTransformParams,
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<PasteTransformData> {
-    let analysis = analyze_csv_text(&input.content, input.sample_row_count)?;
-    let metadata = prepare_selected_metadata(&analysis.columns, &input.columns, &input.controls)?;
+    let (analysis, coverage) =
+        analyze_csv_text_with_coverage(&input.content, input.sample_row_count)?;
+    let metadata = select_columns(&analysis.columns, &input.columns, &input.controls)?;
     let rows = read_csv_sample_from_str(&input.content, usize::MAX)?.rows;
-    let existing_smart_replacements = preview_smart_replacements_for_transform(&input, &metadata);
+    let existing_smart_replacements =
+        reusable_preview_smart_replacements(&input.preview_smart_replacements, &metadata);
     let smart_replacements = prepare_smart_replacements_from_rows(
         &rows,
         &metadata,
         existing_smart_replacements.as_ref(),
         provider,
-    )?;
-    let smart_replacements = smart_replacements
-        .has_activity()
-        .then_some(smart_replacements);
+    )?
+    .if_active();
     let start_time = Instant::now();
-    let (output, result) = process_csv_text(
+    let (output, result) = process_csv_data(
         &input.content,
         &metadata,
         ProcessOptions {
@@ -92,11 +108,12 @@ pub(super) fn transform_csv_text_with_smart_provider(
         },
     )?;
 
-    Ok(PasteTransformData {
+    Ok(paste_transform_data(
         output,
-        row_count: result.row_count,
-        columns_anonymized: count_transforming_selected_columns(&metadata),
-        duration_ms: start_time.elapsed().as_millis(),
-        privacy_report: build_privacy_report(&metadata, result.transform_report),
-    })
+        result.row_count,
+        &metadata,
+        result.transform_report,
+        coverage,
+        start_time,
+    ))
 }

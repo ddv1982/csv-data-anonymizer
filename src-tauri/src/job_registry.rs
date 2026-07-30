@@ -216,3 +216,310 @@ fn terminal_job_expired<J: JobRegistryEntry>(job: &J, now: SystemTime, ttl: Dura
         Err(_) => false,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ID_PREFIX: &str = "registry-test";
+    const STORE_UNAVAILABLE: &str = "Test job store is unavailable.";
+    const STATUS_UNAVAILABLE: &str = "Test job status is unavailable.";
+    const UNKNOWN_JOB_LABEL: &str = "test job";
+    const LONG_TTL: Duration = Duration::from_secs(30 * 60);
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum TestState {
+        Running,
+        Finished,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct TestStatus {
+        job_id: String,
+        state: TestState,
+        note: String,
+    }
+
+    #[derive(Debug)]
+    struct TestJob {
+        lifecycle: JobLifecycle<TestStatus>,
+    }
+
+    impl JobRegistryEntry for TestJob {
+        type Status = TestStatus;
+
+        fn lifecycle(&self) -> &JobLifecycle<Self::Status> {
+            &self.lifecycle
+        }
+
+        fn status_is_terminal(status: &Self::Status) -> bool {
+            match status.state {
+                TestState::Running => false,
+                TestState::Finished => true,
+            }
+        }
+    }
+
+    impl TestJob {
+        fn job_id(&self) -> String {
+            self.lifecycle.snapshot().expect("status").job_id
+        }
+
+        fn finish(&self) {
+            let _ = self
+                .lifecycle
+                .update_status(|status| status.state = TestState::Finished);
+            self.lifecycle.mark_terminal();
+        }
+
+        fn note(&self, note: &str) {
+            let _ = self
+                .lifecycle
+                .update_status(|status| status.note = note.to_string());
+        }
+    }
+
+    fn registry(max_retained_terminal_jobs: usize, terminal_ttl: Duration) -> JobRegistry<TestJob> {
+        JobRegistry::new(
+            ID_PREFIX,
+            STORE_UNAVAILABLE,
+            UNKNOWN_JOB_LABEL,
+            max_retained_terminal_jobs,
+            terminal_ttl,
+        )
+    }
+
+    fn create(registry: &JobRegistry<TestJob>) -> Arc<TestJob> {
+        registry
+            .create_job(|job_id, sequence| TestJob {
+                lifecycle: JobLifecycle::new(
+                    sequence,
+                    TestStatus {
+                        job_id,
+                        state: TestState::Running,
+                        note: String::new(),
+                    },
+                    STATUS_UNAVAILABLE,
+                ),
+            })
+            .expect("job creation")
+    }
+
+    fn age_terminal_job(job: &TestJob, ttl: Duration) {
+        job.lifecycle
+            .set_terminal_at(SystemTime::now() - ttl - Duration::from_secs(1));
+    }
+
+    /// A registered job is found again under the id it was told to report.
+    ///
+    /// The client only ever holds the id from the first response, so lookup has to
+    /// resolve that exact string back to the same job instance rather than to a copy
+    /// or to a differently-keyed entry.
+    #[test]
+    fn registered_job_is_found_again_under_the_id_it_reports() {
+        let registry = registry(4, LONG_TTL);
+        let job = create(&registry);
+        let job_id = job.job_id();
+
+        let looked_up = registry.get_job(&job_id).expect("registered job");
+
+        assert!(Arc::ptr_eq(&looked_up, &job));
+        assert_eq!(
+            registry.snapshot_job(&job_id).expect("status").state,
+            TestState::Running
+        );
+        assert_eq!(registry.job_count(), 1);
+    }
+
+    /// Minted ids carry the registry prefix, which is what keeps sibling registries apart.
+    ///
+    /// Anonymization jobs and Local AI downloads live in separate registries but share one
+    /// id namespace in the client, so the prefix is the only thing distinguishing them.
+    #[test]
+    fn minted_job_ids_carry_the_registry_prefix() {
+        let registry = registry(4, LONG_TTL);
+
+        let job_id = create(&registry).job_id();
+
+        assert!(job_id.starts_with(ID_PREFIX), "unexpected job id {job_id}");
+    }
+
+    /// An unknown id is refused by name instead of resolving to some other job.
+    ///
+    /// A poll or cancel aimed at an id this registry never minted must fail loudly; a
+    /// silent success would let the UI report progress for a run that is not there.
+    #[test]
+    fn unknown_job_id_is_refused_and_named_in_the_error() {
+        let registry = registry(4, LONG_TTL);
+        let _live_job = create(&registry);
+
+        let get_error = registry.get_job("registry-test-0-999").unwrap_err();
+        let snapshot_error = registry.snapshot_job("registry-test-0-999").unwrap_err();
+
+        assert!(get_error.contains(UNKNOWN_JOB_LABEL));
+        assert!(get_error.contains("registry-test-0-999"));
+        assert_eq!(get_error, snapshot_error);
+    }
+
+    /// Two jobs in one registry keep separate ids and separate status.
+    ///
+    /// Sharing either would let one run's progress, cancel flag or terminal state be
+    /// reported for the other.
+    #[test]
+    fn two_jobs_keep_separate_ids_and_separate_status() {
+        let registry = registry(4, LONG_TTL);
+        let first = create(&registry);
+        let second = create(&registry);
+
+        first.note("first");
+        second.finish();
+
+        assert_ne!(first.job_id(), second.job_id());
+        assert_eq!(registry.job_count(), 2);
+        let first_status = registry.snapshot_job(&first.job_id()).expect("status");
+        let second_status = registry.snapshot_job(&second.job_id()).expect("status");
+        assert_eq!(first_status.note, "first");
+        assert_eq!(first_status.state, TestState::Running);
+        assert_eq!(second_status.note, "");
+        assert_eq!(second_status.state, TestState::Finished);
+    }
+
+    /// Terminal jobs past the retention limit are dropped oldest first.
+    ///
+    /// Newest-first pruning would evict the run the user is most likely still looking at.
+    #[test]
+    fn retention_limit_drops_the_oldest_terminal_jobs_first() {
+        let registry = registry(2, LONG_TTL);
+        let terminal_ids = (0..4)
+            .map(|_| {
+                let job = create(&registry);
+                job.finish();
+                job.job_id()
+            })
+            .collect::<Vec<_>>();
+
+        let trigger = create(&registry);
+
+        assert!(registry.get_job(&terminal_ids[0]).is_err());
+        assert!(registry.get_job(&terminal_ids[1]).is_err());
+        assert!(registry.get_job(&terminal_ids[2]).is_ok());
+        assert!(registry.get_job(&terminal_ids[3]).is_ok());
+        assert!(registry.get_job(&trigger.job_id()).is_ok());
+    }
+
+    /// Running jobs are never pruned, however full the registry gets.
+    ///
+    /// Dropping a running job would strand a real anonymization run: the worker keeps
+    /// writing while every poll and every cancel attempt reports an unknown job.
+    #[test]
+    fn running_jobs_survive_pruning_that_clears_terminal_ones() {
+        let registry = registry(0, LONG_TTL);
+        let running = create(&registry);
+        let terminal = create(&registry);
+        terminal.finish();
+
+        let _trigger = create(&registry);
+
+        assert!(registry.get_job(&running.job_id()).is_ok());
+        assert!(registry.get_job(&terminal.job_id()).is_err());
+    }
+
+    /// The job being asked about survives the prune its own lookup triggers.
+    ///
+    /// Polling is retried, so a finished job has to answer more than once; pruning it
+    /// while answering would turn a completed run into an unknown-job error.
+    #[test]
+    fn requested_terminal_job_survives_the_prune_its_own_lookup_triggers() {
+        let registry = registry(0, LONG_TTL);
+        let job = create(&registry);
+        let job_id = job.job_id();
+        job.finish();
+
+        let first = registry.snapshot_job(&job_id).expect("first poll");
+        let second = registry.snapshot_job(&job_id).expect("repeat poll");
+
+        assert_eq!(first.state, TestState::Finished);
+        assert_eq!(second.state, TestState::Finished);
+
+        // Protection covers only the id being asked for: an unrelated lookup may reclaim it.
+        let _other = create(&registry);
+        assert!(registry.snapshot_job(&job_id).is_err());
+    }
+
+    /// Terminal jobs are reclaimed once their TTL has passed.
+    ///
+    /// Without expiry a long-lived session accumulates finished jobs — each holding its
+    /// full result, including a privacy report — for as long as the app stays open.
+    #[test]
+    fn terminal_jobs_are_reclaimed_after_their_ttl() {
+        let ttl = Duration::from_secs(60);
+        let registry = registry(100, ttl);
+        let expired = create(&registry);
+        expired.finish();
+        age_terminal_job(&expired, ttl);
+        let expired_id = expired.job_id();
+        let running = create(&registry);
+
+        let _trigger = create(&registry);
+
+        assert!(registry.get_job(&expired_id).is_err());
+        assert!(registry.get_job(&running.job_id()).is_ok());
+    }
+
+    /// A job that never went terminal has no expiry clock at all.
+    ///
+    /// `terminal_at` staying unset is what keeps a slow run out of TTL pruning, however
+    /// long it takes.
+    #[test]
+    fn job_has_no_terminal_timestamp_until_it_is_marked_terminal() {
+        let registry = registry(4, LONG_TTL);
+        let job = create(&registry);
+
+        assert!(job.terminal_at().is_none());
+
+        job.finish();
+
+        assert!(job.terminal_at().is_some());
+    }
+
+    /// A cancel request is visible to the worker and recorded in the status it returns.
+    ///
+    /// The worker polls `should_cancel` between batches while the UI reads the returned
+    /// status; if either half were missed the run would keep writing output the user
+    /// asked it to stop producing.
+    #[test]
+    fn cancel_request_reaches_the_worker_and_the_returned_status() {
+        let registry = registry(4, LONG_TTL);
+        let job = create(&registry);
+
+        assert!(!job.lifecycle.should_cancel());
+
+        let status = job
+            .lifecycle
+            .request_cancel(|status| status.note = "canceling".to_string())
+            .expect("cancel");
+
+        assert!(job.lifecycle.should_cancel());
+        assert_eq!(status.note, "canceling");
+        assert_eq!(
+            registry
+                .snapshot_job(&job.job_id())
+                .expect("status after cancel")
+                .note,
+            "canceling"
+        );
+    }
+
+    /// Creation order is recorded per job so pruning can order jobs it never saw created.
+    ///
+    /// Oldest-first eviction reads this sequence, not map order, which is unordered.
+    #[test]
+    fn each_job_records_an_increasing_creation_sequence() {
+        let registry = registry(4, LONG_TTL);
+
+        let first = create(&registry);
+        let second = create(&registry);
+
+        assert!(first.created_sequence() < second.created_sequence());
+    }
+}

@@ -1,22 +1,20 @@
 use crate::error::{AnonymizerError, Result};
-use crate::service::{build_privacy_report, count_transforming_selected_columns};
-use crate::smart::{SmartReplacementProvider, prepare_smart_replacements_from_rows};
+use crate::service::select_columns;
+use crate::smart::SmartReplacementProvider;
 use crate::strategies::{TransformState, transform_value_with_state};
 use crate::types::{
-    ColumnMetadata, PasteAnalyzeData, PasteDataFormat, PastePreviewParams, PasteTransformData,
-    PasteTransformParams, PreviewData, TransformContext,
+    ColumnMetadata, DetectionCoverage, PasteAnalyzeData, PasteDataFormat, PastePreviewParams,
+    PasteTransformData, PasteTransformParams, PreviewData, TransformContext,
 };
 use serde_json::{Number, Value};
 use std::collections::HashMap;
 use std::time::Instant;
 
 use super::shared::{
-    FieldSampleLimits, FieldSamples, FieldWindow, PreviewSelection, bounded_preview_sample_count,
-    escape_path_key, fields_to_rows, metadata_from_fields, next_row_index,
-    paste_detection_sample_rows, prepare_selected_metadata, preview_field_sample_limits,
-    preview_from_fields_with_smart_provider, preview_smart_replacements_for_transform,
-    push_identified_field_sample, selected_columns_by_source,
-    transform_state_for_smart_replacements,
+    FieldSampleLimits, FieldSamples, PreviewSelection, analysis_from_fields,
+    bounded_preview_sample_count, escape_path_key, next_row_index, paste_detection_sample_rows,
+    paste_transform_data, preview_field_sample_limits, preview_from_fields_with_smart_provider,
+    push_identified_field_sample, selected_columns_by_source, smart_replacements_for_fields,
 };
 
 pub(super) fn preview_value_document_with_smart_provider(
@@ -37,12 +35,7 @@ pub(super) fn preview_value_document_with_smart_provider(
     )?;
     preview_from_fields_with_smart_provider(
         &fields,
-        PreviewSelection {
-            columns: &input.columns,
-            controls: &input.controls,
-            sample_count,
-            provider,
-        },
+        PreviewSelection::from_params(&input, sample_count, provider),
     )
 }
 
@@ -74,13 +67,14 @@ fn transform_value_document(
     format: PasteDataFormat,
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<(Value, PasteTransformData)> {
-    let analysis = analyze_value_document(format, &value, input.sample_row_count)?;
-    let metadata = prepare_selected_metadata(&analysis.columns, &input.columns, &input.controls)?;
+    let (analysis, coverage) =
+        analyze_value_document_with_coverage(format, &value, input.sample_row_count)?;
+    let metadata = select_columns(&analysis.columns, &input.columns, &input.controls)?;
     let selected_by_path = selected_columns_by_source(&metadata);
     let smart_replacements =
         prepare_value_smart_replacements(&value, format, &metadata, &input, provider)?;
     let start_time = Instant::now();
-    let mut state = transform_state_for_smart_replacements(smart_replacements);
+    let mut state = TransformState::with_smart_replacements_if_active(smart_replacements);
     let mut row_indices = HashMap::new();
 
     let mut context = ValueTransformContext {
@@ -93,13 +87,16 @@ fn transform_value_document(
     transform_json_value(&mut value, &mut Vec::new(), &mut context);
 
     let row_count = infer_value_row_count(&value);
-    let result = PasteTransformData {
-        output: String::new(),
+    // The output is serialized by the caller, which knows whether this document is
+    // JSON or YAML; everything else about the run is settled here.
+    let result = paste_transform_data(
+        String::new(),
         row_count,
-        columns_anonymized: count_transforming_selected_columns(&metadata),
-        duration_ms: start_time.elapsed().as_millis(),
-        privacy_report: build_privacy_report(&metadata, state.report()),
-    };
+        &metadata,
+        state.report(),
+        coverage,
+        start_time,
+    );
 
     Ok((value, result))
 }
@@ -111,6 +108,8 @@ fn prepare_value_smart_replacements(
     input: &PasteTransformParams,
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<crate::smart::SmartReplacementMap> {
+    // Every value, not the detection window: a value the sample dropped would reach
+    // the transform without a replacement of its own.
     let mut fields = Vec::new();
     collect_json_fields(
         value,
@@ -119,14 +118,7 @@ fn prepare_value_smart_replacements(
         &mut fields,
         FieldSampleLimits::detection_only(usize::MAX),
     )?;
-    let (_headers, rows) = fields_to_rows(&fields, FieldWindow::Detection);
-    let existing_smart_replacements = preview_smart_replacements_for_transform(input, metadata);
-    prepare_smart_replacements_from_rows(
-        &rows,
-        metadata,
-        existing_smart_replacements.as_ref(),
-        provider,
-    )
+    smart_replacements_for_fields(&fields, metadata, input, provider)
 }
 
 pub(super) fn analyze_value_document(
@@ -134,6 +126,17 @@ pub(super) fn analyze_value_document(
     value: &Value,
     sample_row_count: usize,
 ) -> Result<PasteAnalyzeData> {
+    analyze_value_document_with_coverage(format, value, sample_row_count)
+        .map(|(analysis, _)| analysis)
+}
+
+/// [`analyze_value_document`] plus how much of the input it classified. Split for
+/// the same reason as the XML pair: only the transform path reports coverage.
+fn analyze_value_document_with_coverage(
+    format: PasteDataFormat,
+    value: &Value,
+    sample_row_count: usize,
+) -> Result<(PasteAnalyzeData, DetectionCoverage)> {
     let sample_row_count = paste_detection_sample_rows(sample_row_count)?;
     let mut fields = Vec::new();
     collect_json_fields(
@@ -143,15 +146,12 @@ pub(super) fn analyze_value_document(
         &mut fields,
         FieldSampleLimits::detection_only(sample_row_count),
     )?;
-    let (headers, rows) = fields_to_rows(&fields, FieldWindow::Detection);
-    let columns = metadata_from_fields(&fields, &headers, &rows);
 
-    Ok(PasteAnalyzeData {
+    Ok(analysis_from_fields(
         format,
-        row_count: infer_value_row_count(value),
-        row_count_is_complete: true,
-        columns,
-    })
+        &fields,
+        infer_value_row_count(value),
+    ))
 }
 
 fn transform_json_value(
@@ -189,12 +189,7 @@ fn transform_json_value(
                 return;
             };
             let row_index = next_row_index(context.row_indices, &path_name);
-            let value_context = TransformContext {
-                column_name: &column.name,
-                column_index: column.index,
-                row_index,
-                empty_format: column.empty_format,
-            };
+            let value_context = TransformContext::for_column(column, row_index);
             let anonymized =
                 transform_value_with_state(&original, column, &value_context, context.state);
             *value = json_replacement_value(value, &anonymized);

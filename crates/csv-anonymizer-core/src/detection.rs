@@ -117,7 +117,7 @@ pub fn detect_column_type_in_context(
 
     let early_header_rules = header_rules::early_header_detection_rules();
     // One taxonomy scan for this column, shared by every header rule below and
-    // by `finalize_validator`. Each rule used to rescan the taxonomy itself.
+    // by `finalize_validator`.
     let header = header::analyze(column_name);
     let finalize_validator_selection = |result| {
         finalize_validator(
@@ -191,18 +191,32 @@ pub fn detect_column_type_in_context(
         return result;
     }
 
-    // STAGE 5 — Numeric identifiers, header-gated so that a bare integer column
-    // is only called an identifier when its header says so.
+    // STAGE 5 — Identifiers, header-gated so that a bare integer column is only
+    // called an identifier when its header says so.
+    //
+    // The opaque rule behind the integer rule covers the same headers for keys
+    // written in an alphabet the integer rule cannot read (`E1000`, `CUST-0042`,
+    // `a1b2c3d4`) — see `header_rules::detect_header_opaque_identifier`. It
+    // requires a letter in the value, so the two rules cannot both fire on one
+    // column and the order between them is documentation rather than precedence.
     if let Some(result) = first_header_detection(
         &header,
         &sampled,
         values.len(),
         total_non_empty,
-        &[HeaderDetectionRule {
-            detect: header_rules::detect_header_numeric_id,
-            selected_reason: "Header terms and integer sample shape matched numeric ID detection.",
-            trace_reason: "header numeric ID rule",
-        }],
+        &[
+            HeaderDetectionRule {
+                detect: header_rules::detect_header_numeric_id,
+                selected_reason: "Header terms and integer sample shape matched numeric ID detection.",
+                trace_reason: "header numeric ID rule",
+            },
+            HeaderDetectionRule {
+                detect: header_rules::detect_header_opaque_identifier,
+                selected_reason: "Header terms and uniform high-cardinality key shape matched identifier \
+                     detection.",
+                trace_reason: "header opaque identifier rule",
+            },
+        ],
         locale,
     ) {
         return result;
@@ -474,8 +488,6 @@ pub fn classify_pii_risk(data_type: DataType) -> PiiRisk {
     match data_type {
         // A column of given names or of surnames is personal data about identifiable
         // people, which is why each one already carries a `Person` finding at High.
-        // These used to say Medium here, so the mapping and the finding disagreed and
-        // the Medium never survived `max_pii_risk`.
         DataType::Email
         | DataType::Phone
         | DataType::FirstName

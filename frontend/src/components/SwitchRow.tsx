@@ -3,7 +3,6 @@ import type { ReactNode } from 'react'
 export function SwitchRow({
   id,
   label,
-  labelHelp,
   description,
   checked,
   disabled,
@@ -12,7 +11,6 @@ export function SwitchRow({
 }: {
   id: string
   label: ReactNode
-  labelHelp?: ReactNode
   description?: ReactNode
   checked: boolean
   disabled?: boolean
@@ -35,7 +33,6 @@ export function SwitchRow({
       <div className="switch-copy">
         <span className="field-label-row">
           <label htmlFor={id}>{label}</label>
-          {labelHelp}
         </span>
         {description ? <p className="muted-text text-sm">{description}</p> : null}
       </div>

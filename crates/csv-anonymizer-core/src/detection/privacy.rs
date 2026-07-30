@@ -466,7 +466,14 @@ fn summarize_privacy_findings(
             .score
             .cmp(&left.score)
             .then(right.match_count.cmp(&left.match_count))
-            .then(format!("{:?}", left.kind).cmp(&format!("{:?}", right.kind)))
+            // Ascending by risk, which `PiiRisk` declares most-severe-first. Score is derived
+            // from confidence alone, so two High-confidence findings of different kinds tie at
+            // 88 and reach this line: without it a Medium finding can be shown above a High
+            // one, which under-sells what was found.
+            .then(risk_for_privacy_kind(left.kind).cmp(&risk_for_privacy_kind(right.kind)))
+            // Then ascending by kind, so a remaining tie falls to the declaration order of
+            // `PrivacyFindingKind` — a stated order rather than whatever the names spell.
+            .then(left.kind.cmp(&right.kind))
     });
     ordered
 }
@@ -491,6 +498,15 @@ fn confidence_rank(confidence: Confidence) -> u8 {
         Confidence::Medium => 2,
         Confidence::Low => 1,
     }
+}
+
+/// Lets the evidence-ordering test drive the summariser with hand-built findings.
+#[cfg(test)]
+pub(crate) fn summarize_privacy_findings_in_tests(
+    findings: &[PrivacyFinding],
+    sample_count: usize,
+) -> Vec<PrivacyEvidenceSummary> {
+    summarize_privacy_findings(findings, sample_count)
 }
 
 /// Lets the risk-consistency test compare this mapping against `classify_pii_risk`.

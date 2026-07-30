@@ -12,6 +12,7 @@ import { Alert } from '../Alert'
 import { AppSettingsPanel } from '../AppSettingsPanel'
 import { Card } from '../Card'
 import { ColumnSelectionPanel } from '../ColumnSelectionPanel'
+import { ColumnTable } from '../ColumnTable'
 import { LocalAiBlockedAlert } from '../LocalAiBlockedAlert'
 import { PreviewTable } from '../PreviewTable'
 import { ProcessingStatus } from '../ProcessingStatus'
@@ -169,23 +170,26 @@ function ColumnSelectionStep({
             ) : null}
           </>
         )}
-        columns={workflow.visibleColumns}
-        allColumnCount={workflow.columns.length}
-        selectedSet={workflow.selectedSet}
-        loading={workflow.isLoading}
-        showAllColumns={workflow.showAllColumns}
-        hiddenColumnCount={workflow.hiddenColumnCount}
-        onToggleColumn={workflow.toggleColumn}
-        controls={workflow.columnControls}
-        onStrategyChange={workflow.updateColumnStrategy}
-        onToggleShowAll={() => workflow.setShowAllColumns((current) => !current)}
         footer={(
           <p className="muted-text text-sm">
             {workflow.selectedColumns.length} of {workflow.columns.length} columns selected
             {workflow.headers ? `, ${formatRowCount(workflow.headers)} loaded` : ''}
           </p>
         )}
-      />
+      >
+        <ColumnTable
+          columns={workflow.visibleColumns}
+          allColumnCount={workflow.columns.length}
+          selectedSet={workflow.selectedSet}
+          loading={workflow.isLoading}
+          showAllColumns={workflow.showAllColumns}
+          hiddenColumnCount={workflow.hiddenColumnCount}
+          onToggleColumn={workflow.toggleColumn}
+          controls={workflow.columnControls}
+          onStrategyChange={workflow.updateColumnStrategy}
+          onToggleShowAll={() => workflow.setShowAllColumns((current) => !current)}
+        />
+      </ColumnSelectionPanel>
     </Card>
   )
 }
@@ -264,6 +268,9 @@ function PreviewStep({ workflow }: { workflow: AnonymizerWorkflowState }) {
         </button>
       }
     >
+      <div className="table-help-row">
+        <SectionHelp topic="preview" label="What Preview does not prove" />
+      </div>
       <PreviewTable preview={workflow.preview} loading={workflow.busy === 'preview'} />
     </Card>
   )

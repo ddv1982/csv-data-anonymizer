@@ -39,12 +39,22 @@ export function nonZeroMetrics(metrics: PrivacyMetric[]) {
   })
 }
 
-export function formatMetricValue(value: string | number) {
-  return typeof value === 'number' ? value.toLocaleString() : value
-}
-
+// This panel prints numbers exactly as Rust produced them, and that is a rule about this
+// surface rather than a style preference. Rust builds whole sentences that are rendered here
+// verbatim — evidence details, readiness review items, report notes — and some of them state
+// the same figure a React component states a few lines away. `drop_column_advice` is the
+// clearest case: Rust's "…would leave 3 of them unique instead of 4123" lands in the readiness
+// list while `DropColumnAdvice` renders the same sentence in the disclosure above it. With
+// grouping on the React side a reader saw "4,123" and "4123" in one panel, and had to work out
+// whether those were two numbers.
+//
+// So the digits are left alone. It also makes the panel locale-invariant: `toLocaleString()`
+// with no argument follows the host, which rendered this same figure "4,123" in English and
+// "4.123" in Dutch, and forced the tests to compute their expectations with `toLocaleString`
+// at assertion time just to survive being run on a different machine. Rust has no locale here
+// and cannot be taught one, so the only rendering both sides can agree on is the raw integer.
 export function pluralize(count: number, singular: string, plural = `${singular}s`) {
-  return `${count.toLocaleString()} ${count === 1 ? singular : plural}`
+  return `${count} ${count === 1 ? singular : plural}`
 }
 
 export function statusPillClass(status: ReportStatus) {
@@ -67,6 +77,9 @@ export function smartRejectionReasonLabel(reason: PrivacyReport['smartReplacemen
   if (reason === 'emptyOutput') return 'Empty output'
   if (reason === 'sameAsOriginal') return 'Copied source'
   if (reason === 'containsOriginal') return 'Source text included'
+  // Same wording as the Rust release report ("another row's source value"), so the
+  // exported report and the on-screen report name the same event the same way.
+  if (reason === 'matchesOtherOriginal') return "Another row's source value"
   if (reason === 'controlCharacter') return 'Control character'
   if (reason === 'duplicateOriginal') return 'Duplicate source'
   if (reason === 'duplicateOutput') return 'Duplicate output'
@@ -75,5 +88,5 @@ export function smartRejectionReasonLabel(reason: PrivacyReport['smartReplacemen
 
 function metricPart(count: number, label: string) {
   if (count === 0) return null
-  return `${count.toLocaleString()} ${label}`
+  return `${count} ${label}`
 }

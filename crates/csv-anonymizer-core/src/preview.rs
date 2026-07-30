@@ -22,12 +22,7 @@ pub(crate) fn generate_column_preview(
             continue;
         }
 
-        let context = TransformContext {
-            column_name: &column.name,
-            column_index: column.index,
-            row_index,
-            empty_format: column.empty_format,
-        };
+        let context = TransformContext::for_column(column, row_index);
         samples.push(SampleTransform {
             original: value.clone(),
             anonymized: transform_value_with_state(value, column, &context, transform_state),

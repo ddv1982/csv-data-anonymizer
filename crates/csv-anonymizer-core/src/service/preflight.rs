@@ -1,20 +1,19 @@
 use super::controls::keeps_consistent_mapping;
-use super::{
-    apply_column_controls, ensure_output_differs_from_input, validate_column_indices,
-    validate_output_path,
-};
+use super::controls::select_columns_reporting_errors;
+use super::{ensure_output_differs_from_input, validate_output_path};
 use crate::csv_io::count_csv_data_rows;
 use crate::error::Result;
-use crate::metadata::apply_column_selection;
 use crate::release_report::{ReportContext, build_column_reports, build_evidence, build_readiness};
+use crate::report_notes::detection_coverage_disclosure;
 use crate::smart::{
     SmartReplacementMap, has_smart_replacement_columns, missing_smart_replacement_values_from_csv,
+    reusable_preview_smart_replacements,
 };
 use crate::strategies::TransformState;
 use crate::types::{
-    ColumnMetadata, ColumnValueDistribution, PreflightData, PreflightMode, PreflightParams,
-    ReleaseEvidenceItem, ReleaseEvidenceStatus, ReleaseReadiness, ReleaseReadinessStatus,
-    SmartReplacementEntry,
+    ColumnMetadata, ColumnValueDistribution, DetectionCoverage, PreflightData, PreflightMode,
+    PreflightParams, ReleaseEvidenceItem, ReleaseEvidenceStatus, ReleaseReadiness,
+    ReleaseReadinessStatus,
 };
 use std::path::Path;
 
@@ -22,14 +21,15 @@ pub(super) fn run_preflight(
     file_path: &Path,
     metadata: Vec<ColumnMetadata>,
     input: PreflightParams,
+    detection_coverage: DetectionCoverage,
 ) -> Result<PreflightData> {
     let mut state = PreflightState::new(file_path, metadata.len());
     let selected_metadata = selected_preflight_metadata(&metadata, &input, &mut state);
     let selected_smart_columns = has_smart_replacement_columns(&selected_metadata);
-    let existing_smart_replacements = existing_preflight_smart_replacements(
-        selected_smart_columns,
-        &input.preview_smart_replacements,
-    );
+    // The same gate the run applies, so preflight cannot promise that a run needs no
+    // Local AI and then have the run ask for it.
+    let existing_smart_replacements =
+        reusable_preview_smart_replacements(&input.preview_smart_replacements, &selected_metadata);
 
     state.verified_items.push(
         "Replacements are randomized per run with in-run reuse for repeated source values."
@@ -51,6 +51,7 @@ pub(super) fn run_preflight(
         local_ai_required,
         &mut state,
     );
+    add_detection_coverage_review(detection_coverage, &selected_metadata, &mut state);
     add_mapping_memory_review(file_path, &input, &selected_metadata, &mut state);
     add_release_readiness_evidence(&selected_metadata, &mut state);
 
@@ -96,6 +97,15 @@ impl PreflightState {
     }
 }
 
+/// The same selection the run will make, with each step's failure recorded as a
+/// blocker instead of ending the check.
+///
+/// Preflight has to report every problem at once — the user fixes what the panel
+/// lists — so it cannot stop at the first failing step. What it must not do is judge a
+/// *different* selection from the one the run would act on, which is why the steps
+/// themselves come from [`select_columns_reporting_errors`] rather than being repeated
+/// here: a preflight that applied controls differently would clear a run whose columns
+/// are not the ones it examined.
 fn selected_preflight_metadata(
     metadata: &[ColumnMetadata],
     input: &PreflightParams,
@@ -106,30 +116,23 @@ fn selected_preflight_metadata(
             .blockers
             .push("Select at least one column to transform or release.".to_string());
     }
-    if let Err(error) = validate_column_indices(metadata, &input.columns) {
+
+    let selection = select_columns_reporting_errors(metadata, &input.columns, &input.controls);
+    match selection.index_error {
+        Some(error) => state.blockers.push(error.to_string()),
+        None => {
+            if !input.columns.is_empty() {
+                state
+                    .verified_items
+                    .push(format!("{} column(s) selected.", input.columns.len()));
+            }
+        }
+    }
+    if let Some(error) = selection.control_error {
         state.blockers.push(error.to_string());
-    } else if !input.columns.is_empty() {
-        state
-            .verified_items
-            .push(format!("{} column(s) selected.", input.columns.len()));
     }
 
-    let controlled_metadata = match apply_column_controls(metadata, &input.controls) {
-        Ok(columns) => columns,
-        Err(error) => {
-            state.blockers.push(error.to_string());
-            metadata.to_vec()
-        }
-    };
-    apply_column_selection(&controlled_metadata, &input.columns)
-}
-
-fn existing_preflight_smart_replacements(
-    selected_smart_columns: bool,
-    preview_smart_replacements: &[SmartReplacementEntry],
-) -> Option<SmartReplacementMap> {
-    let replacements = SmartReplacementMap::from_entries(preview_smart_replacements);
-    (selected_smart_columns && replacements.has_activity()).then_some(replacements)
+    selection.metadata
 }
 
 fn add_preflight_output_evidence(input: &PreflightParams, state: &mut PreflightState) {
@@ -266,6 +269,48 @@ fn add_preflight_local_ai_evidence(
 /// 12,000,000 entries, where the projection has been reasoned about but not measured
 /// end to end.
 const MAPPING_MEMORY_REVIEW_ENTRIES: usize = 3_000_000;
+
+/// Says the run is about to act on types detected from part of the file.
+///
+/// A review item rather than a blocker, for the same reason the mapping-memory
+/// projection is one: sampling is how this app reads inputs of any size, every
+/// large-file run relies on it, and refusing them would remove the feature rather
+/// than inform the decision. What the user can act on is the sample size, so the
+/// item names it.
+///
+/// The wording is [`detection_coverage_disclosure`], the same sentence the finished
+/// run's report carries. Pre-run and post-run are the only difference between the two
+/// moments, and the limitation is identical, so stating it twice in two voices only
+/// created the chance of stating it with two different strengths.
+///
+/// Silent when the sample covered everything, so the common small-file run is not
+/// given a caveat that does not apply to it — and says so as a verified item, which
+/// the report has no equivalent of.
+fn add_detection_coverage_review(
+    coverage: DetectionCoverage,
+    selected_metadata: &[ColumnMetadata],
+    state: &mut PreflightState,
+) {
+    let Some(disclosure) = detection_coverage_disclosure(coverage, selected_metadata) else {
+        state
+            .verified_items
+            .push("Every row was examined for detection.".to_string());
+        return;
+    };
+
+    let examined = coverage.examined();
+    let total = coverage.total();
+    state.review_items.push(disclosure);
+    state.evidence.push(ReleaseEvidenceItem {
+        id: "detection-coverage".to_string(),
+        label: "Detection coverage".to_string(),
+        status: ReleaseEvidenceStatus::Review,
+        // "data row(s)" rather than the unit noun: preflight has exactly one caller,
+        // `preflight_anonymization`, which takes a file path, so the unit here is
+        // always rows. A field-based paste never reaches this item.
+        detail: format!("Types were detected from {examined} of {total} data row(s)."),
+    });
+}
 
 /// Projects peak mapping memory before the run, and reports it if it is large.
 ///

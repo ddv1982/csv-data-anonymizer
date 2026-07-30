@@ -66,7 +66,12 @@ pub fn apply_column_selection(
         .collect()
 }
 
-pub fn auto_select_pii_columns(metadata: &[ColumnMetadata]) -> Vec<ColumnMetadata> {
+/// Every column [`should_auto_select_column`] accepts, marked selected.
+///
+/// Test-only: the service selects through `apply_column_selection`, which also honours an
+/// explicit column list from the caller. This applies the default and nothing else.
+#[cfg(test)]
+pub(crate) fn auto_select_pii_columns(metadata: &[ColumnMetadata]) -> Vec<ColumnMetadata> {
     metadata
         .iter()
         .map(|column| {
@@ -78,11 +83,11 @@ pub fn auto_select_pii_columns(metadata: &[ColumnMetadata]) -> Vec<ColumnMetadat
 }
 
 pub fn should_auto_select_column(column: &ColumnMetadata) -> bool {
-    !column.sample_values.is_empty() && matches!(column.pii_risk, PiiRisk::High | PiiRisk::Medium)
+    !column.sample_values.is_empty() && column.pii_risk.is_elevated()
 }
 
 pub fn default_strategy_for_pii_risk(pii_risk: PiiRisk) -> AnonymizationStrategy {
-    if matches!(pii_risk, PiiRisk::High | PiiRisk::Medium) {
+    if pii_risk.is_elevated() {
         AnonymizationStrategy::Redact
     } else {
         AnonymizationStrategy::Auto

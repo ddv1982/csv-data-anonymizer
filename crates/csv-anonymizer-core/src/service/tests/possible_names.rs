@@ -23,14 +23,13 @@ fn name_column_file(
 /// when the column table first appears, and the whole point of this warning is what it
 /// says about a column the defaults did *not* pick up.
 fn reviewed_columns(header: &str, values: &[&str]) -> Vec<String> {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let workspace = Workspace::new();
     AnonymizerService::new("test-version")
         .preview_anonymization(PreviewParams {
-            file_path: name_column_file(temp_dir.path(), header, values),
-            columns: vec![],
-            controls: vec![],
-            sample_count: 5,
-            sample_row_count: 100,
+            ..preview_params(
+                name_column_file(workspace.directory.path(), header, values),
+                vec![],
+            )
         })
         .unwrap()
         .warnings
@@ -124,8 +123,8 @@ fn a_place_name_column_is_surfaced_because_nothing_here_can_rule_it_out() {
 /// redacted by default, which is the outcome the review tier exists to avoid.
 #[test]
 fn a_surfaced_column_is_still_neither_selected_nor_redacted() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let path = name_column_file(temp_dir.path(), "agent_name", PEOPLE);
+    let workspace = Workspace::new();
+    let path = name_column_file(workspace.directory.path(), "agent_name", PEOPLE);
     let column = AnonymizerService::new("test-version")
         .analyze_csv(path)
         .unwrap()

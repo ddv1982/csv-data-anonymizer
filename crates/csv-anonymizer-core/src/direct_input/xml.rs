@@ -1,10 +1,10 @@
 use crate::error::{AnonymizerError, Result};
-use crate::service::{build_privacy_report, count_transforming_selected_columns};
-use crate::smart::{SmartReplacementProvider, prepare_smart_replacements_from_rows};
+use crate::service::select_columns;
+use crate::smart::SmartReplacementProvider;
 use crate::strategies::{TransformState, transform_value_with_state};
 use crate::types::{
-    ColumnMetadata, PasteAnalyzeData, PasteDataFormat, PastePreviewParams, PasteTransformData,
-    PasteTransformParams, PreviewData, TransformContext,
+    ColumnMetadata, DetectionCoverage, PasteAnalyzeData, PasteDataFormat, PastePreviewParams,
+    PasteTransformData, PasteTransformParams, PreviewData, TransformContext,
 };
 use quick_xml::events::{BytesCData, BytesText, Event};
 use quick_xml::{Reader, Writer, XmlVersion};
@@ -12,26 +12,35 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use super::shared::{
-    FieldSampleLimits, FieldSamples, FieldWindow, PreviewSelection, bounded_preview_sample_count,
-    escape_path_key, fields_to_rows, format_path, metadata_from_fields, next_row_index,
-    paste_detection_sample_rows, prepare_selected_metadata, preview_field_sample_limits,
-    preview_from_fields_with_smart_provider, preview_smart_replacements_for_transform,
-    push_identified_field_sample, selected_columns_by_source,
-    transform_state_for_smart_replacements,
+    FieldSampleLimits, FieldSamples, PreviewSelection, analysis_from_fields,
+    bounded_preview_sample_count, escape_path_key, format_path, next_row_index,
+    paste_detection_sample_rows, paste_transform_data, preview_field_sample_limits,
+    preview_from_fields_with_smart_provider, push_identified_field_sample,
+    selected_columns_by_source, smart_replacements_for_fields,
 };
 
 pub(super) fn analyze_xml(content: &str, sample_row_count: usize) -> Result<PasteAnalyzeData> {
+    analyze_xml_with_coverage(content, sample_row_count).map(|(analysis, _)| analysis)
+}
+
+/// [`analyze_xml`] plus how much of the input it classified.
+///
+/// Split out rather than widening `analyze_xml` because only the transform path
+/// builds a privacy report and so only it needs the coverage; the analyze command
+/// returns the DTO alone.
+fn analyze_xml_with_coverage(
+    content: &str,
+    sample_row_count: usize,
+) -> Result<(PasteAnalyzeData, DetectionCoverage)> {
     let sample_row_count = paste_detection_sample_rows(sample_row_count)?;
     let fields = collect_xml_fields(content, FieldSampleLimits::detection_only(sample_row_count))?;
-    let (headers, rows) = fields_to_rows(&fields, FieldWindow::Detection);
-    let columns = metadata_from_fields(&fields, &headers, &rows);
+    let row_count = infer_xml_row_count(&fields);
 
-    Ok(PasteAnalyzeData {
-        format: PasteDataFormat::Xml,
-        row_count: infer_xml_row_count(&fields),
-        row_count_is_complete: true,
-        columns,
-    })
+    Ok(analysis_from_fields(
+        PasteDataFormat::Xml,
+        &fields,
+        row_count,
+    ))
 }
 
 pub(super) fn preview_xml_with_smart_provider(
@@ -46,12 +55,7 @@ pub(super) fn preview_xml_with_smart_provider(
     )?;
     preview_from_fields_with_smart_provider(
         &fields,
-        PreviewSelection {
-            columns: &input.columns,
-            controls: &input.controls,
-            sample_count,
-            provider,
-        },
+        PreviewSelection::from_params(&input, sample_count, provider),
     )
 }
 
@@ -59,40 +63,29 @@ pub(super) fn transform_xml_with_smart_provider(
     input: PasteTransformParams,
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<PasteTransformData> {
-    let analysis = analyze_xml(&input.content, input.sample_row_count)?;
-    let metadata = prepare_selected_metadata(&analysis.columns, &input.columns, &input.controls)?;
+    let (analysis, coverage) = analyze_xml_with_coverage(&input.content, input.sample_row_count)?;
+    let metadata = select_columns(&analysis.columns, &input.columns, &input.controls)?;
     let selected_by_path = selected_columns_by_source(&metadata);
-    let smart_replacements = prepare_xml_smart_replacements(&input, &metadata, provider)?;
-    let start_time = Instant::now();
-    let mut state = transform_state_for_smart_replacements(smart_replacements);
-    let output = transform_xml_content(&input.content, &selected_by_path, &mut state)?;
-
-    Ok(PasteTransformData {
-        output,
-        row_count: analysis.row_count,
-        columns_anonymized: count_transforming_selected_columns(&metadata),
-        duration_ms: start_time.elapsed().as_millis(),
-        privacy_report: build_privacy_report(&metadata, state.report()),
-    })
-}
-
-fn prepare_xml_smart_replacements(
-    input: &PasteTransformParams,
-    metadata: &[ColumnMetadata],
-    provider: Option<&mut dyn SmartReplacementProvider>,
-) -> Result<crate::smart::SmartReplacementMap> {
-    let fields = collect_xml_fields(
+    // Collected over every value rather than over the detection window, so each value
+    // the run rewrites has a replacement of its own.
+    let smart_fields = collect_xml_fields(
         &input.content,
         FieldSampleLimits::detection_only(usize::MAX),
     )?;
-    let (_headers, rows) = fields_to_rows(&fields, FieldWindow::Detection);
-    let existing_smart_replacements = preview_smart_replacements_for_transform(input, metadata);
-    prepare_smart_replacements_from_rows(
-        &rows,
-        metadata,
-        existing_smart_replacements.as_ref(),
-        provider,
-    )
+    let smart_replacements =
+        smart_replacements_for_fields(&smart_fields, &metadata, &input, provider)?;
+    let start_time = Instant::now();
+    let mut state = TransformState::with_smart_replacements_if_active(smart_replacements);
+    let output = transform_xml_content(&input.content, &selected_by_path, &mut state)?;
+
+    Ok(paste_transform_data(
+        output,
+        analysis.row_count,
+        &metadata,
+        state.report(),
+        coverage,
+        start_time,
+    ))
 }
 
 pub(super) fn collect_xml_fields(
@@ -274,12 +267,7 @@ fn xml_text_replacement(
     }
 
     let row_index = next_row_index(context.row_indices, &path_name);
-    let value_context = TransformContext {
-        column_name: &column.name,
-        column_index: column.index,
-        row_index,
-        empty_format: column.empty_format,
-    };
+    let value_context = TransformContext::for_column(column, row_index);
     Some(transform_value_with_state(
         trimmed,
         column,
@@ -313,12 +301,7 @@ fn transform_xml_attributes(
                 let path_name = xml_attribute_source_path(path, &key);
                 let next_value = if let Some(column) = context.selected_by_path.get(&path_name) {
                     let row_index = next_row_index(context.row_indices, &path_name);
-                    let value_context = TransformContext {
-                        column_name: &column.name,
-                        column_index: column.index,
-                        row_index,
-                        empty_format: column.empty_format,
-                    };
+                    let value_context = TransformContext::for_column(column, row_index);
                     transform_value_with_state(value.trim(), column, &value_context, context.state)
                 } else {
                     value.into_owned()

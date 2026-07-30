@@ -1,77 +1,25 @@
-import { Check, Clipboard, Loader2, Wand2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { Loader2, Wand2 } from 'lucide-react'
 import { dataTypes, quickGenerateStrategies, strategyLabel } from '../dataOptions'
-import { generateQuickValues } from '../tauri'
-import { useCopyOutput } from '../hooks/useCopyOutput'
-import type { AnonymizationStrategy, DataType, QuickTransformData } from '../types'
-import type { LocalAiState } from '../hooks/useLocalAi'
-import { messageFrom } from '../utils/errors'
+import {
+  QUICK_MAX_COUNT,
+  QUICK_MIN_COUNT,
+  type QuickGenerateWorkflowState,
+} from '../hooks/useQuickGenerateWorkflow'
+import type { AnonymizationStrategy, DataType } from '../types'
 import { formatToken } from '../utils/format'
 import { Card } from './Card'
+import { CopyableOutputCard } from './CopyableOutputCard'
 import { LocalAiBlockedAlert } from './LocalAiBlockedAlert'
 import { PrivacyReportSummary } from './PrivacyReportSummary'
 
-type QuickBusyState = 'idle' | 'generating' | 'copying'
-const MIN_COUNT = 1
-const MAX_COUNT = 1000
-
 export function QuickDataTypeWorkflowView({
-  settingsLoaded,
-  localAi,
+  workflow,
   onOpenLocalAiSettings,
-  onError,
-  onBusyChange,
 }: {
-  settingsLoaded: boolean
-  localAi: LocalAiState
+  workflow: QuickGenerateWorkflowState
   onOpenLocalAiSettings: () => void
-  onError: (message: string | null) => void
-  onBusyChange?: (busy: boolean) => void
 }) {
-  const [dataType, setDataType] = useState<DataType>('email')
-  const [strategy, setStrategy] = useState<AnonymizationStrategy>('auto')
-  const [count, setCount] = useState(1)
-  const [result, setResult] = useState<QuickTransformData | null>(null)
-  const [busy, setBusy] = useState<QuickBusyState>('idle')
-
-  const isBusy = busy !== 'idle'
-  const { copyOutput, copyStatus, setCopyStatus } = useCopyOutput({ isBusy, onError, setBusy })
-  const usesLocalAi = strategy === 'localAi'
-  const localAiBlocked = usesLocalAi && (!localAi.ready || localAi.downloadRunning)
-  const canGenerate = settingsLoaded && count >= MIN_COUNT && count <= MAX_COUNT && !isBusy && !localAiBlocked
-
-  useEffect(() => {
-    onBusyChange?.(isBusy)
-    return () => onBusyChange?.(false)
-  }, [isBusy, onBusyChange])
-
-  async function handleGenerate() {
-    if (!settingsLoaded || count < MIN_COUNT || count > MAX_COUNT || isBusy) return
-    if (localAiBlocked) {
-      onError('Set up Local AI before generating Smart replacement values.')
-      return
-    }
-    onError(null)
-    setBusy('generating')
-    setCopyStatus(null)
-    try {
-      const generated = await generateQuickValues(
-        dataType,
-        strategy,
-        count,
-        localAi.request,
-      )
-      setResult(generated)
-    } catch (caught) {
-      onError(messageFrom(caught))
-    } finally {
-      setBusy('idle')
-    }
-  }
-
-  async function handleCopy() {
-    await copyOutput(result?.output)
-  }
+  const { busy, count, dataType, isBusy, result, strategy } = workflow
 
   return (
     <div className="workflow-stack">
@@ -84,9 +32,7 @@ export function QuickDataTypeWorkflowView({
               value={dataType}
               disabled={isBusy}
               onChange={(event) => {
-                setDataType(event.target.value as DataType)
-                setResult(null)
-                setCopyStatus(null)
+                workflow.setDataType(event.target.value as DataType)
               }}
             >
               {dataTypes.map((type) => (
@@ -104,9 +50,7 @@ export function QuickDataTypeWorkflowView({
               value={strategy}
               disabled={isBusy}
               onChange={(event) => {
-                setStrategy(event.target.value as AnonymizationStrategy)
-                setResult(null)
-                setCopyStatus(null)
+                workflow.setStrategy(event.target.value as AnonymizationStrategy)
               }}
             >
               {quickGenerateStrategies.map((strategyOption) => (
@@ -122,22 +66,20 @@ export function QuickDataTypeWorkflowView({
             <input
               id="quick-count"
               type="number"
-              min={MIN_COUNT}
-              max={MAX_COUNT}
+              min={QUICK_MIN_COUNT}
+              max={QUICK_MAX_COUNT}
               step={1}
               value={count}
               disabled={isBusy}
               onChange={(event) => {
                 const nextCount = Number.parseInt(event.target.value, 10)
-                setCount(Number.isNaN(nextCount) ? 0 : nextCount)
-                setResult(null)
-                setCopyStatus(null)
+                workflow.setCount(Number.isNaN(nextCount) ? 0 : nextCount)
               }}
             />
-            <span className="muted-text text-sm">Generate 1 to {MAX_COUNT.toLocaleString()} values.</span>
+            <span className="muted-text text-sm">Generate 1 to {QUICK_MAX_COUNT.toLocaleString()} values.</span>
           </div>
 
-          {usesLocalAi && localAiBlocked ? (
+          {workflow.usesLocalAi && workflow.localAiBlocked ? (
             <div className="quick-local-ai">
               <LocalAiBlockedAlert
                 message="Set up Local AI before generating Smart replacement values."
@@ -146,7 +88,12 @@ export function QuickDataTypeWorkflowView({
             </div>
           ) : null}
 
-          <button type="button" className="button button-primary button-lg full-width" disabled={!canGenerate} onClick={handleGenerate}>
+          <button
+            type="button"
+            className="button button-primary button-lg full-width"
+            disabled={!workflow.canGenerate}
+            onClick={workflow.generate}
+          >
             {busy === 'generating' ? <Loader2 className="spin" aria-hidden="true" /> : <Wand2 aria-hidden="true" />}
             Generate values
           </button>
@@ -154,28 +101,16 @@ export function QuickDataTypeWorkflowView({
       </Card>
 
       {result ? (
-        <Card
+        <CopyableOutputCard
           title="Generated Values"
-          action={
-            <button type="button" className="button button-outline button-sm" disabled={isBusy} onClick={handleCopy}>
-              {busy === 'copying' ? <Loader2 className="spin" aria-hidden="true" /> : <Clipboard aria-hidden="true" />}
-              Copy
-            </button>
-          }
-        >
-          <div className="direct-output-stack">
-            <textarea className="direct-output" value={result.output} readOnly aria-label="Generated values" />
-            <div className="direct-output-meta" aria-live="polite">
-              <span className="muted-text text-sm">{result.rowCount.toLocaleString()} values generated</span>
-              {copyStatus ? (
-                <span className="status-pill success">
-                  <Check aria-hidden="true" />
-                  {copyStatus}
-                </span>
-              ) : null}
-            </div>
-          </div>
-        </Card>
+          outputLabel="Generated values"
+          output={result.output}
+          stats={`${result.rowCount.toLocaleString()} values generated`}
+          copying={busy === 'copying'}
+          disabled={isBusy}
+          copyStatus={workflow.copyStatus}
+          onCopy={workflow.copyOutput}
+        />
       ) : null}
 
       {result ? <PrivacyReportSummary privacyReport={result.privacyReport} /> : null}

@@ -58,24 +58,13 @@ fn all_strategies() -> impl Iterator<Item = AnonymizationStrategy> {
     })
 }
 
+/// The one selected column the transformers are asked about, called `value` at index 0.
+///
+/// `Auto` rather than the `Default` of `PassThrough`, because these tests exist to observe
+/// a transform and pass-through performs none: a fixture that defaulted the strategy would
+/// leave every value unchanged and the assertions would be about nothing.
 fn column(detected_type: DataType) -> ColumnMetadata {
-    ColumnMetadata {
-        header_label_is_ambiguous: false,
-        name: "value".to_string(),
-        source_path: None,
-        index: 0,
-        detected_type,
-        confidence: Confidence::High,
-        detection_trace: None,
-        privacy_findings: Vec::new(),
-        privacy_evidence: Vec::new(),
-        pii_risk: PiiRisk::Medium,
-        sample_values: vec![],
-        sample_value_distribution: Default::default(),
-        empty_format: EmptyFormat::EmptyString,
-        is_selected: true,
-        strategy: AnonymizationStrategy::Auto,
-    }
+    crate::test_support::selected_column(0, "value", detected_type, AnonymizationStrategy::Auto)
 }
 
 fn context() -> TransformContext<'static> {
@@ -513,6 +502,68 @@ fn country_code_and_enum_are_currently_pass_through() {
     );
 }
 
+/// A rejected Local AI candidate on a pass-through type is replaced, never released.
+///
+/// The leak this closes: `Enum`, `CountryCode`, `Boolean`, `Currency` and `Percentage`
+/// are closed value domains, which is precisely what makes the smart-replacement leak
+/// guard refuse nearly every candidate — a realistic replacement for one row is another
+/// row's real value. The refused value then met the shared pass-through gate and was
+/// written out verbatim, so a column the user had asked to anonymize was copied
+/// through at close to a 100% rate.
+#[test]
+fn a_rejected_local_ai_value_is_replaced_even_on_a_pass_through_type() {
+    for detected_type in [
+        DataType::Enum,
+        DataType::CountryCode,
+        DataType::Boolean,
+        DataType::Currency,
+        DataType::Percentage,
+    ] {
+        let mut subject = column(detected_type);
+        subject.strategy = AnonymizationStrategy::LocalAi;
+        // An empty replacement map is the same state a rejected candidate leaves:
+        // `smart_replacement` finds nothing and the transform takes the fallback.
+        let mut state = TransformState::new();
+
+        let result = transform_value_with_state("Netherlands", &subject, &context(), &mut state);
+
+        assert_ne!(
+            result, "Netherlands",
+            "{detected_type:?} released the source value on the Local AI fallback"
+        );
+        assert_eq!(state.report().smart_replacement_fallbacks, 1);
+    }
+}
+
+/// The exemption above is scoped to Local AI and nothing else.
+///
+/// Pass-through for closed domains is a deliberate utility choice — swapping `NL` for
+/// another country code buys no privacy and destroys the column — so a user who chose
+/// Auto or Pseudonymize must see no change from the Local AI fix.
+#[test]
+fn the_local_ai_exemption_does_not_reach_the_other_strategies() {
+    for detected_type in [
+        DataType::Enum,
+        DataType::CountryCode,
+        DataType::Boolean,
+        DataType::Currency,
+        DataType::Percentage,
+    ] {
+        for strategy in [
+            AnonymizationStrategy::Auto,
+            AnonymizationStrategy::Pseudonymize,
+        ] {
+            let mut subject = column(detected_type);
+            subject.strategy = strategy;
+            assert_eq!(
+                transform_value("Netherlands", &subject, &context()),
+                "Netherlands",
+                "{strategy:?} on {detected_type:?} stopped passing through"
+            );
+        }
+    }
+}
+
 #[test]
 fn unknown_values_use_generic_string_strategy() {
     let result = transform_value("mystery", &column(DataType::Unknown), &context());
@@ -717,6 +768,31 @@ fn padded_duplicate_row_values_map_to_the_same_pseudonym() {
         &mut state,
     );
     assert_eq!(first[0], second[0]);
+}
+
+#[test]
+fn a_cell_past_the_metadata_is_blanked_rather_than_released() {
+    // `csv_io` refuses a row this shape, so it is unreachable through the app. This
+    // function is `pub`, so it is reachable from outside the crate, and returning the
+    // original here published a raw value that no strategy chose and no privacy figure
+    // counted.
+    let columns = vec![column(DataType::Email)];
+    let mut state = TransformState::new();
+    let row = transform_row_with_state(
+        &[
+            "john.doe@example.com".to_string(),
+            "secret".to_string(),
+            "0612345678".to_string(),
+        ],
+        &columns,
+        0,
+        &mut state,
+    );
+    // The row keeps its length, so a caller writing it out gets the arity it handed in.
+    assert_eq!(row.len(), 3);
+    assert_ne!(row[0], "john.doe@example.com");
+    assert_eq!(row[1], "");
+    assert_eq!(row[2], "");
 }
 
 #[test]
@@ -1093,28 +1169,6 @@ fn label_reports_its_value_distribution() {
     assert_eq!(distributions[0].total_values, 4);
     assert_eq!(distributions[0].singleton_values, 1);
     assert_eq!(distributions[0].max_value_occurrences, 3);
-}
-
-/// The two halves of duplicate-header handling meeting: detection flags the columns,
-/// the strategy qualifies their labels. Composed rather than assumed, because each
-/// half is inert on its own — a flag nobody reads, or a qualifier nobody sets.
-#[test]
-fn duplicate_headers_do_not_share_a_label_through_the_real_pipeline() {
-    let headers = vec!["notes".to_string(), "notes".to_string()];
-    let rows = vec![vec!["alpha".to_string(), "zulu".to_string()]];
-    let mut columns = crate::metadata::build_column_metadata(&headers, &rows);
-    for column in columns.iter_mut() {
-        column.is_selected = true;
-        column.strategy = AnonymizationStrategy::Label;
-    }
-
-    let output = transform_row(&rows[0], &columns, 0);
-
-    assert_eq!(output, vec!["[NOTES_0_1]", "[NOTES_1_1]"]);
-    assert_ne!(
-        output[0], output[1],
-        "unrelated values in same-named columns shared a label"
-    );
 }
 
 /// One source value must get one replacement, whatever padding or case it arrives in.

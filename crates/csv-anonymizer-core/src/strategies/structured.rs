@@ -119,7 +119,13 @@ pub(super) fn transform_phone(
 // Digit randomization only anonymizes the digits; any other text in the value
 // (names, notes) would survive verbatim. Restrict format preservation to values
 // made of digits plus common phone separators and extension markers ("x"/"ext").
-fn is_phone_shaped(value: &str) -> bool {
+//
+// Visible to the crate because `crate::uniqueness` has to ask the same question of the
+// *released* value: a value this predicate rejected was pseudonymized generically, so
+// nothing about its layout is reproducible and the joint measure must not treat leftover
+// random letters as a dial pattern. Two copies of this rule would drift, and the drift
+// would show up as a false alarm in a privacy report.
+pub(crate) fn is_phone_shaped(value: &str) -> bool {
     let digit_count = value.chars().filter(char::is_ascii_digit).count();
     if digit_count < 7 {
         return false;

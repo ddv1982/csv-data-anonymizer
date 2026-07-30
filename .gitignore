@@ -51,3 +51,7 @@ temp/
 # Python
 __pycache__/
 *.py[cod]
+
+# Refactor scratch: staged inputs, worker handoffs and pre-change backups.
+# Kept on disk as a rollback point; never part of the tree.
+.waves/

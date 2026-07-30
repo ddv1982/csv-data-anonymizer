@@ -1,20 +1,14 @@
 import { act, render } from '@testing-library/react'
 import { useEffect } from 'react'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
-import { defaultSettings } from '../defaults'
 import { localAiStatusFixture } from '../test-utils/builders'
+import { settingsFixture, tauriMocks } from '../test-utils/mocks'
 import type { AppSettings, LocalAiDownloadStatus, LocalAiStatus } from '../types'
 import { useLocalAi, type LocalAiState } from './useLocalAi'
 
-const tauriMocks = vi.hoisted(() => ({
-  getLocalAiStatus: vi.fn(),
-  startLocalAiModelDownload: vi.fn(),
-  getLocalAiModelDownloadStatus: vi.fn(),
-  cancelLocalAiModelDownload: vi.fn(),
-  openLocalAiSetupUrl: vi.fn(),
-}))
-
-vi.mock('../tauri', () => tauriMocks)
+// Dynamic, because the factory runs while the hook under test pulls in `../tauri` — ahead of
+// this file's own imports, so a plain reference to `tauriMocks` would still be in its dead zone.
+vi.mock('../tauri', async () => (await import('../test-utils/mocks')).tauriMocks)
 
 describe('useLocalAi', () => {
   beforeEach(() => {
@@ -233,10 +227,6 @@ async function flushPromises() {
     await Promise.resolve()
     await Promise.resolve()
   })
-}
-
-function settingsFixture(overrides: Partial<AppSettings> = {}): AppSettings {
-  return { ...defaultSettings, ...overrides }
 }
 
 function downloadStatusFixture(overrides: Partial<LocalAiDownloadStatus> = {}): LocalAiDownloadStatus {

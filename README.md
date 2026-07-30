@@ -20,7 +20,7 @@ Read the generated project wiki at [github.com/ddv1982/csv-data-anonymizer/wiki]
 
 ## Detection Language Coverage
 
-The app UI is currently English. CSV and pasted values are read as UTF-8, and detector rules are Unicode-aware. Detection coverage is fixture-backed, but it is not a claim of full multilingual parity.
+The app UI is currently English. CSV and pasted values are read as UTF-8, and detector rules are Unicode-aware. Files in other encodings are refused with the encoding named rather than converted, because a wrongly guessed encoding produces values that look plausible and are wrong. Re-save such a file as UTF-8 and run it again. Detection coverage is fixture-backed, but it is not a claim of full multilingual parity.
 
 Header-based sensitive-field detection includes a maintained taxonomy for English, Dutch, German, French, Spanish, Portuguese, and Italian, plus a small Japanese pilot for unambiguous phone, address, name, and date headers. Header matching handles Unicode normalization, word segmentation, accent folding for Latin terms, camelCase splitting, compact aliases such as `apikey`, `homephone`, and `person_id`, and conservative fuzzy matching for longer taxonomy terms with sample-value confirmation.
 

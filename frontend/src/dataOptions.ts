@@ -33,15 +33,13 @@ const smartReplacementStrategies: AnonymizationStrategy[] = [
   'localAi',
 ]
 
-export const csvStrategies: AnonymizationStrategy[] = [
-  ...smartReplacementStrategies,
-  'mask',
-  'label',
-  'redact',
-  'passThrough',
-]
-
-export const directInputStrategies: AnonymizationStrategy[] = [
+/**
+ * Every strategy a column can be given, for both the CSV and the paste workflow.
+ *
+ * The two used to be separate byte-identical lists, which meant a strategy added to
+ * one silently went missing from the other.
+ */
+export const columnStrategies: AnonymizationStrategy[] = [
   ...smartReplacementStrategies,
   'mask',
   'label',

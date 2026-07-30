@@ -5,13 +5,27 @@ use csv_anonymizer_core::{
     ProcessProgress, SmartReplacementProvider,
 };
 use serde::Serialize;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
 
 const MAX_RETAINED_TERMINAL_JOBS: usize = 20;
 const TERMINAL_JOB_TTL: Duration = Duration::from_secs(30 * 60);
+
+/// Refusal shown when the single anonymization slot is taken.
+///
+/// Names the abandoned case explicitly because the client can lose a job without the
+/// backend losing it: after two minutes of unreachable status polls the UI stops
+/// tracking the run and returns to idle, while the job keeps running and keeps this
+/// lease. "Another job is already running" alone then reads as a bug — nothing is
+/// visibly running — and leaves no way forward. Restarting the app is the only exit
+/// this layer can honestly offer: cancelling needs a job id the client no longer has.
+const ACTIVE_JOB_REFUSAL: &str = "Another anonymization job is already running. \
+Only one run is allowed at a time; if this app stopped tracking an earlier run, \
+that run still holds the slot until it finishes or the app is restarted.";
+
+/// Refusal shown when admission state itself cannot be read.
+const ADMISSION_UNAVAILABLE: &str = "Anonymization job admission is unavailable.";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -95,17 +109,43 @@ impl AnonymizeJobStore {
         })
     }
 
+    /// Admits one anonymization job at a time, whatever it writes.
+    ///
+    /// Deliberately not keyed by output path. Two runs writing different files would
+    /// be safe to interleave, but a per-path lease cannot be made correct: the same
+    /// destination can be spelled more than one way, and path identity varies by
+    /// platform, so "different output" is not a question this can answer reliably.
+    /// One global lease is the answer it can answer.
+    /// Reports whether a job could be admitted right now, without reserving the slot.
+    ///
+    /// Exists so a caller can refuse an already-busy request before it makes the user
+    /// do interactive work (picking or confirming an output file) that a later refusal
+    /// throws away. Deliberately does not take the lease: acquiring it here would leave
+    /// it held — and the app permanently unable to start any run — on every path that
+    /// returns before the job exists, including the user simply cancelling that dialog.
+    /// So this is advisory only; `create_job_for_output` stays the sole authority, and a
+    /// second request that slips through this check is still refused there.
+    pub fn admission_available(&self) -> Result<(), String> {
+        let active = self
+            .active_job
+            .lock()
+            .map_err(|_| ADMISSION_UNAVAILABLE.to_string())?;
+        if *active {
+            return Err(ACTIVE_JOB_REFUSAL.to_string());
+        }
+        Ok(())
+    }
+
     pub fn create_job_for_output(
         &self,
         total_rows: Option<usize>,
-        _output_path: PathBuf,
     ) -> Result<Arc<AnonymizeJob>, String> {
         let mut active = self
             .active_job
             .lock()
-            .map_err(|_| "Anonymization job admission is unavailable.".to_string())?;
+            .map_err(|_| ADMISSION_UNAVAILABLE.to_string())?;
         if *active {
-            return Err("Another anonymization job is already running.".into());
+            return Err(ACTIVE_JOB_REFUSAL.to_string());
         }
         *active = true;
         drop(active);
@@ -302,42 +342,89 @@ mod tests {
         assert_eq!(status.total_rows, Some(10));
     }
 
+    /// Admission is global: one job at a time, whatever it writes.
+    ///
+    /// There is no second test for "a different output path is refused too".
+    /// `create_job_for_output` takes no path, so nothing at this layer can tell the
+    /// two cases apart, and a test that cannot express the distinction only claims
+    /// to pin it. The choice itself is documented on `create_job_for_output`; the
+    /// path lives one layer up, in `start_anonymize_job`, where it is authorized
+    /// after admission has already been decided.
     #[test]
     fn rejects_second_job_until_active_job_finishes() {
         let store = AnonymizeJobStore::default();
-        let output = PathBuf::from("/tmp/private-output.csv");
-        let job = store.create_job_for_output(None, output.clone()).unwrap();
+        let job = store.create_job_for_output(None).unwrap();
 
         assert!(
             store
-                .create_job_for_output(None, output.clone())
+                .create_job_for_output(None)
                 .unwrap_err()
                 .contains("already running")
         );
 
         job.finish(Err(AnonymizerError::Canceled));
-        assert!(store.create_job_for_output(None, output).is_ok());
+        assert!(store.create_job_for_output(None).is_ok());
     }
 
+    /// The pre-dialog check must answer the same question as admission without taking the slot.
+    ///
+    /// Both halves matter: if it reserved the slot, `start_anonymize_job` would leak the
+    /// lease whenever output authorization failed or the user dismissed the dialog, and no
+    /// run could ever start again; if it did not refuse, the reorder would buy nothing.
     #[test]
-    fn rejects_different_output_while_anonymization_is_active() {
+    fn admission_check_refuses_while_busy_without_consuming_the_slot() {
         let store = AnonymizeJobStore::default();
-        let job = store
-            .create_job_for_output(None, PathBuf::from("/tmp/output.csv"))
-            .unwrap();
 
-        assert!(
-            store
-                .create_job_for_output(None, PathBuf::from("/tmp/different-output.csv"))
-                .unwrap_err()
-                .contains("already running")
-        );
+        assert!(store.admission_available().is_ok());
+        // Checking twice must not have used the slot up.
+        assert!(store.admission_available().is_ok());
+
+        let job = store.create_job_for_output(None).unwrap();
+        assert!(store.admission_available().is_err());
+
         job.finish(Err(AnonymizerError::Canceled));
-        assert!(
-            store
-                .create_job_for_output(None, PathBuf::from("/tmp/after-finish.csv"))
-                .is_ok()
-        );
+        assert!(store.admission_available().is_ok());
+        assert!(store.create_job_for_output(None).is_ok());
+    }
+
+    /// The refusal has to explain the abandoned-run case, not just state that one is running.
+    ///
+    /// A client that gave up polling shows nothing running, so the bare message read as a
+    /// bug and offered no way out.
+    #[test]
+    fn active_job_refusal_names_the_abandoned_run_and_the_way_out() {
+        let store = AnonymizeJobStore::default();
+        let _job = store.create_job_for_output(None).unwrap();
+
+        let message = store.create_job_for_output(None).unwrap_err();
+
+        assert_eq!(message, store.admission_available().unwrap_err());
+        assert!(message.contains("already running"));
+        assert!(message.contains("stopped tracking"));
+        assert!(message.contains("restarted"));
+    }
+
+    /// Repeat cancel requests are safe, which is what lets the UI keep the button live.
+    ///
+    /// `ProcessingStatus` no longer disables Cancel once `cancelRequested` is set, so the
+    /// command can be called again while the worker is still winding down.
+    #[test]
+    fn repeated_cancel_requests_are_idempotent() {
+        let store = AnonymizeJobStore::default();
+        let job = store.create_job(None).unwrap();
+
+        let first = job.request_cancel().unwrap();
+        let second = job.request_cancel().unwrap();
+
+        assert!(job.should_cancel());
+        assert_eq!(first.state, AnonymizeJobState::Running);
+        assert_eq!(second.state, AnonymizeJobState::Running);
+        assert!(second.cancel_requested);
+
+        job.finish(Err(AnonymizerError::Canceled));
+        let after_terminal = job.request_cancel().unwrap();
+        assert_eq!(after_terminal.state, AnonymizeJobState::Canceled);
+        assert!(after_terminal.cancel_requested);
     }
 
     #[test]
@@ -665,6 +752,7 @@ mod tests {
                 smart_replacement_fallbacks: 0,
                 shape_fallback_values: 0,
                 column_value_distributions: Vec::new(),
+                row_uniqueness: None,
                 readiness: Default::default(),
                 evidence: Vec::new(),
                 column_reports: Vec::new(),

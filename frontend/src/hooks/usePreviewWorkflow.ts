@@ -1,50 +1,40 @@
 import type { Dispatch, SetStateAction } from 'react'
 import { firstPreflightBlocker, preflightAnonymization, previewAnonymization } from '../tauri'
 import type {
-  AnonymizeData,
-  AppSettings,
   ColumnControl,
-  LocalAiRequest,
   PreviewData,
 } from '../types'
 import { messageFrom } from '../utils/errors'
-import type { BusyState } from './workflowTypes'
+import type { WorkflowShell } from './workflowTypes'
 
-type PreviewWorkflowOptions = {
+type PreviewWorkflowArgs = {
   inputPath: string
   selectedColumns: number[]
   hasColumns: boolean
   hasSelectedColumns: boolean
-  busy: BusyState
-  localAiReady: boolean
   localAiBlocked: boolean
-  settings: AppSettings
-  localAiRequest: LocalAiRequest
   controlsForColumns: (columns: number[]) => ColumnControl[]
   selectionUsesLocalAi: (columns: number[]) => boolean
-  setBusy: Dispatch<SetStateAction<BusyState>>
-  setError: Dispatch<SetStateAction<string | null>>
   setPreview: Dispatch<SetStateAction<PreviewData | null>>
-  setResult: Dispatch<SetStateAction<AnonymizeData | null>>
 }
 
-export function usePreviewWorkflow({
-  inputPath,
-  selectedColumns,
-  hasColumns,
-  hasSelectedColumns,
-  busy,
-  localAiReady,
-  localAiBlocked,
-  settings,
-  localAiRequest,
-  controlsForColumns,
-  selectionUsesLocalAi,
-  setBusy,
-  setError,
-  setPreview,
-  setResult,
-}: PreviewWorkflowOptions) {
+export function usePreviewWorkflow(
+  shell: WorkflowShell,
+  {
+    inputPath,
+    selectedColumns,
+    hasColumns,
+    hasSelectedColumns,
+    localAiBlocked,
+    controlsForColumns,
+    selectionUsesLocalAi,
+    setPreview,
+  }: PreviewWorkflowArgs,
+) {
+  const { busy, setBusy, setError, setResult, settings, localAi } = shell
+  const localAiRequest = localAi.request
+  const localAiReady = localAi.ready
+
   const canPreview = Boolean(
     hasColumns &&
       hasSelectedColumns &&

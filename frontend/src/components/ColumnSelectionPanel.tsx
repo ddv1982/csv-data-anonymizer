@@ -1,7 +1,4 @@
 import type { ReactNode } from 'react'
-import type { AnonymizationStrategy, ColumnControl, ColumnMetadata } from '../types'
-import { csvStrategies } from '../dataOptions'
-import { ColumnTable } from './ColumnTable'
 
 type SelectionAction = {
   label: string
@@ -9,38 +6,25 @@ type SelectionAction = {
   onClick: () => void
 }
 
+/**
+ * The chrome around a column table: bulk-select buttons, an optional notice above
+ * the table and a summary below it.
+ *
+ * The table itself arrives as `children` rather than through forwarded props. This
+ * used to re-declare every `ColumnTable` prop and pass it straight through, so each
+ * call site drilled eleven props across two levels and every new table prop had to
+ * be added in three files.
+ */
 export function ColumnSelectionPanel({
   actions,
   notice,
-  columns,
-  allColumnCount,
-  selectedSet,
-  loading,
-  disabled = false,
-  showAllColumns,
-  hiddenColumnCount,
-  onToggleColumn,
-  controls,
-  onStrategyChange,
-  onToggleShowAll,
-  availableStrategies = csvStrategies,
   footer,
+  children,
 }: {
   actions: SelectionAction[]
   notice?: ReactNode
-  columns: ColumnMetadata[]
-  allColumnCount: number
-  selectedSet: Set<number>
-  loading: boolean
-  disabled?: boolean
-  showAllColumns: boolean
-  hiddenColumnCount: number
-  onToggleColumn: (column: ColumnMetadata) => void
-  controls: Record<number, ColumnControl>
-  onStrategyChange: (column: ColumnMetadata, value: AnonymizationStrategy) => void
-  onToggleShowAll: () => void
-  availableStrategies?: AnonymizationStrategy[]
   footer: ReactNode
+  children: ReactNode
 }) {
   return (
     <div className="columns-stack">
@@ -60,20 +44,7 @@ export function ColumnSelectionPanel({
 
       {notice}
 
-      <ColumnTable
-        columns={columns}
-        allColumnCount={allColumnCount}
-        selectedSet={selectedSet}
-        loading={loading}
-        disabled={disabled}
-        showAllColumns={showAllColumns}
-        hiddenColumnCount={hiddenColumnCount}
-        onToggleColumn={onToggleColumn}
-        controls={controls}
-        onStrategyChange={onStrategyChange}
-        onToggleShowAll={onToggleShowAll}
-        availableStrategies={availableStrategies}
-      />
+      {children}
 
       {footer}
     </div>

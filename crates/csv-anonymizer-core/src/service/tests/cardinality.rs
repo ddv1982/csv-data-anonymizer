@@ -47,14 +47,10 @@ fn repeated_values_columns() -> Vec<ColumnMetadata> {
 }
 
 fn cardinality_warnings(columns: Vec<usize>, controls: Vec<ColumnControl>) -> Vec<String> {
-    let service = AnonymizerService::new("test-version");
-    let preview = service
+    let preview = AnonymizerService::new("test-version")
         .preview_anonymization(PreviewParams {
-            file_path: fixture("repeated-values.csv"),
-            columns,
             controls,
-            sample_count: 5,
-            sample_row_count: 100,
+            ..preview_params(fixture("repeated-values.csv"), columns)
         })
         .unwrap();
 
@@ -64,14 +60,6 @@ fn cardinality_warnings(columns: Vec<usize>, controls: Vec<ColumnControl>) -> Ve
         .filter(|warning| warning.message.contains(INVERSION_MECHANISM))
         .map(|warning| warning.column_name.clone())
         .collect()
-}
-
-fn control(column_index: usize, strategy: AnonymizationStrategy) -> ColumnControl {
-    ColumnControl {
-        column_index,
-        type_override: None,
-        strategy,
-    }
 }
 
 /// Pins the detection outcomes the rest of this file depends on. If any of these
@@ -214,18 +202,17 @@ fn strategies_that_expose_no_distribution_are_not_warned_about() {
 /// the consequence rather than the mechanism.
 #[test]
 fn warning_about_cardinality_does_not_count_the_column_as_pass_through() {
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
-    let output_path = temp_dir.path().join("repeated-values-anonymized.csv");
+    let workspace = Workspace::new();
 
-    let result = service
+    let result = workspace
+        .service
         .anonymize_csv(AnonymizeParams {
-            file_path: fixture("repeated-values.csv"),
-            output_path,
-            columns: vec![1],
             controls: vec![control(1, AnonymizationStrategy::Pseudonymize)],
-            force: false,
-            preview_smart_replacements: vec![],
+            ..anonymize_params(
+                fixture("repeated-values.csv"),
+                workspace.path("repeated-values-anonymized.csv"),
+                vec![1],
+            )
         })
         .unwrap();
 
@@ -239,18 +226,17 @@ fn warning_about_cardinality_does_not_count_the_column_as_pass_through() {
 /// agree exactly.
 #[test]
 fn the_run_reports_the_exact_distribution_of_each_pseudonymized_column() {
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
-    let output_path = temp_dir.path().join("repeated-values-anonymized.csv");
+    let workspace = Workspace::new();
 
-    let result = service
+    let result = workspace
+        .service
         .anonymize_csv(AnonymizeParams {
-            file_path: fixture("repeated-values.csv"),
-            output_path,
-            columns: vec![1],
             controls: vec![control(1, AnonymizationStrategy::Pseudonymize)],
-            force: false,
-            preview_smart_replacements: vec![],
+            ..anonymize_params(
+                fixture("repeated-values.csv"),
+                workspace.path("repeated-values-anonymized.csv"),
+                vec![1],
+            )
         })
         .unwrap();
 
@@ -266,18 +252,17 @@ fn the_run_reports_the_exact_distribution_of_each_pseudonymized_column() {
 /// it is not warned about.
 #[test]
 fn a_redacted_column_reports_no_distribution() {
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
-    let output_path = temp_dir.path().join("repeated-values-redacted.csv");
+    let workspace = Workspace::new();
 
-    let result = service
+    let result = workspace
+        .service
         .anonymize_csv(AnonymizeParams {
-            file_path: fixture("repeated-values.csv"),
-            output_path,
-            columns: vec![1],
             controls: vec![control(1, AnonymizationStrategy::Redact)],
-            force: false,
-            preview_smart_replacements: vec![],
+            ..anonymize_params(
+                fixture("repeated-values.csv"),
+                workspace.path("repeated-values-redacted.csv"),
+                vec![1],
+            )
         })
         .unwrap();
 
@@ -294,18 +279,17 @@ fn a_redacted_column_reports_no_distribution() {
 /// replacement means the output is pseudonymized rather than anonymized.
 #[test]
 fn the_report_names_the_invertible_columns_and_the_pseudonymization_caveat() {
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
-    let output_path = temp_dir.path().join("repeated-values-reported.csv");
+    let workspace = Workspace::new();
 
-    let result = service
+    let result = workspace
+        .service
         .anonymize_csv(AnonymizeParams {
-            file_path: fixture("repeated-values.csv"),
-            output_path,
-            columns: vec![1],
             controls: vec![control(1, AnonymizationStrategy::Pseudonymize)],
-            force: false,
-            preview_smart_replacements: vec![],
+            ..anonymize_params(
+                fixture("repeated-values.csv"),
+                workspace.path("repeated-values-reported.csv"),
+                vec![1],
+            )
         })
         .unwrap();
     let report = result.privacy_report;
@@ -344,18 +328,17 @@ fn the_report_names_the_invertible_columns_and_the_pseudonymization_caveat() {
 /// mapping to invert and no linkability caveat to make.
 #[test]
 fn a_redacted_run_reports_no_frequency_or_pseudonymization_caveat() {
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
-    let output_path = temp_dir.path().join("repeated-values-redacted-notes.csv");
+    let workspace = Workspace::new();
 
-    let result = service
+    let result = workspace
+        .service
         .anonymize_csv(AnonymizeParams {
-            file_path: fixture("repeated-values.csv"),
-            output_path,
-            columns: vec![1],
             controls: vec![control(1, AnonymizationStrategy::Redact)],
-            force: false,
-            preview_smart_replacements: vec![],
+            ..anonymize_params(
+                fixture("repeated-values.csv"),
+                workspace.path("repeated-values-redacted-notes.csv"),
+                vec![1],
+            )
         })
         .unwrap();
 
@@ -389,14 +372,10 @@ fn cardinality_warnings_for(
     file_path: std::path::PathBuf,
     strategy: AnonymizationStrategy,
 ) -> Vec<crate::types::PreviewWarning> {
-    let service = AnonymizerService::new("test-version");
-    service
+    AnonymizerService::new("test-version")
         .preview_anonymization(PreviewParams {
-            file_path,
-            columns: vec![1],
             controls: vec![control(1, strategy)],
-            sample_count: 5,
-            sample_row_count: 100,
+            ..preview_params(file_path, vec![1])
         })
         .unwrap()
         .warnings
@@ -433,8 +412,8 @@ fn sole_warning_message(file_path: std::path::PathBuf, strategy: AnonymizationSt
 /// the output had been written and the choice could no longer be changed.
 #[test]
 fn warns_before_the_run_about_values_that_repeat_across_a_file_larger_than_the_sample() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let path = repeating_column_file(temp_dir.path(), 5000, 30);
+    let workspace = Workspace::new();
+    let path = repeating_column_file(workspace.directory.path(), 5000, 30);
 
     assert_eq!(
         warned_columns(path, AnonymizationStrategy::Pseudonymize),
@@ -446,8 +425,8 @@ fn warns_before_the_run_about_values_that_repeat_across_a_file_larger_than_the_s
 /// rather than the shape of the data.
 #[test]
 fn a_redacted_column_is_silent_however_much_its_values_repeat() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let path = repeating_column_file(temp_dir.path(), 5000, 30);
+    let workspace = Workspace::new();
+    let path = repeating_column_file(workspace.directory.path(), 5000, 30);
 
     assert!(warned_columns(path, AnonymizationStrategy::Redact).is_empty());
 }
@@ -458,8 +437,8 @@ fn a_redacted_column_is_silent_however_much_its_values_repeat() {
 /// trivially invertible — the opposite of true.
 #[test]
 fn a_unique_column_in_a_large_file_is_not_warned_about() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let path = temp_dir.path().join("unique.csv");
+    let workspace = Workspace::new();
+    let path = workspace.directory.path().join("unique.csv");
     let mut text = String::from("row_id,reference\n");
     for row in 0..5000 {
         text.push_str(&format!("{row},ref-{row}\n"));
@@ -473,8 +452,8 @@ fn a_unique_column_in_a_large_file_is_not_warned_about() {
 /// silent too — 1000 values over 5000 rows is five rows a group.
 #[test]
 fn a_high_cardinality_column_is_not_warned_about() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let path = repeating_column_file(temp_dir.path(), 5000, 1000);
+    let workspace = Workspace::new();
+    let path = repeating_column_file(workspace.directory.path(), 5000, 1000);
 
     assert!(warned_columns(path, AnonymizationStrategy::Pseudonymize).is_empty());
 }
@@ -673,9 +652,9 @@ fn each_warning_names_the_evidence_that_produced_it() {
     // 30 departments across 5000 rows: too many to enumerate, none dominant, and every
     // replacement covers around 166 rows. The estimate is the sample's, not the file's,
     // which is why the wording says "estimated" and the figure is not exactly 30.
-    let temp_dir = tempfile::tempdir().unwrap();
+    let workspace = Workspace::new();
     let large_groups = sole_warning_message(
-        repeating_column_file(temp_dir.path(), 5000, 30),
+        repeating_column_file(workspace.directory.path(), 5000, 30),
         AnonymizationStrategy::Pseudonymize,
     );
     assert!(
@@ -707,17 +686,17 @@ fn each_warning_names_the_evidence_that_produced_it() {
 /// has been given a reason to dismiss it.
 #[test]
 fn the_post_run_report_names_the_dominant_value_rather_than_the_distinct_count() {
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
+    let workspace = Workspace::new();
 
-    let result = service
+    let result = workspace
+        .service
         .anonymize_csv(AnonymizeParams {
-            file_path: fixture("dominant-value.csv"),
-            output_path: temp_dir.path().join("dominant-value-reported.csv"),
-            columns: vec![1],
             controls: vec![control(1, AnonymizationStrategy::Pseudonymize)],
-            force: false,
-            preview_smart_replacements: vec![],
+            ..anonymize_params(
+                fixture("dominant-value.csv"),
+                workspace.path("dominant-value-reported.csv"),
+                vec![1],
+            )
         })
         .unwrap();
     let report = result.privacy_report;
@@ -754,50 +733,29 @@ fn a_dominant_value_column_is_silent_when_it_exposes_no_distribution() {
     }
 }
 
-/// A dominant value in a file far larger than the sample, which is the case the term was
-/// calibrated for and the one an absolute count of occurrences would get wrong.
-///
-/// One value over half of 5000 rows with the other 5000-odd values spread thin: 0 of 120
-/// measured draws of this shape fired either older term, at every combination of tail
-/// size and row count swept.
-#[test]
-fn warns_about_a_dominant_value_in_a_file_much_larger_than_the_sample() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let path = dominant_value_column_file(temp_dir.path(), 5000, 0.5, 5000, 0);
-
-    assert_eq!(
-        warned_columns(path, AnonymizationStrategy::Pseudonymize),
-        vec!["department".to_string()]
-    );
-}
-
 /// The false-positive counterweight, and the reason the threshold is a third rather than
 /// a fifth. A Zipf column with exponent 1.0 is the ordinary shape of real categorical
 /// data — a city, a surname, a product code — and its most common value takes a seventh
 /// of the rows. If this fires, the warning fires on most text columns in most files and
 /// stops being read.
-#[test]
-fn an_ordinarily_skewed_column_is_not_warned_about() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let path = zipf_column_file(temp_dir.path(), 5000, 1000, 1.0, 0);
-
-    assert!(warned_columns(path, AnonymizationStrategy::Pseudonymize).is_empty());
-}
-
-/// Ten independent draws of that same shape, because one draw says nothing about a
-/// threshold judged on a 100-value sample.
+///
+/// Ten independent draws of that shape rather than one, because one draw says nothing
+/// about a threshold judged on a 100-value sample.
 ///
 /// The sampled dominant share of a Zipf-1.0 column varies by about ±0.09 between draws,
 /// so a single seed can sit either side of a boundary by luck. This is the cheap standing
-/// version of the 4000-draw measurement behind `MIN_INVERTIBLE_DOMINANT_SHARE`: it is
-/// what would catch someone lowering that constant to a fifth, where the measured fire
-/// rate on this shape is 25%.
+/// version of the 4000-draw measurement behind `MIN_INVERTIBLE_DOMINANT_SHARE`.
+///
+/// Its sensitivity is measured, not assumed, and it is coarser than it looks: dropping the
+/// constant to a tenth fails these ten draws, dropping it to a fifth does not. So this test
+/// guards the constant's order of magnitude and nothing finer — a change from a third to a
+/// quarter would pass here, and needs the 4000-draw harness rather than this.
 #[test]
 fn an_ordinarily_skewed_column_stays_silent_across_independent_draws() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let workspace = Workspace::new();
 
     for seed in 0..10 {
-        let path = zipf_column_file(temp_dir.path(), 5000, 1000, 1.0, seed);
+        let path = zipf_column_file(workspace.directory.path(), 5000, 1000, 1.0, seed);
         assert!(
             warned_columns(path, AnonymizationStrategy::Pseudonymize).is_empty(),
             "seed {seed} warned about an ordinarily skewed column"
@@ -805,15 +763,21 @@ fn an_ordinarily_skewed_column_stays_silent_across_independent_draws() {
     }
 }
 
-/// And ten draws of the shape that must always be caught, for the same reason in the
-/// other direction. Measured fire rate at the chosen threshold is 0.999 or better, so ten
-/// draws passing is expected and one failing is a real signal.
+/// Ten draws of the shape that must always be caught, for the same reason in the other
+/// direction. Measured fire rate at the chosen threshold is 0.999 or better, so ten draws
+/// passing is expected and one failing is a real signal.
+///
+/// A dominant value in a file far larger than the sample is the case the term was
+/// calibrated for, and the one an absolute count of occurrences would get wrong. One value
+/// over half of 5000 rows with the other 5000-odd values spread thin: 0 of 120 measured
+/// draws of this shape fired either older term, at every combination of tail size and row
+/// count swept.
 #[test]
 fn a_dominated_column_is_warned_about_across_independent_draws() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let workspace = Workspace::new();
 
     for seed in 0..10 {
-        let path = dominant_value_column_file(temp_dir.path(), 5000, 0.5, 5000, seed);
+        let path = dominant_value_column_file(workspace.directory.path(), 5000, 0.5, 5000, seed);
         assert_eq!(
             warned_columns(path, AnonymizationStrategy::Pseudonymize),
             vec!["department".to_string()],
@@ -830,18 +794,17 @@ fn a_dominated_column_is_warned_about_across_independent_draws() {
 /// dominant count is 51 and the run's is 100, and only the share is comparable.
 #[test]
 fn the_run_reports_the_dominant_value_the_preview_warned_about() {
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
-    let output_path = temp_dir.path().join("dominant-value-anonymized.csv");
+    let workspace = Workspace::new();
 
-    let result = service
+    let result = workspace
+        .service
         .anonymize_csv(AnonymizeParams {
-            file_path: fixture("dominant-value.csv"),
-            output_path,
-            columns: vec![1],
             controls: vec![control(1, AnonymizationStrategy::Pseudonymize)],
-            force: false,
-            preview_smart_replacements: vec![],
+            ..anonymize_params(
+                fixture("dominant-value.csv"),
+                workspace.path("dominant-value-anonymized.csv"),
+                vec![1],
+            )
         })
         .unwrap();
 
@@ -939,8 +902,8 @@ fn near_tie_column_file(
 /// other 66 values are all singletons.
 #[test]
 fn a_dominant_value_its_runner_up_nearly_matches_is_warned_about_anyway() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let path = near_tie_column_file(temp_dir.path(), 34, 33, 33);
+    let workspace = Workspace::new();
+    let path = near_tie_column_file(workspace.directory.path(), 34, 33, 33);
 
     // The shape the verdict turns on, read as the predicate reads it: 34 of 100 values is
     // a 0.34 share, just past the 1/3 threshold, and both other terms are out — 35

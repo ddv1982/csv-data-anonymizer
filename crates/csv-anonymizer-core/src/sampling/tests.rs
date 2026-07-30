@@ -46,6 +46,13 @@ fn spread_keeps_everything_from_a_short_stream() {
     assert_eq!(kept_positions(sampler), (0..20).collect::<Vec<_>>());
 }
 
+/// Two runs over the same stream keep the same items.
+///
+/// This is what makes every figure downstream reproducible: a detection verdict, a
+/// cardinality warning and the row numbers a preview shows are all read off one sample,
+/// and a sampler that varied between runs would make a failing test pass on the next
+/// invocation. Pinned here rather than through `csv_io`, which reaches the same items by
+/// the same call.
 #[test]
 fn spread_is_deterministic() {
     assert_eq!(
@@ -68,6 +75,18 @@ fn spread_draws_from_every_part_of_the_stream() {
 }
 
 /// The property a positional rule cannot have. See [`SpreadSampler`].
+///
+/// The choice of items must not correlate with position modulo anything, because real
+/// inputs are periodic: a flattened export writes one logical record per k rows and puts
+/// each field on a fixed row of the block. Sampling such a file at a fixed phase — which
+/// is what keeping every nth row does, k and n being powers of two often enough — either
+/// sees a field on every sampled row or never sees it at all. The second case classifies
+/// the column off filler values, which is a column of real PII detected as `String` and
+/// left unselected.
+///
+/// That consequence is a detection one, and this test is a sampler one, which is the
+/// point: `csv_io::read_csv_detection_sample_from_str` delegates to this sampler, so the
+/// property is established once here rather than restated through a CSV parser.
 #[test]
 fn spread_does_not_align_with_a_periodic_stream() {
     const CAPACITY: usize = 200;

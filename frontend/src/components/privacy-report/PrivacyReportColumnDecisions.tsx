@@ -9,7 +9,7 @@ export function PrivacyReportColumnDecisions({ columns }: { columns: ColumnRelea
       <div className="report-subsection-header">
         <h4>Column Decisions</h4>
         <span className="status-pill">
-          Showing {columns.length.toLocaleString()} of {columns.length.toLocaleString()}
+          Showing {columns.length} of {columns.length}
         </span>
       </div>
       <div className="table-frame release-column-frame">

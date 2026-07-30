@@ -13,22 +13,6 @@ type SectionHelpEntry = {
 }
 
 export const sectionHelp = {
-  selectFile: {
-    title: 'Select File',
-    summary: [
-      'Start by choosing the CSV you want to transform. The app reads the header row and a sample of rows so it can detect column types, risk, and suggested settings before you write any output.',
-    ],
-    points: [
-      {
-        label: 'What changes',
-        text: 'Nothing is written at this step. Browse or type a path, then the app loads metadata from the source file.',
-      },
-      {
-        label: 'What to check',
-        text: 'Make sure the file path points to the source CSV and that the detected row count and columns look like the file you intended to use.',
-      },
-    ],
-  },
   selectColumns: {
     title: 'Review Sensitive Columns',
     summary: [
@@ -86,36 +70,6 @@ export const sectionHelp = {
       },
     ],
   },
-  configuration: {
-    title: 'Configuration',
-    summary: [
-      [
-        'This section decides where the protected CSV goes. The file is transformed with the per-column ',
-        { text: 'Strategy', term: 'strategy' },
-        ' values from the column review.',
-      ],
-    ],
-    points: [
-      {
-        label: 'Output path',
-        text: 'The transformed or released CSV is written here. Use a new path unless you intentionally want to overwrite an existing file.',
-      },
-      {
-        label: 'Local AI',
-        text: [
-          'Only needed for columns whose ',
-          { text: 'Strategy', term: 'strategy' },
-          ' is ',
-          { text: 'Smart replacement', term: 'smartReplacement' },
-          '. The ',
-          { text: 'model', term: 'model' },
-          ' runs through ',
-          { text: 'Ollama', term: 'ollama' },
-          ' on this device.',
-        ],
-      },
-    ],
-  },
   localAi: {
     title: 'Local AI',
     summary: [
@@ -159,22 +113,6 @@ export const sectionHelp = {
           { text: 'Smart replacement', term: 'smartReplacement' },
           ' can improve readability, but it is not a formal anonymization guarantee. Use Preview and the Privacy Report to review model output and any fallbacks before relying on the file.',
         ],
-      },
-    ],
-  },
-  appSettings: {
-    title: 'App Settings',
-    summary: [
-      'These settings control output naming, preview size, and whether paths are remembered between runs.',
-    ],
-    points: [
-      {
-        label: 'Samples',
-        text: 'Sample rows affect detection and preview speed. More rows can improve detection but may make loading slower on large files.',
-      },
-      {
-        label: 'Output handling',
-        text: 'Overwrite Output replaces an existing file, while Output suffix controls the default new filename.',
       },
     ],
   },

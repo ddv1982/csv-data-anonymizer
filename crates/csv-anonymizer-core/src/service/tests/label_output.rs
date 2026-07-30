@@ -1,5 +1,4 @@
 use super::*;
-use std::path::Path;
 
 /// A labelled column, with detection left to decide the type on its own.
 ///
@@ -7,33 +6,7 @@ use std::path::Path;
 /// type does not change what these tests observe — but a control that overrode the
 /// type would hide it if that ever stopped being true, so nothing here overrides one.
 fn label_control(column_index: usize) -> ColumnControl {
-    ColumnControl {
-        column_index,
-        type_override: None,
-        strategy: AnonymizationStrategy::Label,
-    }
-}
-
-fn write_input(directory: &Path, name: &str, text: &str) -> PathBuf {
-    let path = directory.join(name);
-    fs::write(&path, text).unwrap();
-    path
-}
-
-/// Reads a written output file back as fields, header row first.
-///
-/// Parsed as CSV rather than split on commas: these tests assert on exact cell
-/// contents, and a quoting change would otherwise show up as a mangled expectation
-/// rather than as the quoting change it is.
-fn written_rows(path: &Path) -> Vec<Vec<String>> {
-    let mut reader = csv::ReaderBuilder::new()
-        .has_headers(false)
-        .from_path(path)
-        .unwrap();
-    reader
-        .records()
-        .map(|record| record.unwrap().iter().map(ToString::to_string).collect())
-        .collect()
+    control(column_index, AnonymizationStrategy::Label)
 }
 
 /// The ordinal a placeholder carries, or `None` if the cell is not one.
@@ -51,12 +24,8 @@ fn anonymize_to(input_path: &Path, output_path: &Path, columns: Vec<usize>) {
     let controls = columns.iter().copied().map(label_control).collect();
     AnonymizerService::new("test-version")
         .anonymize_csv(AnonymizeParams {
-            file_path: input_path.to_path_buf(),
-            output_path: output_path.to_path_buf(),
-            columns,
             controls,
-            force: false,
-            preview_smart_replacements: vec![],
+            ..anonymize_params(input_path.to_path_buf(), output_path.to_path_buf(), columns)
         })
         .unwrap();
 }
@@ -72,9 +41,8 @@ fn anonymize_to(input_path: &Path, output_path: &Path, columns: Vec<usize>) {
 /// `[CUSTOMER_NOTES_1]` into the file the user hands over.
 #[test]
 fn a_labelled_column_reaches_the_written_file_with_one_placeholder_per_distinct_value() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let input_path = write_input(
-        temp_dir.path(),
+    let workspace = Workspace::new();
+    let input_path = workspace.write_input(
         "notes.csv",
         "ticket,customer notes\n\
          T-1,escalated to billing\n\
@@ -83,15 +51,12 @@ fn a_labelled_column_reaches_the_written_file_with_one_placeholder_per_distinct_
          T-4,\n\
          T-5,  ESCALATED TO BILLING  \n",
     );
-    let output_path = temp_dir.path().join("notes-anonymized.csv");
+    let output_path = workspace.path("notes-anonymized.csv");
 
     // Pins the reason this column is a fair subject: no validator claims free-form
     // prose, so `String` is what a real free-text column detects as, and the header
     // is genuinely the only surviving evidence about what the cells held.
-    let columns = AnonymizerService::new("test-version")
-        .analyze_csv(&input_path)
-        .unwrap()
-        .columns;
+    let columns = workspace.service.analyze_csv(&input_path).unwrap().columns;
     assert_eq!(columns[1].name, "customer notes");
     assert_eq!(columns[1].detected_type, DataType::String);
 
@@ -136,12 +101,12 @@ fn a_labelled_column_reaches_the_written_file_with_one_placeholder_per_distinct_
 /// disagreement about *which rows were seen in what order* shows up as an arithmetic
 /// mismatch rather than as a coincidence. 5000 rows is deliberate — see
 /// [`the_preview_and_the_run_agree_on_what_each_placeholder_stands_for`].
-fn unique_notes_file(directory: &Path) -> PathBuf {
+fn unique_notes_file(workspace: &Workspace) -> PathBuf {
     let mut text = String::from("row_id,notes\n");
     for row in 0..5_000 {
         text.push_str(&format!("{row},note {row}\n"));
     }
-    write_input(directory, "unique-notes.csv", &text)
+    workspace.write_input("unique-notes.csv", &text)
 }
 
 /// The invariant no other test pins: a placeholder means the same source value in the
@@ -163,18 +128,15 @@ fn unique_notes_file(directory: &Path) -> PathBuf {
 /// the preview has to hand — and neither is row 0.
 #[test]
 fn the_preview_and_the_run_agree_on_what_each_placeholder_stands_for() {
-    let service = AnonymizerService::new("test-version");
-    let temp_dir = tempfile::tempdir().unwrap();
-    let input_path = unique_notes_file(temp_dir.path());
-    let output_path = temp_dir.path().join("unique-notes-anonymized.csv");
+    let workspace = Workspace::new();
+    let input_path = unique_notes_file(&workspace);
+    let output_path = workspace.path("unique-notes-anonymized.csv");
 
-    let preview = service
+    let preview = workspace
+        .service
         .preview_anonymization(PreviewParams {
-            file_path: input_path.clone(),
-            columns: vec![1],
             controls: vec![label_control(1)],
-            sample_count: 5,
-            sample_row_count: 100,
+            ..preview_params(input_path.clone(), vec![1])
         })
         .unwrap();
     anonymize_to(&input_path, &output_path, vec![1]);
@@ -212,16 +174,14 @@ fn the_preview_and_the_run_agree_on_what_each_placeholder_stands_for() {
 /// placeholders are the first five ordinals.
 #[test]
 fn the_preview_numbers_the_files_opening_rows() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let input_path = unique_notes_file(temp_dir.path());
+    let workspace = Workspace::new();
+    let input_path = unique_notes_file(&workspace);
 
-    let preview = AnonymizerService::new("test-version")
+    let preview = workspace
+        .service
         .preview_anonymization(PreviewParams {
-            file_path: input_path,
-            columns: vec![1],
             controls: vec![label_control(1)],
-            sample_count: 5,
-            sample_row_count: 100,
+            ..preview_params(input_path, vec![1])
         })
         .unwrap();
 
@@ -240,6 +200,10 @@ fn the_preview_numbers_the_files_opening_rows() {
 /// Two columns whose headers reduce to the same label must stay distinguishable in
 /// the written file.
 ///
+/// The two halves of duplicate-header handling meeting: detection flags the columns, the
+/// strategy qualifies their labels. Composed rather than assumed, because each half is
+/// inert on its own — a flag nobody reads, or a qualifier nobody sets.
+///
 /// The qualifier is decided in `build_column_metadata`, which is the only stage that
 /// sees the whole column set, and consumed in `labelled_placeholder`, which is handed
 /// one column at a time. Between them lie the control application, column selection
@@ -253,18 +217,17 @@ fn the_preview_numbers_the_files_opening_rows() {
 /// nothing ever measured.
 #[test]
 fn duplicate_headers_stay_index_qualified_in_the_written_file() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let workspace = Workspace::new();
     // `notes` and `Notes!` are different headers that reduce to the same label:
     // case is folded away and the trailing punctuation contributes nothing.
-    let input_path = write_input(
-        temp_dir.path(),
+    let input_path = workspace.write_input(
         "duplicate-headers.csv",
         "notes,Notes!\n\
          alpha,zulu\n\
          beta,zulu\n\
          alpha,yankee\n",
     );
-    let output_path = temp_dir.path().join("duplicate-headers-anonymized.csv");
+    let output_path = workspace.path("duplicate-headers-anonymized.csv");
 
     anonymize_to(&input_path, &output_path, vec![0, 1]);
     let rows = written_rows(&output_path);

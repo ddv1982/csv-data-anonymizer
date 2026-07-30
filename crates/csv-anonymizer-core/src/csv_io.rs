@@ -11,13 +11,178 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+/// Gate every input file passes before any reader opens it: it exists, it is a
+/// file, and it is text this crate can actually parse.
+///
+/// The encoding check lives here rather than at each `from_path` call because
+/// this is the one place all input paths already share — the detection sample,
+/// the row count, the transform and the smart-replacement value scan all call it
+/// first. A per-reader check would have to be repeated four times and would be
+/// silently skipped the next time a reader is added.
 pub fn validate_file(file_path: &Path) -> Result<()> {
     let metadata = fs::metadata(file_path)
         .map_err(|_| AnonymizerError::FileNotFound(file_path.to_path_buf()))?;
     if !metadata.is_file() {
         return Err(AnonymizerError::FileNotFound(file_path.to_path_buf()));
     }
-    Ok(())
+    reject_unsupported_encoding(file_path)
+}
+
+/// How much of the head of a file the encoding sniffer looks at.
+///
+/// Bounded so opening a multi-gigabyte export costs one small read, and large
+/// enough that the byte-density rule below has a meaningful sample even when the
+/// header row alone is short.
+const ENCODING_SNIFF_BYTES: usize = 8 * 1024;
+
+/// A prefix has to be at least this long before the density rule is trusted.
+///
+/// Two bytes of "NULs are 50% of the file" is noise; a short header row is not.
+const MIN_DENSITY_SAMPLE_BYTES: usize = 16;
+
+/// Fraction of sniffed bytes that must be NUL before the input is called UTF-16.
+///
+/// UTF-16-encoded ASCII is very close to 50% NUL. The threshold sits well under
+/// that so a file with some non-Latin text still trips it, and well over what any
+/// real UTF-8 CSV can reach — a UTF-8 CSV's NUL rate is zero, not merely low.
+const UTF16_NUL_RATIO_PERCENT: usize = 20;
+
+/// Fraction of a prefix's NUL bytes that must share one offset parity for the
+/// input to be called UTF-16 rather than merely binary.
+///
+/// UTF-16LE ASCII puts every NUL at an odd offset and UTF-16BE at an even one, so
+/// a real UTF-16 text file scores 100 here. A binary blob's NULs land wherever
+/// the format put them and score near 50, which is what keeps the two verdicts —
+/// and their two different remedies — from being confused for each other.
+const UTF16_PARITY_CONCENTRATION_PERCENT: usize = 90;
+
+/// An input the CSV parser must not be handed, and why.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UnsupportedEncoding {
+    /// UTF-16, byte order named so the message can tell the user what they have.
+    Utf16 { little_endian: bool },
+    /// NUL-dense but not shaped like UTF-16: not text at all.
+    Binary,
+}
+
+impl UnsupportedEncoding {
+    /// The single wording both the analyze path and the transform path show,
+    /// because they both reach it through [`validate_file`].
+    fn message(self) -> String {
+        match self {
+            Self::Utf16 { little_endian } => {
+                let byte_order = if little_endian { "LE" } else { "BE" };
+                format!(
+                    "this file is UTF-16{byte_order} text, not UTF-8, so it cannot be read as \
+                     CSV. Re-save it as UTF-8 and run it again — in Excel choose \"CSV UTF-8\", in \
+                     PowerShell add `-Encoding utf8` to Out-File or Set-Content, and with bcp use \
+                     -c rather than -w. Converting it here is deliberately refused: a wrongly \
+                     guessed encoding produces values that look plausible but are wrong, and this \
+                     tool will not publish an output it cannot vouch for."
+                )
+            }
+            Self::Binary => "this file contains NUL bytes, so it is a binary file rather than \
+                             text, and cannot be read as CSV. Export the data to a UTF-8 CSV file \
+                             and run that instead."
+                .to_string(),
+        }
+    }
+}
+
+/// Refuses inputs whose bytes are not UTF-8 CSV text.
+///
+/// Prevents the worst failure this tool has: a BOM-less UTF-16 export — what
+/// PowerShell's `Out-File`/`Set-Content` and SQL Server's `bcp -w` produce by
+/// default — is *valid UTF-8* once its NULs are read as ordinary characters, so
+/// nothing errors. The headers parse as `n\0a\0m\0e\0`, no detector matches them,
+/// and a file full of names and email addresses is reported as holding no
+/// sensitive data. Refusing loudly is the only safe answer; UTF-16 *with* a BOM
+/// already failed, but with an unactionable "invalid utf-8" and it is routed here
+/// too so both spellings say the same thing.
+fn reject_unsupported_encoding(file_path: &Path) -> Result<()> {
+    let prefix = read_file_prefix(file_path, ENCODING_SNIFF_BYTES)?;
+    match sniff_unsupported_encoding(&prefix) {
+        Some(encoding) => Err(AnonymizerError::csv_parse(encoding.message(), None)),
+        None => Ok(()),
+    }
+}
+
+/// Reads at most `limit` bytes from the head of `file_path`.
+///
+/// Only `NotFound` becomes [`AnonymizerError::FileNotFound`]. Every other open error keeps
+/// its own kind, because the one that actually reaches a user here is `PermissionDenied` —
+/// a file they can see and the app cannot read — and telling them it does not exist sends
+/// them looking for the wrong problem. The caller checked existence a moment ago, so a
+/// `NotFound` at this point means the file went away mid-run, which is what that variant says.
+fn read_file_prefix(file_path: &Path, limit: usize) -> Result<Vec<u8>> {
+    let file = fs::File::open(file_path).map_err(|error| match error.kind() {
+        std::io::ErrorKind::NotFound => AnonymizerError::FileNotFound(file_path.to_path_buf()),
+        _ => AnonymizerError::from(error),
+    })?;
+    let mut prefix = Vec::new();
+    file.take(limit as u64).read_to_end(&mut prefix)?;
+    Ok(prefix)
+}
+
+/// Classifies a sniffed prefix, or returns `None` for anything that may be CSV.
+///
+/// `None` is the answer that must never be wrong in the refusing direction, so
+/// every rule keys on NUL bytes: a UTF-8 CSV cannot contain one — U+0000 is not
+/// produced by any exporter and is not a legal character in a CSV field anyone
+/// means to write — while UTF-16 text is roughly half NULs by construction. The
+/// small allowance below the binary threshold exists so a file that somehow
+/// carries a stray control byte still gets parsed and reported on rather than
+/// rejected out of hand.
+fn sniff_unsupported_encoding(prefix: &[u8]) -> Option<UnsupportedEncoding> {
+    // A BOM is a declaration, not a guess, so it outranks the density rules and
+    // catches even a UTF-16 file whose sniffed prefix happens to be NUL-poor.
+    match prefix {
+        [0xff, 0xfe, ..] => {
+            return Some(UnsupportedEncoding::Utf16 {
+                little_endian: true,
+            });
+        }
+        [0xfe, 0xff, ..] => {
+            return Some(UnsupportedEncoding::Utf16 {
+                little_endian: false,
+            });
+        }
+        _ => {}
+    }
+
+    let nul_count = prefix.iter().filter(|byte| **byte == 0).count();
+    if nul_count == 0 {
+        return None;
+    }
+
+    let at_odd_offsets = prefix
+        .iter()
+        .enumerate()
+        .filter(|(offset, byte)| **byte == 0 && offset % 2 == 1)
+        .count();
+    let dominant_parity = at_odd_offsets.max(nul_count - at_odd_offsets);
+
+    let dense_enough = prefix.len() >= MIN_DENSITY_SAMPLE_BYTES
+        && nul_count * 100 >= prefix.len() * UTF16_NUL_RATIO_PERCENT;
+    let aligned_enough = dominant_parity * 100 >= nul_count * UTF16_PARITY_CONCENTRATION_PERCENT;
+
+    if dense_enough && aligned_enough {
+        // UTF-16LE holds ASCII as `text, NUL`, so its NULs sit at odd offsets;
+        // UTF-16BE is the mirror image.
+        return Some(UnsupportedEncoding::Utf16 {
+            little_endian: at_odd_offsets >= nul_count - at_odd_offsets,
+        });
+    }
+
+    // Not UTF-16-shaped, but NUL-heavy enough that no CSV export explains it:
+    // more than one percent of the prefix, and never on the strength of a single
+    // byte, so one stray control character in an otherwise readable file is
+    // parsed and reported on instead of refused.
+    if nul_count >= 2 && nul_count * 100 > prefix.len() {
+        return Some(UnsupportedEncoding::Binary);
+    }
+
+    None
 }
 
 /// Which data rows survive when the input holds more rows than the caller wants.
@@ -159,7 +324,7 @@ fn read_sample_from_csv_reader<R: Read>(
             continue;
         }
 
-        if row.iter().all(|value| value.is_empty()) {
+        if is_blank_data_row(&row) {
             continue;
         }
 
@@ -209,7 +374,7 @@ pub fn count_csv_data_rows(file_path: &Path) -> Result<usize> {
             header_processed = true;
             continue;
         }
-        if row.iter().all(|value| value.is_empty()) {
+        if is_blank_data_row(&row) {
             continue;
         }
         row_count += 1;
@@ -249,15 +414,12 @@ pub fn process_csv_data(
     Ok((output, result))
 }
 
-pub fn process_csv_text(
-    input: &str,
-    columns: &[ColumnMetadata],
-    options: ProcessOptions<'_>,
-) -> Result<(String, ProcessResult)> {
-    process_csv_data(input, columns, options)
-}
-
-pub fn process_file(
+/// [`process_file_with_control`] with no cancellation handle, for tests that never cancel.
+///
+/// Test-only: the service always has a control to pass, because a desktop run has to stay
+/// cancellable.
+#[cfg(test)]
+pub(crate) fn process_file(
     input_path: &Path,
     output_path: &Path,
     columns: &[ColumnMetadata],
@@ -266,7 +428,12 @@ pub fn process_file(
     process_file_with_control(input_path, output_path, columns, options, None)
 }
 
-pub fn process_file_with_control(
+/// [`process_file_with_control_and_overwrite`] that refuses to overwrite.
+///
+/// Test-only. Production reaches the overwrite-aware form directly, because whether an
+/// existing output may be replaced is the user's answer to a dialog, never a default.
+#[cfg(test)]
+pub(crate) fn process_file_with_control(
     input_path: &Path,
     output_path: &Path,
     columns: &[ColumnMetadata],
@@ -348,12 +515,10 @@ fn process_csv_reader_to_writer<R: Read, W: Write>(
     let mut header_processed = false;
     let mut header_len = 0;
     let mut row_count = 0;
-    let mut transform_state = match options.smart_replacements {
-        Some(smart_replacements) => {
-            TransformState::with_smart_replacements(smart_replacements.clone())
-        }
-        None => TransformState::new(),
-    };
+    let mut transform_state = options.smart_replacements.cloned().map_or_else(
+        TransformState::new,
+        TransformState::with_smart_replacements_if_active,
+    );
 
     check_canceled(&mut control)?;
 
@@ -402,7 +567,6 @@ fn process_csv_reader_to_writer<R: Read, W: Write>(
 
     Ok(ProcessResult {
         row_count,
-        success: true,
         output_path,
         duration_ms: start_time.elapsed().as_millis(),
         transform_report: transform_state.report(),
@@ -516,6 +680,13 @@ fn is_spreadsheet_formula_prefix(character: char) -> bool {
     )
 }
 
+/// The one definition of "this row carries no data", used by every reader here.
+///
+/// It trims rather than testing `is_empty`, so it holds whether or not the reader was built
+/// with [`Trim::All`] — the sampling readers are, the processing ones are not. The two must
+/// agree: [`count_csv_data_rows`] produces the denominator of the detection-coverage figure
+/// and [`read_detection_sample`] the numerator, so a reader-dependent predicate could report
+/// coverage of more rows than the file has, which reads as more scrutiny than the data got.
 fn is_blank_data_row(row: &[String]) -> bool {
     row.iter().all(|value| value.trim().is_empty())
 }

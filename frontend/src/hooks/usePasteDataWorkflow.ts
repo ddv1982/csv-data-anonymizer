@@ -12,6 +12,7 @@ import { messageFrom } from '../utils/errors'
 import { useColumnSelection } from './useColumnSelection'
 import { useCopyOutput } from './useCopyOutput'
 import type { LocalAiState } from './useLocalAi'
+import { useSelectionInvalidation } from './useWorkflowArtifacts'
 
 export type PasteBusyState = 'idle' | 'analyzing' | 'previewing' | 'transforming' | 'copying'
 
@@ -45,8 +46,10 @@ export function usePasteDataWorkflow({
   const localAiBlocked = selectedUsesLocalAi && (!localAi.ready || localAi.downloadRunning)
   const canAnalyze = settingsLoaded && content.trim().length > 0 && !isBusy && !isContentTooLarge
   const canClear = !isBusy && (content.length > 0 || analysis !== null || preview !== null || result !== null || copyStatus !== null)
-  const canPreview = settingsLoaded && Boolean(analysis) && selection.selectedColumns.length > 0 && !isBusy && !localAiBlocked
-  const canTransform = settingsLoaded && Boolean(analysis) && selection.selectedColumns.length > 0 && !isBusy && !localAiBlocked
+  // Preview and transform are gated on exactly the same conditions: both send the
+  // current selection to the backend, so anything that makes one unsafe makes the
+  // other unsafe too. They were two identical expressions that could drift apart.
+  const canRun = settingsLoaded && Boolean(analysis) && selection.selectedColumns.length > 0 && !isBusy && !localAiBlocked
 
   useEffect(() => () => {
     operationSequence.current += 1
@@ -166,26 +169,13 @@ export function usePasteDataWorkflow({
     setPreview(null)
   }
 
-  function setColumnSelection(nextColumns: number[]) {
-    if (isBusy) return
-    selection.setSelectedColumns(nextColumns)
-    clearOutput()
-  }
-
-  function toggleColumn(column: Parameters<typeof selection.toggleColumn>[0]) {
-    if (isBusy) return
-    selection.toggleColumn(column)
-    clearOutput()
-  }
-
-  function updateColumnStrategy(
-    column: Parameters<typeof selection.updateColumnStrategy>[0],
-    strategy: Parameters<typeof selection.updateColumnStrategy>[1],
-  ) {
-    if (isBusy) return
-    selection.updateColumnStrategy(column, strategy)
-    clearOutput()
-  }
+  const invalidatingSelection = useSelectionInvalidation(
+    selection,
+    () => {
+      clearOutput()
+    },
+    () => isBusy,
+  )
 
   return {
     format,
@@ -203,8 +193,7 @@ export function usePasteDataWorkflow({
     isBusy,
     canAnalyze,
     canClear,
-    canPreview,
-    canTransform,
+    canRun,
     setFormat,
     setContent,
     analyze,
@@ -212,8 +201,10 @@ export function usePasteDataWorkflow({
     showPreview,
     transform,
     copyOutput: () => copyOutput(result?.output),
-    setColumnSelection,
-    toggleColumn,
-    updateColumnStrategy,
+    setColumnSelection: invalidatingSelection.setColumnSelection,
+    toggleColumn: invalidatingSelection.toggleColumn,
+    updateColumnStrategy: invalidatingSelection.updateColumnStrategy,
   }
 }
+
+export type PasteDataWorkflowState = ReturnType<typeof usePasteDataWorkflow>

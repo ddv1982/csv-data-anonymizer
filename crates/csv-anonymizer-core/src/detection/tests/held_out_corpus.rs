@@ -75,6 +75,17 @@ enum Challenge {
     /// information and the taxonomy has no entry for it" — the second is a
     /// coverage gap with a known fix, the first is not.
     HeaderGatedName,
+    /// An identifier column whose keys are not written in digits.
+    ///
+    /// Kept apart from [`Challenge::CrypticHeader`] because nothing here is cryptic:
+    /// the header says `id` and the values are plainly keys. What made these hard is
+    /// that identifier detection used to corroborate the header with an
+    /// integer test, so `employee_id` holding `1000…` was `NumericId` and the same
+    /// header holding `E1000…` was `String` — the alphabet the source system minted
+    /// its keys in decided whether the column was offered for anonymization at all.
+    /// Its own category so the report can show which alphabets a change reaches;
+    /// the padded and unpadded cases below are on opposite sides of that line.
+    NonNumericKey,
     /// Values resemble a PII type but are not one. Must not be flagged.
     BenignLookAlike,
     /// The column is only partly populated with the type.
@@ -88,6 +99,7 @@ impl Challenge {
             Challenge::UntaxonomizedLanguage => "untaxonomized-language",
             Challenge::MessyFormatting => "messy-formatting",
             Challenge::HeaderGatedName => "header-gated-name",
+            Challenge::NonNumericKey => "non-numeric-key",
             Challenge::BenignLookAlike => "benign-look-alike",
             Challenge::MixedColumn => "mixed-column",
         }
@@ -106,14 +118,23 @@ impl Challenge {
 /// the direction that makes it stop being read. It is pinned in both directions all the
 /// same, so that the cost cannot drift either way unremarked.
 mod baseline {
-    /// Cases whose exact `DataType` the detector gets right. Recorded at 27/44.
+    /// Cases whose exact `DataType` the detector gets right. Recorded at 33/51.
     ///
-    /// This started at 25/44. The two cases it gained are `client_name` and `legal_name`,
-    /// which held organization names and were typed `FullName`; `NON_PERSON_NAME_TOKENS`
-    /// in `detection::header_rules` closed both, and they are the same two cases that
-    /// took [`BENIGN_RISK_EXACT`] from 12 to 14.
+    /// This started at 25/44. Two of the cases it gained are `client_name` and
+    /// `legal_name`, which held organization names and were typed `FullName`;
+    /// `NON_PERSON_NAME_TOKENS` in `detection::header_rules` closed both, and they are
+    /// the same two cases that took [`BENIGN_RISK_EXACT`] from 12 to 14.
     ///
-    /// The seventeen misses, by category — counts given so the breakdown can be checked
+    /// The other four, and the seven cases the population grew by, arrived together
+    /// with `detection::header_rules::detect_header_opaque_identifier`. The corpus had
+    /// no alphanumeric identifier case at all — its only key column was `seq`, holding
+    /// `1000001…`, the one shape the integer-corroborated header rule could already
+    /// see — so the gap where an `*_id` column's alphabet decided whether it was
+    /// offered for anonymization was invisible here. Three `non-numeric-key` cases and
+    /// three benign identifier look-alikes now pass; the fourth `non-numeric-key` case
+    /// is the recorded miss listed below.
+    ///
+    /// The eighteen misses, by category — counts given so the breakdown can be checked
     /// against the total:
     ///
     /// - **Person names, eleven cases.** Name detection is header-gated since the
@@ -132,33 +153,39 @@ mod baseline {
     /// - **European decimal-comma numbers, two cases.** `omzet` holding `1.234,56` and
     ///   `bedrag` holding `€ 1.234,56`, both read as `String`.
     /// - **IPv6, one case.**
+    /// - **An unpadded alphanumeric key, one case.** `order_ref` holding `REF-7`
+    ///   through `REF-104213`, read as `String`. The identifier rule asks a column's
+    ///   values to agree on a length, which is what tells a minted key from a
+    ///   hand-written label, and keys counted up without padding do not.
     /// - **One benign look-alike over-flagged**, listed under
     ///   [`BENIGN_RISK_EXACT`].
     ///
-    /// Eleven, one, one, two, one and one: seventeen, against 44 cases and a score of 27.
+    /// Eleven, one, one, two, one, one and one: eighteen, against 51 cases and a score
+    /// of 33.
     ///
     /// Not measured here: whether any of these would be caught with a name
     /// gazetteer or a Local AI assist. The corpus records what the shipped
     /// header-and-shape pipeline does, nothing about what an alternative would do.
-    pub(super) const EXACT_TYPE_CORRECT: usize = 27;
+    pub(super) const EXACT_TYPE_CORRECT: usize = 33;
     /// Cases assigned at least the privacy risk they warrant. This is the
     /// number that matters for anonymization: it bounds how many columns would
-    /// be offered for transformation. Recorded at 32/44.
+    /// be offered for transformation. Recorded at 38/51.
     ///
-    /// Eleven of the twelve shortfalls are unreachable person-name columns — the
+    /// Eleven of the thirteen shortfalls are unreachable person-name columns — the
     /// two cryptic ones, the untaxonomized-language one, and all eight
     /// `header-gated-name` cases. Each is a column of full names the app would
-    /// leave unselected. The twelfth is IPv6. Eight of those eleven are nonetheless
+    /// leave unselected. The twelfth is IPv6 and the thirteenth is `order_ref`, the
+    /// unpadded key. Eight of those eleven are nonetheless
     /// surfaced for review, which [`REVIEW_COVERAGE`] counts and this number
     /// deliberately does not: the review tier grants no risk, so under this axis they are
     /// still columns the app would not offer to anonymize. Every other case clears its floor,
     /// including the ones whose exact type is wrong: a mistyped column can still
     /// be escalated correctly, which is why these two axes are scored separately.
-    pub(super) const RISK_FLOOR_MET: usize = 32;
+    pub(super) const RISK_FLOOR_MET: usize = 38;
     /// Cases the app would put in front of the user by *some* route, whether or not it
-    /// typed them correctly. Recorded at 24/28.
+    /// typed them correctly. Recorded at 27/32.
     ///
-    /// Scored over the 28 cases whose `expected_risk_floor` is above Low — the ones that
+    /// Scored over the 32 cases whose `expected_risk_floor` is above Low — the ones that
     /// ought to reach a reviewer at all — and counted through the production predicates:
     /// either `metadata::should_auto_select_column` on a real `ColumnMetadata` built for
     /// the column, or `service::possible_person_name_warning_for_column`, the function that
@@ -175,7 +202,7 @@ mod baseline {
     /// remove the second route and the score here is 16/28, which is what the shipped
     /// product scored before that tier existed.
     ///
-    /// The four misses are the columns a user accepting the defaults would never see
+    /// The five misses are the columns a user accepting the defaults would never see
     /// mentioned anywhere:
     ///
     /// - **Three unreachable person-name columns**, `c_nm`, the header-less one, and
@@ -186,6 +213,10 @@ mod baseline {
     ///   apart from `header-gated-name` in [`super::Challenge`].
     /// - **IPv6**, `server_addr`, typed `String`/Low: below the auto-select bar, and no
     ///   name term in its header to reach the other route.
+    /// - **The unpadded key**, `order_ref`. Its header opens the identifier gate and its
+    ///   values close it again, so it is typed `String`/Low and neither route reaches
+    ///   it. This is the miss to watch if the uniformity half of
+    ///   `column_values_look_like_keys` is ever relaxed.
     ///
     /// Not measured here. That surfacing is *adequate*: a warning on an unselected column
     /// is weaker than auto-selection with a redacting default, and this axis counts them
@@ -198,13 +229,21 @@ mod baseline {
     /// codebase made, and the next widening of the review tier would show up here as a
     /// regression while being an improvement. The direction that costs real utility, risk
     /// escalation on a benign column, is still guarded, by [`BENIGN_RISK_EXACT`].
-    pub(super) const REVIEW_COVERAGE: usize = 24;
+    pub(super) const REVIEW_COVERAGE: usize = 27;
     /// Benign look-alikes whose risk landed exactly where it should — neither
-    /// under-flagged (a leak) nor over-flagged (lost utility). Recorded at 14/15.
+    /// under-flagged (a leak) nor over-flagged (lost utility). Recorded at 17/18.
     ///
     /// The one shortfall is an over-flag, the safe direction for privacy and the
     /// expensive one for utility: `measurement`, holding dotted quads in a column
     /// plainly not about networking, still becomes `IpAddress`/Medium.
+    ///
+    /// The population grew from 15 to 18 with the identifier rule, and those three are
+    /// the price side of it rather than more of the same evidence: `status_code`, a
+    /// vocabulary of five codes; `region_ref`, a foreign key into a four-row dimension
+    /// table under a header that *is* in the identifier family; and `booking_ref`, free
+    /// text under one. Each fails a different one of the rule's gates — the header
+    /// family, the distinctness ratio, the per-value shape — so this number is what
+    /// notices if any one of the three is widened on its own.
     ///
     /// This started at 12/15. `client_name` and `legal_name`, both holding
     /// organization names, were false positives reachable in the shipped product —
@@ -234,9 +273,9 @@ mod baseline {
     /// with. An earlier version of this comment assigned `department_name` and
     /// `project_name` to the rejected group on the strength of their headers reading like
     /// organization units; their values contain no organization word at all.
-    pub(super) const BENIGN_RISK_EXACT: usize = 14;
+    pub(super) const BENIGN_RISK_EXACT: usize = 17;
     /// Benign look-alikes that draw the possible-person-name review warning. Recorded at
-    /// 5/15 — a third of the benign corpus.
+    /// 5/18 — just over a quarter of the benign corpus.
     ///
     /// This is the price of the review tier, stated as a number instead of a caveat. The
     /// tier fires on a header ending in a name term whose values pass
@@ -267,8 +306,9 @@ mod baseline {
     /// same commit — the discipline every other axis here gets. A rise means the warning is
     /// getting noisier, and noise is how a warning stops being read; at that point the
     /// question to re-open is not whether the tier is correct in principle but whether
-    /// users still act on it. Two-thirds of the benign corpus staying quiet is what makes
-    /// the warning worth showing at all, and that is the ratio this number protects.
+    /// users still act on it. Nearly three quarters of the benign corpus staying quiet is
+    /// what makes the warning worth showing at all, and that is the ratio this number
+    /// protects.
     ///
     /// Two further benign columns *are* surfaced and are deliberately not counted here,
     /// because they arrive by auto-selection rather than by the warning and this number is
@@ -954,6 +994,88 @@ fn cases() -> &'static [Case] {
             expected_detector: None,
             expected_risk_floor: PiiRisk::High,
         },
+        // --- Identifier columns whose keys are not digits --------------------
+        //
+        // Four alphabets under four ordinary `*_id` / `*_ref` headers. The corpus
+        // held none of these before: its only identifier case was `seq`, holding
+        // `1000001…`, which is the one shape the integer-corroborated header rule
+        // could already see. That is why the gap these probe stayed green for as long
+        // as it did, and why they are listed one alphabet at a time — recognising a
+        // letter prefix says nothing about recognising an opaque hex key.
+        Case {
+            challenge: Challenge::NonNumericKey,
+            header: "employee_id",
+            values: &[
+                "E1000", "E1001", "E1002", "E1003", "E1004", "E1005", "E1006", "E1007", "E1008",
+                "E1009", "E1010", "E1011",
+            ],
+            expected: DataType::NumericId,
+            expected_detector: None,
+            expected_risk_floor: PiiRisk::Medium,
+        },
+        Case {
+            challenge: Challenge::NonNumericKey,
+            header: "customer_id",
+            values: &[
+                "CUST-0042",
+                "CUST-0043",
+                "CUST-0044",
+                "CUST-0045",
+                "CUST-0046",
+                "CUST-0047",
+                "CUST-0048",
+                "CUST-0049",
+                "CUST-0050",
+                "CUST-0051",
+                "CUST-0052",
+                "CUST-0053",
+            ],
+            expected: DataType::NumericId,
+            expected_detector: None,
+            expected_risk_floor: PiiRisk::Medium,
+        },
+        // An opaque key with no prefix to recognise and no separator to lean on: the
+        // only thing saying it is a key is that twelve eight-character mixed
+        // letter-and-digit tokens are all different. If a future tightening of the
+        // shape test starts requiring a recognisable prefix, this is the case that
+        // says so.
+        Case {
+            challenge: Challenge::NonNumericKey,
+            header: "case_id",
+            values: &[
+                "a1b2c0d4", "a1b2c1d4", "9f3e2d1c", "7b6a5949", "3c2b1a09", "e5d4c3b2", "0a1b2c3d",
+                "4e5f6a7b", "8c9d0e1f", "2f3a4b5c", "6d7e8f90", "1a2b3c4d",
+            ],
+            expected: DataType::NumericId,
+            expected_detector: None,
+            expected_risk_floor: PiiRisk::Medium,
+        },
+        // Unpadded keys, and a recorded miss. The shape test asks that a column's
+        // values agree on a length, which is what separates a minted key from a
+        // hand-written label; keys counted up from one without padding do not, so
+        // this column is left unselected. Systems that export keys overwhelmingly
+        // zero-pad them — the three cases above are the common shape and this is the
+        // uncommon one — but the cost of that choice belongs in the instrument rather
+        // than in a caveat, and this is where a change that removes it will show up.
+        Case {
+            challenge: Challenge::NonNumericKey,
+            header: "order_ref",
+            values: &[
+                "REF-7",
+                "REF-83",
+                "REF-104",
+                "REF-1042",
+                "REF-9",
+                "REF-51",
+                "REF-6613",
+                "REF-70281",
+                "REF-312",
+                "REF-104213",
+            ],
+            expected: DataType::NumericId,
+            expected_detector: None,
+            expected_risk_floor: PiiRisk::Medium,
+        },
         // --- Benign look-alikes that must not be flagged --------------------
         Case {
             challenge: Challenge::BenignLookAlike,
@@ -1158,6 +1280,67 @@ fn cases() -> &'static [Case] {
             expected: DataType::NumericId,
             expected_detector: None,
             expected_risk_floor: PiiRisk::Medium,
+        },
+        // The cost side of reading a key shape as an identifier, one gate at a time.
+        // Every value below would pass the per-value shape test on its own, so each
+        // of these columns is what the column-level gates exist to refuse.
+        //
+        // A status vocabulary: five codes over twenty rows. `*_code` is deliberately
+        // outside the identifier header family — `status_code`, `reason_code`,
+        // `currency_code` and `product_code` dominate that suffix, and a rule that
+        // destroys a product key buys no privacy — so this column is not even
+        // offered to the rule. `Enum` is the reviewer's answer as well as the
+        // detector's: a repeated finite set is what it is.
+        Case {
+            challenge: Challenge::BenignLookAlike,
+            header: "status_code",
+            values: &[
+                "ACT1", "PND2", "CLS3", "HLD4", "CAN5", "ACT1", "PND2", "CLS3", "HLD4", "CAN5",
+                "ACT1", "PND2", "CLS3", "HLD4", "CAN5", "ACT1", "PND2", "CLS3", "HLD4", "CAN5",
+            ],
+            expected: DataType::Enum,
+            expected_detector: None,
+            expected_risk_floor: PiiRisk::Low,
+        },
+        // A foreign key into a four-row dimension table, under a header that *is* in
+        // the identifier family. Nothing about the values distinguishes it from
+        // `employee_id` above; what does is that there are four of them across twenty
+        // rows, which is the distinctness gate's entire job. Read the direction
+        // carefully: the same gate rejects a genuine low-cardinality foreign key, so
+        // this case pins a decision that costs recall, not a free win.
+        Case {
+            challenge: Challenge::BenignLookAlike,
+            header: "region_ref",
+            values: &[
+                "RGN-01", "RGN-02", "RGN-03", "RGN-04", "RGN-01", "RGN-02", "RGN-03", "RGN-04",
+                "RGN-01", "RGN-02", "RGN-03", "RGN-04", "RGN-01", "RGN-02", "RGN-03", "RGN-04",
+                "RGN-01", "RGN-02", "RGN-03", "RGN-04",
+            ],
+            expected: DataType::Enum,
+            expected_detector: None,
+            expected_risk_floor: PiiRisk::Low,
+        },
+        // Free text under an identifier header, which is the ordinary fate of a
+        // nullable reference column in a system people type into. The header opens
+        // the gate; the values have to close it.
+        Case {
+            challenge: Challenge::BenignLookAlike,
+            header: "booking_ref",
+            values: &[
+                "confirmed by phone",
+                "rebooked for tuesday",
+                "no answer, left message",
+                "cancelled at the desk",
+                "waiting on the deposit",
+                "moved to the later slot",
+                "guest asked for a quiet room",
+                "arriving after midnight",
+                "paid the balance in cash",
+                "needs an accessible room",
+            ],
+            expected: DataType::String,
+            expected_detector: None,
+            expected_risk_floor: PiiRisk::Low,
         },
         // --- Partly-populated columns ---------------------------------------
         Case {

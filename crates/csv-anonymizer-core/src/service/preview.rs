@@ -1,13 +1,25 @@
 use super::{
-    apply_column_controls, cardinality_warning_for_column, possible_person_name_warning_for_column,
-    preview_warning_for_column, validate_column_indices,
+    cardinality_warning_for_column, possible_person_name_warning_for_column,
+    preview_warning_for_column, select_columns,
 };
 use crate::error::Result;
-use crate::metadata::apply_column_selection;
 use crate::preview::generate_column_preview;
 use crate::smart::{SmartReplacementProvider, prepare_smart_replacements_from_rows};
 use crate::strategies::TransformState;
 use crate::types::{ColumnControl, ColumnMetadata, PreviewData};
+
+/// Rows a preview reads to display a requested sample count.
+///
+/// Twice the request, because a preview drops rows that a column's strategy leaves
+/// unchanged and would otherwise run short of samples to show.
+///
+/// Named once for both workflows: the file preview and the paste previews show the
+/// same window, and as a bare expression in one of them and a named function in the
+/// other the two could be widened apart, leaving the same paste and file showing a
+/// different number of rows.
+pub(crate) fn display_row_count(sample_count: usize) -> usize {
+    sample_count.saturating_mul(2).max(1)
+}
 
 /// `population_values` is how many values each column holds in the whole input, not
 /// in `rows` — the cardinality warning is judged against the column's real size, and
@@ -22,17 +34,11 @@ pub(crate) fn preview_rows_with_smart_provider(
     population_values: usize,
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<PreviewData> {
-    validate_column_indices(metadata, columns)?;
-    let controlled = apply_column_controls(metadata, controls)?;
-    let selected_metadata = apply_column_selection(&controlled, columns);
+    let selected_metadata = select_columns(metadata, columns, controls)?;
     let smart_replacements =
         prepare_smart_replacements_from_rows(rows, &selected_metadata, None, provider)?;
     let smart_replacement_entries = smart_replacements.to_entries();
-    let mut state = if smart_replacements.has_activity() {
-        TransformState::with_smart_replacements(smart_replacements)
-    } else {
-        TransformState::new()
-    };
+    let mut state = TransformState::with_smart_replacements_if_active(smart_replacements);
     let mut previews = Vec::new();
 
     for column in selected_metadata.iter().filter(|column| column.is_selected) {

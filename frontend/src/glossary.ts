@@ -1,27 +1,11 @@
 export const glossaryTerms = {
-  standardMasking: {
-    title: 'Standard CSV transform',
-    body: 'Transforms selected cells in the original row-level CSV and leaves unselected columns unchanged. It is useful local masking and pseudonymization, not a formal anonymity guarantee.',
-  },
-  typeOverride: {
-    title: 'Type override',
-    body: 'Manual correction when automatic detection picked the wrong data type.',
-  },
   strategy: {
     title: 'Strategy',
     body: 'How selected cell values are transformed in standard row-level mode. Auto and Pseudonymize use type-based rules; Mask, Redact, Tokenize, Smart replacement, and Pass through are explicit choices.',
   },
-  role: {
-    title: 'Column category',
-    body: 'The detector category used in the report to explain why a column was considered identifying or sensitive.',
-  },
   risk: {
     title: 'Risk',
     body: 'Estimated likelihood that a column contains personal or identifying data.',
-  },
-  pii: {
-    title: 'PII',
-    body: 'Personally identifiable information: data that can identify a person directly or indirectly.',
   },
   directIdentifier: {
     title: 'Direct ID',
@@ -30,14 +14,6 @@ export const glossaryTerms = {
   quasiIdentifier: {
     title: 'Quasi-ID',
     body: 'A value that may identify someone when combined with other columns, such as timestamp, postal code, country, IP, or UUID.',
-  },
-  attribute: {
-    title: 'Attribute',
-    body: 'Regular data kept for utility and not treated as an identifier.',
-  },
-  exclude: {
-    title: 'Exclude',
-    body: 'A column intentionally left out of protection because it is not useful, not sensitive, or should stay unchanged.',
   },
   pseudonymize: {
     title: 'Pseudonymize',

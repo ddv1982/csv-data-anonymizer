@@ -25,4 +25,5 @@ default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
 
 [dev-dependencies]
+tauri = { workspace = true, features = ["test"] }
 tempfile.workspace = true

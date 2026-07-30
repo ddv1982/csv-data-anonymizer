@@ -1,7 +1,10 @@
 use crate::error::{AnonymizerError, Result};
 use crate::random::random_string;
 use crate::smart::{SmartReplacementMap, value_identity_key};
-use crate::types::{AnonymizationStrategy, ColumnValueDistribution, TransformReport};
+use crate::types::{
+    AnonymizationStrategy, ColumnMetadata, ColumnValueDistribution, TransformReport,
+};
+use crate::uniqueness::RowUniquenessTracker;
 use rand::Rng;
 use std::collections::HashMap;
 
@@ -14,6 +17,10 @@ pub struct TransformState {
     mappers: HashMap<PseudonymDomain, PseudonymMapper>,
     ledgers: HashMap<usize, ColumnValueLedger>,
     smart_replacements: SmartReplacementMap,
+    /// Deliberately outside the `mapping_entries` budget below. Its entries are real
+    /// memory and are bounded, but by a ceiling of its own with a softer failure: see
+    /// [`Self::record_released_row`].
+    row_uniqueness: RowUniquenessTracker,
     report: TransformReport,
     /// Live entry count across every map in [`Self::mappers`] and [`Self::ledgers`].
     ///
@@ -33,6 +40,19 @@ impl TransformState {
         Self::default()
     }
 
+    /// A state carrying `smart_replacements` only when they hold something to carry.
+    ///
+    /// Every transform builds its state this way, so what counts as worth carrying —
+    /// [`SmartReplacementMap::if_active`] — is decided once. Split across the call
+    /// sites, a state built from an inert map would open a Local AI section in the
+    /// report of a run that used none, and one built from a map with rejections
+    /// dropped would omit the guard's refusals from a run that had them.
+    pub fn with_smart_replacements_if_active(smart_replacements: SmartReplacementMap) -> Self {
+        smart_replacements
+            .if_active()
+            .map_or_else(Self::new, Self::with_smart_replacements)
+    }
+
     pub fn with_smart_replacements(smart_replacements: SmartReplacementMap) -> Self {
         let smart_replacement_values = smart_replacements.len();
         let smart_replacement_requests = smart_replacements.requested_values();
@@ -42,6 +62,7 @@ impl TransformState {
             mappers: HashMap::new(),
             ledgers: HashMap::new(),
             smart_replacements,
+            row_uniqueness: RowUniquenessTracker::default(),
             report: TransformReport {
                 smart_replacement_requests,
                 smart_replacement_values,
@@ -59,57 +80,48 @@ impl TransformState {
             // arrive, because a distribution is not a running total: distinct and
             // singleton counts are only correct once the last row has been seen.
             column_value_distributions: self.column_value_distributions(),
+            // `None` until a row has actually been recorded, which is how the paths with
+            // no rows to speak of — unstructured text, a single pasted value — report an
+            // absent measurement rather than a clean one.
+            row_uniqueness: self.row_uniqueness.summary(),
             ..self.report.clone()
         }
     }
 
+    /// Records one transformed row against the joint re-identifiability measure.
+    ///
+    /// Separate from `record_pseudonymized_value` and called once per row rather
+    /// than once per value, because the whole point of this figure is that it cannot be
+    /// computed a column at a time.
+    ///
+    /// Its memory is bounded by a ceiling of its own rather than by
+    /// `MAPPING_ENTRY_CEILING`, for two reasons. Folding it in would start
+    /// refusing runs that stream fine today — a redact-only run costs zero mapping
+    /// entries, and charging it one per row would make a large redaction fail in the name
+    /// of a report. And the two have opposite failure modes: dropping mapping entries
+    /// silently corrupts the output, so that ceiling must refuse the run, while dropping
+    /// uniqueness classes costs only a figure, so this one stops measuring, says so
+    /// through `measurement_incomplete`, and lets the run finish.
+    pub fn record_released_row(&mut self, released: &[String], columns: &[ColumnMetadata]) {
+        self.row_uniqueness.record_row(released, columns);
+    }
+
     /// Bytes of resident memory one mapping entry costs, measured.
     ///
-    /// Measured on Linux with `VmHWM` read at the end of a one-column,
-    /// 1,000,000-row transform — the harness is
-    /// `strategies::tests::mapping_budget`, whose ignored tests print these figures
-    /// and say how to re-run them. The streaming floor is subtracted, so what
-    /// remains is the mapping's own cost:
-    ///
-    /// | Run | Peak RSS | Entries | Bytes per entry |
-    /// | --- | --- | --- | --- |
-    /// | Redact, all distinct | 11 MiB | 0 | — (floor) |
-    /// | Label, all distinct | 162 MiB | 1,000,000 | 158 |
-    /// | Pseudonymize, 250,000 distinct | 127 MiB | 750,000 | 162 |
-    /// | Pseudonymize, all distinct | 477 MiB | 3,000,000 | 163 |
-    ///
-    /// 160 is the middle of that 158–163 band. The band is narrow across two
-    /// structures with different value types — a ledger entry is a `String` key with
-    /// two `usize`s, a mapper entry is a `String` key with a `String` value — because
-    /// at these sizes the cost is dominated by the allocator and hash-table overhead
-    /// per entry rather than by the payload, which is what makes one figure per
-    /// *entry* meaningful at all.
-    ///
-    /// Range the data supports: keys of about 16 bytes, entry counts from 750,000 to
-    /// 3,000,000, on 64-bit Linux with the system allocator. Not tested: other
-    /// platforms or allocators, 32-bit targets, long values (a 200-byte cell pays its
-    /// own bytes on top of this overhead, twice over on a pseudonymizing strategy
-    /// since the value is also a key of the reverse map), or entry counts far above
-    /// 3,000,000, where the figure could drift with hash-table growth steps.
+    /// Peak-RSS measurements over one-column, 1,000,000-row transforms put the cost in
+    /// a 158–163 byte band; 160 is its middle. Measured only on 64-bit Linux with the
+    /// system allocator, short keys, and 750,000–3,000,000 entries — other platforms,
+    /// allocators and long values are not covered.
+    /// See docs/calibration.md#approximate-bytes-per-mapping-entry for the measurements behind this.
     pub(crate) const APPROXIMATE_BYTES_PER_MAPPING_ENTRY: usize = 160;
 
     /// Mapping entries a single run may hold before it is refused.
     ///
-    /// At [`Self::APPROXIMATE_BYTES_PER_MAPPING_ENTRY`] this is about 5.1 GB, and it
-    /// is chosen from both ends:
-    ///
-    /// - It must not refuse work the app does today. The largest run this project has
-    ///   measured is four all-distinct columns of a 63 MB input at about 1.9 GB, which
-    ///   is 4 × 1,000,000 × 3 = 12,000,000 entries. The ceiling sits 2.7× above that.
-    ///   A single all-distinct pseudonymized column of 1,000,000 rows — the README's
-    ///   worst measured single-column case, 477 MiB — is 3,000,000 entries, under a
-    ///   tenth of it.
-    /// - It must fire before the machine dies. 5.1 GB of mapping still leaves room on
-    ///   the 8 GB floor of a current desktop, where the alternative is the OOM killer
-    ///   taking the process with no message at all.
-    ///
-    /// Not tested: machines with less than 8 GB of RAM, and 32-bit builds, where 5.1 GB
-    /// is unreachable and this ceiling can never be the thing that fires.
+    /// About 5.1 GB at [`Self::APPROXIMATE_BYTES_PER_MAPPING_ENTRY`]: 2.7× above the
+    /// largest run this project has measured, and still under the 8 GB floor of a
+    /// current desktop. Not tested on machines with less than 8 GB, or on 32-bit
+    /// builds where 5.1 GB is unreachable and this ceiling can never fire.
+    /// See docs/calibration.md#mapping-entry-ceiling for the measurements behind this.
     ///
     /// Smart replacement's own value map is resident alongside this and is not counted
     /// here, but it needs no ceiling of its own: `smart::insert_unique_smart_value`
@@ -180,37 +192,36 @@ impl TransformState {
 
     /// Entries currently held across every pseudonym domain and every column ledger.
     ///
-    /// Public for the same reason [`Self::check_mapping_budget`] is: this state is
-    /// handed out to callers that drive [`super::transform_row_with_state`] over their
-    /// own input, and the memory it accumulates is theirs to watch.
-    pub fn mapping_entries(&self) -> usize {
+    /// Test-only: production reads the count through [`Self::check_mapping_budget_against`],
+    /// which is the only place the number is acted on rather than merely observed.
+    #[cfg(test)]
+    pub(crate) fn mapping_entries(&self) -> usize {
         self.mapping_entries
     }
 
     /// Refuses the run once the mapping has outgrown the crate-internal
-    /// `MAPPING_ENTRY_CEILING`, whose documentation carries the measurements behind it.
+    /// `MAPPING_ENTRY_CEILING`, whose documentation points at the measurements behind it.
     ///
-    /// Called once per row by the run loop in `crate::csv_io`, which is the only place
-    /// that can stop the growth: by the time a single row has been transformed the
-    /// entries it added are already resident, so this reports the ceiling being
-    /// *passed* rather than preventing it — one row's worth of entries beyond the
-    /// ceiling is well inside the estimate's own error.
-    ///
-    /// Public rather than `pub(crate)` because the loop is not always this crate's.
-    /// `transform_row_with_state` and `transform_value_with_state` are public and take
-    /// this state, so a caller streaming its own rows through them accumulates exactly
-    /// the same unbounded mapping and needs the same check available.
-    pub fn check_mapping_budget(&self) -> Result<()> {
+    /// Test-only. The run loop in `crate::csv_io` calls
+    /// [`Self::check_mapping_budget_against`] with the constant directly; this exists so a
+    /// test can assert the real ceiling is the one wired up, without naming the figure twice.
+    #[cfg(test)]
+    pub(crate) fn check_mapping_budget(&self) -> Result<()> {
         self.check_mapping_budget_against(Self::MAPPING_ENTRY_CEILING)
     }
 
-    /// [`Self::check_mapping_budget`] against an arbitrary ceiling.
+    /// Refuses the run once the mapping has outgrown `ceiling`.
     ///
-    /// Exists so the refusal can be tested without building the several gigabytes of
-    /// mapping the real ceiling stands for. It cannot change production behaviour:
-    /// the ceiling is an argument rather than a setting, so there is no global for a
-    /// test to install and nothing for it to leave behind, and the only caller outside
-    /// the tests is [`Self::check_mapping_budget`], which passes the constant.
+    /// This is the production entry point: the run loop in `crate::csv_io` calls it once per
+    /// row with [`Self::MAPPING_ENTRY_CEILING`]. That loop is the only place that can stop the
+    /// growth, and even it reports the ceiling being *passed* rather than preventing it — by
+    /// the time a row has been transformed its entries are already resident, which is well
+    /// inside the estimate's own error.
+    ///
+    /// The ceiling is an argument rather than a constant read here so the refusal can be
+    /// tested without building the several gigabytes the real one stands for. That cannot
+    /// change production behaviour: there is no global for a test to install and nothing for
+    /// it to leave behind.
     pub(crate) fn check_mapping_budget_against(&self, ceiling: usize) -> Result<()> {
         if self.mapping_entries <= ceiling {
             return Ok(());

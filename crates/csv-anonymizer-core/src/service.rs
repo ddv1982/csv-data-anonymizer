@@ -1,13 +1,13 @@
 use crate::csv_io::{count_csv_data_rows, read_detection_sample, read_sample};
 use crate::error::Result;
-use crate::metadata::{apply_column_selection, build_column_metadata};
+use crate::metadata::build_column_metadata;
 use crate::smart::{
-    SmartReplacementMap, SmartReplacementProvider, has_smart_replacement_columns,
-    prepare_smart_replacements_from_csv,
+    SmartReplacementProvider, prepare_smart_replacements_from_csv,
+    reusable_preview_smart_replacements,
 };
 use crate::types::{
-    AnonymizeData, AnonymizeParams, HeadersData, PreflightData, PreflightParams, PreviewData,
-    PreviewParams, ProcessControl, ProcessOptions,
+    AnonymizeData, AnonymizeParams, DETECTION_SAMPLE_ROW_FLOOR, DetectionCoverage, HeadersData,
+    PreflightData, PreflightParams, PreviewData, PreviewParams, ProcessControl, ProcessOptions,
 };
 use std::path::Path;
 
@@ -18,20 +18,18 @@ mod preview;
 mod privacy_report;
 
 pub(crate) use controls::{
-    apply_column_controls, cardinality_warning_for_column, possible_person_name_warning_for_column,
-    preview_warning_for_column, redaction_changes_structured_scalar_type, validate_column_indices,
+    cardinality_warning_for_column, possible_person_name_warning_for_column,
+    preview_warning_for_column, redaction_changes_structured_scalar_type, select_columns,
 };
-pub use path_validation::generate_default_output_path;
+use path_validation::generate_default_output_path;
 use path_validation::{ensure_output_differs_from_input, normalize_path, validate_output_path};
 use preflight::run_preflight;
-pub(crate) use preview::preview_rows_with_smart_provider;
+pub(crate) use preview::{display_row_count, preview_rows_with_smart_provider};
 pub(crate) use privacy_report::{build_privacy_report, count_transforming_selected_columns};
-
-const DEFAULT_SAMPLE_ROWS: usize = 100;
 
 /// Rows to classify on, given what a caller asked for.
 ///
-/// [`DEFAULT_SAMPLE_ROWS`] is a floor rather than a default: every entry point that
+/// [`DETECTION_SAMPLE_ROW_FLOOR`] is a floor rather than a default: every entry point that
 /// classifies a file routes its figure through here, so the "Sample rows" setting
 /// can only ask for *more* evidence than the default, never less.
 ///
@@ -44,16 +42,18 @@ const DEFAULT_SAMPLE_ROWS: usize = 100;
 /// on different types: measured on a column that is one-third email addresses, the
 /// detected type moves through Email, String and Enum as the sample grows from 1 row
 /// to 100. Whichever of those is right, the four commands disagreeing about it means
-/// the table promises a classification the run does not apply. Preview used to reach
-/// this floor with its *display* row count, which is capped below the floor, so at
-/// any "Sample rows" above the default it classified on less than analyze had.
-/// [`PreviewParams::sample_row_count`] is how it now hears the same figure.
+/// the table promises a classification the run does not apply. Preview must reach this
+/// floor through [`PreviewParams::sample_row_count`], never through its *display* row
+/// count, which is capped below the floor.
 ///
 /// A floor rather than a fixed value because a caller asking for more evidence is
 /// always safe: the sample is drawn from the whole input either way, so a larger
 /// figure refines the same estimate rather than shifting where it looks.
+///
+/// The paste workflow reaches the same floor through
+/// `direct_input::shared::paste_detection_sample_rows`, from the same constant.
 fn detection_sample_rows(requested: usize) -> usize {
-    DEFAULT_SAMPLE_ROWS.max(requested).max(1)
+    DETECTION_SAMPLE_ROW_FLOOR.max(requested).max(1)
 }
 
 #[derive(Debug, Clone)]
@@ -73,7 +73,7 @@ impl AnonymizerService {
     }
 
     pub fn analyze_csv(&self, file_path: impl AsRef<Path>) -> Result<HeadersData> {
-        self.analyze_csv_with_sample_rows(file_path, DEFAULT_SAMPLE_ROWS)
+        self.analyze_csv_with_sample_rows(file_path, DETECTION_SAMPLE_ROW_FLOOR)
     }
 
     /// Detection reads the whole file in one streaming pass and keeps
@@ -113,7 +113,14 @@ impl AnonymizerService {
     pub fn preflight_anonymization(&self, input: PreflightParams) -> Result<PreflightData> {
         let file_path = normalize_path(&input.file_path)?;
         let headers = self.analyze_csv_with_sample_rows(&file_path, input.sample_row_count)?;
-        run_preflight(&file_path, headers.columns, input)
+        // Coverage of the pass that just classified the file, not a fresh count: the
+        // detection sample reads every row and keeps a bounded spread, so both figures
+        // fell out of work already done.
+        let coverage = DetectionCoverage::rows(
+            detection_sample_rows(input.sample_row_count).min(headers.row_count),
+            headers.row_count,
+        );
+        run_preflight(&file_path, headers.columns, input, coverage)
     }
 
     pub fn preview_anonymization(&self, input: PreviewParams) -> Result<PreviewData> {
@@ -136,8 +143,7 @@ impl AnonymizerService {
         let metadata = build_column_metadata(&detection_sample.headers, &detection_sample.rows);
         // Displayed rows are a separate, head-anchored window: the user expects
         // the preview to show the file's opening rows, not the detection spread.
-        let display_row_count = input.sample_count.saturating_mul(2).max(1);
-        let display = read_sample(&file_path, display_row_count)?;
+        let display = read_sample(&file_path, display_row_count(input.sample_count))?;
         preview::preview_rows_with_smart_provider(
             &metadata,
             &display.rows,
@@ -158,7 +164,7 @@ impl AnonymizerService {
     }
 
     pub fn anonymize_csv(&self, input: AnonymizeParams) -> Result<AnonymizeData> {
-        self.anonymize_csv_with_sample_rows(input, DEFAULT_SAMPLE_ROWS)
+        self.anonymize_csv_with_sample_rows(input, DETECTION_SAMPLE_ROW_FLOOR)
     }
 
     pub fn anonymize_csv_with_sample_rows(
@@ -174,7 +180,11 @@ impl AnonymizerService {
         input: AnonymizeParams,
         control: &mut ProcessControl<'_>,
     ) -> Result<AnonymizeData> {
-        self.anonymize_csv_with_sample_rows_and_control(input, DEFAULT_SAMPLE_ROWS, Some(control))
+        self.anonymize_csv_with_sample_rows_and_control(
+            input,
+            DETECTION_SAMPLE_ROW_FLOOR,
+            Some(control),
+        )
     }
 
     pub fn anonymize_csv_with_sample_rows_and_control(
@@ -203,14 +213,11 @@ impl AnonymizerService {
         let output_path = validate_output_path(&input.output_path, input.force)?;
         let sample = read_detection_sample(&input_path, detection_sample_rows(sample_rows))?;
         let metadata = build_column_metadata(&sample.headers, &sample.rows);
-        validate_column_indices(&metadata, &input.columns)?;
-        let controlled_metadata = apply_column_controls(&metadata, &input.controls)?;
-        let selected_metadata = apply_column_selection(&controlled_metadata, &input.columns);
-        let preview_smart_replacements =
-            SmartReplacementMap::from_entries(&input.preview_smart_replacements);
-        let existing_smart_replacements = (preview_smart_replacements.has_activity()
-            && has_smart_replacement_columns(&selected_metadata))
-        .then_some(preview_smart_replacements);
+        let selected_metadata = select_columns(&metadata, &input.columns, &input.controls)?;
+        let existing_smart_replacements = reusable_preview_smart_replacements(
+            &input.preview_smart_replacements,
+            &selected_metadata,
+        );
         let smart_replacements = prepare_smart_replacements_from_csv(
             &input_path,
             &selected_metadata,
@@ -218,9 +225,7 @@ impl AnonymizerService {
             existing_smart_replacements.as_ref(),
             provider,
         )?;
-        let smart_replacements = smart_replacements
-            .has_activity()
-            .then_some(smart_replacements);
+        let smart_replacements = smart_replacements.if_active();
         let result = crate::csv_io::process_file_with_control_and_overwrite(
             &input_path,
             &output_path,
@@ -238,7 +243,11 @@ impl AnonymizerService {
             row_count: result.row_count,
             columns_anonymized: count_transforming_selected_columns(&selected_metadata),
             duration_ms: result.duration_ms,
-            privacy_report: build_privacy_report(&selected_metadata, result.transform_report),
+            privacy_report: build_privacy_report(
+                &selected_metadata,
+                result.transform_report,
+                DetectionCoverage::from_detection_sample(&sample),
+            ),
         })
     }
 }

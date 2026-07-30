@@ -79,21 +79,8 @@ fn does_not_detect_names_without_header_context() {
 #[test]
 fn applies_column_selection_without_mutating_source() {
     let metadata = vec![ColumnMetadata {
-        header_label_is_ambiguous: false,
-        name: "email".to_string(),
-        source_path: None,
-        index: 0,
-        detected_type: DataType::Email,
-        confidence: crate::types::Confidence::High,
-        detection_trace: None,
-        privacy_findings: Vec::new(),
-        privacy_evidence: Vec::new(),
         pii_risk: PiiRisk::High,
-        sample_values: vec![],
-        sample_value_distribution: Default::default(),
-        empty_format: crate::types::EmptyFormat::EmptyString,
-        is_selected: false,
-        strategy: AnonymizationStrategy::Auto,
+        ..crate::test_support::column(0, "email", DataType::Email, AnonymizationStrategy::Auto)
     }];
 
     let selected = apply_column_selection(&metadata, &[0]);
@@ -194,23 +181,16 @@ fn default_strategy_redacts_medium_and_high_risk_columns() {
     assert_eq!(metadata[3].strategy, AnonymizationStrategy::Auto);
 }
 
+/// An unselected generic-text column, varied on the two things auto-selection reads.
+///
+/// `DataType::String` rather than the `Default` of `Unknown` because these tests ask
+/// whether a column is auto-selected on its *risk and values* alone, and a type that
+/// carries a finding of its own would answer for them.
 fn column_metadata(pii_risk: PiiRisk, sample_values: Vec<String>) -> ColumnMetadata {
     ColumnMetadata {
-        header_label_is_ambiguous: false,
-        name: "field".to_string(),
-        source_path: None,
-        index: 0,
-        detected_type: DataType::String,
-        confidence: crate::types::Confidence::High,
-        detection_trace: None,
-        privacy_findings: Vec::new(),
-        privacy_evidence: Vec::new(),
         pii_risk,
         sample_values,
-        sample_value_distribution: Default::default(),
-        empty_format: crate::types::EmptyFormat::EmptyString,
-        is_selected: false,
-        strategy: AnonymizationStrategy::Auto,
+        ..crate::test_support::column(0, "field", DataType::String, AnonymizationStrategy::Auto)
     }
 }
 

@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use crate::types::{Confidence, DataType, DetectionResult};
 
 use super::header;
@@ -30,20 +32,12 @@ pub(in crate::detection) struct HeaderDetection {
 
 /// A confidence that has already cleared the Low filter every header rule applies.
 ///
-/// [`Confidence::Low`] is deliberately not representable here, and that absence is the
-/// whole point. A header rule fires only when enough sampled values corroborate the
-/// header, so a Low ratio means "no detection" rather than "a weak detection" — every
-/// rule in this module returns `None` for it. Because the flag
-/// [`first_header_detection`] hands to `trace_item` is exactly that judgement, the two
-/// used to be written twice: once as the filter that produced the `Option`, and once as
-/// a `confidence != Confidence::Low` comparison at the trace item. The second copy could
-/// only ever evaluate to `true`, which read to a maintainer as a live rejection path that
-/// does not exist, and would have silently gone wrong the day a rule started reporting a
-/// Low detection instead of declining.
-///
-/// So the filter lives in [`Self::from_match_ratio`] and nowhere else, and the flag is
-/// [`Self::ACCEPTED`]. A rule that wants to report a rejected header detection cannot
-/// express it in this type and has to change both, together.
+/// [`Confidence::Low`] is not representable here, and the type is what enforces that: a
+/// header rule fires only when enough sampled values corroborate the header, so a Low
+/// ratio means "no detection" rather than "a weak detection". The filter lives in
+/// [`Self::from_match_ratio`] and nowhere else, which is why the trace item's `accepted`
+/// flag is the constant [`Self::ACCEPTED`]. A rule that wants to report a *rejected*
+/// header detection cannot express it in this type and has to change both, together.
 #[derive(Clone, Copy)]
 enum CorroboratedConfidence {
     Medium,
@@ -206,6 +200,185 @@ pub(in crate::detection) fn detect_header_numeric_id(
         DataType::NumericId,
         |_, values| count_matching(values, is_unsigned_integer),
     )
+}
+
+/// The same question [`detect_header_numeric_id`] asks, for a column whose keys are
+/// not written in digits.
+///
+/// That rule corroborates an identifier header with [`is_unsigned_integer`], so on its
+/// own it would leave whether an `*_id` column is called an identifier turning on the
+/// alphabet its keys happen to use: `employee_id` holding `1000…` classified and
+/// auto-selected, the same header holding `E1000…` left as `String`/Low. An unselected
+/// primary key such as `PT-4471` joins a released file straight back to the source
+/// system, so the alphabet must not decide it.
+///
+/// Deliberately *not* a widening of [`detect_header_numeric_id`]: this rule requires a
+/// letter in the value, so the two are disjoint and no column that rule classifies can
+/// be re-classified here. The only difference between them is the alphabet.
+///
+/// Why the `opaque_identifier` kind is scoped the way it is. Its terms are the
+/// identifier words themselves — `id`, `identifier`, `uid`, `ref`, `reference` and
+/// their translations — matched as *tokens*, so `patient_id`, `caseRef` and
+/// `identificador` open the gate and `valid`, `humid` and `grid` do not: a token match
+/// needs a separator or a camel-case boundary, which is exactly what distinguishes a
+/// compound header from a word that happens to end in those letters. Three families
+/// that read as identifiers were left out on purpose, each because its false positives
+/// are common and expensive:
+///
+/// - `*_code`, because `status_code`, `reason_code`, `currency_code` and
+///   `product_code` dominate the population. The cardinality gate below rejects the
+///   first three, but nothing rejects a SKU column, and destroying a product key buys
+///   no privacy. A bare `code` header is still reachable through the `numeric_id` kind.
+/// - `*_key`, because `api_key` and `session_key` are secrets, already classified High
+///   by the `secret` branch of the privacy analysis, and `sort_key`/`partition_key` are
+///   structural rather than referential.
+/// - `*_no` and `*_number`, because `no` is an ordinary English word, `phone_number`
+///   and `house_number` belong to rules that run earlier, and the entity-qualified
+///   forms that matter (`customer number`, `order number`, …) are already enumerated
+///   under `numeric_id`.
+///
+/// `numeric_id` is consulted alongside the new kind so that the entity-qualified and
+/// non-English terms already enumerated there — `klantnummer`, `kundennummer`,
+/// `numero client` — reach the alphanumeric case too; they are single compact words
+/// that no token rule could match.
+pub(in crate::detection) fn detect_header_opaque_identifier(
+    header: &header::HeaderAnalysis,
+    non_empty_values: &[&String],
+    total_samples: usize,
+    _locale: &LocaleContext,
+) -> Option<HeaderDetection> {
+    // Asked before the header, because it is the expensive half of the judgement and
+    // the half that can decline for a reason the ratio below cannot express: a column
+    // can be 100% key-shaped values and still be a category.
+    if !column_values_look_like_keys(non_empty_values) {
+        return None;
+    }
+
+    header_signal_detection(
+        header,
+        non_empty_values,
+        total_samples,
+        &["opaque_identifier", "numeric_id"],
+        DataType::NumericId,
+        |_, values| count_matching(values, is_alphanumeric_key_token),
+    )
+}
+
+/// Punctuation an exported key may carry. Deliberately short: `.` is excluded because
+/// it makes `1.2.3` and `report.pdf` keys, and everything outside this set implies a
+/// value with internal structure that some other rule owns — `@` an address, `:` a
+/// URL, whitespace a phrase.
+const KEY_TOKEN_SEPARATORS: [char; 3] = ['-', '_', '/'];
+
+/// Whether one value is shaped like a key an integer rule cannot read.
+///
+/// Both the letter and the digit are required, and they do different jobs. The digit is
+/// what separates a key from a word, so `ACTIVE`, `PENDING` and `EUR` are rejected on
+/// their own shape rather than left to the cardinality gate. The letter is what keeps
+/// this rule disjoint from [`detect_header_numeric_id`]: a column of bare integers
+/// cannot match here, so nothing that rule already classifies can be re-classified by
+/// this one.
+///
+/// The length floor of three is what keeps `house_number` values (`12`, `14b`) out.
+fn is_alphanumeric_key_token(value: &str) -> bool {
+    let trimmed = value.trim();
+    (3..=64).contains(&trimmed.len())
+        && trimmed.chars().all(|character| {
+            character.is_ascii_alphanumeric() || KEY_TOKEN_SEPARATORS.contains(&character)
+        })
+        && trimmed.chars().any(|character| character.is_ascii_digit())
+        && trimmed
+            .chars()
+            .any(|character| character.is_ascii_alphabetic())
+}
+
+/// The part of a key's shape that a column is expected to hold constant.
+///
+/// Length and separator presence only, because [`is_alphanumeric_key_token`] has
+/// already pinned the rest of the character-class set — every counted value has at
+/// least one letter and at least one digit. So `CUST-0042` and `CUST-0043` share a
+/// profile, `E1000` and `a1b2c3d4` each share one with their own column, and a column
+/// mixing `AB-12`, `X9`, and `ORDER-2024-000117` shares none.
+type KeyTokenProfile = (usize, bool);
+
+fn key_token_profile(value: &str) -> Option<KeyTokenProfile> {
+    if !is_alphanumeric_key_token(value) {
+        return None;
+    }
+    let trimmed = value.trim();
+    Some((
+        trimmed.len(),
+        trimmed
+            .chars()
+            .any(|character| KEY_TOKEN_SEPARATORS.contains(&character)),
+    ))
+}
+
+/// Share of a column's values that must agree, both on shape and on being distinct.
+///
+/// Three quarters, the same share `privacy`'s name gate requires, and for the same
+/// reason: a real key column carries the odd `UNKNOWN`, `N/A` or legacy-format row, and
+/// one such value must not disqualify it, while a column that is mostly something else
+/// cannot reach it.
+const MIN_KEY_AGREEMENT_NUMERATOR: usize = 3;
+const MIN_KEY_AGREEMENT_DENOMINATOR: usize = 4;
+
+/// Minimum non-empty values before the distinctness test is allowed to decide anything.
+///
+/// Below this, "mostly distinct" is not evidence — four different values out of four is
+/// equally true of a key column and of a five-value status vocabulary seen once each.
+/// Production analyses at least 100 rows (`types::DETECTION_SAMPLE_ROW_FLOOR`), so this only
+/// binds on hand-written fixtures and on files that really are that short.
+const MIN_KEY_VALUES: usize = 8;
+
+/// Whether the column as a whole behaves like a key column, as opposed to a category
+/// vocabulary that happens to be spelled in an identifier-ish alphabet.
+///
+/// Two aggregates, because neither alone is enough. Uniformity says the values were
+/// minted by one generator rather than written by hand. Distinctness is what separates
+/// a key from a label: `status_code` holding five values across five thousand rows
+/// passes every per-value shape test this module has and is not an identifier, and the
+/// column-level ratio is the only place that fact is visible.
+///
+/// Two known misses, both in the safe direction for utility and the unsafe one for
+/// privacy, and both stated rather than hidden:
+///
+/// - A low-cardinality *foreign* key — `customer_id` in an orders table with fifty
+///   customers — is indistinguishable from a category label by shape alone, and this
+///   rejects it. Sampling helps more than it looks: `DETECTION_SAMPLE_CAP` reads at
+///   most 200 values, so a key column with hundreds of distinct values still reads as
+///   nearly all-distinct.
+/// - Unpadded variable-width keys (`CUST-1` through `CUST-1000`) fail the uniformity
+///   half. Exported systems zero-pad precisely to avoid this, which is why the trade is
+///   worth making, but it is a trade.
+fn column_values_look_like_keys(non_empty_values: &[&String]) -> bool {
+    if non_empty_values.len() < MIN_KEY_VALUES {
+        return false;
+    }
+
+    let mut profiles: HashMap<KeyTokenProfile, usize> = HashMap::new();
+    for value in non_empty_values {
+        if let Some(profile) = key_token_profile(value) {
+            *profiles.entry(profile).or_default() += 1;
+        }
+    }
+    let modal_profile_count = profiles.into_values().max().unwrap_or(0);
+    if !clears_key_agreement_share(modal_profile_count, non_empty_values.len()) {
+        return false;
+    }
+
+    // Case-folded, because a key column that spells the same key `AB-1` and `ab-1` is
+    // one key written twice, and counting it as two would let a two-value vocabulary
+    // masquerade as distinct.
+    let distinct: HashSet<String> = non_empty_values
+        .iter()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .collect();
+    clears_key_agreement_share(distinct.len(), non_empty_values.len())
+}
+
+fn clears_key_agreement_share(count: usize, total: usize) -> bool {
+    count * MIN_KEY_AGREEMENT_DENOMINATOR >= total * MIN_KEY_AGREEMENT_NUMERATOR
 }
 
 fn detect_header_phone(

@@ -2,11 +2,69 @@ use crate::detection::{
     POSSIBLE_PERSON_NAME_DETECTOR, analyze_column_privacy, classify_pii_risk, max_pii_risk,
 };
 use crate::error::{AnonymizerError, Result};
-use crate::strategies::STRUCTURED_SCALAR_REDACTION_WARNING;
+use crate::metadata::apply_column_selection;
+use crate::strategies::{MASK_STRUCTURE_DISCLOSURE, STRUCTURED_SCALAR_REDACTION_WARNING};
 use crate::types::{
     AnonymizationStrategy, ColumnControl, ColumnMetadata, ColumnValueDistribution,
     FrequencyInversionRisk, PreviewWarning, WarningSeverity,
 };
+
+/// The metadata a run acts on, from a caller's column list and controls.
+///
+/// Three steps in a fixed order — check the indices exist, apply the type and
+/// strategy overrides, then mark the selection — and the order is the point.
+/// Selecting before applying the controls would mark the selection on metadata the
+/// overrides then replace, so a column the user re-typed would be transformed as the
+/// detector classified it; skipping the index check lets an out-of-range column be
+/// silently dropped instead of reported. Every entry point that turns a request into
+/// a run goes through here — file preview, file run, the paste runs and preflight —
+/// so none of them can be given a different answer about which columns are in the
+/// run, and about how.
+pub(crate) fn select_columns(
+    metadata: &[ColumnMetadata],
+    columns: &[usize],
+    controls: &[ColumnControl],
+) -> Result<Vec<ColumnMetadata>> {
+    let report = select_columns_reporting_errors(metadata, columns, controls);
+    match report.index_error.or(report.control_error) {
+        Some(error) => Err(error),
+        None => Ok(report.metadata),
+    }
+}
+
+/// [`select_columns`] for preflight, which reports every problem rather than
+/// stopping at the first.
+///
+/// Preflight's whole job is to list what would block a run, so it cannot abort on
+/// step one and leave the later steps' verdicts unknown. It gets the same three steps
+/// in the same order — this is what [`select_columns`] itself is built from — with a
+/// failing step's error handed back instead of returned. A failed control application
+/// falls back to the uncontrolled metadata so the remaining checks still have columns
+/// to judge; that selection is never used for a run, because the error it came with
+/// is a blocker.
+pub(crate) struct ColumnSelectionReport {
+    pub(crate) metadata: Vec<ColumnMetadata>,
+    pub(crate) index_error: Option<AnonymizerError>,
+    pub(crate) control_error: Option<AnonymizerError>,
+}
+
+pub(crate) fn select_columns_reporting_errors(
+    metadata: &[ColumnMetadata],
+    columns: &[usize],
+    controls: &[ColumnControl],
+) -> ColumnSelectionReport {
+    let index_error = validate_column_indices(metadata, columns).err();
+    let (controlled, control_error) = match apply_column_controls(metadata, controls) {
+        Ok(controlled) => (controlled, None),
+        Err(error) => (metadata.to_vec(), Some(error)),
+    };
+
+    ColumnSelectionReport {
+        metadata: apply_column_selection(&controlled, columns),
+        index_error,
+        control_error,
+    }
+}
 
 pub(crate) fn validate_column_indices(
     metadata: &[ColumnMetadata],
@@ -78,7 +136,7 @@ pub(crate) fn preview_warning_for_column(column: &ColumnMetadata) -> Option<Prev
             "Pass-through leaves selected values unchanged.".to_string()
         }
         AnonymizationStrategy::LocalAi => {
-            "Smart replacement uses Local AI on your device. Review the preview before writing output."
+            "Smart replacement uses Local AI on your device; candidates that would re-emit a real value are rejected and fall back to rule-based replacement, never to the original. Review the preview before writing output."
                 .to_string()
         }
         AnonymizationStrategy::Redact if redaction_changes_structured_scalar_type(column) => {
@@ -89,12 +147,31 @@ pub(crate) fn preview_warning_for_column(column: &ColumnMetadata) -> Option<Prev
                 .to_string()
         }
         AnonymizationStrategy::Redact => return None,
-        AnonymizationStrategy::Mask | AnonymizationStrategy::Tokenize => return None,
+        // Masking must disclose rather than return `None`: a column rendered as
+        // `*** ** *****` looks maximally destroyed and publishes its word count and
+        // per-word letter counts exactly. Said before the run, while the user can still
+        // pick Redact or Label, rather than only in the report afterwards.
+        AnonymizationStrategy::Mask => MASK_STRUCTURE_DISCLOSURE.to_string(),
+        // Tokenize is genuinely opaque — a fresh `tok_...` of fixed width keeps nothing
+        // of the source's shape — so there is nothing to disclose here. Its
+        // re-linkability is covered by `cardinality_warning_for_column`.
+        AnonymizationStrategy::Tokenize => return None,
         AnonymizationStrategy::Auto | AnonymizationStrategy::Pseudonymize => {
             if column.detected_type.uses_default_pass_through() {
                 format!("{} currently uses pass-through behavior.", column.name)
             } else {
-                return None;
+                // The rule-based transformers are format-preserving on purpose, and
+                // the preview shows old and new side by side — but a reader comparing
+                // `2024-06-15 10:30:45.123450` with `2023-12-02 10:30:45.123450` has to
+                // notice for themselves that the second half never moved. Naming what
+                // survives is the point of the disclosure.
+                match column.detected_type.pseudonymization_preserves_structure() {
+                    Some(structure) => format!(
+                        "Rule-based replacement for {} preserves structure: {structure}.",
+                        column.name
+                    ),
+                    None => return None,
+                }
             }
         }
     };

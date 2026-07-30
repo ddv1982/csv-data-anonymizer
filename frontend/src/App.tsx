@@ -10,16 +10,32 @@ import { PasteDataWorkflowView } from './components/PasteDataWorkflowView'
 import { QuickDataTypeWorkflowView } from './components/QuickDataTypeWorkflowView'
 import { ThemeModeToggle } from './components/ThemeModeToggle'
 import { useAnonymizerWorkflow } from './hooks/useAnonymizerWorkflow'
+import { usePasteDataWorkflow } from './hooks/usePasteDataWorkflow'
+import { useQuickGenerateWorkflow } from './hooks/useQuickGenerateWorkflow'
 import { normalizeThemeMode, useTheme } from './hooks/useTheme'
 
 function App() {
   const workflow = useAnonymizerWorkflow()
+  // The three workflows are owned here, not by their views, because the tab strip and
+  // the topbar controls have to know during this render whether any of them is busy.
+  // The paste and quick views used to mirror their busy flag up through an effect, so
+  // that answer only arrived a paint late.
+  const pasteWorkflow = usePasteDataWorkflow({
+    settings: workflow.settings,
+    settingsLoaded: workflow.settingsLoaded,
+    localAi: workflow.localAi,
+    onError: workflow.setError,
+  })
+  const quickWorkflow = useQuickGenerateWorkflow({
+    settingsLoaded: workflow.settingsLoaded,
+    localAi: workflow.localAi,
+    onError: workflow.setError,
+  })
   const [activeMode, setActiveMode] = useState<InputMode>('csv')
   const [localAiSettingsOpen, setLocalAiSettingsOpen] = useState(false)
-  const [pasteBusy, setPasteBusy] = useState(false)
-  const [quickBusy, setQuickBusy] = useState(false)
   const themeMode = normalizeThemeMode(workflow.settings.themeMode)
-  const anyWorkflowBusy = workflow.isLoading || pasteBusy || quickBusy
+  const directInputBusy = pasteWorkflow.isBusy || quickWorkflow.isBusy
+  const anyWorkflowBusy = workflow.isLoading || directInputBusy
   useTheme(themeMode)
 
   return (
@@ -32,14 +48,14 @@ function App() {
             <LocalAiTopbarControl
               settings={workflow.settings}
               localAi={workflow.localAi}
-              disabled={workflow.settingsDisabled || pasteBusy || quickBusy}
+              disabled={workflow.settingsDisabled || directInputBusy}
               settingsOpen={localAiSettingsOpen}
               onToggleSettings={setLocalAiSettingsOpen}
               onUpdateSetting={workflow.updateSetting}
             />
             <ThemeModeToggle
               themeMode={themeMode}
-              disabled={workflow.settingsDisabled || pasteBusy || quickBusy}
+              disabled={workflow.settingsDisabled || directInputBusy}
               onChange={(mode) => workflow.updateSetting('themeMode', mode)}
             />
           </div>
@@ -69,12 +85,8 @@ function App() {
           className="mode-panel"
         >
           <PasteDataWorkflowView
-            settings={workflow.settings}
-            settingsLoaded={workflow.settingsLoaded}
-            localAi={workflow.localAi}
+            workflow={pasteWorkflow}
             onOpenLocalAiSettings={() => setLocalAiSettingsOpen(true)}
-            onError={workflow.setError}
-            onBusyChange={setPasteBusy}
           />
         </section>
 
@@ -86,11 +98,8 @@ function App() {
           className="mode-panel"
         >
           <QuickDataTypeWorkflowView
-            settingsLoaded={workflow.settingsLoaded}
-            localAi={workflow.localAi}
+            workflow={quickWorkflow}
             onOpenLocalAiSettings={() => setLocalAiSettingsOpen(true)}
-            onError={workflow.setError}
-            onBusyChange={setQuickBusy}
           />
         </section>
       </main>

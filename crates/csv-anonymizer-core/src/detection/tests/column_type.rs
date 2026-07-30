@@ -323,3 +323,109 @@ fn five_digit_sku_column_is_not_postal_without_context() {
     let result = detect_column_type_with_name("artikel", &values);
     assert_ne!(result.data_type, DataType::PostalCode);
 }
+
+/// The alphabet a system happens to mint its keys in must not decide whether the
+/// column is treated as an identifier.
+///
+/// Before `detect_header_opaque_identifier`, `employee_id` holding `1000…` was
+/// `NumericId`/Medium and auto-selected while the same header holding `E1000…` was
+/// `String`/Low and silently published. These are the four alphabets that gap covered:
+/// a letter prefix, a hyphenated key, an opaque hex key, and a non-English header.
+#[test]
+fn identifier_headers_are_detected_whatever_alphabet_their_keys_use() {
+    let cases: [(&str, Vec<String>); 4] = [
+        (
+            "employee_id",
+            (0..12)
+                .map(|index| format!("E{:04}", 1000 + index))
+                .collect(),
+        ),
+        (
+            "customer_id",
+            (0..12)
+                .map(|index| format!("CUST-{:04}", 42 + index))
+                .collect(),
+        ),
+        (
+            "case_id",
+            (0..12).map(|index| format!("a1b2c{index:01x}d4")).collect(),
+        ),
+        (
+            "klantnummer",
+            (0..12).map(|index| format!("KL{:05}", index)).collect(),
+        ),
+    ];
+
+    for (header, values) in cases {
+        let result = detect_column_type_with_name(header, &values);
+        assert_eq!(result.data_type, DataType::NumericId, "header {header}");
+        assert_ne!(result.confidence, Confidence::Low, "header {header}");
+    }
+}
+
+/// The clinical export from the failure this rule was written for: the primary key
+/// has to reach the same Medium risk the rest of the pipeline acts on, or the release
+/// report certifies a file that still joins back to the source system.
+#[test]
+fn an_alphanumeric_patient_key_reaches_the_risk_that_gets_it_selected() {
+    let values: Vec<String> = (0..12)
+        .map(|index| format!("PT-{:04}", 4471 + index))
+        .collect();
+    let detection = detect_column_type_with_name("patient_id", &values);
+    let privacy = analyze_column_privacy(
+        "patient_id",
+        0,
+        &values,
+        detection.data_type,
+        detection.confidence,
+    );
+
+    assert_eq!(detection.data_type, DataType::NumericId);
+    assert_eq!(
+        max_pii_risk(classify_pii_risk(detection.data_type), privacy.pii_risk),
+        PiiRisk::Medium
+    );
+}
+
+/// The cost side of the rule, and the reason it asks two column-level questions
+/// instead of only looking at value shape.
+///
+/// Every value in `status_code` is as key-shaped as `E1000` is; what says it is a
+/// category is that there are five of them. `note_ref` is the other direction: an
+/// identifier header over prose. And `part_no` checks that the header family stops
+/// where it was documented to — `*_no` is deliberately not in it.
+#[test]
+fn identifier_headers_over_categories_and_prose_are_not_identifiers() {
+    let status_code: Vec<String> = (0..40)
+        .map(|index| ["S1", "S2ND", "S3RD", "S4TH", "S5TH"][index % 5].to_string())
+        .collect();
+    let note_ref: Vec<String> = (0..12)
+        .map(|index| format!("call back on {index} about the invoice"))
+        .collect();
+    let part_no: Vec<String> = (0..12).map(|index| format!("PN-{:05}", index)).collect();
+
+    for (header, values) in [
+        ("status_code", status_code),
+        ("note_ref", note_ref),
+        ("part_no", part_no),
+    ] {
+        assert_ne!(
+            detect_column_type_with_name(header, &values).data_type,
+            DataType::NumericId,
+            "header {header}"
+        );
+    }
+}
+
+/// A column too short for "mostly distinct" to mean anything must not be read as a
+/// key column: four different values out of four is equally true of a status
+/// vocabulary seen once each.
+#[test]
+fn a_column_too_short_to_judge_cardinality_is_not_called_an_identifier() {
+    let values = strings(&["AB-01", "AB-02", "AB-03", "AB-04"]);
+
+    assert_ne!(
+        detect_column_type_with_name("shipment_id", &values).data_type,
+        DataType::NumericId
+    );
+}

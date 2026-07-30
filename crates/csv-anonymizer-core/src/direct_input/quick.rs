@@ -3,14 +3,12 @@ use crate::error::{AnonymizerError, Result};
 use crate::random::{random_string, random_uuid_v4};
 use crate::service::build_privacy_report;
 use crate::smart::{SmartReplacementProvider, prepare_smart_replacements_from_rows};
-use crate::strategies::transform_value_with_state;
+use crate::strategies::{TransformState, transform_value_with_state};
 use crate::types::{
-    AnonymizationStrategy, ColumnMetadata, ColumnValueDistribution, DataType, QuickGenerateParams,
-    QuickTransformData, SampleTransform, TransformContext,
+    AnonymizationStrategy, ColumnMetadata, ColumnValueDistribution, DataType, DetectionCoverage,
+    QuickGenerateParams, QuickTransformData, SampleTransform, TransformContext,
 };
 use rand::Rng;
-
-use super::shared::transform_state_for_smart_replacements;
 
 const QUICK_GENERATE_MAX_COUNT: usize = 1_000;
 const HEX_CHARSET: &str = "0123456789abcdef";
@@ -53,18 +51,13 @@ pub fn generate_quick_values_with_smart_provider(
         .collect::<Vec<_>>();
     let smart_replacements =
         prepare_smart_replacements_from_rows(&source_rows, &selected_columns, None, provider)?;
-    let mut state = transform_state_for_smart_replacements(smart_replacements);
+    let mut state = TransformState::with_smart_replacements_if_active(smart_replacements);
     let mut output_values = Vec::with_capacity(input.count);
     let mut samples = Vec::with_capacity(input.count);
 
     for (row_index, source_value) in source_values.iter().enumerate() {
         let anonymized = if should_transform_generated_value(input.data_type, input.strategy) {
-            let context = TransformContext {
-                column_name: &column.name,
-                column_index: column.index,
-                row_index,
-                empty_format: column.empty_format,
-            };
+            let context = TransformContext::for_column(&column, row_index);
             transform_value_with_state(source_value, &column, &context, &mut state)
         } else {
             source_value.clone()
@@ -81,7 +74,11 @@ pub fn generate_quick_values_with_smart_provider(
         output: output_values.join("\n"),
         row_count: output_values.len(),
         values: samples,
-        privacy_report: build_privacy_report(&selected_columns, state.report()),
+        privacy_report: build_privacy_report(
+            &selected_columns,
+            state.report(),
+            DetectionCoverage::complete(),
+        ),
     })
 }
 

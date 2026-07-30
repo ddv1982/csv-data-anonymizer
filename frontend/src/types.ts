@@ -56,6 +56,7 @@ export type SmartReplacementRejectionReason =
   | 'emptyOutput'
   | 'sameAsOriginal'
   | 'containsOriginal'
+  | 'matchesOtherOriginal'
   | 'controlCharacter'
   | 'duplicateOriginal'
   | 'duplicateOutput'
@@ -159,10 +160,20 @@ export interface AnalyzeResponse {
 
 export type PasteDataFormat = 'auto' | 'csv' | 'json' | 'xml' | 'yaml' | 'plainText' | 'logs'
 
+export type DetectionCoverageUnit = 'rows' | 'values'
+
+export interface DetectionCoverageSummary {
+  examined: number
+  total: number
+  unit: DetectionCoverageUnit
+  isPartial: boolean
+}
+
 export interface PasteAnalyzeData {
   format: PasteDataFormat
   rowCount: number
   rowCountIsComplete: boolean
+  detectionCoverage: DetectionCoverageSummary
   columns: ColumnMetadata[]
 }
 
@@ -296,6 +307,7 @@ export interface PrivacyReport {
   evidence: ReleaseEvidenceItem[]
   columnReports: ColumnReleaseReport[]
   columnValueDistributions: ColumnValueDistribution[]
+  rowUniqueness: RowUniquenessSummary | null
   utilityMetrics: UtilityMetric[]
   notes: string[]
 }
@@ -348,6 +360,105 @@ export interface ColumnValueDistribution {
   /** With `singletonValues`, what lets a sampled distribution estimate the whole column. */
   doubletonValues: number
   maxValueOccurrences: number
+}
+
+/** What survived a column that an outsider holding the original could match against. */
+export type MatchedPart =
+  | 'wholeValue'
+  | 'emailDomain'
+  | 'dateDecadeAndTime'
+  | 'survivingFormat'
+  | 'blankPattern'
+
+/**
+ * One column the joint measure read, and what it was matched on.
+ *
+ * The pairing is the point. Two flat lists of indices — value-carrying and format-only —
+ * cannot express the middle case, and the middle case is the common one on a pseudonymized
+ * file: a column whose domain or whose decade survived, but not its value.
+ */
+export interface MatchedColumn {
+  columnIndex: number
+  matchedOn: MatchedPart
+  /**
+   * Whether every measured row actually carried `matchedOn`, or only some of them did.
+   *
+   * `matchedOn` is fixed per column by its strategy and detected type; no cell value can
+   * change it. Cells can still fail to carry it — one that does not fit its column's detected
+   * shape is pseudonymized generically and projects to nothing — so a timestamp column where
+   * one value in a hundred parses was still described as the decade and time of all hundred.
+   * The counts already treat those rows as sharing nothing on that column, so this qualifies
+   * the wording and not the arithmetic.
+   */
+  matchedEveryRow: boolean
+}
+
+/**
+ * How exposed the released rows are once every column is read together.
+ *
+ * Every other privacy figure is per column, so a file can report no unselected high or
+ * medium risk column while postcode, birth date and job title jointly single out a third
+ * of its rows. This is the figure that says so.
+ *
+ * Counted over every column in `matchedColumns` — including the format-only ones, which
+ * contribute to the same classes — with the single exception of `distinctRowsAllColumns`.
+ * Absent, never zeroed, on the paths with no rows to measure: a summary claiming zero unique
+ * rows would read as a clean result from a check that never ran.
+ */
+export interface RowUniquenessSummary {
+  rowsMeasured: number
+  /**
+   * The columns the measure read, each with what an outsider could match it on, in column
+   * order. Empty means nothing released is matchable — not that the data is anonymous.
+   *
+   * Only columns that actually yielded something are listed, so no figure here rests on a
+   * column whose projection came back empty on every row.
+   */
+  matchedColumns: MatchedColumn[]
+  distinctClasses: number
+  /** Rows alone in their class: holding those columns for a person finds their row. */
+  uniqueRows: number
+  /** The k-anonymity floor. One freak record sets it, hence the percentile beside it. */
+  smallestClass: number
+  /** The class size at or below which the most exposed 5% of rows sit. */
+  fifthPercentileClassSize: number
+  /**
+   * Distinct rows over every released column, subset rule not applied. `null` when this
+   * histogram alone outgrew what the check keeps, which does not make the joint figures
+   * incomplete.
+   */
+  distinctRowsAllColumns: number | null
+  /** The *joint* measurement stopped early; every count above is then a lower bound. */
+  measurementIncomplete: boolean
+  /**
+   * What `uniqueRows` would have been with each matched column dropped, best first.
+   *
+   * The only figure here anyone can act on. Empty both when nothing was measured and when
+   * there is no matched column at all, which `dropAttributionIncomplete` tells apart.
+   */
+  dropColumnEffects: DropColumnEffect[]
+  /**
+   * `dropColumnEffects` is empty for a reason other than there being nothing to say: the
+   * joint measurement stopped, the file was wider than the attribution tracks, or the
+   * leave-one-out histograms outgrew their budget.
+   */
+  dropAttributionIncomplete: boolean
+}
+
+/**
+ * What dropping one column would do to the count of rows that stand alone.
+ *
+ * Measured, not estimated, and the two disagree often enough to be worth the pass: a column
+ * that looks revealing can carry almost nothing once its strategy has flattened it, and one
+ * of two correlated columns can be dropped without moving the count at all.
+ */
+export interface DropColumnEffect {
+  columnIndex: number
+  /**
+   * Rows still alone in their class with this column dropped and every other unchanged.
+   * Never larger than `uniqueRows` — removing a column only merges classes.
+   */
+  uniqueRowsWithout: number
 }
 
 export type AnonymizeJobState = 'running' | 'succeeded' | 'failed' | 'canceled'

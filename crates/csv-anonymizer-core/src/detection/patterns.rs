@@ -28,8 +28,7 @@ pub(super) const MAC_ADDRESS: &str = r"(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}";
 /// `010.0.0.1` is not a second spelling of `10.0.0.1`: some resolvers read a
 /// leading zero as octal and route it to `8.0.0.1` instead. A value that means
 /// different things to different readers is not an address, so neither path here
-/// calls it one — and both paths use this body so they cannot disagree about it,
-/// which they previously did in both directions.
+/// calls it one — and both paths use this body so they cannot disagree about it.
 pub(super) const IPV4: &str =
     r"(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)";
 
