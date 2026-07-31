@@ -13,6 +13,7 @@ import {
 import { formatToken } from '../utils/format'
 import { hasSampleData, maxVisibleColumns } from '../utils/columns'
 import { columnRedactionPlaceholder } from '../utils/redactionPlaceholder'
+import { completeEvidenceProfile } from '../utils/analysisContract'
 import { GlossaryLabel, HelpPopover } from './GlossaryPopover'
 import { RiskBadge } from './RiskBadge'
 
@@ -82,6 +83,7 @@ export function ColumnTable({
                 const sampleDataAvailable = hasSampleData(column)
                 const control = controls[column.index]
                 const selected = selectedSet.has(column.index)
+                const redactionPlaceholder = columnRedactionPlaceholder(column)
                 const rowClassName = ['clickable-row', selected ? 'selected-row' : '']
                   .filter(Boolean)
                   .join(' ')
@@ -148,9 +150,9 @@ export function ColumnTable({
                     <td className="privacy-evidence-column">
                       <span className="mobile-cell-label">Evidence</span>
                       <DecisionEvidenceCell column={column} />
-                      {(control?.strategy ?? column.strategy) === 'redact' && sampleDataAvailable ? (
+                      {(control?.strategy ?? column.strategy) === 'redact' && sampleDataAvailable && redactionPlaceholder ? (
                         <span className="column-note redaction-output">
-                          Output: <span className="mono">{columnRedactionPlaceholder(column)}</span>
+                          Output: <span className="mono">{redactionPlaceholder}</span>
                         </span>
                       ) : null}
                     </td>
@@ -179,7 +181,22 @@ export function ColumnTable({
 }
 
 function DecisionEvidenceCell({ column }: { column: ColumnMetadata }) {
-  const profile = column.evidenceProfile
+  const profile = completeEvidenceProfile(column.evidenceProfile)
+  if (!profile) {
+    return (
+      <span className="decision-evidence-cell">
+        <span className="decision-status status-uncertain">Unavailable</span>
+        <span className="decision-meaning">Decision evidence could not be displayed</span>
+        <span className="column-note">Re-select the file or update the application.</span>
+        <HelpPopover title="Column decision unavailable" triggerLabel={`Explain unavailable column decision for ${column.name}`}>
+          <div className="detector-popover-content">
+            <p>The analysis returned an incomplete decision profile for this column.</p>
+            <RawEvidenceDetails column={column} />
+          </div>
+        </HelpPopover>
+      </span>
+    )
+  }
   const semantic = profile.semanticDecision
   const format = profile.formatEvidence
   const statusLabel = semantic.status[0].toLocaleUpperCase() + semantic.status.slice(1)

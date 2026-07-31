@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.86 - 2026-07-31
+
+- Prevent an incomplete or incompatible column-decision profile from crashing React after file selection: validate file and pasted-data analysis responses before they enter UI state, reject malformed enums, counts, booleans, placeholders, and evidence arrays with a visible error, and leave file selection available for recovery.
+- Keep column rendering defensive if decision data is corrupted after validation, showing an explicit unavailable state and withholding any redaction-output claim when the backend did not provide an authoritative placeholder.
+- Replace an otherwise blank window after an unexpected render exception with a recovery screen that confirms the source file was not changed, offers an application reload, and includes a stable non-sensitive diagnostic code for support and regression tracking.
+- Add unit and browser regressions for missing profiles, unsafe evidence entries, invalid numeric and enum fields, graceful file-workflow recovery, and the top-level render boundary.
+
 ## v1.0.85 - 2026-07-31
 
 - Separate a value's detected format from its privacy meaning, so UUID shape alone reports only a persistent identifier and no longer asserts that an entity, location, or animal key is a network or device identifier. Require independent device-specific header evidence before using `[NETWORK_ID]`, and resolve mixed headers by explicit semantic precedence so credential evidence wins over weaker device context.

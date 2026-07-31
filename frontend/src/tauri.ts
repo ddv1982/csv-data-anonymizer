@@ -1,6 +1,7 @@
 import { setTheme as setTauriTheme } from '@tauri-apps/api/app'
 import { invoke } from '@tauri-apps/api/core'
 import { defaultSettings } from './defaults'
+import { validateAnalyzeResponse, validatePasteAnalyzeData } from './utils/analysisContract'
 import type {
   AnalyzeResponse,
   AnonymizeJobStatus,
@@ -68,7 +69,8 @@ export function analyzeCsv(
   sampleRowCount: number,
   outputSuffix: string,
 ): Promise<AnalyzeResponse> {
-  return invokeCommand('analyze_csv', { filePath, sampleRowCount, outputSuffix })
+  return invokeCommand<AnalyzeResponse>('analyze_csv', { filePath, sampleRowCount, outputSuffix })
+    .then(validateAnalyzeResponse)
 }
 
 export function countCsvRows(filePath: string): Promise<number> {
@@ -80,13 +82,13 @@ export function analyzePasteData(
   format: PasteDataFormat,
   sampleRowCount: number,
 ): Promise<PasteAnalyzeData> {
-  return invokeCommand('analyze_pasted_data', {
+  return invokeCommand<PasteAnalyzeData>('analyze_pasted_data', {
     request: {
       content,
       format,
       sampleRowCount,
     },
-  })
+  }).then(validatePasteAnalyzeData)
 }
 
 export function previewPasteData(

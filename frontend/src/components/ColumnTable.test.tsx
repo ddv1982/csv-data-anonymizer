@@ -200,4 +200,29 @@ describe('ColumnTable', () => {
     expect(screen.getByText('3 of 3 samples', { exact: false })).toBeInTheDocument()
     expect(screen.getByText('The header identifies credential or secret data.')).toBeInTheDocument()
   })
+
+  it('keeps the file workflow visible when a runtime column has no decision profile', () => {
+    const column = columnMetadataFixture({ name: 'legacy_id', strategy: 'redact' })
+    Reflect.deleteProperty(column, 'evidenceProfile')
+
+    render(
+      <ColumnTable
+        columns={[column]}
+        allColumnCount={1}
+        selectedSet={new Set([0])}
+        loading={false}
+        showAllColumns={false}
+        hiddenColumnCount={0}
+        onToggleColumn={vi.fn()}
+        controls={{}}
+        onStrategyChange={vi.fn()}
+        onToggleShowAll={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('Unavailable')).toBeInTheDocument()
+    expect(screen.getByText('Decision evidence could not be displayed')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: /select column legacy_id/i })).toBeInTheDocument()
+    expect(screen.queryByText(/^Output:/)).not.toBeInTheDocument()
+  })
 })

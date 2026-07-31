@@ -15,6 +15,7 @@ declare global {
     __CSV_ANONYMIZER_TEST_INVOKE__?: (command: string, args?: Record<string, unknown>) => unknown
     __CSV_ANONYMIZER_TEST_CALLS__?: Array<{ command: string; args?: Record<string, unknown> }>
     __CSV_ANONYMIZER_COPIED_TEXT__?: string
+    __CSV_ANONYMIZER_INCOMPLETE_PROFILE__?: boolean
   }
 }
 
@@ -53,6 +54,19 @@ test('covers disabled states, simplified column review, and glossary help', asyn
 
   await page.keyboard.press('Escape')
   await expect(page.getByRole('dialog', { name: 'Review Sensitive Columns' })).toBeHidden()
+})
+
+test('rejects an incomplete decision profile without blanking the file workflow', async ({ page }) => {
+  await page.goto('/')
+  await page.evaluate(() => {
+    window.__CSV_ANONYMIZER_INCOMPLETE_PROFILE__ = true
+  })
+
+  await page.getByRole('button', { name: 'Browse for CSV file' }).click()
+
+  await expect(page.getByRole('alert')).toContainText('incompatible decision data')
+  await expect(page.getByRole('heading', { name: '1. Select File' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Browse for CSV file' })).toBeEnabled()
 })
 
 test('recovers from preview errors and cancels a running job', async ({ page }) => {
@@ -299,8 +313,16 @@ async function installTauriMock(page: Page) {
       if (command === 'pick_input_csv') return '/data/input.csv'
       if (command === 'pick_output_csv') return '/data/custom-output.csv'
       if (command === 'analyze_csv') {
+        const columns = window.__CSV_ANONYMIZER_INCOMPLETE_PROFILE__
+          ? fixtures.csvHeaders.columns.map((column, index) => {
+              if (index !== 0) return column
+              const incompleteColumn: Partial<ColumnMetadata> = { ...column }
+              Reflect.deleteProperty(incompleteColumn, 'evidenceProfile')
+              return incompleteColumn
+            })
+          : fixtures.csvHeaders.columns
         return {
-          headers: fixtures.csvHeaders,
+          headers: { ...fixtures.csvHeaders, columns },
           selectedColumns: [0, 1],
           suggestedOutputPath: '/data/input_private_output.csv',
         }

@@ -73,6 +73,17 @@
   padding: 2rem 0;
 }
 
+.app-recovery-card {
+  max-width: 42rem;
+  margin: 4rem auto;
+  padding: 2rem;
+}
+
+.app-recovery-card p {
+  margin: 1rem 0 1.5rem;
+  color: hsl(var(--muted-foreground));
+}
+
 .mode-panel {
   min-width: 0;
 }
