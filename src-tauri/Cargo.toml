@@ -19,6 +19,7 @@ serde.workspace = true
 serde_json.workspace = true
 tauri.workspace = true
 tauri-plugin-dialog.workspace = true
+tempfile.workspace = true
 
 [features]
 default = ["custom-protocol"]
@@ -26,4 +27,3 @@ custom-protocol = ["tauri/custom-protocol"]
 
 [dev-dependencies]
 tauri = { workspace = true, features = ["test"] }
-tempfile.workspace = true

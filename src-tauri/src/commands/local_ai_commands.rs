@@ -1,6 +1,7 @@
 use crate::local_ai::{
     LocalAiDownloadStatus, LocalAiDownloadStore, LocalAiRequest, LocalAiStatus,
-    ensure_ollama_runtime_available, local_ai_status, open_setup_url, start_download_job,
+    ensure_obviously_local_model, ensure_ollama_runtime_available, local_ai_status, open_setup_url,
+    start_download_job,
 };
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use tauri::State;
@@ -15,6 +16,7 @@ pub async fn start_local_ai_model_download(
     downloads: State<'_, LocalAiDownloadStore>,
     request: LocalAiRequest,
 ) -> Result<LocalAiDownloadStatus, String> {
+    ensure_obviously_local_model(&request.model_name())?;
     // The runtime probe is a blocking HTTP call (up to 120s); keep it off the
     // main thread like the sibling status command.
     super::shared::run_blocking(ensure_ollama_runtime_available).await?;

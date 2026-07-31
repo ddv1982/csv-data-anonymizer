@@ -36,6 +36,8 @@ export function usePasteDataWorkflow({
   const [result, setResult] = useState<PasteTransformData | null>(null)
   const [busy, setBusy] = useState<PasteBusyState>('idle')
   const operationSequence = useRef(0)
+  const detectionSettingsFingerprint = `${settings.sampleRowCount}:${settings.localNerEnabled}:${settings.localAiModel}`
+  const previousDetectionSettings = useRef(detectionSettingsFingerprint)
   const selection = useColumnSelection(analysis?.columns, { pruneDefaultControls: true })
 
   const isBusy = busy !== 'idle'
@@ -49,11 +51,31 @@ export function usePasteDataWorkflow({
   // Preview and transform are gated on exactly the same conditions: both send the
   // current selection to the backend, so anything that makes one unsafe makes the
   // other unsafe too. They were two identical expressions that could drift apart.
-  const canRun = settingsLoaded && Boolean(analysis) && selection.selectedColumns.length > 0 && !isBusy && !localAiBlocked
+  const canRun =
+    settingsLoaded &&
+    Boolean(analysis) &&
+    selection.selectedColumns.length > 0 &&
+    (!settings.localNerEnabled || Boolean(analysis?.preparedAnalysis)) &&
+    !isBusy &&
+    !localAiBlocked
 
   useEffect(() => () => {
     operationSequence.current += 1
   }, [])
+
+  useEffect(() => {
+    if (previousDetectionSettings.current === detectionSettingsFingerprint) return
+    previousDetectionSettings.current = detectionSettingsFingerprint
+    // Content and its chosen format are user input. Everything else was derived
+    // under the old detector mode and must be detected again.
+    operationSequence.current += 1
+    setBusy('idle')
+    setAnalysis(null)
+    selection.resetColumnSelection()
+    setPreview(null)
+    setResult(null)
+    setCopyStatus(null)
+  }, [detectionSettingsFingerprint, selection, setCopyStatus])
 
   function resetDerivedState() {
     operationSequence.current += 1
@@ -84,7 +106,11 @@ export function usePasteDataWorkflow({
     setPreview(null)
     setResult(null)
     try {
-      const nextAnalysis = await analyzePasteData(content, format, settings.sampleRowCount)
+      const nextAnalysis = await analyzePasteData(
+        content,
+        format,
+        settings.sampleRowCount,
+      )
       if (sequence !== operationSequence.current) return
       setAnalysis(nextAnalysis)
       selection.setSelectedColumns(
@@ -111,6 +137,10 @@ export function usePasteDataWorkflow({
       onError('Set up Local AI before previewing Smart replacement fields.')
       return
     }
+    if (settings.localNerEnabled && !analysis.preparedAnalysis) {
+      onError('Analyze the content again before previewing.')
+      return
+    }
     const sequence = ++operationSequence.current
     onError(null)
     setBusy('previewing')
@@ -125,6 +155,7 @@ export function usePasteDataWorkflow({
         settings.previewSampleCount,
         settings.sampleRowCount,
         localAi.request,
+        ...(analysis.preparedAnalysis ? [analysis.preparedAnalysis] : []),
       )
       if (sequence === operationSequence.current) setPreview(nextPreview)
     } catch (caught) {
@@ -140,6 +171,10 @@ export function usePasteDataWorkflow({
       onError('Set up Local AI before anonymizing Smart replacement fields.')
       return
     }
+    if (settings.localNerEnabled && !analysis.preparedAnalysis) {
+      onError('Analyze the content again before transforming.')
+      return
+    }
     const sequence = ++operationSequence.current
     onError(null)
     setBusy('transforming')
@@ -153,6 +188,7 @@ export function usePasteDataWorkflow({
         settings.sampleRowCount,
         preview?.smartReplacements ?? [],
         localAi.request,
+        ...(analysis.preparedAnalysis ? [analysis.preparedAnalysis] : []),
       )
       if (sequence === operationSequence.current) setResult(nextResult)
     } catch (caught) {

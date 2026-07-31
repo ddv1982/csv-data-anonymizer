@@ -104,6 +104,66 @@ describe('useAnonymizerWorkflow', () => {
     )
   })
 
+  it('invalidates detection results when local NER changes but preserves paths', async () => {
+    tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())
+    const harness = renderWorkflow()
+    await flushPromises()
+
+    await act(async () => {
+      await harness.workflow.handlePickInput()
+    })
+    expect(harness.workflow.headers).not.toBeNull()
+
+    act(() => harness.workflow.updateSetting('localNerEnabled', true))
+
+    expect(harness.workflow.inputPath).toBe('/data/input.csv')
+    expect(harness.workflow.outputPath).toBe('/data/input_private_output.csv')
+    expect(harness.workflow.headers).toBeNull()
+    expect(harness.workflow.selectedColumns).toEqual([])
+    expect(harness.workflow.preview).toBeNull()
+    expect(harness.workflow.result).toBeNull()
+  })
+
+  it('preserves prepared detection when unrelated settings change', async () => {
+    tauriMocks.loadSettings.mockResolvedValue(settingsFixture({ localNerEnabled: true }))
+    const preparedAnalysis = {
+      version: 2,
+      sourceIdentity: '/data/input.csv',
+      sourceFingerprint: 'fnv128:test',
+      format: 'csv',
+      sampleRowCount: 100,
+      columns: [],
+      detector: { status: 'completed' as const, detectorId: 'ollama-local-ner' },
+      detectionRunSummary: {
+        deterministic: 'completed' as const,
+        localNer: 'completed' as const,
+        detectorId: 'ollama-local-ner',
+        examinedCells: 1,
+        totalEligibleCells: 1,
+        skippedOversizedCells: 0,
+        acceptedCandidates: 0,
+        rejectedCandidates: 0,
+      },
+      candidateEvidence: [],
+      integrityChecksum: 'fnv128:snapshot',
+    }
+    tauriMocks.analyzeCsv.mockResolvedValue({
+      ...analyzeResponseFixture(),
+      preparedAnalysis,
+    })
+    const harness = renderWorkflow()
+    await flushPromises()
+
+    await act(async () => {
+      await harness.workflow.handlePickInput()
+    })
+    act(() => harness.workflow.updateSetting('defaultOutputSuffix', '_safe'))
+
+    expect(harness.workflow.preparedAnalysis).toEqual(preparedAnalysis)
+    expect(harness.workflow.headers).not.toBeNull()
+    expect(harness.workflow.outputPath).toBe('/data/input_safe.csv')
+  })
+
   it('polls a started job to success and persists the output directory', async () => {
     vi.useFakeTimers()
     tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())

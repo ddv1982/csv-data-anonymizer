@@ -18,6 +18,7 @@ pub mod direct_input;
 pub mod error;
 mod file_ops;
 pub(crate) mod metadata;
+mod prepared_snapshot;
 mod preview;
 mod process_control;
 mod random;
@@ -34,13 +35,18 @@ mod uniqueness;
 
 pub use error::{AnonymizerError, Result};
 pub use metadata::should_auto_select_column;
+pub use prepared_snapshot::{
+    PREPARED_ANALYSIS_VERSION, PreparedAnalysisSnapshot, PreparedCandidateEvidence,
+    PreparedDetectorIdentity, PreparedSnapshotError, SourceFingerprint, ValidatedPreparedAnalysis,
+};
 pub use service::AnonymizerService;
 pub use smart::{SmartReplacement, SmartReplacementProvider, SmartReplacementRequest};
 pub use types::{
     AnonymizationStrategy, AnonymizeData, AnonymizeParams, ColumnControl, ColumnMetadata,
-    ColumnPreview, ColumnReleaseReport, ColumnValueDistribution, Confidence, DataType,
-    DetectionCoverageSummary, DetectionCoverageUnit, DetectionResult, DetectionTrace,
-    DetectionTraceItem, DropColumnEffect, EmptyFormat, HeadersData, MAX_PREVIEW_SAMPLE_COUNT,
+    ColumnPreview, ColumnReleaseReport, ColumnReviewReason, ColumnValueDistribution, Confidence,
+    DataType, DetectionCoverageSummary, DetectionCoverageUnit, DetectionResult,
+    DetectionRunSummary, DetectionTrace, DetectionTraceItem, DeterministicDetectionStatus,
+    DropColumnEffect, EmptyFormat, HeadersData, LocalNerRunStatus, MAX_PREVIEW_SAMPLE_COUNT,
     MAX_SAMPLE_ROW_COUNT, MatchedColumn, MatchedPart, ParsedSample, PasteAnalyzeData,
     PasteAnalyzeParams, PasteDataFormat, PastePreviewParams, PasteTransformData,
     PasteTransformParams, PiiRisk, PreflightData, PreflightMode, PreflightParams, PreviewData,

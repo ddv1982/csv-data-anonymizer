@@ -1,3 +1,4 @@
+use crate::detection::CandidateDetector;
 use crate::error::{AnonymizerError, Result};
 use crate::service::select_columns;
 use crate::smart::SmartReplacementProvider;
@@ -13,14 +14,30 @@ use std::time::Instant;
 
 use super::shared::{
     FieldSampleLimits, FieldSamples, PreviewSelection, analysis_from_fields,
-    bounded_preview_sample_count, escape_path_key, format_path, next_row_index,
-    paste_detection_sample_rows, paste_transform_data, preview_field_sample_limits,
-    preview_from_fields_with_smart_provider, push_identified_field_sample,
-    selected_columns_by_source, smart_replacements_for_fields,
+    analysis_from_fields_with_candidate_detector, bounded_preview_sample_count, escape_path_key,
+    format_path, next_row_index, paste_detection_sample_rows, paste_transform_data,
+    preview_field_sample_limits, preview_from_fields_with_smart_provider,
+    push_identified_field_sample, selected_columns_by_source, smart_replacements_for_fields,
 };
 
 pub(super) fn analyze_xml(content: &str, sample_row_count: usize) -> Result<PasteAnalyzeData> {
     analyze_xml_with_coverage(content, sample_row_count).map(|(analysis, _)| analysis)
+}
+
+pub(super) fn analyze_xml_with_candidate_detector(
+    content: &str,
+    sample_row_count: usize,
+    detector: &mut dyn CandidateDetector,
+) -> Result<PasteAnalyzeData> {
+    let sample_row_count = paste_detection_sample_rows(sample_row_count)?;
+    let fields = collect_xml_fields(content, FieldSampleLimits::detection_only(sample_row_count))?;
+    Ok(analysis_from_fields_with_candidate_detector(
+        PasteDataFormat::Xml,
+        &fields,
+        infer_xml_row_count(&fields),
+        Some(detector),
+    )
+    .0)
 }
 
 /// [`analyze_xml`] plus how much of the input it classified.

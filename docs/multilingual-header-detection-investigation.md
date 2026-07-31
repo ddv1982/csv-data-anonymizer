@@ -330,7 +330,7 @@ Confidence rules should prefer value evidence:
 - Reuse the Ollama pathway for ambiguous columns only.
 - Require structured JSON output and strict validation.
 - Show "Local AI classifier" as evidence.
-- Never send data outside localhost.
+- Send requests only to the configured localhost Ollama endpoint; do not claim that an independently configured Ollama server cannot route them onward.
 - Keep manual user confirmation before output creation.
 
 ## Evaluation Harness

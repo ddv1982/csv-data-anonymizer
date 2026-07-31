@@ -92,7 +92,7 @@ export const sectionHelp = {
           { text: 'Smart replacement', term: 'smartReplacement' },
           ' are sent to ',
           { text: 'localhost', term: 'localhost' },
-          ', not a cloud API. Other strategies do not need ',
+          '. Known cloud-model names are refused, but the Ollama server controls downstream routing. Other strategies do not need ',
           { text: 'Local AI', term: 'localAi' },
           '.',
         ],

@@ -2,7 +2,9 @@ use reqwest::blocking::Client;
 use serde::Deserialize;
 
 use super::types::{LocalAiRequest, LocalAiStatus};
-use super::{DEFAULT_OLLAMA_ENDPOINT, OLLAMA_UNAVAILABLE_MESSAGE, client};
+use super::{
+    DEFAULT_OLLAMA_ENDPOINT, OLLAMA_UNAVAILABLE_MESSAGE, client, ensure_obviously_local_model,
+};
 
 #[derive(Debug, Clone, Deserialize)]
 struct OllamaVersion {
@@ -33,6 +35,7 @@ fn local_ai_status_with_endpoint(
     endpoint: &str,
 ) -> Result<LocalAiStatus, String> {
     let model = request.model_name();
+    ensure_obviously_local_model(&model)?;
     let client = client()?;
     let version = ollama_version(&client, endpoint);
     let Ok(version) = version else {
@@ -62,7 +65,7 @@ fn local_ai_status_with_endpoint(
     let message = if !request.enabled {
         "Local AI is off. Enable it before choosing Smart replacement.".to_string()
     } else if model_installed {
-        "Local AI is ready. CSV values stay on this device and are sent only to Ollama on localhost."
+        "Ollama is ready on localhost. The selected model is not identified as an Ollama cloud model."
             .to_string()
     } else {
         format!("{model} is not downloaded in Ollama yet.")
@@ -154,6 +157,20 @@ mod tests {
         assert!(is_model_installed(&models, "llama3.2"));
         assert!(is_model_installed(&models, "llama3.2:latest"));
         assert!(!is_model_installed(&models, "gemma3:4b"));
+    }
+
+    #[test]
+    fn local_ai_status_rejects_cloud_models_before_contacting_ollama() {
+        let error = local_ai_status_with_endpoint(
+            LocalAiRequest {
+                enabled: true,
+                model: "gpt-oss:120b-cloud".to_string(),
+            },
+            &unused_loopback_endpoint(),
+        )
+        .unwrap_err();
+
+        assert!(error.contains("Cloud-backed Ollama models are not allowed"));
     }
 
     #[test]

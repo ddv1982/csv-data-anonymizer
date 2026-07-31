@@ -1,8 +1,8 @@
 use crate::job_registry::{JobLifecycle, JobRegistry, JobRegistryEntry};
 use crate::local_ai::{LocalAiRequest, smart_provider_for_request};
 use csv_anonymizer_core::{
-    AnonymizeData, AnonymizeParams, AnonymizerError, AnonymizerService, ProcessControl,
-    ProcessProgress, SmartReplacementProvider,
+    AnonymizeData, AnonymizeParams, AnonymizerError, AnonymizerService, DetectionRunSummary,
+    ProcessControl, ProcessProgress, SmartReplacementProvider,
 };
 use serde::Serialize;
 use std::sync::Arc;
@@ -278,6 +278,7 @@ pub fn run_anonymize_job(
     sample_row_count: usize,
     local_ai: Option<LocalAiRequest>,
     local_ai_enabled: bool,
+    detection_run_summary: Option<DetectionRunSummary>,
 ) {
     let progress_job = job.clone();
     let mut on_progress = move |progress: ProcessProgress| {
@@ -290,7 +291,7 @@ pub fn run_anonymize_job(
         should_cancel: Some(&should_cancel),
     };
 
-    let result = match smart_provider_for_request(
+    let mut result = match smart_provider_for_request(
         local_ai,
         &input.controls,
         &input.columns,
@@ -309,6 +310,9 @@ pub fn run_anonymize_job(
         }
         Err(error) => Err(AnonymizerError::SmartReplacement(error)),
     };
+    if let (Ok(data), Some(summary)) = (&mut result, detection_run_summary) {
+        data.privacy_report.detection_run_summary = Some(summary);
+    }
     job.finish(result);
 }
 
@@ -595,6 +599,7 @@ mod tests {
             10,
             None,
             false,
+            None,
         );
 
         let status = job.snapshot().unwrap();
@@ -632,6 +637,7 @@ mod tests {
             10,
             None,
             false,
+            None,
         );
 
         let status = job.snapshot().unwrap();
@@ -673,6 +679,7 @@ mod tests {
             10,
             None,
             false,
+            None,
         );
 
         let status = job.snapshot().unwrap();
@@ -710,6 +717,7 @@ mod tests {
             10,
             None,
             false,
+            None,
         );
 
         let status = job.snapshot().unwrap();
@@ -732,6 +740,7 @@ mod tests {
             columns_anonymized: 1,
             duration_ms: 1,
             privacy_report: PrivacyReport {
+                detection_run_summary: None,
                 direct_identifiers: 0,
                 quasi_identifiers: 0,
                 pseudonymized_columns: 1,

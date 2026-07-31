@@ -33,9 +33,11 @@ describe('AppSettingsPanel', () => {
     )
 
     await user.click(screen.getByRole('switch', { name: /Remember paths/ }))
+    await user.click(screen.getByRole('switch', { name: /Local AI detection/ }))
     fireEvent.change(screen.getByLabelText(/Output suffix/), { target: { value: '_redacted' } })
 
     expect(updates).toContainEqual(['rememberLastPaths', false])
+    expect(updates).toContainEqual(['localNerEnabled', true])
     expect(updates.at(-1)).toEqual(['defaultOutputSuffix', '_redacted'])
   })
 })

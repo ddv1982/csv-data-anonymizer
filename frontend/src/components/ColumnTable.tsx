@@ -110,6 +110,9 @@ export function ColumnTable({
                         <span className={sampleDataAvailable ? 'column-name' : 'column-name no-data'}>
                           {column.name}
                         </span>
+                        {column.reviewReasons?.length ? (
+                          <span className="status-pill warning">Review</span>
+                        ) : null}
                         {!sampleDataAvailable ? (
                           <span className="column-note">No sample data</span>
                         ) : column.piiRisk === 'low' ? (

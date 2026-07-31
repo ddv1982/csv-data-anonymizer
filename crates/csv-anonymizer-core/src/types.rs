@@ -523,6 +523,15 @@ impl PrivacyEvidenceSummary {
 /// `AnonymizationStrategy::PassThrough`, `is_selected: false`, and a zeroed
 /// distribution. A default may leave a column looking more exposed than it is; it may
 /// never leave one looking safer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ColumnReviewReason {
+    DetectorsDisagree,
+    LocalNerLowConfidence,
+    AmbiguousContext,
+    InsufficientSample,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ColumnMetadata {
@@ -557,6 +566,8 @@ pub struct ColumnMetadata {
     pub privacy_findings: Vec<PrivacyFinding>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub privacy_evidence: Vec<PrivacyEvidenceSummary>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub review_reasons: Vec<ColumnReviewReason>,
     pub pii_risk: PiiRisk,
     pub sample_values: Vec<String>,
     /// The value distribution of the *detection sample*, not of the whole input.
@@ -1333,6 +1344,8 @@ pub struct HeadersData {
     pub row_count: usize,
     pub row_count_is_complete: bool,
     pub default_output_path: PathBuf,
+    #[serde(default)]
+    pub detection_run_summary: DetectionRunSummary,
     pub columns: Vec<ColumnMetadata>,
 }
 
@@ -1368,7 +1381,61 @@ pub struct PasteAnalyzeData {
     /// column table can caveat itself *before* the user selects columns and
     /// transforms. See [`DetectionCoverageSummary`].
     pub detection_coverage: DetectionCoverageSummary,
+    #[serde(default)]
+    pub detection_run_summary: DetectionRunSummary,
     pub columns: Vec<ColumnMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prepared_analysis: Option<crate::PreparedAnalysisSnapshot>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LocalNerRunStatus {
+    #[default]
+    Disabled,
+    Completed,
+    Unavailable,
+    Failed,
+    Incomplete,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DeterministicDetectionStatus {
+    #[default]
+    Completed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DetectionReviewReason {
+    DetectorFailed,
+    CandidateRejected,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DetectionRunSummary {
+    pub deterministic: DeterministicDetectionStatus,
+    pub local_ner: LocalNerRunStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detector_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_version: Option<String>,
+    #[serde(default)]
+    pub examined_cells: usize,
+    #[serde(default)]
+    pub total_eligible_cells: usize,
+    #[serde(default)]
+    pub skipped_oversized_cells: usize,
+    #[serde(default)]
+    pub accepted_candidates: usize,
+    #[serde(default)]
+    pub rejected_candidates: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub review_reasons: Vec<DetectionReviewReason>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1587,6 +1654,8 @@ pub struct PreflightData {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PrivacyReport {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detection_run_summary: Option<DetectionRunSummary>,
     pub direct_identifiers: usize,
     pub quasi_identifiers: usize,
     pub pseudonymized_columns: usize,
@@ -1726,6 +1795,7 @@ mod tests {
                 reason: "Column contains contact details.".to_string(),
                 detectors: vec!["email".to_string()],
             }],
+            review_reasons: vec![ColumnReviewReason::AmbiguousContext],
             pii_risk: PiiRisk::High,
             sample_values: vec!["ada@example.com".to_string()],
             sample_value_distribution: Default::default(),
@@ -1739,6 +1809,7 @@ mod tests {
         assert_eq!(value["detectedType"], json!("email"));
         assert_eq!(value["detectionTrace"]["totalNonEmpty"], json!(1));
         assert_eq!(value["privacyEvidence"][0]["matchCount"], json!(1));
+        assert_eq!(value["reviewReasons"], json!(["ambiguousContext"]));
         assert_eq!(value["piiRisk"], json!("high"));
         assert_eq!(value["sampleValues"], json!(["ada@example.com"]));
         assert_eq!(value["emptyFormat"], json!("emptyString"));
@@ -1798,6 +1869,7 @@ mod tests {
     #[test]
     fn privacy_report_serializes_nested_release_and_smart_replacement_fields() {
         let report = PrivacyReport {
+            detection_run_summary: None,
             direct_identifiers: 1,
             quasi_identifiers: 2,
             pseudonymized_columns: 1,

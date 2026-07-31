@@ -8,7 +8,7 @@ use serde_json::json;
 
 use super::prompt::{PreparedPrompt, replacement_schema, smart_replacement_prompt};
 use super::types::LocalAiRequest;
-use super::{DEFAULT_OLLAMA_ENDPOINT, client};
+use super::{DEFAULT_OLLAMA_ENDPOINT, client, ensure_obviously_local_model};
 
 #[derive(Debug, Clone)]
 pub struct OllamaSmartReplacementProvider {
@@ -35,6 +35,7 @@ struct ReplacementItem {
 
 impl OllamaSmartReplacementProvider {
     fn new(model: String) -> CoreResult<Self> {
+        ensure_obviously_local_model(&model).map_err(AnonymizerError::SmartReplacement)?;
         Ok(Self {
             client: client().map_err(AnonymizerError::SmartReplacement)?,
             endpoint: DEFAULT_OLLAMA_ENDPOINT.to_string(),
@@ -286,5 +287,20 @@ mod tests {
         .unwrap();
 
         assert!(provider.is_some());
+    }
+
+    #[test]
+    fn rejects_cloud_model_before_constructing_generation_provider() {
+        let error = smart_provider_for_strategy(
+            Some(LocalAiRequest {
+                enabled: true,
+                model: "glm-4.7:cloud".to_string(),
+            }),
+            AnonymizationStrategy::LocalAi,
+            true,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("Cloud-backed Ollama models are not allowed"));
     }
 }

@@ -9,6 +9,7 @@ import { Card } from './Card'
 import { ColumnSelectionPanel } from './ColumnSelectionPanel'
 import { ColumnTable } from './ColumnTable'
 import { CopyableOutputCard } from './CopyableOutputCard'
+import { DetectionRunNotice } from './DetectionRunNotice'
 import { LocalAiBlockedAlert } from './LocalAiBlockedAlert'
 import { PreviewTable } from './PreviewTable'
 import { PrivacyReportSummary } from './PrivacyReportSummary'
@@ -148,6 +149,10 @@ export function PasteDataWorkflowView({
           ]}
           footer={(
             <>
+              <DetectionRunNotice
+                summary={analysis?.detectionRunSummary}
+                columns={selection.columns}
+              />
               {analysis?.detectionCoverage.isPartial ? (
                 <Alert icon={<AlertCircle aria-hidden="true" />}>
                   {formatDetectionCoverageWarning(analysis.detectionCoverage)}

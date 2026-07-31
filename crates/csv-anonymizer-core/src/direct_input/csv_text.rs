@@ -1,8 +1,9 @@
 use crate::csv_io::{
     process_csv_data, read_csv_detection_sample_from_str, read_csv_sample_from_str,
 };
+use crate::detection::CandidateDetector;
 use crate::error::Result;
-use crate::metadata::build_column_metadata;
+use crate::metadata::{build_column_metadata, build_column_metadata_with_candidate_detector};
 use crate::service::{display_row_count, select_columns};
 use crate::smart::{
     SmartReplacementProvider, prepare_smart_replacements_from_rows,
@@ -23,6 +24,15 @@ pub(super) fn analyze_csv_text(content: &str, sample_row_count: usize) -> Result
     analyze_csv_text_with_coverage(content, sample_row_count).map(|(analysis, _)| analysis)
 }
 
+pub(super) fn analyze_csv_text_with_candidate_detector(
+    content: &str,
+    sample_row_count: usize,
+    detector: &mut dyn CandidateDetector,
+) -> Result<PasteAnalyzeData> {
+    analyze_csv_text_with_coverage_and_candidate_detector(content, sample_row_count, Some(detector))
+        .map(|(analysis, _)| analysis)
+}
+
 /// [`analyze_csv_text`] plus how much of the paste it classified, in the crate's own
 /// coverage type.
 ///
@@ -34,12 +44,21 @@ fn analyze_csv_text_with_coverage(
     content: &str,
     sample_row_count: usize,
 ) -> Result<(PasteAnalyzeData, DetectionCoverage)> {
+    analyze_csv_text_with_coverage_and_candidate_detector(content, sample_row_count, None)
+}
+
+fn analyze_csv_text_with_coverage_and_candidate_detector(
+    content: &str,
+    sample_row_count: usize,
+    detector: Option<&mut dyn CandidateDetector>,
+) -> Result<(PasteAnalyzeData, DetectionCoverage)> {
     let sample_row_count = paste_detection_sample_rows(sample_row_count)?;
     // Spread the sample over the whole paste: pasted content can exceed the
     // sample cap, and a head window would leave detection blind to values that
     // only appear in the tail.
     let sample = read_csv_detection_sample_from_str(content, sample_row_count)?;
-    let columns = build_column_metadata(&sample.headers, &sample.rows);
+    let (columns, detector_status) =
+        build_column_metadata_with_candidate_detector(&sample.headers, &sample.rows, detector);
     let coverage = DetectionCoverage::from_detection_sample(&sample);
 
     Ok((
@@ -48,7 +67,9 @@ fn analyze_csv_text_with_coverage(
             row_count: sample.data_rows_scanned,
             row_count_is_complete: sample.scanned_entire_input,
             detection_coverage: coverage.summary(),
+            detection_run_summary: crate::service::detection_run_summary(detector_status),
             columns,
+            prepared_analysis: None,
         },
         coverage,
     ))

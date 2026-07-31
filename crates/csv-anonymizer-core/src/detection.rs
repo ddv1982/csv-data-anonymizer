@@ -1,6 +1,7 @@
 use crate::types::{Confidence, DataType, EmptyFormat, PiiRisk};
 
 mod candidate;
+mod candidate_detector;
 mod header;
 mod header_rules;
 mod locale;
@@ -26,8 +27,15 @@ use value::{
     detect_priority_pattern, detect_vat_value_type,
 };
 
+pub use candidate_detector::{
+    Candidate, CandidateBatch, CandidateBatchResult, CandidateCell, CandidateDetectionCoverage,
+    CandidateDetector, CandidateDetectorRunStatus, CandidateKind, CandidateRejection,
+    CandidateRejectionReason,
+};
+pub(crate) use candidate_detector::{candidate_batch, validate_candidates};
 pub use locale::{LocaleContext, infer_locale_context};
 pub(crate) use privacy::POSSIBLE_PERSON_NAME_DETECTOR;
+pub(crate) use privacy::summarize_privacy_findings;
 pub use privacy::{ColumnPrivacyAnalysis, analyze_column_privacy, max_pii_risk};
 pub use spans::{PrivacySpan, collect_privacy_spans};
 

@@ -13,6 +13,7 @@ import { AppSettingsPanel } from '../AppSettingsPanel'
 import { Card } from '../Card'
 import { ColumnSelectionPanel } from '../ColumnSelectionPanel'
 import { ColumnTable } from '../ColumnTable'
+import { DetectionRunNotice } from '../DetectionRunNotice'
 import { LocalAiBlockedAlert } from '../LocalAiBlockedAlert'
 import { PreviewTable } from '../PreviewTable'
 import { ProcessingStatus } from '../ProcessingStatus'
@@ -163,6 +164,10 @@ function ColumnSelectionStep({
             <div className="table-help-row">
               <SectionHelp topic="selectColumns" />
             </div>
+            <DetectionRunNotice
+              summary={workflow.headers?.detectionRunSummary}
+              columns={workflow.columns}
+            />
             {unselectedRiskMessage ? (
               <Alert icon={<AlertTriangle aria-hidden="true" />}>
                 <strong>Detector-flagged columns are unselected.</strong> {unselectedRiskMessage}

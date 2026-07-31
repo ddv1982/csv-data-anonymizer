@@ -41,6 +41,14 @@ export function AppSettingsPanel({
             disabled={disabled}
             onChange={(checked) => onUpdateSetting('overwriteOutput', checked)}
           />
+          <SwitchRow
+            id="local-ner"
+            label="Local AI detection"
+            description="Optional. Uses the configured Ollama model to suggest additional sensitive fields for review. It may be unavailable, and suggestions are never selected automatically."
+            checked={settings.localNerEnabled}
+            disabled={disabled}
+            onChange={(checked) => onUpdateSetting('localNerEnabled', checked)}
+          />
           <div className="settings-grid">
             <div className="field">
               <label htmlFor="output-suffix">Output suffix</label>

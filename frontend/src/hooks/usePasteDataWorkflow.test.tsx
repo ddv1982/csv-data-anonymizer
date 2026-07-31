@@ -70,6 +70,26 @@ describe('usePasteDataWorkflow', () => {
     expect(harness.workflow.preview).toBeNull()
   })
 
+  it('invalidates detection results when local NER changes but preserves source input', async () => {
+    const harness = renderWorkflow()
+    act(() => {
+      harness.workflow.setFormat('json')
+      harness.workflow.setContent('[{"email":"ada@example.com"}]')
+    })
+    await act(async () => harness.workflow.analyze())
+    expect(harness.workflow.analysis).not.toBeNull()
+
+    harness.rerender({ ...defaultSettings, localNerEnabled: true })
+
+    expect(harness.workflow.content).toBe('[{"email":"ada@example.com"}]')
+    expect(harness.workflow.format).toBe('json')
+    expect(harness.workflow.analysis).toBeNull()
+    expect(harness.workflow.selection.selectedColumns).toEqual([])
+    expect(harness.workflow.preview).toBeNull()
+    expect(harness.workflow.result).toBeNull()
+    expect(harness.workflow.copyStatus).toBeNull()
+  })
+
   it('ignores analysis that completes after the content changes', async () => {
     const pending = deferred<{
       format: 'json'
@@ -104,6 +124,26 @@ describe('usePasteDataWorkflow', () => {
   })
 
   it('sends controls only for selected columns', async () => {
+    const preparedAnalysis = {
+      version: 1,
+      sourceIdentity: 'paste',
+      sourceFingerprint: 'sha256:paste',
+      format: 'json',
+      columns: [],
+      detector: { status: 'completed' as const, detectorId: 'ollama:test' },
+      detectionRunSummary: {
+        deterministic: 'completed' as const,
+        localNer: 'completed' as const,
+        detectorId: 'ollama:test',
+        examinedCells: 1,
+        totalEligibleCells: 1,
+        skippedOversizedCells: 0,
+        acceptedCandidates: 0,
+        rejectedCandidates: 0,
+      },
+      candidateEvidence: [],
+      integrityChecksum: 'sha256:snapshot',
+    }
     tauriMocks.analyzePasteData.mockResolvedValue({
       format: 'json',
       rowCount: 1,
@@ -113,6 +153,7 @@ describe('usePasteDataWorkflow', () => {
         columnMetadataFixture({ index: 0, name: '[].email', isSelected: true }),
         columnMetadataFixture({ index: 1, name: '[].city', isSelected: true }),
       ],
+      preparedAnalysis,
     })
     const harness = renderWorkflow()
 
@@ -133,6 +174,7 @@ describe('usePasteDataWorkflow', () => {
       expect.any(Number),
       defaultSettings.sampleRowCount,
       expect.any(Object),
+      preparedAnalysis,
     )
     expect(tauriMocks.transformPasteData).toHaveBeenCalledWith(
       expect.any(String),
@@ -142,6 +184,7 @@ describe('usePasteDataWorkflow', () => {
       defaultSettings.sampleRowCount,
       expect.any(Array),
       expect.any(Object),
+      preparedAnalysis,
     )
   })
 
@@ -188,12 +231,14 @@ function deferred<T>() {
 function WorkflowHarness({
   onError,
   onUpdate,
+  settings,
 }: {
   onError: (message: string | null) => void
   onUpdate: (workflow: PasteDataWorkflowState) => void
+  settings: typeof defaultSettings
 }) {
   const workflow = usePasteDataWorkflow({
-    settings: defaultSettings,
+    settings,
     settingsLoaded: true,
     localAi: localAiFixture(),
     onError,
@@ -205,12 +250,27 @@ function WorkflowHarness({
 
 function renderWorkflow(onError = vi.fn()) {
   let workflow: PasteDataWorkflowState | null = null
-  render(<WorkflowHarness onError={onError} onUpdate={(nextWorkflow) => { workflow = nextWorkflow }} />)
+  const rendered = render(
+    <WorkflowHarness
+      settings={defaultSettings}
+      onError={onError}
+      onUpdate={(nextWorkflow) => { workflow = nextWorkflow }}
+    />,
+  )
 
   return {
     get workflow() {
       if (!workflow) throw new Error('workflow did not render')
       return workflow
+    },
+    rerender(settings: typeof defaultSettings) {
+      rendered.rerender(
+        <WorkflowHarness
+          settings={settings}
+          onError={onError}
+          onUpdate={(nextWorkflow) => { workflow = nextWorkflow }}
+        />,
+      )
     },
   }
 }

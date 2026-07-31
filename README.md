@@ -2,7 +2,7 @@
 
 CSV Anonymizer is a local-first desktop app for reducing sensitive CSV and pasted-data exposure before sharing, testing, demos, or support work. It detects likely personal data, previews transformations, and writes protected output while preserving the original structure where possible.
 
-All non-LLM detection and transformation runs locally in Rust. Optional local LLM replacement also runs on your machine through Ollama.
+All deterministic detection and transformation runs locally in Rust. Optional Smart replacement connects to Ollama on the loopback interface; the app refuses model names Ollama identifies as cloud-backed, but an independently configured Ollama process remains responsible for where inference runs.
 
 Read the generated project wiki at [github.com/ddv1982/csv-data-anonymizer/wiki](https://github.com/ddv1982/csv-data-anonymizer/wiki).
 
@@ -46,7 +46,7 @@ Usage:
 
 The app batches unique values per selected column, asks the local model for realistic fake replacements, validates the response, reuses accepted replacements for repeated source values within the current run, and falls back to rule-based pseudonymization when the model output is missing or unsafe.
 
-Model weights and local runtime binaries are not bundled in the repository or desktop release. The first model download uses network access through Ollama. CSV values selected for Smart replacement are sent only to the configured local Ollama endpoint.
+Model weights and local runtime binaries are not bundled in the repository or desktop release. The first model download uses network access through Ollama. CSV values selected for Smart replacement are sent to the configured loopback Ollama endpoint. A loopback endpoint alone is not proof of data residency, so the app also refuses documented cloud-model name forms and avoids claiming that arbitrary external Ollama configurations are local-only.
 
 ## Privacy Boundary
 

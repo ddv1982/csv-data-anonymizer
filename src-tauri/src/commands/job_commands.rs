@@ -1,9 +1,15 @@
+use super::csv::{
+    ValidatedFileInput, require_prepared_analysis, require_snapshot_model,
+    snapshot_detection_summary,
+};
 use super::shared::authorize_or_confirm_output_file;
 use crate::jobs::{AnonymizeJobStatus, AnonymizeJobStore, run_anonymize_job};
 use crate::local_ai::LocalAiRequest;
 use crate::path_access::PathAccess;
 use crate::settings::{MAX_SAMPLE_ROW_COUNT, SettingsStore, validate_sample_count};
-use csv_anonymizer_core::{AnonymizeParams, ColumnControl, SmartReplacementEntry};
+use csv_anonymizer_core::{
+    AnonymizeParams, ColumnControl, PreparedAnalysisSnapshot, SmartReplacementEntry,
+};
 use serde::Deserialize;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
@@ -24,6 +30,7 @@ pub struct StartAnonymizeJobRequest {
     #[serde(default)]
     pub preview_smart_replacements: Vec<SmartReplacementEntry>,
     pub local_ai: Option<LocalAiRequest>,
+    pub prepared_analysis: Option<PreparedAnalysisSnapshot>,
 }
 
 #[tauri::command]
@@ -48,7 +55,22 @@ pub async fn start_anonymize_job(
     // is still the authority that decides, so a race past this point is refused there.
     jobs.admission_available()?;
     let file_path = path_access.authorize_input_file(request.file_path)?;
+    let (local_ner_enabled, local_ner_model) = settings
+        .load_settings()
+        .map(|settings| (settings.local_ner_enabled, settings.local_ai_model))
+        .map_err(|error| format!("Could not load settings: {error}"))?;
+    require_prepared_analysis(local_ner_enabled, request.prepared_analysis.as_ref())?;
+    require_snapshot_model(request.prepared_analysis.as_ref(), &local_ner_model)?;
+    let validated_input = ValidatedFileInput::prepare(
+        request.prepared_analysis.as_ref(),
+        file_path,
+        request.sample_row_count,
+        &request.columns,
+    )?;
     let output_path = authorize_or_confirm_output_file(&app, &path_access, request.output_path)?;
+    if validated_input.original_path() == output_path {
+        return Err("Output path must differ from the input path.".to_string());
+    }
     let local_ai_enabled = settings
         .load_settings()
         .map(|settings| settings.local_ai_enabled)
@@ -57,13 +79,18 @@ pub async fn start_anonymize_job(
     let initial_status = job.snapshot()?;
     let worker_job = job.clone();
     let panic_job = job.clone();
+    let detection_run_summary = request
+        .prepared_analysis
+        .as_ref()
+        .map(snapshot_detection_summary);
 
     let _job_handle = tauri::async_runtime::spawn_blocking(move || {
         let result = catch_unwind(AssertUnwindSafe(|| {
+            let processing_path = validated_input.processing_path();
             run_anonymize_job(
                 worker_job,
                 AnonymizeParams {
-                    file_path,
+                    file_path: processing_path,
                     output_path,
                     columns: request.columns,
                     controls: request.controls,
@@ -73,6 +100,7 @@ pub async fn start_anonymize_job(
                 request.sample_row_count,
                 request.local_ai,
                 local_ai_enabled,
+                detection_run_summary,
             );
         }));
         if result.is_err() {

@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.84 - 2026-07-31
+
+- Add an opt-in, supplemental local named-entity pass for person names and private addresses across CSV and pasted-data formats. Ollama proposes exact quoted spans, while Rust validates cell identity, boundaries, confidence, overlap, and replay before any candidate can affect a transformation.
+- Carry backend-issued prepared analysis from detection through preview, preflight, and output, binding it to the source bytes, format, sample size, model, column evidence, and user selection. CSV operations process a private streamed copy of the validated bytes, closing the file-change race without loading the whole source into memory.
+- Bound local detection to ten requests and 320 cells with deterministic column-balanced sampling, skip cells that cannot fit safely, and report examined, eligible, rejected, and oversized counts instead of treating partial coverage as complete or failing large inputs outright.
+- Surface detector status and review-needed columns in both file and paste workflows, keep deterministic protection available when Ollama is unavailable, invalidate evidence only when detector inputs change, and replay confirmed free-text spans without asking the model a second time.
+- Refuse documented Ollama cloud-model name forms before status or generation requests, describe the loopback trust boundary without promising residency an independently configured runtime cannot prove, and keep model/runtime artifacts out of releases.
+
 ## v1.0.83 - 2026-07-30
 
 - Supersede the failed v1.0.82 tag without moving it, preserving every change in that release while replacing a `match` that Rust 1.97's clippy rejects in favour of `?`. The lint is newer than the toolchain the release was prepared on, so release validation failed on a check that had passed locally; no v1.0.82 release was ever drafted or published.

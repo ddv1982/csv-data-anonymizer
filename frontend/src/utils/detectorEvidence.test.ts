@@ -7,6 +7,7 @@ describe('detector evidence labels', () => {
     expect(detectorSourceLabel('validator:tax-id:us')).toBe('US tax ID validator')
     expect(detectorSourceLabel('pattern:tax-id:nl-btw-tax-number')).toBe('Dutch BTW pattern')
     expect(detectorSourceLabel('pattern:tax-id')).toBe('Tax ID pattern')
+    expect(detectorSourceLabel('local-ner:presidio')).toBe('Local language model')
   })
 
   // Every detector identifier the Rust pipeline emits, so a rename on that side

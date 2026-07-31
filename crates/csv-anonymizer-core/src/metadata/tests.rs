@@ -1,4 +1,8 @@
 use super::*;
+use crate::detection::{
+    Candidate, CandidateBatch, CandidateBatchResult, CandidateDetectionCoverage, CandidateDetector,
+    CandidateDetectorRunStatus, CandidateKind, CandidateRejectionReason,
+};
 use crate::types::DataType;
 
 #[test]
@@ -525,4 +529,269 @@ fn unnamed_columns_are_not_ambiguous_because_their_labels_already_differ() {
             column.index
         );
     }
+}
+
+struct FakeCandidateDetector {
+    result: std::result::Result<CandidateBatchResult, String>,
+}
+
+impl CandidateDetector for FakeCandidateDetector {
+    fn detector_id(&self) -> &str {
+        "fake"
+    }
+
+    fn detect(
+        &mut self,
+        _batch: &CandidateBatch<'_>,
+    ) -> std::result::Result<CandidateBatchResult, String> {
+        self.result.clone()
+    }
+}
+
+fn candidate_result(candidates: Vec<Candidate>) -> CandidateBatchResult {
+    CandidateBatchResult {
+        model_version: Some("test-1".to_string()),
+        coverage: CandidateDetectionCoverage::complete(1),
+        candidates,
+    }
+}
+
+#[test]
+fn disabled_candidate_detection_preserves_the_existing_metadata() {
+    let headers = vec!["misc".to_string()];
+    let samples = vec![vec!["Ada Lovelace".to_string()]];
+
+    let expected = build_column_metadata(&headers, &samples);
+    let (actual, status) = build_column_metadata_with_candidate_detector(&headers, &samples, None);
+
+    assert_eq!(actual, expected);
+    assert_eq!(status, CandidateDetectorRunStatus::Disabled);
+}
+
+#[test]
+fn detector_failure_preserves_deterministic_metadata() {
+    let headers = vec!["email".to_string()];
+    let samples = vec![vec!["ada@example.com".to_string()]];
+    let expected = build_column_metadata(&headers, &samples);
+    let mut detector = FakeCandidateDetector {
+        result: Err("model unavailable".to_string()),
+    };
+
+    let (actual, status) =
+        build_column_metadata_with_candidate_detector(&headers, &samples, Some(&mut detector));
+
+    assert_eq!(actual, expected);
+    assert!(matches!(
+        status,
+        CandidateDetectorRunStatus::Failed { message, .. } if message == "model unavailable"
+    ));
+}
+
+#[test]
+fn valid_candidate_adds_privacy_evidence_without_retyping_the_column() {
+    let headers = vec!["misc".to_string()];
+    let samples = vec![vec!["Ada Lovelace".to_string()]];
+    let mut detector = FakeCandidateDetector {
+        result: Ok(candidate_result(vec![Candidate {
+            column_index: 0,
+            row_index: 0,
+            start_byte: 0,
+            end_byte: "Ada Lovelace".len(),
+            kind: CandidateKind::PersonName,
+            score_basis_points: 9_000,
+        }])),
+    };
+
+    let (metadata, status) =
+        build_column_metadata_with_candidate_detector(&headers, &samples, Some(&mut detector));
+
+    assert_eq!(metadata[0].detected_type, DataType::String);
+    assert_eq!(metadata[0].pii_risk, PiiRisk::Low);
+    assert!(!metadata[0].is_selected);
+    assert_eq!(metadata[0].strategy, AnonymizationStrategy::Auto);
+    assert_eq!(
+        metadata[0].review_reasons,
+        [ColumnReviewReason::AmbiguousContext]
+    );
+    assert!(
+        metadata[0]
+            .privacy_evidence
+            .iter()
+            .any(|evidence| evidence.detectors == ["local-ner:fake"])
+    );
+    assert!(matches!(
+        status,
+        CandidateDetectorRunStatus::Completed {
+            accepted_candidates: 1,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn partial_detector_coverage_is_reported_as_incomplete() {
+    let headers = vec!["misc".to_string()];
+    let samples = vec![vec!["Ada Lovelace".to_string()]];
+    let mut detector = FakeCandidateDetector {
+        result: Ok(CandidateBatchResult {
+            model_version: Some("test-1".to_string()),
+            coverage: CandidateDetectionCoverage {
+                total_cells: 10,
+                examined_cells: 1,
+                skipped_oversized_cells: 2,
+            },
+            candidates: Vec::new(),
+        }),
+    };
+
+    let (_, status) =
+        build_column_metadata_with_candidate_detector(&headers, &samples, Some(&mut detector));
+
+    assert!(matches!(
+        status,
+        CandidateDetectorRunStatus::Incomplete {
+            total_cells: 10,
+            examined_cells: 1,
+            skipped_oversized_cells: 2,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn malformed_candidates_are_rejected_without_changing_metadata() {
+    let headers = vec!["misc".to_string()];
+    let samples = vec![vec!["Renée".to_string()]];
+    let expected = build_column_metadata(&headers, &samples);
+    let mut detector = FakeCandidateDetector {
+        result: Ok(candidate_result(vec![
+            Candidate {
+                column_index: 1,
+                row_index: 0,
+                start_byte: 0,
+                end_byte: 1,
+                kind: CandidateKind::PersonName,
+                score_basis_points: 9_000,
+            },
+            Candidate {
+                column_index: 0,
+                row_index: 0,
+                start_byte: 3,
+                end_byte: 4,
+                kind: CandidateKind::PersonName,
+                score_basis_points: 9_000,
+            },
+            Candidate {
+                column_index: 0,
+                row_index: 0,
+                start_byte: 0,
+                end_byte: 1,
+                kind: CandidateKind::PersonName,
+                score_basis_points: 10_001,
+            },
+        ])),
+    };
+
+    let (actual, status) =
+        build_column_metadata_with_candidate_detector(&headers, &samples, Some(&mut detector));
+
+    assert_eq!(actual, expected);
+    let CandidateDetectorRunStatus::Completed { rejections, .. } = status else {
+        panic!("expected completed detector status");
+    };
+    assert!(
+        rejections
+            .iter()
+            .any(|item| item.reason == CandidateRejectionReason::UnknownCell)
+    );
+    assert!(
+        rejections
+            .iter()
+            .any(|item| item.reason == CandidateRejectionReason::InvalidSpan)
+    );
+    assert!(
+        rejections
+            .iter()
+            .any(|item| item.reason == CandidateRejectionReason::ScoreOutOfRange)
+    );
+}
+
+#[test]
+fn candidate_cannot_replace_overlapping_deterministic_evidence() {
+    let headers = vec!["email".to_string()];
+    let samples = vec![vec!["ada@example.com".to_string()]];
+    let expected = build_column_metadata(&headers, &samples);
+    let mut detector = FakeCandidateDetector {
+        result: Ok(candidate_result(vec![Candidate {
+            column_index: 0,
+            row_index: 0,
+            start_byte: 0,
+            end_byte: "ada@example.com".len(),
+            kind: CandidateKind::PersonName,
+            score_basis_points: 9_500,
+        }])),
+    };
+
+    let (actual, status) =
+        build_column_metadata_with_candidate_detector(&headers, &samples, Some(&mut detector));
+
+    assert_eq!(actual, expected);
+    let CandidateDetectorRunStatus::Completed { rejections, .. } = status else {
+        panic!("expected completed detector status");
+    };
+    assert!(
+        rejections
+            .iter()
+            .any(|item| { item.reason == CandidateRejectionReason::OverlapsDeterministicEvidence })
+    );
+}
+
+#[test]
+fn overlapping_model_candidates_are_resolved_before_replay() {
+    let headers = vec!["misc".to_string()];
+    let samples = vec![vec!["Ada Lovelace lives here".to_string()]];
+    let mut detector = FakeCandidateDetector {
+        result: Ok(candidate_result(vec![
+            Candidate {
+                column_index: 0,
+                row_index: 0,
+                start_byte: 0,
+                end_byte: "Ada Lovelace".len(),
+                kind: CandidateKind::PersonName,
+                score_basis_points: 9_000,
+            },
+            Candidate {
+                column_index: 0,
+                row_index: 0,
+                start_byte: 4,
+                end_byte: "Ada Lovelace lives".len(),
+                kind: CandidateKind::PrivateAddress,
+                score_basis_points: 9_000,
+            },
+        ])),
+    };
+
+    let (metadata, status) =
+        build_column_metadata_with_candidate_detector(&headers, &samples, Some(&mut detector));
+
+    assert_eq!(
+        metadata[0]
+            .privacy_findings
+            .iter()
+            .filter(|finding| finding.detector == "local-ner:fake")
+            .count(),
+        1
+    );
+    let CandidateDetectorRunStatus::Completed {
+        accepted_candidates,
+        rejections,
+        ..
+    } = status
+    else {
+        panic!("expected completed detector status");
+    };
+    assert_eq!(accepted_candidates, 1);
+    assert!(rejections.iter().any(|item| {
+        item.reason == CandidateRejectionReason::OverlapsCandidateEvidence && item.count == 1
+    }));
 }

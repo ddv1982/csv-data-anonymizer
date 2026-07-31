@@ -38,6 +38,7 @@ export function columnMetadataFixture(overrides: Partial<ColumnMetadata> = {}): 
     emptyFormat: 'emptyString',
     isSelected: false,
     strategy: piiRisk === 'high' || piiRisk === 'medium' ? 'redact' : 'auto',
+    reviewReasons: [],
     ...overrides,
   }
 }

@@ -20,6 +20,7 @@ import type {
   PreflightParams,
   PreviewData,
   PreviewParams,
+  PreparedAnalysis,
   QuickTransformData,
   SmartReplacementEntry,
 } from './types'
@@ -31,12 +32,13 @@ type TestInvoke = (command: string, args?: Record<string, unknown>) => unknown
 // unnoticed: the params interfaces are compared against it by
 // `scripts/check-contracts.mjs`.
 type WithLocalAi<Params> = Params & { localAi: LocalAiRequest }
-type PreflightCommandRequest = WithLocalAi<
+type WithPreparedAnalysis<Params> = Params & { preparedAnalysis?: PreparedAnalysis | null }
+type PreflightCommandRequest = WithPreparedAnalysis<WithLocalAi<
   Omit<PreflightParams, 'localAiReady' | 'localAiMessage'>
->
-type PreviewCommandRequest = WithLocalAi<PreviewParams>
-type PastePreviewCommandRequest = WithLocalAi<PastePreviewParams>
-type PasteTransformCommandRequest = WithLocalAi<PasteTransformParams>
+>>
+type PreviewCommandRequest = WithPreparedAnalysis<WithLocalAi<PreviewParams>>
+type PastePreviewCommandRequest = WithPreparedAnalysis<WithLocalAi<PastePreviewParams>>
+type PasteTransformCommandRequest = WithPreparedAnalysis<WithLocalAi<PasteTransformParams>>
 
 declare global {
   interface Window {
@@ -95,6 +97,7 @@ export function previewPasteData(
   sampleCount: number,
   sampleRowCount: number,
   localAi: LocalAiRequest,
+  preparedAnalysis?: PreparedAnalysis | null,
 ): Promise<PreviewData> {
   const request: PastePreviewCommandRequest = {
     content,
@@ -104,6 +107,7 @@ export function previewPasteData(
     sampleCount,
     sampleRowCount,
     localAi,
+    ...(preparedAnalysis ? { preparedAnalysis } : {}),
   }
   return invokeCommand('preview_pasted_data', { request })
 }
@@ -116,6 +120,7 @@ export function transformPasteData(
   sampleRowCount: number,
   previewSmartReplacements: SmartReplacementEntry[],
   localAi: LocalAiRequest,
+  preparedAnalysis?: PreparedAnalysis | null,
 ): Promise<PasteTransformData> {
   const request: PasteTransformCommandRequest = {
     content,
@@ -125,6 +130,7 @@ export function transformPasteData(
     sampleRowCount,
     previewSmartReplacements,
     localAi,
+    ...(preparedAnalysis ? { preparedAnalysis } : {}),
   }
   return invokeCommand('anonymize_pasted_data', { request })
 }
@@ -152,6 +158,7 @@ export function previewAnonymization(
   sampleCount: number,
   sampleRowCount: number,
   localAi: LocalAiRequest,
+  preparedAnalysis?: PreparedAnalysis | null,
 ): Promise<PreviewData> {
   const request: PreviewCommandRequest = {
     filePath,
@@ -160,6 +167,7 @@ export function previewAnonymization(
     sampleCount,
     sampleRowCount,
     localAi,
+    ...(preparedAnalysis ? { preparedAnalysis } : {}),
   }
   return invokeCommand('preview_anonymization', { request })
 }
@@ -174,6 +182,7 @@ export function preflightAnonymization(
   sampleRowCount: number,
   previewSmartReplacements: SmartReplacementEntry[],
   localAi: LocalAiRequest,
+  preparedAnalysis?: PreparedAnalysis | null,
 ): Promise<PreflightData> {
   const request: PreflightCommandRequest = {
     mode,
@@ -185,6 +194,7 @@ export function preflightAnonymization(
     sampleRowCount,
     previewSmartReplacements,
     localAi,
+    ...(preparedAnalysis ? { preparedAnalysis } : {}),
   }
 
   return invokeCommand('preflight_anonymization', {
@@ -206,6 +216,7 @@ export function startAnonymizeJob(
   totalRowCount: number | null,
   previewSmartReplacements: SmartReplacementEntry[],
   localAi: LocalAiRequest,
+  preparedAnalysis?: PreparedAnalysis | null,
 ): Promise<AnonymizeJobStatus> {
   return invokeCommand('start_anonymize_job', {
     request: {
@@ -218,6 +229,7 @@ export function startAnonymizeJob(
       totalRowCount,
       previewSmartReplacements,
       localAi,
+      ...(preparedAnalysis ? { preparedAnalysis } : {}),
     },
   })
 }

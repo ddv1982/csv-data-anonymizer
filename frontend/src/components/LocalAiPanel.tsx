@@ -63,7 +63,7 @@ export function LocalAiPanel({
           <p className="muted-text text-sm">
             Optional <GlossaryLabel term="smartReplacement">smart replacements</GlossaryLabel> using{' '}
             <GlossaryLabel term="gemma">Gemma 3 4B</GlossaryLabel> through{' '}
-            <GlossaryLabel term="ollama">Ollama</GlossaryLabel> on this device.
+            <GlossaryLabel term="ollama">Ollama</GlossaryLabel> on localhost.
           </p>
         </div>
         <button type="button" className="button button-ghost button-icon" disabled={disabled} onClick={onRefresh} aria-label="Refresh Local AI status">
@@ -76,8 +76,9 @@ export function LocalAiPanel({
         label="Use Local AI"
         description={
           <>
-            Enable <GlossaryLabel term="smartReplacement">Smart replacement</GlossaryLabel> for selected columns. CSV
-            rows are sent only to <GlossaryLabel term="localhost">localhost</GlossaryLabel>.
+            Enable <GlossaryLabel term="smartReplacement">Smart replacement</GlossaryLabel> for selected columns.
+            Requests go to <GlossaryLabel term="localhost">localhost</GlossaryLabel>; the Ollama server controls
+            downstream routing.
           </>
         }
         checked={enabled}
