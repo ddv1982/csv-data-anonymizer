@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.87 - 2026-07-31
+
+- Accept analysis decisions whose empty detector and semantic-evidence arrays Rust legitimately omits from its serialized response, restoring those declared defaults before the data enters React state so ordinary low-evidence columns no longer produce an incompatible-decision error after file selection.
+- Keep the response boundary strict for malformed data: explicit `null` values and non-string evidence still fail validation instead of being mistaken for omitted defaults.
+- Add contract regressions for both the valid omitted-array representation and the invalid `null` representation that distinguish this compatibility repair from a broader relaxation.
+
 ## v1.0.86 - 2026-07-31
 
 - Prevent an incomplete or incompatible column-decision profile from crashing React after file selection: validate file and pasted-data analysis responses before they enter UI state, reject malformed enums, counts, booleans, placeholders, and evidence arrays with a visible error, and leave file selection available for recovery.

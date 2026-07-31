@@ -35,19 +35,27 @@ export function completeEvidenceProfile(value: unknown): ColumnEvidenceProfile |
     return null
   }
 
+  const detectors = format.detectors === undefined ? [] : format.detectors
+  const supportingEvidence = semantic.supportingEvidence === undefined
+    ? []
+    : semantic.supportingEvidence
+  const conflictingEvidence = semantic.conflictingEvidence === undefined
+    ? []
+    : semantic.conflictingEvidence
+
   if (
     !isEnum(format.dataType, dataTypes) ||
     !isEnum(format.confidence, confidences) ||
     !isCount(format.matchCount) ||
     !isCount(format.sampleCount) ||
     !isEnum(format.basis, new Set(['detectionSample', 'userOverride', 'retainedPreviewValues'])) ||
-    !isStringArray(format.detectors) ||
+    !isStringArray(detectors) ||
     !isEnum(semantic.kind, findingKinds) ||
     !isEnum(semantic.confidence, confidences) ||
     !isEnum(semantic.status, new Set(['resolved', 'uncertain', 'conflicting'])) ||
     !isEnum(semantic.specificity, new Set(['generic', 'specific'])) ||
-    !isStringArray(semantic.supportingEvidence) ||
-    !isStringArray(semantic.conflictingEvidence) ||
+    !isStringArray(supportingEvidence) ||
+    !isStringArray(conflictingEvidence) ||
     typeof semantic.reason !== 'string' ||
     !isEnum(privacy.risk, new Set(['high', 'medium', 'low'])) ||
     !isEnum(privacy.recommendedStrategy, strategies) ||
@@ -63,13 +71,24 @@ export function completeEvidenceProfile(value: unknown): ColumnEvidenceProfile |
     return null
   }
 
-  return value as unknown as ColumnEvidenceProfile
+  const profile = value as unknown as ColumnEvidenceProfile
+  return {
+    ...profile,
+    formatEvidence: { ...profile.formatEvidence, detectors },
+    semanticDecision: {
+      ...profile.semanticDecision,
+      supportingEvidence,
+      conflictingEvidence,
+    },
+  }
 }
 
 function validateColumns(columns: ColumnMetadata[] | undefined, source: string) {
   if (!Array.isArray(columns)) throw incompatibleAnalysis(source)
   for (const column of columns) {
-    if (!completeEvidenceProfile(column?.evidenceProfile)) throw incompatibleAnalysis(source)
+    const profile = completeEvidenceProfile(column?.evidenceProfile)
+    if (!profile) throw incompatibleAnalysis(source)
+    column.evidenceProfile = profile
   }
 }
 
