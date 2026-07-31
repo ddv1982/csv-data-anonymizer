@@ -1,5 +1,36 @@
 use super::*;
+use crate::detection::{
+    Candidate, CandidateBatch, CandidateBatchResult, CandidateDetectionCoverage, CandidateDetector,
+    CandidateKind,
+};
 use crate::service::controls::apply_column_controls;
+
+struct FirstCellNameDetector;
+
+impl CandidateDetector for FirstCellNameDetector {
+    fn detector_id(&self) -> &str {
+        "test-ner"
+    }
+
+    fn detect(
+        &mut self,
+        batch: &CandidateBatch<'_>,
+    ) -> std::result::Result<CandidateBatchResult, String> {
+        let cell = batch.cells.first().expect("fixture has a non-empty cell");
+        Ok(CandidateBatchResult {
+            model_version: Some("1".to_string()),
+            coverage: CandidateDetectionCoverage::complete(batch.cells.len()),
+            candidates: vec![Candidate {
+                column_index: cell.column_index,
+                row_index: cell.row_index,
+                start_byte: 0,
+                end_byte: cell.text.len(),
+                kind: CandidateKind::PersonName,
+                score_basis_points: 9_000,
+            }],
+        })
+    }
+}
 
 #[test]
 fn analyzes_csv_headers_and_default_output_path() {
@@ -14,6 +45,29 @@ fn analyzes_csv_headers_and_default_output_path() {
             .ends_with("sample_private_output.csv")
     );
     assert_eq!(result.columns[1].name, "email");
+}
+
+#[test]
+fn file_analysis_can_report_additive_candidate_detection() {
+    let service = AnonymizerService::new("test-version");
+    let mut detector = FirstCellNameDetector;
+
+    let result = service
+        .analyze_csv_with_candidate_detector(fixture("sample.csv"), &mut detector)
+        .unwrap();
+
+    assert_eq!(
+        result.detection_run_summary.local_ner,
+        LocalNerRunStatus::Completed
+    );
+    assert_eq!(
+        result.detection_run_summary.deterministic,
+        DeterministicDetectionStatus::Completed
+    );
+    assert_eq!(
+        result.detection_run_summary.detector_id.as_deref(),
+        Some("test-ner")
+    );
 }
 
 #[test]

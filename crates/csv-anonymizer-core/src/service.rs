@@ -1,13 +1,16 @@
 use crate::csv_io::{count_csv_data_rows, read_detection_sample, read_sample};
+use crate::detection::{CandidateDetector, CandidateDetectorRunStatus};
 use crate::error::Result;
-use crate::metadata::build_column_metadata;
+use crate::metadata::{build_column_metadata, build_column_metadata_with_candidate_detector};
 use crate::smart::{
     SmartReplacementProvider, prepare_smart_replacements_from_csv,
     reusable_preview_smart_replacements,
 };
 use crate::types::{
-    AnonymizeData, AnonymizeParams, DETECTION_SAMPLE_ROW_FLOOR, DetectionCoverage, HeadersData,
-    PreflightData, PreflightParams, PreviewData, PreviewParams, ProcessControl, ProcessOptions,
+    AnonymizeData, AnonymizeParams, DETECTION_SAMPLE_ROW_FLOOR, DetectionCoverage,
+    DetectionReviewReason, DetectionRunSummary, DeterministicDetectionStatus, HeadersData,
+    LocalNerRunStatus, PreflightData, PreflightParams, PreviewData, PreviewParams, ProcessControl,
+    ProcessOptions,
 };
 use std::path::Path;
 
@@ -56,6 +59,86 @@ fn detection_sample_rows(requested: usize) -> usize {
     DETECTION_SAMPLE_ROW_FLOOR.max(requested).max(1)
 }
 
+pub(crate) fn detection_run_summary(status: CandidateDetectorRunStatus) -> DetectionRunSummary {
+    match status {
+        CandidateDetectorRunStatus::Disabled => DetectionRunSummary::default(),
+        CandidateDetectorRunStatus::Completed {
+            detector_id,
+            model_version,
+            examined_cells,
+            accepted_candidates,
+            rejections,
+        } => {
+            let rejected_candidates = rejections.iter().map(|item| item.count).sum();
+            DetectionRunSummary {
+                deterministic: DeterministicDetectionStatus::Completed,
+                local_ner: LocalNerRunStatus::Completed,
+                detector_id: Some(detector_id),
+                model_version,
+                examined_cells,
+                total_eligible_cells: examined_cells,
+                skipped_oversized_cells: 0,
+                accepted_candidates,
+                rejected_candidates,
+                review_reasons: if rejected_candidates == 0 {
+                    Vec::new()
+                } else {
+                    vec![DetectionReviewReason::CandidateRejected]
+                },
+                message: None,
+            }
+        }
+        CandidateDetectorRunStatus::Incomplete {
+            detector_id,
+            model_version,
+            total_cells,
+            examined_cells,
+            skipped_oversized_cells,
+            accepted_candidates,
+            rejections,
+        } => {
+            let rejected_candidates = rejections.iter().map(|item| item.count).sum();
+            DetectionRunSummary {
+                deterministic: DeterministicDetectionStatus::Completed,
+                local_ner: LocalNerRunStatus::Incomplete,
+                detector_id: Some(detector_id),
+                model_version,
+                examined_cells,
+                total_eligible_cells: total_cells,
+                skipped_oversized_cells,
+                accepted_candidates,
+                rejected_candidates,
+                review_reasons: if rejected_candidates == 0 {
+                    Vec::new()
+                } else {
+                    vec![DetectionReviewReason::CandidateRejected]
+                },
+                message: Some(format!(
+                    "Local AI examined {examined_cells} of {total_cells} eligible cells. \
+                     {skipped_oversized_cells} oversized cell(s) were skipped."
+                )),
+            }
+        }
+        CandidateDetectorRunStatus::Failed {
+            detector_id,
+            examined_cells,
+            message,
+        } => DetectionRunSummary {
+            deterministic: DeterministicDetectionStatus::Completed,
+            local_ner: LocalNerRunStatus::Failed,
+            detector_id: Some(detector_id),
+            model_version: None,
+            examined_cells,
+            total_eligible_cells: examined_cells,
+            skipped_oversized_cells: 0,
+            accepted_candidates: 0,
+            rejected_candidates: 0,
+            review_reasons: vec![DetectionReviewReason::DetectorFailed],
+            message: Some(message),
+        },
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct AnonymizerService {
     version: String,
@@ -86,15 +169,38 @@ impl AnonymizerService {
         file_path: impl AsRef<Path>,
         sample_rows: usize,
     ) -> Result<HeadersData> {
+        self.analyze_csv_with_sample_rows_and_candidate_detector(file_path, sample_rows, None)
+    }
+
+    pub fn analyze_csv_with_candidate_detector(
+        &self,
+        file_path: impl AsRef<Path>,
+        detector: &mut dyn CandidateDetector,
+    ) -> Result<HeadersData> {
+        self.analyze_csv_with_sample_rows_and_candidate_detector(
+            file_path,
+            DETECTION_SAMPLE_ROW_FLOOR,
+            Some(detector),
+        )
+    }
+
+    pub fn analyze_csv_with_sample_rows_and_candidate_detector(
+        &self,
+        file_path: impl AsRef<Path>,
+        sample_rows: usize,
+        detector: Option<&mut dyn CandidateDetector>,
+    ) -> Result<HeadersData> {
         let file_path = normalize_path(file_path.as_ref())?;
         let sample = read_detection_sample(&file_path, detection_sample_rows(sample_rows))?;
-        let metadata = build_column_metadata(&sample.headers, &sample.rows);
+        let (metadata, detector_status) =
+            build_column_metadata_with_candidate_detector(&sample.headers, &sample.rows, detector);
 
         Ok(HeadersData {
             file_path: file_path.clone(),
             row_count: sample.data_rows_scanned,
             row_count_is_complete: sample.scanned_entire_input,
             default_output_path: generate_default_output_path(&file_path),
+            detection_run_summary: detection_run_summary(detector_status),
             columns: metadata,
         })
     }

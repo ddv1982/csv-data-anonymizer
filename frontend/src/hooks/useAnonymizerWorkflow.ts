@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type {
   AnonymizeData,
   AppSettings,
+  PreparedAnalysis,
   PreviewData,
 } from '../types'
 import { useAnonymizeJob } from './useAnonymizeJob'
@@ -19,6 +20,7 @@ export function useAnonymizerWorkflow() {
   const [busy, setBusy] = useState<BusyState>('idle')
   const [error, setError] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [preparedAnalysis, setPreparedAnalysis] = useState<PreparedAnalysis | null>(null)
   const {
     headers,
     setHeaders,
@@ -68,6 +70,7 @@ export function useAnonymizerWorkflow() {
       setLoadedCsv,
       setColumnControls,
     },
+    setPreparedAnalysis,
   })
 
   const hasFile = Boolean(inputPath.trim())
@@ -84,6 +87,7 @@ export function useAnonymizerWorkflow() {
     controlsForColumns,
     selectionUsesLocalAi,
     setPreview,
+    preparedAnalysis,
   })
   const anonymizeJob = useAnonymizeJob(shell, {
     inputPath,
@@ -97,6 +101,7 @@ export function useAnonymizerWorkflow() {
     localAiBlocked,
     persistSettings,
     refreshSettings,
+    preparedAnalysis,
   })
   const invalidatingSelection = useSelectionInvalidation(
     { setSelectedColumns: setCsvSelectedColumns, toggleColumn: toggleCsvColumn, updateColumnStrategy: updateCsvColumnStrategy },
@@ -109,10 +114,14 @@ export function useAnonymizerWorkflow() {
     const nextSettings = { ...latestSettingsRef.current, [key]: value }
     if (
       key === 'previewSampleCount' ||
-      key === 'localAiEnabled' ||
-      key === 'localAiModel'
+      key === 'localAiEnabled'
     ) {
       clearArtifacts()
+    }
+    if (key === 'localNerEnabled' || key === 'localAiModel' || key === 'sampleRowCount') {
+      // Only detector inputs invalidate the prepared snapshot. Presentation,
+      // destination and Smart-replacement settings do not change its evidence.
+      resetData()
     }
     if (key === 'defaultOutputSuffix') {
       csvAnalysis.updateOutputPathSuffix(String(value))
@@ -121,6 +130,7 @@ export function useAnonymizerWorkflow() {
   }
 
   function resetData() {
+    setPreparedAnalysis(null)
     resetCsvSelection()
     clearArtifacts()
     anonymizeJob.clearJobState()
@@ -132,6 +142,7 @@ export function useAnonymizerWorkflow() {
     inputPath,
     outputPath,
     headers,
+    preparedAnalysis,
     selectedColumns,
     columnControls,
     preview,

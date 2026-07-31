@@ -67,6 +67,7 @@ export function detectorSourceLabel(detector: string | undefined) {
   if (!detector) return 'Detector'
   if (detector.startsWith('header:taxonomy')) return 'Header taxonomy'
   if (detector.startsWith('header:')) return 'Header rule'
+  if (detector.startsWith('local-ner:')) return 'Local language model'
   if (detector === 'validator:iban') return 'IBAN validator'
   if (detector === 'validator:phone') return 'Phone validator'
   if (detector === 'validator:card') return 'Payment card validator'

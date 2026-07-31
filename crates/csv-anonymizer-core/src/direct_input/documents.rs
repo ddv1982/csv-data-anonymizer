@@ -1,3 +1,4 @@
+use crate::detection::CandidateDetector;
 use crate::error::{AnonymizerError, Result};
 use crate::service::select_columns;
 use crate::smart::SmartReplacementProvider;
@@ -12,9 +13,10 @@ use std::time::Instant;
 
 use super::shared::{
     FieldSampleLimits, FieldSamples, PreviewSelection, analysis_from_fields,
-    bounded_preview_sample_count, escape_path_key, next_row_index, paste_detection_sample_rows,
-    paste_transform_data, preview_field_sample_limits, preview_from_fields_with_smart_provider,
-    push_identified_field_sample, selected_columns_by_source, smart_replacements_for_fields,
+    analysis_from_fields_with_candidate_detector, bounded_preview_sample_count, escape_path_key,
+    next_row_index, paste_detection_sample_rows, paste_transform_data, preview_field_sample_limits,
+    preview_from_fields_with_smart_provider, push_identified_field_sample,
+    selected_columns_by_source, smart_replacements_for_fields,
 };
 
 pub(super) fn preview_value_document_with_smart_provider(
@@ -128,6 +130,30 @@ pub(super) fn analyze_value_document(
 ) -> Result<PasteAnalyzeData> {
     analyze_value_document_with_coverage(format, value, sample_row_count)
         .map(|(analysis, _)| analysis)
+}
+
+pub(super) fn analyze_value_document_with_candidate_detector(
+    format: PasteDataFormat,
+    value: &Value,
+    sample_row_count: usize,
+    detector: &mut dyn CandidateDetector,
+) -> Result<PasteAnalyzeData> {
+    let sample_row_count = paste_detection_sample_rows(sample_row_count)?;
+    let mut fields = Vec::new();
+    collect_json_fields(
+        value,
+        format,
+        &mut Vec::new(),
+        &mut fields,
+        FieldSampleLimits::detection_only(sample_row_count),
+    )?;
+    Ok(analysis_from_fields_with_candidate_detector(
+        format,
+        &fields,
+        infer_value_row_count(value),
+        Some(detector),
+    )
+    .0)
 }
 
 /// [`analyze_value_document`] plus how much of the input it classified. Split for

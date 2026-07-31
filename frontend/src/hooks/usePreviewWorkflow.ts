@@ -3,6 +3,7 @@ import { firstPreflightBlocker, preflightAnonymization, previewAnonymization } f
 import type {
   ColumnControl,
   PreviewData,
+  PreparedAnalysis,
 } from '../types'
 import { messageFrom } from '../utils/errors'
 import type { WorkflowShell } from './workflowTypes'
@@ -16,6 +17,7 @@ type PreviewWorkflowArgs = {
   controlsForColumns: (columns: number[]) => ColumnControl[]
   selectionUsesLocalAi: (columns: number[]) => boolean
   setPreview: Dispatch<SetStateAction<PreviewData | null>>
+  preparedAnalysis: PreparedAnalysis | null
 }
 
 export function usePreviewWorkflow(
@@ -29,6 +31,7 @@ export function usePreviewWorkflow(
     controlsForColumns,
     selectionUsesLocalAi,
     setPreview,
+    preparedAnalysis,
   }: PreviewWorkflowArgs,
 ) {
   const { busy, setBusy, setError, setResult, settings, localAi } = shell
@@ -40,6 +43,7 @@ export function usePreviewWorkflow(
       hasSelectedColumns &&
       inputPath &&
       busy === 'idle' &&
+      (!settings.localNerEnabled || Boolean(preparedAnalysis)) &&
       !localAiBlocked,
   )
 
@@ -67,6 +71,7 @@ export function usePreviewWorkflow(
         settings.sampleRowCount,
         [],
         localAiRequest,
+        ...(preparedAnalysis ? [preparedAnalysis] : []),
       )
       const blocker = firstPreflightBlocker(preflight)
       if (blocker) {
@@ -81,6 +86,7 @@ export function usePreviewWorkflow(
         settings.previewSampleCount,
         settings.sampleRowCount,
         localAiRequest,
+        ...(preparedAnalysis ? [preparedAnalysis] : []),
       )
       setPreview(nextPreview)
       setResult(null)

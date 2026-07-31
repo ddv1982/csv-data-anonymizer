@@ -160,6 +160,26 @@ mod tests {
         assert_eq!(settings.schema_version, SETTINGS_SCHEMA_VERSION);
         assert_eq!(settings.theme_mode, ThemeMode::System);
         assert_eq!(settings.sample_row_count, 250);
+        assert!(!settings.local_ner_enabled);
+    }
+
+    #[test]
+    fn pre_local_ner_settings_migrate_with_the_detector_off() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let settings_path = temp_dir.path().join("settings.json");
+        let mut legacy = serde_json::to_value(AppSettings::default()).unwrap();
+        let object = legacy.as_object_mut().unwrap();
+        object.insert("schemaVersion".to_string(), serde_json::json!(10));
+        object.remove("localNerEnabled");
+        fs::write(&settings_path, serde_json::to_string(&legacy).unwrap()).unwrap();
+
+        let settings = load_settings_from_path(&settings_path).unwrap();
+        let persisted: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&settings_path).unwrap()).unwrap();
+
+        assert_eq!(settings.schema_version, SETTINGS_SCHEMA_VERSION);
+        assert!(!settings.local_ner_enabled);
+        assert_eq!(persisted["localNerEnabled"], false);
     }
 
     #[test]
@@ -217,6 +237,22 @@ mod tests {
         assert_eq!(returned.preview_sample_count, 7);
         let loaded = store.load_settings().unwrap();
         assert_eq!(loaded.preview_sample_count, 7);
+    }
+
+    #[test]
+    fn local_ner_opt_in_round_trips() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let store = SettingsStore::new(temp_dir.path().join("settings.json"));
+        let settings = AppSettings {
+            local_ner_enabled: true,
+            ..AppSettings::default()
+        };
+
+        let saved = store.save_settings(&settings).unwrap();
+        let loaded = store.load_settings().unwrap();
+
+        assert!(saved.local_ner_enabled);
+        assert_eq!(loaded, saved);
     }
 
     #[test]

@@ -1,14 +1,25 @@
 use crate::detection::{
-    LocaleContext, analyze_column_privacy, classify_pii_risk, detect_column_type_in_context,
-    detect_empty_format, infer_locale_context, max_pii_risk,
+    CandidateDetector, CandidateDetectorRunStatus, LocaleContext, analyze_column_privacy,
+    candidate_batch, classify_pii_risk, detect_column_type_in_context, detect_empty_format,
+    infer_locale_context, max_pii_risk, summarize_privacy_findings, validate_candidates,
 };
 use crate::strategies::base_column_label;
-use crate::types::{AnonymizationStrategy, ColumnMetadata, ColumnValueDistribution, PiiRisk};
+use crate::types::{
+    AnonymizationStrategy, ColumnMetadata, ColumnReviewReason, ColumnValueDistribution, PiiRisk,
+};
 use std::collections::{HashMap, HashSet};
 
 const DEFAULT_SAMPLE_COUNT: usize = 5;
 
 pub fn build_column_metadata(headers: &[String], samples: &[Vec<String>]) -> Vec<ColumnMetadata> {
+    build_column_metadata_with_candidate_detector(headers, samples, None).0
+}
+
+pub fn build_column_metadata_with_candidate_detector(
+    headers: &[String],
+    samples: &[Vec<String>],
+    detector: Option<&mut dyn CandidateDetector>,
+) -> (Vec<ColumnMetadata>, CandidateDetectorRunStatus) {
     let column_values: Vec<Vec<String>> = (0..headers.len())
         .map(|index| extract_column_values(samples, index))
         .collect();
@@ -27,7 +38,78 @@ pub fn build_column_metadata(headers: &[String], samples: &[Vec<String>]) -> Vec
         })
         .collect();
     mark_ambiguous_header_labels(&mut metadata);
-    metadata
+    let Some(detector) = detector else {
+        return (metadata, CandidateDetectorRunStatus::Disabled);
+    };
+    let detector_id = detector.detector_id().to_string();
+    let batch = candidate_batch(headers, samples);
+    let examined_cells = batch.cells.len();
+    let result = match detector.detect(&batch) {
+        Ok(result) => result,
+        Err(message) => {
+            return (
+                metadata,
+                CandidateDetectorRunStatus::Failed {
+                    detector_id,
+                    examined_cells,
+                    message,
+                },
+            );
+        }
+    };
+    let model_version = result.model_version.clone();
+    let coverage = result.coverage;
+    let deterministic_findings = metadata
+        .iter()
+        .map(|column| column.privacy_findings.clone())
+        .collect::<Vec<_>>();
+    let validated = validate_candidates(
+        &batch,
+        result,
+        &deterministic_findings,
+        &detector_id,
+        metadata.len(),
+    );
+    for (column, mut findings) in metadata.iter_mut().zip(validated.findings_by_column) {
+        if findings.is_empty() {
+            continue;
+        }
+        if !column
+            .review_reasons
+            .contains(&ColumnReviewReason::AmbiguousContext)
+        {
+            column
+                .review_reasons
+                .push(ColumnReviewReason::AmbiguousContext);
+        }
+        column.privacy_findings.append(&mut findings);
+        let sample_count = column_values[column.index]
+            .iter()
+            .filter(|value| !crate::detection::is_empty_value(value))
+            .count();
+        column.privacy_evidence =
+            summarize_privacy_findings(&column.privacy_findings, sample_count);
+    }
+    let status = if coverage.is_incomplete() {
+        CandidateDetectorRunStatus::Incomplete {
+            detector_id,
+            model_version,
+            total_cells: coverage.total_cells,
+            examined_cells: coverage.examined_cells,
+            skipped_oversized_cells: coverage.skipped_oversized_cells,
+            accepted_candidates: validated.accepted,
+            rejections: validated.rejections,
+        }
+    } else {
+        CandidateDetectorRunStatus::Completed {
+            detector_id,
+            model_version,
+            examined_cells: coverage.examined_cells,
+            accepted_candidates: validated.accepted,
+            rejections: validated.rejections,
+        }
+    };
+    (metadata, status)
 }
 
 /// Flags the columns whose headers reduce to a label some other column also claims.
@@ -137,6 +219,7 @@ fn build_single_column_metadata(
         detection_trace: detection.trace,
         privacy_findings: privacy.findings,
         privacy_evidence: privacy.evidence,
+        review_reasons: Vec::new(),
         pii_risk,
         sample_values,
         sample_value_distribution: ColumnValueDistribution::from_values(index, values),

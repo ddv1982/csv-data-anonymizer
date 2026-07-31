@@ -4,6 +4,7 @@ import type {
   AnalyzeResponse,
   AppSettings,
   ColumnControl,
+  PreparedAnalysis,
 } from '../types'
 import { messageFrom } from '../utils/errors'
 import { defaultOutputPathWithSuffix, directoryOf } from '../utils/paths'
@@ -28,6 +29,7 @@ type CsvAnalysisArgs = {
   outputPath: string
   setOutputPath: Dispatch<SetStateAction<string>>
   selection: CsvSelectionState
+  setPreparedAnalysis: Dispatch<SetStateAction<PreparedAnalysis | null>>
 }
 
 export function useCsvAnalysis(
@@ -42,6 +44,7 @@ export function useCsvAnalysis(
     outputPath,
     setOutputPath,
     selection,
+    setPreparedAnalysis,
   }: CsvAnalysisArgs,
 ) {
   const { busy, setBusy, setError, setResult, settings } = shell
@@ -78,7 +81,12 @@ export function useCsvAnalysis(
     selection.setColumnControls({})
 
     try {
-      const response = await analyzeCsv(normalized, settings.sampleRowCount, settings.defaultOutputSuffix)
+      const response = await analyzeCsv(
+        normalized,
+        settings.sampleRowCount,
+        settings.defaultOutputSuffix,
+      )
+      setPreparedAnalysis(response.preparedAnalysis ?? null)
       setInputPath(response.headers.filePath)
       selection.setLoadedCsv(response.headers, response.selectedColumns)
       setOutputPath(response.suggestedOutputPath)

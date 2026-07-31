@@ -415,7 +415,7 @@ fn promote_findings(
     }
 }
 
-fn summarize_privacy_findings(
+pub(crate) fn summarize_privacy_findings(
     findings: &[PrivacyFinding],
     sample_count: usize,
 ) -> Vec<PrivacyEvidenceSummary> {
@@ -515,7 +515,7 @@ pub(crate) fn risk_for_privacy_kind_in_tests(kind: PrivacyFindingKind) -> PiiRis
     risk_for_privacy_kind(kind)
 }
 
-fn risk_for_privacy_kind(kind: PrivacyFindingKind) -> PiiRisk {
+pub(crate) fn risk_for_privacy_kind(kind: PrivacyFindingKind) -> PiiRisk {
     match kind {
         PrivacyFindingKind::Person
         | PrivacyFindingKind::Contact

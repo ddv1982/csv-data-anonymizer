@@ -14,7 +14,7 @@ export const maxSampleRowCount = 10000
 export const maxPreviewSampleCount = 100
 
 export const defaultSettings: AppSettings = {
-  schemaVersion: 10,
+  schemaVersion: 11,
   themeMode: 'system',
   overwriteOutput: false,
   sampleRowCount: 100,
@@ -25,4 +25,5 @@ export const defaultSettings: AppSettings = {
   lastOutputDirectory: null,
   localAiEnabled: false,
   localAiModel: defaultLocalAiModel,
+  localNerEnabled: false,
 }

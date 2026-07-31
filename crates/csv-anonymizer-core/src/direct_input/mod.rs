@@ -9,6 +9,7 @@ mod xml;
 #[cfg(test)]
 mod tests;
 
+use crate::detection::CandidateDetector;
 use crate::error::Result;
 use crate::metadata::should_auto_select_column;
 use crate::smart::SmartReplacementProvider;
@@ -18,24 +19,78 @@ use crate::types::{
 };
 
 pub fn analyze_paste_data(input: PasteAnalyzeParams) -> Result<PasteAnalyzeData> {
+    analyze_paste_data_impl(input, None)
+}
+
+pub fn analyze_paste_data_with_candidate_detector(
+    input: PasteAnalyzeParams,
+    detector: &mut dyn CandidateDetector,
+) -> Result<PasteAnalyzeData> {
+    analyze_paste_data_impl(input, Some(detector))
+}
+
+fn analyze_paste_data_impl(
+    input: PasteAnalyzeParams,
+    detector: Option<&mut dyn CandidateDetector>,
+) -> Result<PasteAnalyzeData> {
     shared::validate_paste_content(&input.content)?;
     let format = format_detection::resolve_format(input.format, &input.content);
 
-    let mut analysis = match format {
-        PasteDataFormat::Csv => csv_text::analyze_csv_text(&input.content, input.sample_row_count),
-        PasteDataFormat::Json => {
+    let mut analysis = match (format, detector) {
+        (PasteDataFormat::Csv, Some(detector)) => {
+            csv_text::analyze_csv_text_with_candidate_detector(
+                &input.content,
+                input.sample_row_count,
+                detector,
+            )
+        }
+        (PasteDataFormat::Csv, None) => {
+            csv_text::analyze_csv_text(&input.content, input.sample_row_count)
+        }
+        (PasteDataFormat::Json, Some(detector)) => {
+            let value = documents::parse_json(&input.content)?;
+            documents::analyze_value_document_with_candidate_detector(
+                format,
+                &value,
+                input.sample_row_count,
+                detector,
+            )
+        }
+        (PasteDataFormat::Json, None) => {
             let value = documents::parse_json(&input.content)?;
             documents::analyze_value_document(format, &value, input.sample_row_count)
         }
-        PasteDataFormat::Yaml => {
+        (PasteDataFormat::Yaml, Some(detector)) => {
+            let value = documents::parse_yaml(&input.content)?;
+            documents::analyze_value_document_with_candidate_detector(
+                format,
+                &value,
+                input.sample_row_count,
+                detector,
+            )
+        }
+        (PasteDataFormat::Yaml, None) => {
             let value = documents::parse_yaml(&input.content)?;
             documents::analyze_value_document(format, &value, input.sample_row_count)
         }
-        PasteDataFormat::Xml => xml::analyze_xml(&input.content, input.sample_row_count),
-        PasteDataFormat::PlainText | PasteDataFormat::Logs => {
+        (PasteDataFormat::Xml, Some(detector)) => xml::analyze_xml_with_candidate_detector(
+            &input.content,
+            input.sample_row_count,
+            detector,
+        ),
+        (PasteDataFormat::Xml, None) => xml::analyze_xml(&input.content, input.sample_row_count),
+        (PasteDataFormat::PlainText | PasteDataFormat::Logs, Some(detector)) => {
+            text::analyze_text_content_with_candidate_detector(
+                &input.content,
+                format,
+                input.sample_row_count,
+                detector,
+            )
+        }
+        (PasteDataFormat::PlainText | PasteDataFormat::Logs, None) => {
             text::analyze_text_content(&input.content, format, input.sample_row_count)
         }
-        PasteDataFormat::Auto => unreachable!("auto format must resolve before analysis"),
+        (PasteDataFormat::Auto, _) => unreachable!("auto format must resolve before analysis"),
     }?;
 
     for column in &mut analysis.columns {
@@ -108,3 +163,69 @@ pub fn transform_paste_data_with_smart_provider(
 }
 
 pub use quick::{generate_quick_values, generate_quick_values_with_smart_provider};
+
+pub fn replay_paste_text_candidate_evidence(
+    input: &PasteTransformParams,
+    snapshot: &crate::PreparedAnalysisSnapshot,
+    confirmed_candidate_ids: &[String],
+) -> Result<PasteTransformData> {
+    replay_paste_text_candidate_evidence_with_smart_provider(
+        input,
+        snapshot,
+        confirmed_candidate_ids,
+        None,
+    )
+}
+
+pub fn replay_paste_text_candidate_evidence_with_smart_provider(
+    input: &PasteTransformParams,
+    snapshot: &crate::PreparedAnalysisSnapshot,
+    confirmed_candidate_ids: &[String],
+    provider: Option<&mut dyn SmartReplacementProvider>,
+) -> Result<PasteTransformData> {
+    shared::validate_paste_content(&input.content)?;
+    let format = format_detection::resolve_format(input.format, &input.content);
+    if !matches!(format, PasteDataFormat::PlainText | PasteDataFormat::Logs) {
+        return Err(crate::error::AnonymizerError::input_parse(
+            "prepared text analysis",
+            "Candidate span replay is only available for plain text and logs.",
+        ));
+    }
+    text::replay_text_candidate_evidence(input, format, snapshot, confirmed_candidate_ids, provider)
+}
+
+pub fn preview_paste_text_candidate_evidence(
+    input: &PastePreviewParams,
+    snapshot: &crate::PreparedAnalysisSnapshot,
+    confirmed_candidate_ids: &[String],
+) -> Result<PreviewData> {
+    preview_paste_text_candidate_evidence_with_smart_provider(
+        input,
+        snapshot,
+        confirmed_candidate_ids,
+        None,
+    )
+}
+
+pub fn preview_paste_text_candidate_evidence_with_smart_provider(
+    input: &PastePreviewParams,
+    snapshot: &crate::PreparedAnalysisSnapshot,
+    confirmed_candidate_ids: &[String],
+    provider: Option<&mut dyn SmartReplacementProvider>,
+) -> Result<PreviewData> {
+    shared::validate_paste_content(&input.content)?;
+    let format = format_detection::resolve_format(input.format, &input.content);
+    if !matches!(format, PasteDataFormat::PlainText | PasteDataFormat::Logs) {
+        return Err(crate::error::AnonymizerError::input_parse(
+            "prepared text analysis",
+            "Candidate span preview is only available for plain text and logs.",
+        ));
+    }
+    text::preview_text_candidate_evidence(
+        input,
+        format,
+        snapshot,
+        confirmed_candidate_ids,
+        provider,
+    )
+}

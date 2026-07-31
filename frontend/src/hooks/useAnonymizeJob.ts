@@ -12,6 +12,7 @@ import type {
   AppSettings,
   ColumnControl,
   HeadersData,
+  PreparedAnalysis,
   SmartReplacementEntry,
 } from '../types'
 import { messageFrom } from '../utils/errors'
@@ -112,6 +113,7 @@ type AnonymizeJobArgs = {
   hasSelectedColumns: boolean
   headers: HeadersData | null
   previewSmartReplacements: SmartReplacementEntry[]
+  preparedAnalysis: PreparedAnalysis | null
   localAiBlocked: boolean
   persistSettings: (settings: AppSettings) => Promise<void>
   refreshSettings: () => Promise<void>
@@ -128,6 +130,7 @@ export function useAnonymizeJob(
     hasSelectedColumns,
     headers,
     previewSmartReplacements,
+    preparedAnalysis,
     localAiBlocked,
     persistSettings,
     refreshSettings,
@@ -156,6 +159,7 @@ export function useAnonymizeJob(
       inputPath &&
       outputPath &&
       busy === 'idle' &&
+      (!settings.localNerEnabled || Boolean(preparedAnalysis)) &&
       !localAiBlocked,
   )
 
@@ -270,6 +274,7 @@ export function useAnonymizeJob(
 
   function anonymizeBlockedMessage() {
     if (localAiBlocked) return 'Set up Local AI before creating output with Smart replacement columns.'
+    if (settings.localNerEnabled && !preparedAnalysis) return 'Analyze the source again before creating output.'
     if (!inputPath || !hasColumns) return 'Load a CSV file first.'
     if (!hasSelectedColumns) return 'Select at least one column to anonymize.'
     if (!outputPath) return 'Choose an output path.'
@@ -298,6 +303,7 @@ export function useAnonymizeJob(
         settings.sampleRowCount,
         previewSmartReplacements,
         localAiRequest,
+        ...(preparedAnalysis ? [preparedAnalysis] : []),
       )
       const blocker = firstPreflightBlocker(preflight)
       if (blocker) {
@@ -315,6 +321,7 @@ export function useAnonymizeJob(
         headers?.rowCountIsComplete ? headers.rowCount : null,
         previewSmartReplacements,
         localAiRequest,
+        ...(preparedAnalysis ? [preparedAnalysis] : []),
       )
       setActiveJobId(status.jobId)
       handleJobStatus(status)

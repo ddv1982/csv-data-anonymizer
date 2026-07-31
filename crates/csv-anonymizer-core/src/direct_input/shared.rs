@@ -1,6 +1,9 @@
+use crate::detection::{CandidateDetector, CandidateDetectorRunStatus};
 use crate::detection::{classify_pii_risk, max_pii_risk};
 use crate::error::{AnonymizerError, Result};
-use crate::metadata::{build_column_metadata, default_strategy_for_pii_risk};
+use crate::metadata::{
+    build_column_metadata_with_candidate_detector, default_strategy_for_pii_risk,
+};
 use crate::sampling::SpreadSampler;
 use crate::service::{
     build_privacy_report, count_transforming_selected_columns, display_row_count,
@@ -175,8 +178,18 @@ pub(super) fn analysis_from_fields(
     fields: &[FieldSamples],
     row_count: usize,
 ) -> (PasteAnalyzeData, DetectionCoverage) {
+    analysis_from_fields_with_candidate_detector(format, fields, row_count, None)
+}
+
+pub(super) fn analysis_from_fields_with_candidate_detector(
+    format: PasteDataFormat,
+    fields: &[FieldSamples],
+    row_count: usize,
+    detector: Option<&mut dyn CandidateDetector>,
+) -> (PasteAnalyzeData, DetectionCoverage) {
     let (headers, rows) = fields_to_rows(fields, FieldWindow::Detection);
-    let columns = metadata_from_fields(fields, &headers, &rows);
+    let (columns, detector_status) =
+        metadata_from_fields_with_candidate_detector(fields, &headers, &rows, detector);
     let coverage = detection_coverage(fields, rows.len());
 
     (
@@ -185,7 +198,9 @@ pub(super) fn analysis_from_fields(
             row_count,
             row_count_is_complete: true,
             detection_coverage: coverage.summary(),
+            detection_run_summary: crate::service::detection_run_summary(detector_status),
             columns,
+            prepared_analysis: None,
         },
         coverage,
     )
@@ -453,7 +468,17 @@ pub(super) fn metadata_from_fields(
     headers: &[String],
     rows: &[Vec<String>],
 ) -> Vec<ColumnMetadata> {
-    let mut metadata = build_column_metadata(headers, rows);
+    metadata_from_fields_with_candidate_detector(fields, headers, rows, None).0
+}
+
+fn metadata_from_fields_with_candidate_detector(
+    fields: &[FieldSamples],
+    headers: &[String],
+    rows: &[Vec<String>],
+    detector: Option<&mut dyn CandidateDetector>,
+) -> (Vec<ColumnMetadata>, CandidateDetectorRunStatus) {
+    let (mut metadata, detector_status) =
+        build_column_metadata_with_candidate_detector(headers, rows, detector);
     for (field, column) in fields.iter().zip(metadata.iter_mut()) {
         column.source_path = field.source_path.clone();
         if let Some(data_type) = field.data_type {
@@ -468,7 +493,7 @@ pub(super) fn metadata_from_fields(
         }
     }
     apply_direct_input_strategy_defaults(&mut metadata);
-    metadata
+    (metadata, detector_status)
 }
 
 fn apply_direct_input_strategy_defaults(metadata: &mut [ColumnMetadata]) {

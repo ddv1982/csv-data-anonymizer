@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "description": "Supplemental, data-driven detector cases. This is a development/regression seed, not the locked release evaluation set.",
+  "annotationUnit": "column",
+  "cases": [
+    {
+      "id": "name-cryptic-header",
+      "header": "c_nm",
+      "values": ["Ada Lovelace", "Grace Hopper", "Edsger Dijkstra"],
+      "expectedType": "fullName",
+      "expectedRiskFloor": "high",
+      "mustSurface": true,
+      "tags": ["person-name", "cryptic-header", "latin"]
+    },
+    {
+      "id": "name-headerless-diacritics",
+      "header": "",
+      "values": ["Łukasz Żółć", "Zoë Saldaña", "Søren Kierkegaard"],
+      "expectedType": "fullName",
+      "expectedRiskFloor": "high",
+      "mustSurface": true,
+      "tags": ["person-name", "headerless", "diacritics"]
+    },
+    {
+      "id": "name-benign-city-label",
+      "header": "city_name",
+      "values": ["Rotterdam", "Utrecht", "Groningen"],
+      "expectedType": "string",
+      "expectedRiskFloor": "low",
+      "mustSurface": false,
+      "tags": ["benign-look-alike", "name"]
+    },
+    {
+      "id": "email-display-name",
+      "header": "contact",
+      "values": [
+        "Ada Lovelace <ada@example.com>",
+        "Grace Hopper <grace@example.org>"
+      ],
+      "expectedType": "email",
+      "expectedRiskFloor": "high",
+      "mustSurface": true,
+      "tags": ["email", "wrapper", "messy-format"]
+    },
+    {
+      "id": "email-benign-documentation",
+      "header": "example_syntax",
+      "values": ["user@example.invalid", "name@example.invalid"],
+      "expectedType": "string",
+      "expectedRiskFloor": "low",
+      "mustSurface": false,
+      "tags": ["benign-look-alike", "email", "documentation"]
+    },
+    {
+      "id": "opaque-id-unpadded",
+      "header": "order_ref",
+      "values": ["REF-7", "REF-81", "REF-104213"],
+      "expectedType": "numericId",
+      "expectedRiskFloor": "medium",
+      "mustSurface": true,
+      "tags": ["identifier", "alphanumeric", "variable-width"]
+    },
+    {
+      "id": "opaque-id-benign-product-label",
+      "header": "product_label",
+      "values": ["REF-7", "REF-81", "REF-104213"],
+      "expectedType": "string",
+      "expectedRiskFloor": "low",
+      "mustSurface": false,
+      "tags": ["benign-look-alike", "identifier", "context"]
+    },
+    {
+      "id": "ipv6-headerless",
+      "header": "",
+      "values": ["2001:db8::1", "2001:db8:85a3::8a2e:370:7334"],
+      "expectedType": "ipAddress",
+      "expectedRiskFloor": "medium",
+      "mustSurface": true,
+      "tags": ["ip-address", "ipv6", "headerless"]
+    },
+    {
+      "id": "ipv4-benign-measurement",
+      "header": "measurement",
+      "values": ["1.2.3.4", "5.6.7.8", "9.10.11.12"],
+      "expectedType": "string",
+      "expectedRiskFloor": "low",
+      "mustSurface": false,
+      "tags": ["benign-look-alike", "ip-address"]
+    },
+    {
+      "id": "dob-private-context",
+      "header": "date_of_birth",
+      "values": ["1984-06-12", "1977-01-03", "2001-11-28"],
+      "expectedType": "timestamp",
+      "expectedRiskFloor": "high",
+      "mustSurface": true,
+      "tags": ["date", "private-context"]
+    },
+    {
+      "id": "date-operational-context",
+      "header": "invoice_date",
+      "values": ["2026-01-02", "2026-01-03", "2026-01-04"],
+      "expectedType": "timestamp",
+      "expectedRiskFloor": "low",
+      "mustSurface": false,
+      "tags": ["date", "benign-context"]
+    },
+    {
+      "id": "phone-mixed-column",
+      "header": "notes",
+      "values": ["call +31 6 12345678", "no phone supplied", "office: +44 20 7946 0958"],
+      "expectedType": "string",
+      "expectedRiskFloor": "medium",
+      "mustSurface": true,
+      "tags": ["phone", "mixed-column", "free-text"]
+    }
+  ]
+}

@@ -2,7 +2,7 @@ use crate::local_ai::DEFAULT_OLLAMA_MODEL;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-pub(super) const SETTINGS_SCHEMA_VERSION: u32 = 10;
+pub(super) const SETTINGS_SCHEMA_VERSION: u32 = 11;
 pub(super) const DEFAULT_OUTPUT_SUFFIX: &str = "_private_output";
 pub(super) const LEGACY_OUTPUT_SUFFIX: &str = "_anonymized";
 
@@ -38,6 +38,12 @@ pub struct AppSettings {
     pub local_ai_enabled: bool,
     #[serde(default = "default_local_ai_model")]
     pub local_ai_model: String,
+    /// Enables the optional Ollama-backed supplemental detection pass.
+    ///
+    /// It remains separate from Smart replacement consent because detection and
+    /// replacement are independent uses of the configured model.
+    #[serde(default)]
+    pub local_ner_enabled: bool,
 }
 
 impl Default for AppSettings {
@@ -54,6 +60,7 @@ impl Default for AppSettings {
             last_output_directory: None,
             local_ai_enabled: false,
             local_ai_model: default_local_ai_model(),
+            local_ner_enabled: false,
         }
     }
 }
@@ -100,5 +107,12 @@ mod tests {
         assert!(validate_sample_count(10, 10, "Samples").is_ok());
         assert!(validate_sample_count(0, 10, "Samples").is_err());
         assert!(validate_sample_count(11, 10, "Samples").is_err());
+    }
+
+    #[test]
+    fn local_ner_defaults_off() {
+        let settings = AppSettings::default();
+
+        assert!(!settings.local_ner_enabled);
     }
 }

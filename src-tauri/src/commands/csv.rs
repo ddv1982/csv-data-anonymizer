@@ -2,23 +2,27 @@ use super::shared::{
     authorize_or_confirm_input_file, authorize_or_confirm_output_file,
     default_output_path_with_suffix, run_blocking, service,
 };
+use crate::local_ai::candidate_detector::local_candidate_detector;
 use crate::local_ai::{
-    LOCAL_AI_DISABLED_MESSAGE, LocalAiRequest, local_ai_status, selection_requires_local_ai,
-    smart_provider_for_request, smart_provider_for_strategy,
+    DEFAULT_OLLAMA_MODEL, LOCAL_AI_DISABLED_MESSAGE, LocalAiRequest, local_ai_status,
+    selection_requires_local_ai, smart_provider_for_request, smart_provider_for_strategy,
 };
 use crate::path_access::PathAccess;
 use crate::settings::{
     MAX_PREVIEW_SAMPLE_COUNT, MAX_SAMPLE_ROW_COUNT, SettingsStore, validate_sample_count,
 };
 use csv_anonymizer_core::{
-    ColumnControl, HeadersData, PasteAnalyzeData, PasteAnalyzeParams, PastePreviewParams,
-    PasteTransformData, PasteTransformParams, PreflightData, PreflightMode, PreflightParams,
-    PreviewData, PreviewParams, QuickGenerateParams, QuickTransformData, SmartReplacementEntry,
-    SmartReplacementProvider, should_auto_select_column,
+    ColumnControl, DetectionRunSummary, HeadersData, LocalNerRunStatus, PasteAnalyzeData,
+    PasteAnalyzeParams, PastePreviewParams, PasteTransformData, PasteTransformParams,
+    PreflightData, PreflightMode, PreflightParams, PreparedAnalysisSnapshot, PreviewData,
+    PreviewParams, QuickGenerateParams, QuickTransformData, SmartReplacementEntry,
+    SmartReplacementProvider, SourceFingerprint, should_auto_select_column,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
+use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use tauri::State;
 
 #[derive(Debug, Clone, Serialize)]
@@ -27,6 +31,8 @@ pub struct AnalyzeResponse {
     pub headers: HeadersData,
     pub selected_columns: Vec<usize>,
     pub suggested_output_path: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prepared_analysis: Option<PreparedAnalysisSnapshot>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -39,6 +45,7 @@ pub struct PreviewRequest {
     pub sample_count: usize,
     pub sample_row_count: usize,
     pub local_ai: Option<LocalAiRequest>,
+    pub prepared_analysis: Option<PreparedAnalysisSnapshot>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -55,6 +62,7 @@ pub struct PreflightRequest {
     #[serde(default)]
     pub preview_smart_replacements: Vec<SmartReplacementEntry>,
     pub local_ai: Option<LocalAiRequest>,
+    pub prepared_analysis: Option<PreparedAnalysisSnapshot>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -63,6 +71,7 @@ pub struct PastePreviewRequest {
     #[serde(flatten)]
     pub params: PastePreviewParams,
     pub local_ai: Option<LocalAiRequest>,
+    pub prepared_analysis: Option<PreparedAnalysisSnapshot>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -71,6 +80,7 @@ pub struct PasteTransformRequest {
     #[serde(flatten)]
     pub params: PasteTransformParams,
     pub local_ai: Option<LocalAiRequest>,
+    pub prepared_analysis: Option<PreparedAnalysisSnapshot>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -88,37 +98,364 @@ fn load_local_ai_enabled(settings: &State<'_, Arc<SettingsStore>>) -> Result<boo
         .map_err(|error| format!("Could not load settings: {error}"))
 }
 
+fn load_local_ner_settings(
+    settings: &State<'_, Arc<SettingsStore>>,
+) -> Result<(bool, String), String> {
+    settings
+        .load_settings()
+        .map(|settings| (settings.local_ner_enabled, settings.local_ai_model))
+        .map_err(|error| format!("Could not load settings: {error}"))
+}
+
+fn local_ner_unavailable_message(model: &str) -> Result<Option<String>, String> {
+    let status = local_ai_status(LocalAiRequest {
+        enabled: true,
+        model: model.to_string(),
+    })?;
+    Ok((!status.ready).then_some(status.message))
+}
+
+fn selected_candidate_ids(
+    snapshot: &PreparedAnalysisSnapshot,
+    selected_columns: &[usize],
+) -> Vec<String> {
+    snapshot
+        .candidate_evidence
+        .iter()
+        .filter(|evidence| selected_columns.contains(&evidence.column_index))
+        .map(|evidence| evidence.id.clone())
+        .collect()
+}
+
+const PREPARED_ANALYSIS_CACHE_LIMIT: usize = 16;
+
+fn prepared_analysis_cache() -> &'static Mutex<VecDeque<PreparedAnalysisSnapshot>> {
+    static CACHE: OnceLock<Mutex<VecDeque<PreparedAnalysisSnapshot>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(VecDeque::new()))
+}
+
+fn register_prepared_analysis(snapshot: &PreparedAnalysisSnapshot) -> Result<(), String> {
+    let mut cache = prepared_analysis_cache()
+        .lock()
+        .map_err(|_| "Prepared analysis cache is unavailable.".to_string())?;
+    if !cache.iter().any(|issued| issued == snapshot) {
+        cache.push_back(snapshot.clone());
+    }
+    while cache.len() > PREPARED_ANALYSIS_CACHE_LIMIT {
+        cache.pop_front();
+    }
+    Ok(())
+}
+
+fn verify_backend_issued_snapshot(snapshot: &PreparedAnalysisSnapshot) -> Result<(), String> {
+    let cache = prepared_analysis_cache()
+        .lock()
+        .map_err(|_| "Prepared analysis cache is unavailable.".to_string())?;
+    if cache.iter().any(|issued| issued == snapshot) {
+        Ok(())
+    } else {
+        Err(
+            "Analyze the source again: the prepared analysis was not issued by this app session."
+                .to_string(),
+        )
+    }
+}
+
+pub(crate) fn snapshot_detection_summary(
+    snapshot: &PreparedAnalysisSnapshot,
+) -> DetectionRunSummary {
+    snapshot.detection_run_summary.clone()
+}
+
+pub(crate) fn require_prepared_analysis(
+    local_ner_enabled: bool,
+    snapshot: Option<&PreparedAnalysisSnapshot>,
+) -> Result<(), String> {
+    match (local_ner_enabled, snapshot) {
+        (true, None) => {
+            Err("Analyze the source again before using Local AI detection results.".to_string())
+        }
+        (false, Some(_)) => Err(
+            "Analyze the source again after changing the Local AI detection setting.".to_string(),
+        ),
+        _ => Ok(()),
+    }
+}
+
+pub(crate) fn require_snapshot_model(
+    snapshot: Option<&PreparedAnalysisSnapshot>,
+    configured_model: &str,
+) -> Result<(), String> {
+    let Some(snapshot) = snapshot else {
+        return Ok(());
+    };
+    let configured_model = if configured_model.trim().is_empty() {
+        DEFAULT_OLLAMA_MODEL
+    } else {
+        configured_model.trim()
+    };
+    if matches!(
+        snapshot.detector.status,
+        LocalNerRunStatus::Completed | LocalNerRunStatus::Incomplete
+    ) && snapshot.detector.model_version.as_deref() != Some(configured_model)
+    {
+        Err("Analyze the source again after changing the Local AI model.".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_file_snapshot_fingerprint(
+    snapshot: &PreparedAnalysisSnapshot,
+    file_path: &std::path::Path,
+    sample_row_count: usize,
+    selected_columns: &[usize],
+    source_fingerprint: &str,
+) -> Result<(), String> {
+    let source_identity = file_path.to_string_lossy();
+    let confirmed = selected_candidate_ids(snapshot, selected_columns);
+    snapshot
+        .validate_source_fingerprint(
+            &source_identity,
+            "csv",
+            source_fingerprint,
+            sample_row_count,
+            &confirmed,
+        )
+        .map_err(|error| format!("Analyze the source again: {error}"))?;
+    Ok(())
+}
+
+pub(crate) struct ValidatedFileInput {
+    original_path: PathBuf,
+    staged_path: Option<tempfile::TempPath>,
+}
+
+impl ValidatedFileInput {
+    pub(crate) fn prepare(
+        snapshot: Option<&PreparedAnalysisSnapshot>,
+        original_path: PathBuf,
+        sample_row_count: usize,
+        selected_columns: &[usize],
+    ) -> Result<Self, String> {
+        let staged_path = snapshot
+            .map(|snapshot| {
+                stage_validated_file_snapshot(
+                    snapshot,
+                    &original_path,
+                    sample_row_count,
+                    selected_columns,
+                )
+            })
+            .transpose()?;
+        Ok(Self {
+            original_path,
+            staged_path,
+        })
+    }
+
+    pub(crate) fn original_path(&self) -> &std::path::Path {
+        &self.original_path
+    }
+
+    pub(crate) fn processing_path(&self) -> PathBuf {
+        self.staged_path
+            .as_deref()
+            .unwrap_or(&self.original_path)
+            .to_path_buf()
+    }
+}
+
+/// Copies the exact snapshot-validated bytes to a private file for a background job.
+///
+/// Keeping the returned path alive pins the staged source until processing finishes,
+/// closing the gap between validation and the service opening the input.
+pub(crate) fn stage_validated_file_snapshot(
+    snapshot: &PreparedAnalysisSnapshot,
+    file_path: &std::path::Path,
+    sample_row_count: usize,
+    selected_columns: &[usize],
+) -> Result<tempfile::TempPath, String> {
+    verify_backend_issued_snapshot(snapshot)?;
+    let (staged, source_fingerprint) = stage_private_csv_file(file_path)?;
+    validate_file_snapshot_fingerprint(
+        snapshot,
+        file_path,
+        sample_row_count,
+        selected_columns,
+        &source_fingerprint,
+    )?;
+    Ok(staged)
+}
+
+fn validate_paste_snapshot(
+    snapshot: &PreparedAnalysisSnapshot,
+    content: &str,
+    format: csv_anonymizer_core::PasteDataFormat,
+    sample_row_count: usize,
+    selected_columns: &[usize],
+) -> Result<(), String> {
+    verify_backend_issued_snapshot(snapshot)?;
+    let confirmed = selected_candidate_ids(snapshot, selected_columns);
+    let requested_format = if format == csv_anonymizer_core::PasteDataFormat::Auto {
+        snapshot.format.as_str().to_string()
+    } else {
+        paste_format_name(format).to_string()
+    };
+    snapshot
+        .validate(
+            "paste",
+            &requested_format,
+            content.as_bytes(),
+            sample_row_count,
+            &confirmed,
+        )
+        .map_err(|error| format!("Analyze the pasted data again: {error}"))?;
+    Ok(())
+}
+
+fn paste_format_name(format: csv_anonymizer_core::PasteDataFormat) -> &'static str {
+    match format {
+        csv_anonymizer_core::PasteDataFormat::Auto => "auto",
+        csv_anonymizer_core::PasteDataFormat::Csv => "csv",
+        csv_anonymizer_core::PasteDataFormat::Json => "json",
+        csv_anonymizer_core::PasteDataFormat::Xml => "xml",
+        csv_anonymizer_core::PasteDataFormat::Yaml => "yaml",
+        csv_anonymizer_core::PasteDataFormat::PlainText => "plainText",
+        csv_anonymizer_core::PasteDataFormat::Logs => "logs",
+    }
+}
+
+fn analyze_csv_data(
+    file_path: PathBuf,
+    sample_row_count: usize,
+    output_suffix: &str,
+    local_ner_enabled: bool,
+    local_ner_model: &str,
+) -> Result<AnalyzeResponse, String> {
+    let service = service();
+    let prepared_source = if local_ner_enabled {
+        Some(stage_private_csv_file(&file_path)?)
+    } else {
+        None
+    };
+    let analysis_path = prepared_source
+        .as_ref()
+        .map_or(file_path.as_path(), |(staged, _)| staged.as_ref());
+    let mut headers = if local_ner_enabled {
+        if let Some(message) = local_ner_unavailable_message(local_ner_model)? {
+            let mut headers = service
+                .analyze_csv_with_sample_rows(analysis_path, sample_row_count)
+                .map_err(|error| error.to_string())?;
+            headers.detection_run_summary.local_ner = LocalNerRunStatus::Unavailable;
+            headers.detection_run_summary.message = Some(message);
+            headers
+        } else {
+            let mut detector = local_candidate_detector(local_ner_model)?;
+            service
+                .analyze_csv_with_sample_rows_and_candidate_detector(
+                    analysis_path,
+                    sample_row_count,
+                    Some(&mut detector),
+                )
+                .map_err(|error| error.to_string())?
+        }
+    } else {
+        service
+            .analyze_csv_with_sample_rows(analysis_path, sample_row_count)
+            .map_err(|error| error.to_string())?
+    };
+    // The staged path is an implementation detail. Keep the public analysis and
+    // suggested destination tied to the user-authorized original source.
+    headers.file_path = file_path.clone();
+    let selected_columns = headers
+        .columns
+        .iter()
+        .filter(|column| should_auto_select_column(column))
+        .map(|column| column.index)
+        .collect::<Vec<_>>();
+    let suggested_output_path = default_output_path_with_suffix(&file_path, output_suffix)?;
+    headers.default_output_path = default_output_path_with_suffix(&file_path, "_private_output")?;
+    let prepared_analysis = prepared_source
+        .as_ref()
+        .map(|(_, source_fingerprint)| {
+            PreparedAnalysisSnapshot::new_with_source_fingerprint(
+                file_path.to_string_lossy(),
+                "csv",
+                source_fingerprint.clone(),
+                sample_row_count,
+                headers.columns.clone(),
+                &headers.detection_run_summary,
+            )
+            .map_err(|error| format!("Could not prepare analysis: {error}"))
+        })
+        .transpose()?;
+    if let Some(snapshot) = &prepared_analysis {
+        register_prepared_analysis(snapshot)?;
+    }
+
+    Ok(AnalyzeResponse {
+        headers,
+        selected_columns,
+        suggested_output_path,
+        prepared_analysis,
+    })
+}
+
+fn stage_private_csv_file(
+    source_path: &std::path::Path,
+) -> Result<(tempfile::TempPath, String), String> {
+    let mut source = std::fs::File::open(source_path)
+        .map_err(|error| format!("Could not open source for private staging: {error}"))?;
+    let mut staged = tempfile::Builder::new()
+        .prefix("csv-anonymizer-validated-")
+        .suffix(".csv")
+        .tempfile()
+        .map_err(|error| format!("Could not create private staged source: {error}"))?;
+    let mut fingerprint = SourceFingerprint::default();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = source
+            .read(&mut buffer)
+            .map_err(|error| format!("Could not read source for private staging: {error}"))?;
+        if read == 0 {
+            break;
+        }
+        fingerprint.update(&buffer[..read]);
+        staged
+            .write_all(&buffer[..read])
+            .map_err(|error| format!("Could not write private staged source: {error}"))?;
+    }
+    staged
+        .as_file_mut()
+        .sync_all()
+        .map_err(|error| format!("Could not write private staged source: {error}"))?;
+    Ok((staged.into_temp_path(), fingerprint.finish()))
+}
+
 #[tauri::command]
 pub async fn analyze_csv(
     app: tauri::AppHandle,
     path_access: State<'_, PathAccess>,
+    settings: State<'_, Arc<SettingsStore>>,
     file_path: PathBuf,
     sample_row_count: usize,
     output_suffix: String,
 ) -> Result<AnalyzeResponse, String> {
     validate_sample_count(sample_row_count, MAX_SAMPLE_ROW_COUNT, "Sample row count")?;
     let file_path = authorize_or_confirm_input_file(&app, &path_access, file_path)?;
+    // Persisted consent is authoritative; invoke payloads cannot override it.
+    let (local_ner_enabled, local_ner_model) = load_local_ner_settings(&settings)?;
     // The suggested output path is only a suggestion: write access is granted
     // later through the explicit confirm/save-dialog flow, never silently here.
     run_blocking(move || {
-        let service = service();
-        let headers = service
-            .analyze_csv_with_sample_rows(&file_path, sample_row_count)
-            .map_err(|error| error.to_string())?;
-        let selected_columns = headers
-            .columns
-            .iter()
-            .filter(|column| should_auto_select_column(column))
-            .map(|column| column.index)
-            .collect::<Vec<_>>();
-        let suggested_output_path =
-            default_output_path_with_suffix(&headers.file_path, &output_suffix)?;
-
-        Ok(AnalyzeResponse {
-            headers,
-            selected_columns,
-            suggested_output_path,
-        })
+        analyze_csv_data(
+            file_path,
+            sample_row_count,
+            &output_suffix,
+            local_ner_enabled,
+            &local_ner_model,
+        )
     })
     .await
 }
@@ -142,8 +479,19 @@ pub async fn preview_anonymization(
         "Sample row count",
     )?;
     let file_path = path_access.authorize_input_file(request.file_path)?;
+    let (local_ner_enabled, local_ner_model) = load_local_ner_settings(&settings)?;
+    require_prepared_analysis(local_ner_enabled, request.prepared_analysis.as_ref())?;
+    require_snapshot_model(request.prepared_analysis.as_ref(), &local_ner_model)?;
+    let validated_input = ValidatedFileInput::prepare(
+        request.prepared_analysis.as_ref(),
+        file_path,
+        request.sample_row_count,
+        &request.columns,
+    )?;
+    let processing_path = validated_input.processing_path();
     let local_ai_enabled = load_local_ai_enabled(&settings)?;
     run_blocking(move || {
+        let _validated_input = validated_input;
         let mut provider = smart_provider_for_request(
             request.local_ai,
             &request.controls,
@@ -156,7 +504,7 @@ pub async fn preview_anonymization(
         service()
             .preview_anonymization_with_smart_provider(
                 PreviewParams {
-                    file_path,
+                    file_path: processing_path,
                     columns: request.columns,
                     controls: request.controls,
                     sample_count: request.sample_count,
@@ -183,15 +531,29 @@ pub async fn preflight_anonymization(
     )?;
     let mode = request.mode;
     let file_path = authorize_or_confirm_input_file(&app, &path_access, request.file_path.clone())?;
+    let (local_ner_enabled, local_ner_model) = load_local_ner_settings(&settings)?;
+    require_prepared_analysis(local_ner_enabled, request.prepared_analysis.as_ref())?;
+    require_snapshot_model(request.prepared_analysis.as_ref(), &local_ner_model)?;
     let output_path = match (mode, request.output_path.clone()) {
         (PreflightMode::Anonymize, Some(path)) => {
             Some(authorize_or_confirm_output_file(&app, &path_access, path)?)
         }
         (_, output_path) => output_path,
     };
+    if output_path.as_deref() == Some(file_path.as_path()) {
+        return Err("Output path must differ from the input path.".to_string());
+    }
+    let validated_input = ValidatedFileInput::prepare(
+        request.prepared_analysis.as_ref(),
+        file_path,
+        request.sample_row_count,
+        &request.columns,
+    )?;
+    let processing_path = validated_input.processing_path();
     let local_ai_enabled = load_local_ai_enabled(&settings)?;
 
     run_blocking(move || {
+        let _validated_input = validated_input;
         let local_ai_required = selection_requires_local_ai(&request.controls, &request.columns);
         let (local_ai_ready, local_ai_message) = if local_ai_required && !local_ai_enabled {
             (false, Some(LOCAL_AI_DISABLED_MESSAGE.to_string()))
@@ -216,7 +578,7 @@ pub async fn preflight_anonymization(
         service()
             .preflight_anonymization(PreflightParams {
                 mode: request.mode,
-                file_path,
+                file_path: processing_path,
                 output_path,
                 columns: request.columns,
                 controls: request.controls,
@@ -246,10 +608,57 @@ pub async fn count_csv_rows(
 }
 
 #[tauri::command]
-pub async fn analyze_pasted_data(request: PasteAnalyzeParams) -> Result<PasteAnalyzeData, String> {
+pub async fn analyze_pasted_data(
+    settings: State<'_, Arc<SettingsStore>>,
+    request: PasteAnalyzeParams,
+) -> Result<PasteAnalyzeData, String> {
+    let (local_ner_enabled, local_ner_model) = load_local_ner_settings(&settings)?;
     run_blocking(move || {
-        csv_anonymizer_core::direct_input::analyze_paste_data(request)
-            .map_err(|error| error.to_string())
+        let content = request.content.clone();
+        let sample_row_count = request.sample_row_count;
+        let mut analysis = if local_ner_enabled {
+            if let Some(message) = local_ner_unavailable_message(&local_ner_model)? {
+                let mut analysis = csv_anonymizer_core::direct_input::analyze_paste_data(request)
+                    .map_err(|error| error.to_string())?;
+                analysis.detection_run_summary.local_ner = LocalNerRunStatus::Unavailable;
+                analysis.detection_run_summary.message = Some(message);
+                analysis
+            } else {
+                let mut detector = local_candidate_detector(&local_ner_model)?;
+                csv_anonymizer_core::direct_input::analyze_paste_data_with_candidate_detector(
+                    request,
+                    &mut detector,
+                )
+                .map_err(|error| error.to_string())?
+            }
+        } else {
+            csv_anonymizer_core::direct_input::analyze_paste_data(request)
+                .map_err(|error| error.to_string())?
+        };
+        let prepared_analysis = if local_ner_enabled {
+            if analysis.prepared_analysis.is_some() {
+                analysis.prepared_analysis.take()
+            } else {
+                Some(
+                    PreparedAnalysisSnapshot::new(
+                        "paste",
+                        paste_format_name(analysis.format),
+                        content.as_bytes(),
+                        sample_row_count,
+                        analysis.columns.clone(),
+                        &analysis.detection_run_summary,
+                    )
+                    .map_err(|error| format!("Could not prepare analysis: {error}"))?,
+                )
+            }
+        } else {
+            None
+        };
+        analysis.prepared_analysis = prepared_analysis;
+        if let Some(snapshot) = &analysis.prepared_analysis {
+            register_prepared_analysis(snapshot)?;
+        }
+        Ok(analysis)
     })
     .await
 }
@@ -259,6 +668,18 @@ pub async fn preview_pasted_data(
     settings: State<'_, Arc<SettingsStore>>,
     request: PastePreviewRequest,
 ) -> Result<PreviewData, String> {
+    let (local_ner_enabled, local_ner_model) = load_local_ner_settings(&settings)?;
+    require_prepared_analysis(local_ner_enabled, request.prepared_analysis.as_ref())?;
+    require_snapshot_model(request.prepared_analysis.as_ref(), &local_ner_model)?;
+    if let Some(snapshot) = &request.prepared_analysis {
+        validate_paste_snapshot(
+            snapshot,
+            &request.params.content,
+            request.params.format,
+            request.params.sample_row_count,
+            &request.params.columns,
+        )?;
+    }
     let local_ai_enabled = load_local_ai_enabled(&settings)?;
     run_blocking(move || {
         let mut provider = smart_provider_for_request(
@@ -270,11 +691,26 @@ pub async fn preview_pasted_data(
         let provider = provider
             .as_mut()
             .map(|provider| provider as &mut dyn SmartReplacementProvider);
-        csv_anonymizer_core::direct_input::preview_paste_data_with_smart_provider(
-            request.params,
-            provider,
-        )
-        .map_err(|error| error.to_string())
+        if let Some(snapshot) = request
+            .prepared_analysis
+            .as_ref()
+            .filter(|snapshot| matches!(snapshot.format.as_str(), "plainText" | "logs"))
+        {
+            let confirmed = selected_candidate_ids(snapshot, &request.params.columns);
+            csv_anonymizer_core::direct_input::preview_paste_text_candidate_evidence_with_smart_provider(
+                &request.params,
+                snapshot,
+                &confirmed,
+                provider,
+            )
+            .map_err(|error| error.to_string())
+        } else {
+            csv_anonymizer_core::direct_input::preview_paste_data_with_smart_provider(
+                request.params,
+                provider,
+            )
+            .map_err(|error| error.to_string())
+        }
     })
     .await
 }
@@ -284,6 +720,18 @@ pub async fn anonymize_pasted_data(
     settings: State<'_, Arc<SettingsStore>>,
     request: PasteTransformRequest,
 ) -> Result<PasteTransformData, String> {
+    let (local_ner_enabled, local_ner_model) = load_local_ner_settings(&settings)?;
+    require_prepared_analysis(local_ner_enabled, request.prepared_analysis.as_ref())?;
+    require_snapshot_model(request.prepared_analysis.as_ref(), &local_ner_model)?;
+    if let Some(snapshot) = &request.prepared_analysis {
+        validate_paste_snapshot(
+            snapshot,
+            &request.params.content,
+            request.params.format,
+            request.params.sample_row_count,
+            &request.params.columns,
+        )?;
+    }
     let local_ai_enabled = load_local_ai_enabled(&settings)?;
     run_blocking(move || {
         let mut provider = smart_provider_for_request(
@@ -295,11 +743,31 @@ pub async fn anonymize_pasted_data(
         let provider = provider
             .as_mut()
             .map(|provider| provider as &mut dyn SmartReplacementProvider);
-        csv_anonymizer_core::direct_input::transform_paste_data_with_smart_provider(
-            request.params,
-            provider,
-        )
-        .map_err(|error| error.to_string())
+        let mut result = if let Some(snapshot) = request
+            .prepared_analysis
+            .as_ref()
+            .filter(|snapshot| matches!(snapshot.format.as_str(), "plainText" | "logs"))
+        {
+            let confirmed = selected_candidate_ids(snapshot, &request.params.columns);
+            csv_anonymizer_core::direct_input::replay_paste_text_candidate_evidence_with_smart_provider(
+                &request.params,
+                snapshot,
+                &confirmed,
+                provider,
+            )
+            .map_err(|error| error.to_string())
+        } else {
+            csv_anonymizer_core::direct_input::transform_paste_data_with_smart_provider(
+                request.params,
+                provider,
+            )
+            .map_err(|error| error.to_string())
+        }?;
+        if let Some(snapshot) = &request.prepared_analysis {
+            result.privacy_report.detection_run_summary =
+                Some(snapshot_detection_summary(snapshot));
+        }
+        Ok(result)
     })
     .await
 }
@@ -331,7 +799,11 @@ pub async fn generate_quick_values(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use csv_anonymizer_core::{AnonymizationStrategy, ColumnMetadata, DataType, PasteDataFormat};
+    use crate::settings::AppSettings;
+    use csv_anonymizer_core::{
+        AnonymizationStrategy, ColumnMetadata, DataType, DetectionRunSummary, LocalNerRunStatus,
+        PasteDataFormat,
+    };
     use serde_json::{Value, json};
     use tauri::Manager;
 
@@ -387,6 +859,189 @@ mod tests {
         .unwrap();
 
         assert_eq!(count, 2);
+    }
+
+    fn settings_store_with_local_ner(enabled: bool) -> Arc<SettingsStore> {
+        let temp_dir = tempfile::tempdir().expect("settings temp dir");
+        let path = temp_dir.keep().join("settings.json");
+        let store = Arc::new(SettingsStore::new(path));
+        store
+            .save_settings(&AppSettings {
+                local_ner_enabled: enabled,
+                ..AppSettings::default()
+            })
+            .expect("save settings");
+        store
+    }
+
+    #[test]
+    fn pasted_analysis_reports_disabled_when_persisted_local_ner_is_off() {
+        let app = tauri::test::mock_app();
+        app.manage(settings_store_with_local_ner(false));
+        // Even if a caller sends this extra field, Serde ignores it because persisted
+        // backend settings, not an invoke payload, own consent.
+        let request: PasteAnalyzeParams = serde_json::from_value(json!({
+            "content": "name\nAlice\n",
+            "format": "csv",
+            "sampleRowCount": 100,
+            "localNerEnabled": true,
+        }))
+        .expect("frontend paste analyze payload");
+
+        let result = tauri::async_runtime::block_on(analyze_pasted_data(
+            app.state::<Arc<SettingsStore>>(),
+            request,
+        ))
+        .expect("paste analysis");
+
+        assert_eq!(
+            result.detection_run_summary.local_ner,
+            LocalNerRunStatus::Disabled
+        );
+        assert!(result.detection_run_summary.message.is_none());
+    }
+
+    #[test]
+    fn prepared_file_analysis_must_be_backend_issued_and_match_current_bytes() {
+        let temp_dir = tempfile::tempdir().expect("data temp dir");
+        let input_path = temp_dir.path().join("data.csv");
+        std::fs::write(&input_path, "name\nAlice\n").expect("write fixture");
+        let snapshot = PreparedAnalysisSnapshot::new(
+            input_path.to_string_lossy(),
+            "csv",
+            b"name\nAlice\n",
+            100,
+            Vec::new(),
+            &DetectionRunSummary::default(),
+        )
+        .expect("snapshot");
+
+        assert!(stage_validated_file_snapshot(&snapshot, &input_path, 100, &[]).is_err());
+        register_prepared_analysis(&snapshot).expect("register snapshot");
+        stage_validated_file_snapshot(&snapshot, &input_path, 100, &[]).expect("issued snapshot");
+
+        std::fs::write(&input_path, "name\nGrace\n").expect("change fixture");
+        assert!(stage_validated_file_snapshot(&snapshot, &input_path, 100, &[]).is_err());
+    }
+
+    #[test]
+    fn private_file_staging_streams_and_fingerprints_the_exact_source() {
+        let temp_dir = tempfile::tempdir().expect("data temp dir");
+        let input_path = temp_dir.path().join("large.csv");
+        let content = "value\n".to_string() + &"abcdefghij\n".repeat(20_000);
+        std::fs::write(&input_path, &content).expect("write fixture");
+
+        let (staged, fingerprint) =
+            stage_private_csv_file(&input_path).expect("stream staged source");
+        let mut expected = SourceFingerprint::default();
+        for chunk in content.as_bytes().chunks(17) {
+            expected.update(chunk);
+        }
+
+        assert_eq!(fingerprint, expected.finish());
+        assert_eq!(
+            std::fs::read_to_string(staged).expect("read staged source"),
+            content
+        );
+    }
+
+    #[test]
+    fn detector_setting_and_snapshot_presence_must_match() {
+        let snapshot = PreparedAnalysisSnapshot::new(
+            "paste",
+            "csv",
+            b"name\nAlice\n",
+            100,
+            Vec::new(),
+            &DetectionRunSummary::default(),
+        )
+        .expect("snapshot");
+
+        assert!(require_prepared_analysis(true, None).is_err());
+        assert!(require_prepared_analysis(false, Some(&snapshot)).is_err());
+        assert!(require_prepared_analysis(false, None).is_ok());
+        assert!(require_prepared_analysis(true, Some(&snapshot)).is_ok());
+    }
+
+    #[test]
+    fn staged_source_remains_the_exact_validated_content() {
+        let temp_dir = tempfile::tempdir().expect("data temp dir");
+        let input_path = temp_dir.path().join("data.csv");
+        std::fs::write(&input_path, "name\nAlice\n").expect("write fixture");
+        let snapshot = PreparedAnalysisSnapshot::new(
+            input_path.to_string_lossy(),
+            "csv",
+            b"name\nAlice\n",
+            100,
+            Vec::new(),
+            &DetectionRunSummary::default(),
+        )
+        .expect("snapshot");
+        register_prepared_analysis(&snapshot).expect("register snapshot");
+
+        let staged = stage_validated_file_snapshot(&snapshot, &input_path, 100, &[])
+            .expect("stage validated source");
+        std::fs::write(&input_path, "name\nGrace\n").expect("replace original");
+
+        assert_eq!(
+            std::fs::read_to_string(&staged).expect("read staged source"),
+            "name\nAlice\n"
+        );
+    }
+
+    #[test]
+    fn validated_input_keeps_preview_on_the_analyzed_bytes() {
+        let temp_dir = tempfile::tempdir().expect("data temp dir");
+        let input_path = temp_dir.path().join("data.csv");
+        std::fs::write(&input_path, "name\nAlice\n").expect("write fixture");
+        let snapshot = PreparedAnalysisSnapshot::new(
+            input_path.to_string_lossy(),
+            "csv",
+            b"name\nAlice\n",
+            100,
+            Vec::new(),
+            &DetectionRunSummary::default(),
+        )
+        .expect("snapshot");
+        register_prepared_analysis(&snapshot).expect("register snapshot");
+        let validated = ValidatedFileInput::prepare(Some(&snapshot), input_path.clone(), 100, &[0])
+            .expect("validated input");
+        std::fs::write(&input_path, "name\nGrace\n").expect("replace original");
+
+        let preview = service()
+            .preview_anonymization(PreviewParams {
+                file_path: validated.processing_path(),
+                columns: vec![0],
+                controls: Vec::new(),
+                sample_count: 1,
+                sample_row_count: 100,
+            })
+            .expect("preview staged input");
+
+        assert_eq!(preview.previews[0].samples[0].original, "Alice");
+    }
+
+    #[test]
+    fn analysis_never_exposes_its_private_staged_path() {
+        let temp_dir = tempfile::tempdir().expect("data temp dir");
+        let input_path = temp_dir.path().join("data.csv");
+        std::fs::write(&input_path, "name\nAlice\n").expect("write fixture");
+
+        let response = analyze_csv_data(input_path.clone(), 100, "_safe", false, "gemma3:4b")
+            .expect("analysis");
+
+        assert_eq!(response.headers.file_path, input_path);
+        assert_eq!(
+            response.headers.default_output_path,
+            temp_dir.path().join("data_private_output.csv")
+        );
+        assert!(
+            !response
+                .headers
+                .default_output_path
+                .to_string_lossy()
+                .contains("csv-anonymizer-validated-")
+        );
     }
 
     /// Local AI gating turns on this pairing: a control naming Local AI for a column that
@@ -686,10 +1341,12 @@ mod tests {
                 row_count: 2,
                 row_count_is_complete: true,
                 default_output_path: PathBuf::from("/tmp/data_private_output.csv"),
+                detection_run_summary: DetectionRunSummary::default(),
                 columns: Vec::<ColumnMetadata>::new(),
             },
             selected_columns: vec![0, 2],
             suggested_output_path: PathBuf::from("/tmp/data_private.csv"),
+            prepared_analysis: None,
         };
 
         let value = serde_json::to_value(&response).expect("analyze response");
@@ -697,5 +1354,10 @@ mod tests {
         assert_eq!(value["selectedColumns"], json!([0, 2]));
         assert_eq!(value["suggestedOutputPath"], json!("/tmp/data_private.csv"));
         assert_eq!(value["headers"]["rowCountIsComplete"], json!(true));
+        assert_eq!(
+            value["headers"]["detectionRunSummary"]["localNer"],
+            json!("disabled")
+        );
+        assert!(value.get("detectionRunSummary").is_none());
     }
 }

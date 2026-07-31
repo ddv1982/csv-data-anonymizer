@@ -13,6 +13,7 @@ pub(crate) fn build_privacy_report(
     detection_coverage: DetectionCoverage,
 ) -> PrivacyReport {
     let mut report = PrivacyReport {
+        detection_run_summary: None,
         direct_identifiers: 0,
         quasi_identifiers: 0,
         pseudonymized_columns: 0,

@@ -1,12 +1,43 @@
 use super::*;
+use crate::detection::{
+    Candidate, CandidateBatch, CandidateBatchResult, CandidateDetectionCoverage, CandidateDetector,
+    CandidateKind,
+};
 use crate::smart::{SmartReplacement, SmartReplacementProvider, SmartReplacementRequest};
 use crate::types::{
-    AnonymizationStrategy, ColumnControl, DataType, DetectionCoverageUnit, MAX_SAMPLE_ROW_COUNT,
-    PiiRisk, QuickGenerateParams, SmartReplacementEntry, SmartReplacementRejectionCount,
-    SmartReplacementRejectionReason,
+    AnonymizationStrategy, ColumnControl, DataType, DetectionCoverageUnit, LocalNerRunStatus,
+    MAX_SAMPLE_ROW_COUNT, PiiRisk, QuickGenerateParams, SmartReplacementEntry,
+    SmartReplacementRejectionCount, SmartReplacementRejectionReason,
 };
 
 mod redaction;
+
+struct FirstPasteCellNameDetector;
+
+impl CandidateDetector for FirstPasteCellNameDetector {
+    fn detector_id(&self) -> &str {
+        "paste-test-ner"
+    }
+
+    fn detect(
+        &mut self,
+        batch: &CandidateBatch<'_>,
+    ) -> std::result::Result<CandidateBatchResult, String> {
+        let cell = batch.cells.first().expect("paste has a non-empty cell");
+        Ok(CandidateBatchResult {
+            model_version: None,
+            coverage: CandidateDetectionCoverage::complete(batch.cells.len()),
+            candidates: vec![Candidate {
+                column_index: cell.column_index,
+                row_index: cell.row_index,
+                start_byte: 0,
+                end_byte: cell.text.len(),
+                kind: CandidateKind::PersonName,
+                score_basis_points: 9_000,
+            }],
+        })
+    }
+}
 
 #[test]
 fn transforms_csv_text_with_existing_csv_rules() {
@@ -36,6 +67,231 @@ fn transforms_csv_text_with_existing_csv_rules() {
 
     assert!(result.output.starts_with("email,name\n"));
     assert!(!result.output.contains("ada@example.com"));
+}
+
+#[test]
+fn paste_analysis_reports_completed_candidate_detection_for_all_supported_formats() {
+    for (format, content) in [
+        (PasteDataFormat::Csv, "misc\nAda Lovelace\n"),
+        (PasteDataFormat::Json, r#"{"misc":"Ada Lovelace"}"#),
+        (
+            PasteDataFormat::Xml,
+            "<root><misc>Ada Lovelace</misc></root>",
+        ),
+        (PasteDataFormat::PlainText, "Contact ada@example.com"),
+    ] {
+        let mut detector = FirstPasteCellNameDetector;
+        let analysis = analyze_paste_data_with_candidate_detector(
+            PasteAnalyzeParams {
+                content: content.to_string(),
+                format,
+                sample_row_count: 100,
+            },
+            &mut detector,
+        )
+        .unwrap();
+
+        assert_eq!(
+            analysis.detection_run_summary.local_ner,
+            LocalNerRunStatus::Completed
+        );
+        assert_eq!(
+            analysis.detection_run_summary.detector_id.as_deref(),
+            Some("paste-test-ner")
+        );
+    }
+}
+
+struct NamedSpanDetector {
+    needle: &'static str,
+}
+
+impl CandidateDetector for NamedSpanDetector {
+    fn detector_id(&self) -> &str {
+        "text-span-test"
+    }
+
+    fn detect(
+        &mut self,
+        batch: &CandidateBatch<'_>,
+    ) -> std::result::Result<CandidateBatchResult, String> {
+        let candidates = batch
+            .cells
+            .iter()
+            .filter_map(|cell| {
+                let start = cell.text.find(self.needle)?;
+                Some(Candidate {
+                    column_index: cell.column_index,
+                    row_index: cell.row_index,
+                    start_byte: start,
+                    end_byte: start + self.needle.len(),
+                    kind: CandidateKind::PersonName,
+                    score_basis_points: 9_500,
+                })
+            })
+            .collect();
+        Ok(CandidateBatchResult {
+            model_version: Some("test-v1".to_string()),
+            coverage: CandidateDetectionCoverage::complete(batch.cells.len()),
+            candidates,
+        })
+    }
+}
+
+#[test]
+fn plain_text_candidate_replay_handles_unicode_without_rerunning_detector() {
+    let content = "Intro 😀\nOwner: Élodie Dupont\nDone";
+    let mut detector = NamedSpanDetector {
+        needle: "Élodie Dupont",
+    };
+    let analysis = analyze_paste_data_with_candidate_detector(
+        PasteAnalyzeParams {
+            content: content.to_string(),
+            format: PasteDataFormat::PlainText,
+            sample_row_count: 1,
+        },
+        &mut detector,
+    )
+    .unwrap();
+    let snapshot = analysis.prepared_analysis.unwrap();
+    let candidate_id = snapshot.candidate_evidence[0].id.clone();
+    let output = replay_paste_text_candidate_evidence(
+        &PasteTransformParams {
+            content: content.to_string(),
+            format: PasteDataFormat::PlainText,
+            columns: vec![snapshot.candidate_evidence[0].column_index],
+            controls: Vec::new(),
+            sample_row_count: 1,
+            preview_smart_replacements: Vec::new(),
+        },
+        &snapshot,
+        &[candidate_id],
+    )
+    .unwrap();
+
+    assert!(!output.output.contains("Élodie Dupont"));
+    assert!(output.output.starts_with("Intro 😀\nOwner: "));
+}
+
+#[test]
+fn plain_text_replay_transforms_deterministic_and_confirmed_candidate_spans_together() {
+    let content = "Owner: Ada Lovelace\nEmail: ada@example.com";
+    let mut detector = NamedSpanDetector {
+        needle: "Ada Lovelace",
+    };
+    let analysis = analyze_paste_data_with_candidate_detector(
+        PasteAnalyzeParams {
+            content: content.to_string(),
+            format: PasteDataFormat::PlainText,
+            sample_row_count: 100,
+        },
+        &mut detector,
+    )
+    .unwrap();
+    let snapshot = analysis.prepared_analysis.unwrap();
+    let evidence = &snapshot.candidate_evidence[0];
+    let result = replay_paste_text_candidate_evidence(
+        &PasteTransformParams {
+            content: content.to_string(),
+            format: PasteDataFormat::PlainText,
+            columns: vec![evidence.column_index],
+            controls: Vec::new(),
+            sample_row_count: 100,
+            preview_smart_replacements: Vec::new(),
+        },
+        &snapshot,
+        std::slice::from_ref(&evidence.id),
+    )
+    .unwrap();
+
+    assert!(!result.output.contains("Ada Lovelace"));
+    assert!(!result.output.contains("ada@example.com"));
+    assert_eq!(result.columns_anonymized, 1);
+    assert_eq!(result.row_count, 2);
+
+    let preview = preview_paste_text_candidate_evidence(
+        &PastePreviewParams {
+            content: content.to_string(),
+            format: PasteDataFormat::PlainText,
+            columns: vec![evidence.column_index],
+            controls: Vec::new(),
+            sample_count: 2,
+            sample_row_count: 100,
+        },
+        &snapshot,
+        std::slice::from_ref(&evidence.id),
+    )
+    .unwrap();
+    let preview_text = preview.previews[0]
+        .samples
+        .iter()
+        .map(|sample| sample.anonymized.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(!preview_text.contains("Ada Lovelace"));
+    assert!(!preview_text.contains("ada@example.com"));
+}
+
+#[test]
+fn plain_text_candidate_replay_rejects_stale_source_and_requires_selected_column() {
+    let content = "Owner: Ada Lovelace";
+    let mut detector = NamedSpanDetector {
+        needle: "Ada Lovelace",
+    };
+    let analysis = analyze_paste_data_with_candidate_detector(
+        PasteAnalyzeParams {
+            content: content.to_string(),
+            format: PasteDataFormat::PlainText,
+            sample_row_count: 100,
+        },
+        &mut detector,
+    )
+    .unwrap();
+    let snapshot = analysis.prepared_analysis.unwrap();
+    let candidate_id = snapshot.candidate_evidence[0].id.clone();
+    let base = PasteTransformParams {
+        content: content.to_string(),
+        format: PasteDataFormat::PlainText,
+        columns: Vec::new(),
+        controls: Vec::new(),
+        sample_row_count: 100,
+        preview_smart_replacements: Vec::new(),
+    };
+
+    let unchanged =
+        replay_paste_text_candidate_evidence(&base, &snapshot, std::slice::from_ref(&candidate_id))
+            .unwrap();
+    assert_eq!(unchanged.output, content);
+
+    let mut stale = base;
+    stale.content.push('!');
+    assert!(replay_paste_text_candidate_evidence(&stale, &snapshot, &[candidate_id]).is_err());
+}
+
+#[test]
+fn plain_text_detector_rejects_candidate_overlapping_deterministic_evidence() {
+    let content = "Mail ada@example.com";
+    let mut detector = NamedSpanDetector {
+        needle: "ada@example.com",
+    };
+    let analysis = analyze_paste_data_with_candidate_detector(
+        PasteAnalyzeParams {
+            content: content.to_string(),
+            format: PasteDataFormat::PlainText,
+            sample_row_count: 100,
+        },
+        &mut detector,
+    )
+    .unwrap();
+
+    assert_eq!(analysis.detection_run_summary.accepted_candidates, 0);
+    assert!(
+        analysis
+            .prepared_analysis
+            .unwrap()
+            .candidate_evidence
+            .is_empty()
+    );
 }
 
 #[test]

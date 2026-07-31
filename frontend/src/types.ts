@@ -80,8 +80,78 @@ export interface AppSettings {
   lastOutputDirectory: string | null
   localAiEnabled: boolean
   localAiModel: string
+  /** Optional on-device NER supplements, but never replaces, deterministic detection. */
+  localNerEnabled: boolean
 }
 
+export type ColumnReviewReason =
+  | 'detectorsDisagree'
+  | 'localNerLowConfidence'
+  | 'ambiguousContext'
+  | 'insufficientSample'
+
+export type DetectionReviewReason = 'detectorFailed' | 'candidateRejected'
+
+export type LocalNerRunStatus =
+  | 'disabled'
+  | 'completed'
+  | 'unavailable'
+  | 'failed'
+  | 'incomplete'
+
+export interface DetectionRunSummary {
+  deterministic: 'completed'
+  localNer: LocalNerRunStatus
+  detectorId?: string | null
+  modelVersion?: string | null
+  examinedCells: number
+  totalEligibleCells: number
+  skippedOversizedCells: number
+  acceptedCandidates: number
+  rejectedCandidates: number
+  reviewReasons?: DetectionReviewReason[]
+  message?: string | null
+}
+
+/**
+ * An opaque, backend-issued description of the exact detection run.
+ *
+ * The frontend must retain and return this value unchanged. It deliberately does
+ * not try to interpret detector evidence or recreate it from mutable UI state.
+ */
+export interface PreparedDetectorIdentity {
+  status: LocalNerRunStatus
+  detectorId?: string | null
+  modelVersion?: string | null
+}
+
+export interface PreparedCandidateEvidence {
+  id: string
+  columnIndex: number
+  rowIndex: number
+  start: number
+  end: number
+  kind: PrivacyFindingKind
+  dataType: DataType
+  matchValue: string
+  sampleValue: string
+  detector: string
+}
+
+export interface PreparedAnalysisSnapshot {
+  version: number
+  sourceIdentity: string
+  sourceFingerprint: string
+  format: string
+  sampleRowCount: number
+  columns: ColumnMetadata[]
+  detector: PreparedDetectorIdentity
+  detectionRunSummary: DetectionRunSummary
+  candidateEvidence: PreparedCandidateEvidence[]
+  integrityChecksum: string
+}
+
+export type PreparedAnalysis = PreparedAnalysisSnapshot
 export interface ColumnMetadata {
   name: string
   /** Another column's header reduces to the same label, so labels carry the index. */
@@ -100,6 +170,8 @@ export interface ColumnMetadata {
   emptyFormat: EmptyFormat
   isSelected: boolean
   strategy: AnonymizationStrategy
+  /** Present only when the combined detectors need a human decision. */
+  reviewReasons?: ColumnReviewReason[]
 }
 
 export interface PrivacyFinding {
@@ -150,12 +222,14 @@ export interface HeadersData {
   rowCountIsComplete: boolean
   defaultOutputPath: string
   columns: ColumnMetadata[]
+  detectionRunSummary: DetectionRunSummary
 }
 
 export interface AnalyzeResponse {
   headers: HeadersData
   selectedColumns: number[]
   suggestedOutputPath: string
+  preparedAnalysis?: PreparedAnalysis | null
 }
 
 export type PasteDataFormat = 'auto' | 'csv' | 'json' | 'xml' | 'yaml' | 'plainText' | 'logs'
@@ -175,6 +249,8 @@ export interface PasteAnalyzeData {
   rowCountIsComplete: boolean
   detectionCoverage: DetectionCoverageSummary
   columns: ColumnMetadata[]
+  detectionRunSummary: DetectionRunSummary
+  preparedAnalysis?: PreparedAnalysis | null
 }
 
 export interface PasteTransformData {
@@ -284,6 +360,7 @@ export interface PreflightData {
 }
 
 export interface PrivacyReport {
+  detectionRunSummary?: DetectionRunSummary | null
   directIdentifiers: number
   quasiIdentifiers: number
   pseudonymizedColumns: number

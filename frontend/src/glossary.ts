@@ -50,11 +50,11 @@ export const glossaryTerms = {
   },
   localAi: {
     title: 'Local AI',
-    body: 'AI running through Ollama on this device over localhost, not a cloud API.',
+    body: 'AI reached through Ollama on localhost. Known Ollama cloud-model names are refused, but an independently configured Ollama server controls its downstream routing.',
   },
   ollama: {
     title: 'Ollama',
-    body: 'Local runtime used to run downloaded AI models on this computer.',
+    body: 'A model runtime reached on localhost. Its configuration determines where inference actually runs.',
   },
   model: {
     title: 'Model',

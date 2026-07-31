@@ -61,4 +61,23 @@ describe('ColumnTable', () => {
     expect(onToggleColumn).not.toHaveBeenCalled()
     expect(onStrategyChange).not.toHaveBeenCalled()
   })
+
+  it('marks columns that need detector review', () => {
+    render(
+      <ColumnTable
+        columns={[columnMetadataFixture({ reviewReasons: ['detectorsDisagree'] })]}
+        allColumnCount={1}
+        selectedSet={new Set()}
+        loading={false}
+        showAllColumns={false}
+        hiddenColumnCount={0}
+        onToggleColumn={vi.fn()}
+        controls={{}}
+        onStrategyChange={vi.fn()}
+        onToggleShowAll={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('Review')).toBeInTheDocument()
+  })
 })

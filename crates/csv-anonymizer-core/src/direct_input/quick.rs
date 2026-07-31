@@ -100,6 +100,7 @@ fn quick_column(
         detection_trace: detection.trace,
         privacy_findings: Vec::new(),
         privacy_evidence: Vec::new(),
+        review_reasons: Vec::new(),
         pii_risk: classify_pii_risk(data_type),
         sample_values: values
             .iter()
