@@ -63,9 +63,9 @@ export function ColumnTable({
             <th className="column-title-column">Column Name</th>
             <th className="detected-type-heading">Detected Format</th>
             <th className="strategy-heading">
-              <GlossaryLabel term="strategy">Strategy</GlossaryLabel>
+              <GlossaryLabel term="strategy">Action</GlossaryLabel>
             </th>
-            <th className="privacy-evidence-heading">Evidence</th>
+            <th className="privacy-evidence-heading">Privacy Meaning</th>
             <th className="risk-heading">Risk</th>
           </tr>
         </thead>
@@ -132,11 +132,11 @@ export function ColumnTable({
                       </span>
                     </td>
                     <td className="control-cell">
-                      <span className="mobile-cell-label">Strategy</span>
+                      <span className="mobile-cell-label">Action</span>
                       <select
                         value={control?.strategy ?? column.strategy ?? 'auto'}
                         disabled={loading || disabled}
-                        aria-label={`Strategy for ${column.name}`}
+                        aria-label={`Action for ${column.name}`}
                         onClick={(event) => event.stopPropagation()}
                         onChange={(event) => onStrategyChange(column, event.target.value as AnonymizationStrategy)}
                       >
@@ -148,7 +148,7 @@ export function ColumnTable({
                       </select>
                     </td>
                     <td className="privacy-evidence-column">
-                      <span className="mobile-cell-label">Evidence</span>
+                      <span className="mobile-cell-label">Privacy meaning</span>
                       <DecisionEvidenceCell column={column} />
                       {(control?.strategy ?? column.strategy) === 'redact' && sampleDataAvailable && redactionPlaceholder ? (
                         <span className="column-note redaction-output">

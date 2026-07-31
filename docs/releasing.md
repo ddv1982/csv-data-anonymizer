@@ -134,22 +134,10 @@ cd frontend && npx playwright install chromium
 
 `npm run cargo:machete` is local-optional when cargo-machete is not installed; the scheduled maintenance workflow installs cargo-machete and runs the required variant.
 
-Before a public release, use the full quality gate rather than only the fast local checks:
+Before a public release, use the full quality gate:
 
 ```bash
-npm run fmt
-npm run lint
-npm run test
-npm run typecheck
-npm run deadcode:required
-npm run docs:check
-npm run release:check
-npm run tauri:prebuilt:check
-npm run frontend:e2e
-npm run frontend:a11y
-npm run frontend:audit
-npm run cargo:audit:required
-npm run tooling:test
+npm run validate:release
 ```
 
 Temporary RustSec exceptions in `scripts/cargo-audit.mjs` must identify an

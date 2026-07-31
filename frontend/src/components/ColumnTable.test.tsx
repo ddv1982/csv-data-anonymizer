@@ -5,6 +5,27 @@ import { columnMetadataFixture } from '../test-utils/builders'
 import { ColumnTable } from './ColumnTable'
 
 describe('ColumnTable', () => {
+  it('presents the review as format, privacy meaning, action, and risk', () => {
+    render(
+      <ColumnTable
+        columns={[]}
+        allColumnCount={0}
+        selectedSet={new Set()}
+        loading={false}
+        showAllColumns={false}
+        hiddenColumnCount={0}
+        onToggleColumn={vi.fn()}
+        controls={{}}
+        onStrategyChange={vi.fn()}
+        onToggleShowAll={vi.fn()}
+      />,
+    )
+
+    for (const heading of ['Detected Format', 'Privacy Meaning', 'Action', 'Risk']) {
+      expect(screen.getByRole('columnheader', { name: heading })).toBeInTheDocument()
+    }
+  })
+
   it('allows every rendered column to be selected', async () => {
     const user = userEvent.setup()
     const onToggleColumn = vi.fn()
@@ -51,7 +72,7 @@ describe('ColumnTable', () => {
     )
 
     const checkbox = screen.getByRole('checkbox', { name: /select column email/i })
-    const strategy = screen.getByRole('combobox', { name: /strategy for email/i })
+    const strategy = screen.getByRole('combobox', { name: /action for email/i })
     expect(checkbox).toBeDisabled()
     expect(strategy).toBeDisabled()
 

@@ -1,6 +1,6 @@
 {
   "name": "csv-anonymizer",
-  "version": "1.0.87",
+  "version": "1.0.88",
   "description": "Desktop CSV anonymizer for local-first data transformation workflows.",
   "desktopName": "csv-anonymizer.desktop",
   "homepage": "https://github.com/ddv1982/csv-data-anonymizer",
@@ -51,6 +51,8 @@
     "deadcode:strict": "npm --prefix frontend exec knip -- --config knip.json --production --include exports,types,dependencies,unlisted,unresolved,binaries",
     "deadcode:required": "npm run frontend:deadcode && npm run frontend:deadcode:production && npm run deadcode:strict && npm run cargo:machete:required",
     "smoke:rust": "node scripts/rust-smoke.mjs",
+    "validate": "npm run fmt && npm run lint && npm run test && npm run typecheck && npm run frontend:typecheck:compat && npm run docs:check",
+    "validate:release": "npm run validate && npm run deadcode:required && npm run docs:rustdoc && npm run tooling:test && npm run release:check && npm run tauri:prebuilt:check && npm run frontend:e2e && npm run frontend:a11y && npm run frontend:audit && npm run cargo:audit:required && npm run smoke:rust",
     "fmt": "cargo fmt --all --check",
     "lint": "npm run frontend:lint && node scripts/ensure-frontend-dist.mjs && cargo clippy --workspace --all-targets -- -D warnings",
     "test": "npm run contracts:check && npm run frontend:test && node scripts/ensure-frontend-dist.mjs && cargo test --workspace",

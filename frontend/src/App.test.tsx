@@ -250,7 +250,7 @@ describe('App input mode tabs', () => {
     render(<App />)
 
     await user.click(screen.getByRole('button', { name: /browse for csv file/i }))
-    await user.selectOptions(await screen.findByLabelText('Strategy for email'), 'localAi')
+    await user.selectOptions(await screen.findByLabelText('Action for email'), 'localAi')
 
     const blockedAlert = screen
       .getByText(/Set up Local AI before previewing or creating output/)
@@ -286,7 +286,7 @@ describe('App input mode tabs', () => {
     render(<App />)
 
     await user.click(screen.getByRole('button', { name: /browse for csv file/i }))
-    const csvStrategy = await screen.findByRole('combobox', { name: 'Strategy for email' })
+    const csvStrategy = await screen.findByRole('combobox', { name: 'Action for email' })
     expect(within(csvStrategy).getByRole('option', { name: 'Redact' })).toHaveValue('redact')
     expect(csvStrategy).toHaveValue('redact')
 
@@ -295,7 +295,7 @@ describe('App input mode tabs', () => {
       target: { value: '[{"email":"ada@example.com"}]' },
     })
     await user.click(screen.getByRole('button', { name: /detect fields/i }))
-    const pasteStrategy = await screen.findByRole('combobox', { name: 'Strategy for [].email' })
+    const pasteStrategy = await screen.findByRole('combobox', { name: 'Action for [].email' })
     expect(within(pasteStrategy).getByRole('option', { name: 'Redact' })).toHaveValue('redact')
     expect(pasteStrategy).toHaveValue('redact')
 
@@ -489,7 +489,7 @@ describe('App input mode tabs', () => {
       target: { value: '[{"email":"ada@example.com"}]' },
     })
     await user.click(screen.getByRole('button', { name: /detect fields/i }))
-    await user.selectOptions(await screen.findByLabelText('Strategy for [].email'), 'localAi')
+    await user.selectOptions(await screen.findByLabelText('Action for [].email'), 'localAi')
 
     const alert = screen.getByRole('alert')
     expect(alert).toHaveTextContent(/Set up Local AI before previewing or anonymizing/)

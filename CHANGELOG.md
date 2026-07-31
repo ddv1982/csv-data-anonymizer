@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.88 - 2026-07-31
+
+- Make the Rust-to-React evidence contract describe the wire format it actually receives: empty detector and semantic-evidence collections are optional, their normalized form is explicit, and CI now checks the five format, semantic, privacy, redaction, and combined evidence structures plus their enums instead of leaving that nested decision surface outside the contract gate.
+- Give prepared-analysis issuance, source fingerprint validation, private staging, and snapshot-model checks one security-focused module, reducing the production portion of the CSV command orchestrator to under 600 lines without changing its authorization, staging, or fail-closed behavior.
+- Present column review as Detected Format, Privacy Meaning, Action, and Risk; document the one-way decision boundary; and replace long maintainer checklists with canonical `validate` and `validate:release` commands backed by the existing tests, audits, browser checks, and release tooling.
+- Rewrite the project front page for end users with release, CI, license, and platform badges; installation and workflow guidance; plain-language privacy expectations; and general-purpose examples rather than domain-specific sample names.
+
 ## v1.0.87 - 2026-07-31
 
 - Accept analysis decisions whose empty detector and semantic-evidence arrays Rust legitimately omits from its serialized response, restoring those declared defaults before the data enters React state so ordinary low-evidence columns no longer produce an incompatible-decision error after file selection.

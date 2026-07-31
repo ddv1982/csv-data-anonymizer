@@ -1,4 +1,22 @@
-import type { AnalyzeResponse, ColumnEvidenceProfile, ColumnMetadata, PasteAnalyzeData } from '../types'
+import type {
+  AnalyzeResponse,
+  ColumnEvidenceProfile,
+  ColumnMetadata,
+  FormatEvidence,
+  PasteAnalyzeData,
+  SemanticDecision,
+} from '../types'
+
+export type CompleteColumnEvidenceProfile = Omit<
+  ColumnEvidenceProfile,
+  'formatEvidence' | 'semanticDecision'
+> & {
+  formatEvidence: FormatEvidence & { detectors: string[] }
+  semanticDecision: SemanticDecision & {
+    supportingEvidence: string[]
+    conflictingEvidence: string[]
+  }
+}
 
 const dataTypes = new Set([
   'email', 'uuid', 'timestamp', 'numericId', 'numericValue', 'postalCode', 'address',
@@ -25,7 +43,7 @@ export function validatePasteAnalyzeData(response: PasteAnalyzeData): PasteAnaly
   return response
 }
 
-export function completeEvidenceProfile(value: unknown): ColumnEvidenceProfile | null {
+export function completeEvidenceProfile(value: unknown): CompleteColumnEvidenceProfile | null {
   if (!isRecord(value)) return null
   const format = value.formatEvidence
   const semantic = value.semanticDecision

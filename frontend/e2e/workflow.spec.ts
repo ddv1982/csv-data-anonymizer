@@ -159,7 +159,7 @@ test('supports keyboard focus for input tabs and help dialogs', async ({ page })
   await expect(page.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'input-mode-tab-csv')
 
   await page.getByRole('button', { name: 'Browse for CSV file' }).click()
-  await page.getByLabel('Strategy for email').selectOption('localAi')
+  await page.getByLabel('Action for email').selectOption('localAi')
   const localAiSettingsButton = page
     .getByRole('alert')
     .filter({ hasText: 'Set up Local AI' })

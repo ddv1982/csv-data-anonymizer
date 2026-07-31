@@ -37,7 +37,7 @@ export type PrivacyFindingKind =
   | 'networkOrDeviceId'
   | 'url'
   | 'mixedSensitiveText'
-export type SemanticDecisionStatus = 'resolved' | 'uncertain' | 'conflicting'
+export type SemanticStatus = 'resolved' | 'uncertain' | 'conflicting'
 export type SemanticSpecificity = 'generic' | 'specific'
 export type RedactionPlaceholderSource = 'typed' | 'columnHeader' | 'generic'
 export type FormatEvidenceBasis = 'detectionSample' | 'userOverride' | 'retainedPreviewValues'
@@ -162,37 +162,45 @@ export type PreparedAnalysis = PreparedAnalysisSnapshot
  * decision. The UI presents this profile; it must not derive a new decision
  * from individual evidence items.
  */
+export interface FormatEvidence {
+  dataType: DataType
+  confidence: Confidence
+  matchCount: number
+  sampleCount: number
+  basis: FormatEvidenceBasis
+  detectors?: string[]
+}
+
+export interface SemanticDecision {
+  kind: PrivacyFindingKind | 'unknown'
+  confidence: Confidence
+  status: SemanticStatus
+  specificity: SemanticSpecificity
+  supportingEvidence?: string[]
+  conflictingEvidence?: string[]
+  reason: string
+}
+
+export interface PrivacyDecision {
+  risk: PiiRisk
+  recommendedStrategy: AnonymizationStrategy
+  autoSelected: boolean
+  reason: string
+}
+
+export interface RedactionDecision {
+  placeholder: string
+  source: RedactionPlaceholderSource
+  isTyped: boolean
+  preservesEquality: boolean
+  reason: string
+}
+
 export interface ColumnEvidenceProfile {
-  formatEvidence: {
-    dataType: DataType
-    confidence: Confidence
-    matchCount: number
-    sampleCount: number
-    basis: FormatEvidenceBasis
-    detectors: string[]
-  }
-  semanticDecision: {
-    kind: PrivacyFindingKind | 'unknown'
-    confidence: Confidence
-    status: SemanticDecisionStatus
-    specificity: SemanticSpecificity
-    supportingEvidence: string[]
-    conflictingEvidence: string[]
-    reason: string
-  }
-  privacyDecision: {
-    risk: PiiRisk
-    recommendedStrategy: AnonymizationStrategy
-    autoSelected: boolean
-    reason: string
-  }
-  redactionDecision: {
-    placeholder: string
-    source: RedactionPlaceholderSource
-    isTyped: boolean
-    preservesEquality: boolean
-    reason: string
-  }
+  formatEvidence: FormatEvidence
+  semanticDecision: SemanticDecision
+  privacyDecision: PrivacyDecision
+  redactionDecision: RedactionDecision
 }
 
 export interface ColumnMetadata {

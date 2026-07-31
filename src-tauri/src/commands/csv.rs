@@ -2,27 +2,38 @@ use super::shared::{
     authorize_or_confirm_input_file, authorize_or_confirm_output_file,
     default_output_path_with_suffix, run_blocking, service,
 };
+mod snapshot;
+
 use crate::local_ai::candidate_detector::local_candidate_detector;
 use crate::local_ai::{
-    DEFAULT_OLLAMA_MODEL, LOCAL_AI_DISABLED_MESSAGE, LocalAiRequest, local_ai_status,
-    selection_requires_local_ai, smart_provider_for_request, smart_provider_for_strategy,
+    LOCAL_AI_DISABLED_MESSAGE, LocalAiRequest, local_ai_status, selection_requires_local_ai,
+    smart_provider_for_request, smart_provider_for_strategy,
 };
 use crate::path_access::PathAccess;
 use crate::settings::{
     MAX_PREVIEW_SAMPLE_COUNT, MAX_SAMPLE_ROW_COUNT, SettingsStore, validate_sample_count,
 };
+#[cfg(test)]
+use csv_anonymizer_core::SourceFingerprint;
 use csv_anonymizer_core::{
-    ColumnControl, DetectionRunSummary, HeadersData, LocalNerRunStatus, PasteAnalyzeData,
-    PasteAnalyzeParams, PastePreviewParams, PasteTransformData, PasteTransformParams,
-    PreflightData, PreflightMode, PreflightParams, PreparedAnalysisSnapshot, PreviewData,
-    PreviewParams, QuickGenerateParams, QuickTransformData, SmartReplacementEntry,
-    SmartReplacementProvider, SourceFingerprint, should_auto_select_column,
+    ColumnControl, HeadersData, LocalNerRunStatus, PasteAnalyzeData, PasteAnalyzeParams,
+    PastePreviewParams, PasteTransformData, PasteTransformParams, PreflightData, PreflightMode,
+    PreflightParams, PreparedAnalysisSnapshot, PreviewData, PreviewParams, QuickGenerateParams,
+    QuickTransformData, SmartReplacementEntry, SmartReplacementProvider, should_auto_select_column,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
-use std::io::{Read, Write};
+#[cfg(test)]
+use snapshot::stage_validated_file_snapshot;
+pub(crate) use snapshot::{
+    ValidatedFileInput, require_prepared_analysis, require_snapshot_model,
+    snapshot_detection_summary,
+};
+use snapshot::{
+    paste_format_name, register_prepared_analysis, selected_candidate_ids, stage_private_csv_file,
+    validate_paste_snapshot,
+};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
 use tauri::State;
 
 #[derive(Debug, Clone, Serialize)]
@@ -115,217 +126,6 @@ fn local_ner_unavailable_message(model: &str) -> Result<Option<String>, String> 
     Ok((!status.ready).then_some(status.message))
 }
 
-fn selected_candidate_ids(
-    snapshot: &PreparedAnalysisSnapshot,
-    selected_columns: &[usize],
-) -> Vec<String> {
-    snapshot
-        .candidate_evidence
-        .iter()
-        .filter(|evidence| selected_columns.contains(&evidence.column_index))
-        .map(|evidence| evidence.id.clone())
-        .collect()
-}
-
-const PREPARED_ANALYSIS_CACHE_LIMIT: usize = 16;
-
-fn prepared_analysis_cache() -> &'static Mutex<VecDeque<PreparedAnalysisSnapshot>> {
-    static CACHE: OnceLock<Mutex<VecDeque<PreparedAnalysisSnapshot>>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(VecDeque::new()))
-}
-
-fn register_prepared_analysis(snapshot: &PreparedAnalysisSnapshot) -> Result<(), String> {
-    let mut cache = prepared_analysis_cache()
-        .lock()
-        .map_err(|_| "Prepared analysis cache is unavailable.".to_string())?;
-    if !cache.iter().any(|issued| issued == snapshot) {
-        cache.push_back(snapshot.clone());
-    }
-    while cache.len() > PREPARED_ANALYSIS_CACHE_LIMIT {
-        cache.pop_front();
-    }
-    Ok(())
-}
-
-fn verify_backend_issued_snapshot(snapshot: &PreparedAnalysisSnapshot) -> Result<(), String> {
-    let cache = prepared_analysis_cache()
-        .lock()
-        .map_err(|_| "Prepared analysis cache is unavailable.".to_string())?;
-    if cache.iter().any(|issued| issued == snapshot) {
-        Ok(())
-    } else {
-        Err(
-            "Analyze the source again: the prepared analysis was not issued by this app session."
-                .to_string(),
-        )
-    }
-}
-
-pub(crate) fn snapshot_detection_summary(
-    snapshot: &PreparedAnalysisSnapshot,
-) -> DetectionRunSummary {
-    snapshot.detection_run_summary.clone()
-}
-
-pub(crate) fn require_prepared_analysis(
-    local_ner_enabled: bool,
-    snapshot: Option<&PreparedAnalysisSnapshot>,
-) -> Result<(), String> {
-    match (local_ner_enabled, snapshot) {
-        (true, None) => {
-            Err("Analyze the source again before using Local AI detection results.".to_string())
-        }
-        (false, Some(_)) => Err(
-            "Analyze the source again after changing the Local AI detection setting.".to_string(),
-        ),
-        _ => Ok(()),
-    }
-}
-
-pub(crate) fn require_snapshot_model(
-    snapshot: Option<&PreparedAnalysisSnapshot>,
-    configured_model: &str,
-) -> Result<(), String> {
-    let Some(snapshot) = snapshot else {
-        return Ok(());
-    };
-    let configured_model = if configured_model.trim().is_empty() {
-        DEFAULT_OLLAMA_MODEL
-    } else {
-        configured_model.trim()
-    };
-    if matches!(
-        snapshot.detector.status,
-        LocalNerRunStatus::Completed | LocalNerRunStatus::Incomplete
-    ) && snapshot.detector.model_version.as_deref() != Some(configured_model)
-    {
-        Err("Analyze the source again after changing the Local AI model.".to_string())
-    } else {
-        Ok(())
-    }
-}
-
-fn validate_file_snapshot_fingerprint(
-    snapshot: &PreparedAnalysisSnapshot,
-    file_path: &std::path::Path,
-    sample_row_count: usize,
-    selected_columns: &[usize],
-    source_fingerprint: &str,
-) -> Result<(), String> {
-    let source_identity = file_path.to_string_lossy();
-    let confirmed = selected_candidate_ids(snapshot, selected_columns);
-    snapshot
-        .validate_source_fingerprint(
-            &source_identity,
-            "csv",
-            source_fingerprint,
-            sample_row_count,
-            &confirmed,
-        )
-        .map_err(|error| format!("Analyze the source again: {error}"))?;
-    Ok(())
-}
-
-pub(crate) struct ValidatedFileInput {
-    original_path: PathBuf,
-    staged_path: Option<tempfile::TempPath>,
-}
-
-impl ValidatedFileInput {
-    pub(crate) fn prepare(
-        snapshot: Option<&PreparedAnalysisSnapshot>,
-        original_path: PathBuf,
-        sample_row_count: usize,
-        selected_columns: &[usize],
-    ) -> Result<Self, String> {
-        let staged_path = snapshot
-            .map(|snapshot| {
-                stage_validated_file_snapshot(
-                    snapshot,
-                    &original_path,
-                    sample_row_count,
-                    selected_columns,
-                )
-            })
-            .transpose()?;
-        Ok(Self {
-            original_path,
-            staged_path,
-        })
-    }
-
-    pub(crate) fn original_path(&self) -> &std::path::Path {
-        &self.original_path
-    }
-
-    pub(crate) fn processing_path(&self) -> PathBuf {
-        self.staged_path
-            .as_deref()
-            .unwrap_or(&self.original_path)
-            .to_path_buf()
-    }
-}
-
-/// Copies the exact snapshot-validated bytes to a private file for a background job.
-///
-/// Keeping the returned path alive pins the staged source until processing finishes,
-/// closing the gap between validation and the service opening the input.
-pub(crate) fn stage_validated_file_snapshot(
-    snapshot: &PreparedAnalysisSnapshot,
-    file_path: &std::path::Path,
-    sample_row_count: usize,
-    selected_columns: &[usize],
-) -> Result<tempfile::TempPath, String> {
-    verify_backend_issued_snapshot(snapshot)?;
-    let (staged, source_fingerprint) = stage_private_csv_file(file_path)?;
-    validate_file_snapshot_fingerprint(
-        snapshot,
-        file_path,
-        sample_row_count,
-        selected_columns,
-        &source_fingerprint,
-    )?;
-    Ok(staged)
-}
-
-fn validate_paste_snapshot(
-    snapshot: &PreparedAnalysisSnapshot,
-    content: &str,
-    format: csv_anonymizer_core::PasteDataFormat,
-    sample_row_count: usize,
-    selected_columns: &[usize],
-) -> Result<(), String> {
-    verify_backend_issued_snapshot(snapshot)?;
-    let confirmed = selected_candidate_ids(snapshot, selected_columns);
-    let requested_format = if format == csv_anonymizer_core::PasteDataFormat::Auto {
-        snapshot.format.as_str().to_string()
-    } else {
-        paste_format_name(format).to_string()
-    };
-    snapshot
-        .validate(
-            "paste",
-            &requested_format,
-            content.as_bytes(),
-            sample_row_count,
-            &confirmed,
-        )
-        .map_err(|error| format!("Analyze the pasted data again: {error}"))?;
-    Ok(())
-}
-
-fn paste_format_name(format: csv_anonymizer_core::PasteDataFormat) -> &'static str {
-    match format {
-        csv_anonymizer_core::PasteDataFormat::Auto => "auto",
-        csv_anonymizer_core::PasteDataFormat::Csv => "csv",
-        csv_anonymizer_core::PasteDataFormat::Json => "json",
-        csv_anonymizer_core::PasteDataFormat::Xml => "xml",
-        csv_anonymizer_core::PasteDataFormat::Yaml => "yaml",
-        csv_anonymizer_core::PasteDataFormat::PlainText => "plainText",
-        csv_anonymizer_core::PasteDataFormat::Logs => "logs",
-    }
-}
-
 fn analyze_csv_data(
     file_path: PathBuf,
     sample_row_count: usize,
@@ -400,37 +200,6 @@ fn analyze_csv_data(
         suggested_output_path,
         prepared_analysis,
     })
-}
-
-fn stage_private_csv_file(
-    source_path: &std::path::Path,
-) -> Result<(tempfile::TempPath, String), String> {
-    let mut source = std::fs::File::open(source_path)
-        .map_err(|error| format!("Could not open source for private staging: {error}"))?;
-    let mut staged = tempfile::Builder::new()
-        .prefix("csv-anonymizer-validated-")
-        .suffix(".csv")
-        .tempfile()
-        .map_err(|error| format!("Could not create private staged source: {error}"))?;
-    let mut fingerprint = SourceFingerprint::default();
-    let mut buffer = [0u8; 64 * 1024];
-    loop {
-        let read = source
-            .read(&mut buffer)
-            .map_err(|error| format!("Could not read source for private staging: {error}"))?;
-        if read == 0 {
-            break;
-        }
-        fingerprint.update(&buffer[..read]);
-        staged
-            .write_all(&buffer[..read])
-            .map_err(|error| format!("Could not write private staged source: {error}"))?;
-    }
-    staged
-        .as_file_mut()
-        .sync_all()
-        .map_err(|error| format!("Could not write private staged source: {error}"))?;
-    Ok((staged.into_temp_path(), fingerprint.finish()))
 }
 
 #[tauri::command]
