@@ -58,7 +58,7 @@ It does not produce formal anonymity, differential privacy aggregates, or synthe
 
 | Strategy | Use | Keeps repeats linkable |
 | --- | --- | --- |
-| Redact | Replace values with typed placeholders such as `[EMAIL]`, `[PERSON]`, or `[DATE]`. | No |
+| Redact | Replace values with typed placeholders such as `[EMAIL]` or `[PERSON]` only when semantic evidence supports them. Uncertain values collapse to one marker derived from the column, such as `[CUSTOM_REFERENCE]`. | No |
 | Mask | Replace values with simple masked output. | No |
 | Pseudonymize | Generate readable or shape-preserving fake values. | Yes |
 | Tokenize | Replace values with opaque `tok_...` tokens that stay consistent within the current run. | Yes |

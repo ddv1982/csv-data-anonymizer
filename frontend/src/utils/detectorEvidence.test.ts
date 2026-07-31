@@ -47,7 +47,7 @@ describe('detector evidence labels', () => {
     ['addressRegion', 'Address region'],
     ['privateDate', 'Private date'],
     ['accountOrFinancialId', 'Account ID'],
-    ['recordIdentifier', 'Record ID'],
+    ['recordIdentifier', 'Persistent identifier'],
     ['governmentId', 'Government ID'],
     ['credentialOrSecret', 'Secret'],
     ['networkOrDeviceId', 'Network/device ID'],

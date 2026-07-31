@@ -37,6 +37,10 @@ export type PrivacyFindingKind =
   | 'networkOrDeviceId'
   | 'url'
   | 'mixedSensitiveText'
+export type SemanticDecisionStatus = 'resolved' | 'uncertain' | 'conflicting'
+export type SemanticSpecificity = 'generic' | 'specific'
+export type RedactionPlaceholderSource = 'typed' | 'columnHeader' | 'generic'
+export type FormatEvidenceBasis = 'detectionSample' | 'userOverride' | 'retainedPreviewValues'
 export type EmptyFormat = 'emptyString' | 'null' | 'mixed'
 export type AnonymizationStrategy =
   | 'auto'
@@ -152,6 +156,45 @@ export interface PreparedAnalysisSnapshot {
 }
 
 export type PreparedAnalysis = PreparedAnalysisSnapshot
+
+/**
+ * The backend-authoritative explanation of one column's detection and privacy
+ * decision. The UI presents this profile; it must not derive a new decision
+ * from individual evidence items.
+ */
+export interface ColumnEvidenceProfile {
+  formatEvidence: {
+    dataType: DataType
+    confidence: Confidence
+    matchCount: number
+    sampleCount: number
+    basis: FormatEvidenceBasis
+    detectors: string[]
+  }
+  semanticDecision: {
+    kind: PrivacyFindingKind | 'unknown'
+    confidence: Confidence
+    status: SemanticDecisionStatus
+    specificity: SemanticSpecificity
+    supportingEvidence: string[]
+    conflictingEvidence: string[]
+    reason: string
+  }
+  privacyDecision: {
+    risk: PiiRisk
+    recommendedStrategy: AnonymizationStrategy
+    autoSelected: boolean
+    reason: string
+  }
+  redactionDecision: {
+    placeholder: string
+    source: RedactionPlaceholderSource
+    isTyped: boolean
+    preservesEquality: boolean
+    reason: string
+  }
+}
+
 export interface ColumnMetadata {
   name: string
   /** Another column's header reduces to the same label, so labels carry the index. */
@@ -163,6 +206,8 @@ export interface ColumnMetadata {
   detectionTrace?: DetectionTrace | null
   privacyFindings?: PrivacyFinding[]
   privacyEvidence?: PrivacyEvidenceSummary[]
+  /** Backend-authoritative profile present on every supported analysis schema. */
+  evidenceProfile: ColumnEvidenceProfile
   piiRisk: PiiRisk
   sampleValues: string[]
   /** Distribution of the detection sample, not of the whole input. */

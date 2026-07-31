@@ -759,6 +759,7 @@ mod tests {
                         | DataType::Phone
                         | DataType::Address
                         | DataType::TaxId
+                        | DataType::Uuid
                         | DataType::FirstName
                         | DataType::LastName
                         | DataType::FullName

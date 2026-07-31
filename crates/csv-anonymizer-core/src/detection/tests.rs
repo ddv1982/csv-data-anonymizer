@@ -6,6 +6,7 @@ mod held_out_corpus;
 mod locale_matrix;
 mod multilingual_matrix;
 mod privacy;
+mod semantic_calibration;
 mod taxonomy;
 mod validators;
 

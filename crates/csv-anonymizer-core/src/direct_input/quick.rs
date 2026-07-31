@@ -88,7 +88,7 @@ fn quick_column(
     values: &[String],
 ) -> ColumnMetadata {
     let detection = detect_column_type_with_name("value", values);
-    ColumnMetadata {
+    let mut column = ColumnMetadata {
         name: "value".to_string(),
         // Quick generate synthesizes one column, so there is no second header to
         // collide with.
@@ -101,6 +101,7 @@ fn quick_column(
         privacy_findings: Vec::new(),
         privacy_evidence: Vec::new(),
         review_reasons: Vec::new(),
+        evidence_profile: Default::default(),
         pii_risk: classify_pii_risk(data_type),
         sample_values: values
             .iter()
@@ -112,7 +113,9 @@ fn quick_column(
         empty_format: detect_empty_format(values),
         is_selected: true,
         strategy,
-    }
+    };
+    crate::strategies::refresh_evidence_profile(&mut column);
+    column
 }
 
 fn supports_quick_generate_strategy(strategy: AnonymizationStrategy) -> bool {

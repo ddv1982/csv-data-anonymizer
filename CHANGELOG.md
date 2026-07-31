@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.85 - 2026-07-31
+
+- Separate a value's detected format from its privacy meaning, so UUID shape alone reports only a persistent identifier and no longer asserts that an entity, location, or animal key is a network or device identifier. Require independent device-specific header evidence before using `[NETWORK_ID]`, and resolve mixed headers by explicit semantic precedence so credential evidence wins over weaker device context.
+- Make Redact collapse every non-empty value in an uncertain column to one constant marker derived from the published column name, such as `[CUSTOM_REFERENCE]`, while keeping numbered, equality-preserving placeholders exclusive to the explicit Label strategy.
+- Issue one backend-authoritative evidence profile for format coverage, semantic status, privacy action, and redaction output; rebuild it at analysis and override boundaries, bind it into prepared-analysis schema v3, and reject stale or fabricated snapshot decisions without breaking older standalone column metadata.
+- Present resolved, uncertain, and conflicting decisions separately from detected format, preview the exact redaction marker, and retain a complete audit view of every privacy finding's kind, confidence, source, sample coverage, format, and reason.
+- Add a synthetic semantic calibration gate covering generic UUIDs, device UUIDs, mixed secret/device headers, direct and quasi-identifiers, and benign controls, alongside cross-format redaction, snapshot-integrity, override-coverage, frontend contract, and detector benchmark regressions.
+
 ## v1.0.84 - 2026-07-31
 
 - Add an opt-in, supplemental local named-entity pass for person names and private addresses across CSV and pasted-data formats. Ollama proposes exact quoted spans, while Rust validates cell identity, boundaries, confidence, overlap, and replay before any candidate can affect a transformation.

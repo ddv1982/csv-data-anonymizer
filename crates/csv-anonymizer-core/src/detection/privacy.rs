@@ -57,7 +57,7 @@ pub fn analyze_column_privacy(
         detected_type,
         detection_confidence,
     );
-    add_full_cell_findings_from_header(&mut findings, &header, values);
+    add_full_cell_findings_from_header(&mut findings, &header, values, detected_type);
 
     let sample_count = values.iter().filter(|value| !is_empty_value(value)).count();
     let evidence = summarize_privacy_findings(&findings, sample_count);
@@ -139,56 +139,82 @@ fn add_full_cell_findings_from_header(
     findings: &mut Vec<PrivacyFinding>,
     header: &header::HeaderAnalysis,
     values: &[String],
+    detected_type: DataType,
 ) {
-    let header_signal = if let Some(signal) = header.best_for_kinds(&["secret"]) {
-        Some((
+    let mut header_signals = Vec::new();
+    if let Some(signal) = header.best_for_kinds(&["secret"]) {
+        header_signals.push((
             PrivacyFindingKind::CredentialOrSecret,
             DataType::String,
             Confidence::Medium,
             82,
             signal.detector,
             signal.reason,
-        ))
-    } else if let Some(signal) = header.best_for_kinds(&["account_number"]) {
-        Some((
+            100,
+        ));
+    }
+    if let Some(signal) = header.best_for_kinds(&["account_number"]) {
+        header_signals.push((
             PrivacyFindingKind::AccountOrFinancialId,
             DataType::NumericId,
             Confidence::Medium,
             76,
             signal.detector,
             signal.reason,
-        ))
-    } else if let Some(signal) = header.best_for_kinds(&["private_date"]) {
-        Some((
+            90,
+        ));
+    }
+    if let Some(signal) = header.best_for_kinds(&["private_date"]) {
+        header_signals.push((
             PrivacyFindingKind::PrivateDate,
             DataType::Timestamp,
             Confidence::Medium,
             70,
             signal.detector,
             signal.reason,
-        ))
-    } else if let Some(signal) = header.best_for_kinds(&["user_event_date"]) {
-        Some((
+            80,
+        ));
+    }
+    if let Some(signal) = header.best_for_kinds(&["user_event_date"]) {
+        header_signals.push((
             PrivacyFindingKind::PrivateDate,
             DataType::Timestamp,
             Confidence::Medium,
             68,
             signal.detector,
             signal.reason,
-        ))
-    } else if let Some(signal) = header.best_for_kinds(&["account_identifier"]) {
-        Some((
+            79,
+        ));
+    }
+    if let Some(signal) = header.best_for_kinds(&["account_identifier"]) {
+        header_signals.push((
             PrivacyFindingKind::AccountOrFinancialId,
             DataType::String,
             Confidence::Medium,
             76,
             signal.detector,
             signal.reason,
-        ))
-    } else if header.best_for_kinds(&["possible_name"]).is_some()
+            70,
+        ));
+    }
+    if detected_type == DataType::Uuid
+        && let Some(signal) = header.best_for_kinds(&["device_identifier"])
+    {
+        header_signals.push((
+            PrivacyFindingKind::NetworkOrDeviceId,
+            DataType::Uuid,
+            Confidence::Medium,
+            82,
+            signal.detector,
+            "UUID format and device-specific header independently support a network/device identifier."
+                .to_string(),
+            85,
+        ));
+    }
+    if header.best_for_kinds(&["possible_name"]).is_some()
         && column_values_look_like_person_names(values)
     {
-        Some((
+        header_signals.push((
             PrivacyFindingKind::Person,
             // `String`, not `FullName`, and both halves of that are load-bearing.
             // `suggested_data_type` above only proposes a retype for a data type other
@@ -210,12 +236,13 @@ fn add_full_cell_findings_from_header(
             54,
             POSSIBLE_PERSON_NAME_DETECTOR.to_string(),
             "Header ends in a name term and the sampled values are shaped like names.".to_string(),
-        ))
-    } else {
-        None
-    };
+            10,
+        ));
+    }
 
-    let Some((kind, data_type, confidence, score, detector, reason)) = header_signal else {
+    let Some((kind, data_type, confidence, score, detector, reason, _)) =
+        header_signals.into_iter().max_by_key(|signal| signal.6)
+    else {
         return;
     };
 

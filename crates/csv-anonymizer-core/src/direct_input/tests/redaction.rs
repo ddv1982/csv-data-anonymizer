@@ -107,6 +107,66 @@ fn analyzes_and_transforms_json_array() {
     assert_eq!(result.columns_anonymized, 1);
 }
 
+/// Equivalent top-level fields must not acquire different privacy semantics merely
+/// because their container syntax changes. XML is covered separately because its
+/// canonical field name includes the document root; CSV, JSON and YAML share the
+/// same top-level name and therefore must also share the exact fallback marker.
+#[test]
+fn generic_uuid_redaction_is_consistent_across_structured_formats() {
+    const UUID: &str = "550e8400-e29b-41d4-a716-446655440000";
+    let fixtures = [
+        (PasteDataFormat::Csv, format!("custom_reference\n{UUID}\n")),
+        (
+            PasteDataFormat::Json,
+            format!(r#"{{"custom_reference":"{UUID}"}}"#),
+        ),
+        (PasteDataFormat::Yaml, format!("custom_reference: {UUID}\n")),
+    ];
+
+    for (format, input) in fixtures {
+        let analysis = analyze(&input, format);
+        let column = column_named(&analysis, "custom_reference");
+        assert_eq!(column.detected_type, DataType::Uuid, "{format:?}");
+        assert_eq!(column.pii_risk, PiiRisk::Medium, "{format:?}");
+        assert_eq!(column.strategy, AnonymizationStrategy::Redact, "{format:?}");
+        assert!(column.privacy_evidence.iter().any(|evidence| {
+            evidence.kind == PrivacyFindingKind::RecordIdentifier
+                && evidence.data_type == DataType::Uuid
+        }));
+
+        let result = transform(&input, format, vec![column.index], Vec::new());
+        assert!(result.output.contains("[CUSTOM_REFERENCE]"), "{format:?}");
+        assert!(!result.output.contains(UUID), "{format:?}");
+    }
+}
+
+/// XML field paths include their root element by design, but the classification and
+/// non-linkable behavior must still match other structured inputs.
+#[test]
+fn generic_uuid_xml_field_keeps_record_identifier_semantics() {
+    const FIRST: &str = "550e8400-e29b-41d4-a716-446655440000";
+    const SECOND: &str = "550e8400-e29b-41d4-a716-446655440001";
+    let input = format!(
+        "<records><record><custom_reference>{FIRST}</custom_reference></record>\
+         <record><custom_reference>{SECOND}</custom_reference></record></records>"
+    );
+    let analysis = analyze(&input, PasteDataFormat::Xml);
+    let column = column_named(&analysis, "records.record.custom_reference");
+
+    assert_eq!(column.detected_type, DataType::Uuid);
+    assert_eq!(column.pii_risk, PiiRisk::Medium);
+    assert_eq!(column.strategy, AnonymizationStrategy::Redact);
+    assert!(column.privacy_evidence.iter().any(|evidence| {
+        evidence.kind == PrivacyFindingKind::RecordIdentifier
+            && evidence.data_type == DataType::Uuid
+    }));
+
+    let result = transform(&input, PasteDataFormat::Xml, vec![column.index], Vec::new());
+    assert!(result.output.contains("[RECORDS_RECORD_CUSTOM_REFERENCE]"));
+    assert!(!result.output.contains(FIRST));
+    assert!(!result.output.contains(SECOND));
+}
+
 #[test]
 fn json_direct_input_defaults_sensitive_fields_to_redact() {
     let input = r#"{
@@ -226,7 +286,7 @@ fn redacting_json_numeric_scalars_warns_for_default_and_manual_strategy() {
     assert_scalar_warning(&default_preview);
     // A bare `id` is a record key, not an account number — see
     // `PrivacyFindingKind::RecordIdentifier`.
-    assert!(default_result.output.contains("\"id\": \"[RECORD_ID]\""));
+    assert!(default_result.output.contains("\"id\": \"[ID]\""));
     assert_scalar_note(&default_result);
 
     let manual_input = r#"{"age":42}"#;
@@ -247,7 +307,7 @@ fn redacting_json_numeric_scalars_warns_for_default_and_manual_strategy() {
     );
 
     assert_scalar_warning(&manual_preview);
-    assert!(manual_result.output.contains("\"age\": \"[REDACTED]\""));
+    assert!(manual_result.output.contains("\"age\": \"[AGE]\""));
     assert_scalar_note(&manual_result);
 }
 
@@ -270,7 +330,7 @@ fn redacting_yaml_scalar_values_warns_about_type_changes() {
     );
 
     assert_scalar_warning(&default_preview);
-    assert!(default_result.output.contains("[RECORD_ID]"));
+    assert!(default_result.output.contains("[ID]"));
     assert_scalar_note(&default_result);
 
     let manual_input = "enabled: true\n";
@@ -291,7 +351,7 @@ fn redacting_yaml_scalar_values_warns_about_type_changes() {
     );
 
     assert_scalar_warning(&manual_preview);
-    assert!(manual_result.output.contains("[REDACTED]"));
+    assert!(manual_result.output.contains("[ENABLED]"));
     assert_scalar_note(&manual_result);
 }
 

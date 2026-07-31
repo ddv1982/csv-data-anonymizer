@@ -1,3 +1,4 @@
+use crate::strategies::{build_evidence_profile, refresh_evidence_profile};
 use crate::types::{
     ColumnMetadata, DataType, DetectionRunSummary, LocalNerRunStatus, PrivacyFindingKind,
 };
@@ -5,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt;
 
-pub const PREPARED_ANALYSIS_VERSION: u16 = 2;
+pub const PREPARED_ANALYSIS_VERSION: u16 = 3;
 
 /// Incremental form of the snapshot fingerprint, suitable for streaming files.
 #[derive(Debug, Clone)]
@@ -193,9 +194,10 @@ impl PreparedAnalysisSnapshot {
         format: impl Into<String>,
         source_fingerprint: String,
         sample_row_count: usize,
-        columns: Vec<ColumnMetadata>,
+        mut columns: Vec<ColumnMetadata>,
         run: &DetectionRunSummary,
     ) -> Result<Self, PreparedSnapshotError> {
+        columns.iter_mut().for_each(refresh_evidence_profile);
         let detector = PreparedDetectorIdentity {
             status: run.local_ner,
             detector_id: run.detector_id.clone(),
@@ -287,6 +289,9 @@ impl PreparedAnalysisSnapshot {
         let mut column_indices = HashSet::new();
         for (position, column) in self.columns.iter().enumerate() {
             if column.index != position || !column_indices.insert(column.index) {
+                return Err(PreparedSnapshotError::InvalidSchema);
+            }
+            if column.evidence_profile != build_evidence_profile(column) {
                 return Err(PreparedSnapshotError::InvalidSchema);
             }
         }
@@ -497,6 +502,7 @@ mod tests {
             privacy_findings: vec![finding],
             privacy_evidence: vec![],
             review_reasons: vec![ColumnReviewReason::AmbiguousContext],
+            evidence_profile: Default::default(),
             pii_risk: PiiRisk::Low,
             sample_values: vec!["José lives here".into()],
             sample_value_distribution: ColumnValueDistribution::default(),
@@ -532,6 +538,112 @@ mod tests {
         }
 
         assert_eq!(whole.finish(), chunked.finish());
+    }
+
+    /// The prepared payload crosses an IPC/storage boundary as JSON. Keep a full
+    /// round-trip test here so adding evidence or redaction-decision fields cannot
+    /// silently drop them through a missing serde annotation or default.
+    #[test]
+    fn prepared_snapshot_json_round_trip_preserves_the_authoritative_payload() {
+        let original = snapshot();
+        let encoded = serde_json::to_vec(&original).expect("snapshot serializes");
+        let decoded: PreparedAnalysisSnapshot =
+            serde_json::from_slice(&encoded).expect("snapshot deserializes");
+
+        assert_eq!(decoded, original);
+        assert!(
+            decoded
+                .validate(
+                    "/tmp/input.csv",
+                    "csv",
+                    b"notes\nJose lives here\n",
+                    100,
+                    &[],
+                )
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn snapshot_construction_rebuilds_a_stale_decision_profile() {
+        let original = snapshot();
+        let mut column = original.columns[0].clone();
+        column.evidence_profile.redaction_decision.placeholder = "[FABRICATED]".into();
+        column.evidence_profile.semantic_decision.kind = "governmentId".into();
+
+        let rebuilt = PreparedAnalysisSnapshot::new_with_source_fingerprint(
+            original.source_identity,
+            original.format,
+            original.source_fingerprint,
+            original.sample_row_count,
+            vec![column.clone()],
+            &original.detection_run_summary,
+        )
+        .expect("snapshot construction normalizes derived decisions");
+
+        assert_eq!(
+            rebuilt.columns[0].evidence_profile,
+            build_evidence_profile(&column)
+        );
+        assert_ne!(
+            rebuilt.columns[0]
+                .evidence_profile
+                .redaction_decision
+                .placeholder,
+            "[FABRICATED]"
+        );
+        assert_ne!(
+            rebuilt.columns[0].evidence_profile.semantic_decision.kind,
+            "governmentId"
+        );
+    }
+
+    #[test]
+    fn schema_v3_validation_requires_an_evidence_profile() {
+        let mut encoded = serde_json::to_value(snapshot()).expect("snapshot serializes");
+        encoded["columns"][0]
+            .as_object_mut()
+            .expect("column is an object")
+            .remove("evidenceProfile");
+
+        let mut decoded: PreparedAnalysisSnapshot =
+            serde_json::from_value(encoded).expect("general column metadata remains compatible");
+        decoded.integrity_checksum = decoded.compute_integrity();
+        assert_eq!(
+            decoded.validate(
+                "/tmp/input.csv",
+                "csv",
+                b"notes\nJose lives here\n",
+                100,
+                &[],
+            ),
+            Err(PreparedSnapshotError::InvalidSchema)
+        );
+    }
+
+    #[test]
+    fn validation_rejects_a_consistently_checksummed_fabricated_decision_profile() {
+        let mut fabricated = snapshot();
+        fabricated.columns[0]
+            .evidence_profile
+            .redaction_decision
+            .placeholder = "[PERSON]".into();
+        fabricated.columns[0]
+            .evidence_profile
+            .semantic_decision
+            .kind = "person".into();
+        fabricated.integrity_checksum = fabricated.compute_integrity();
+
+        assert_eq!(
+            fabricated.validate(
+                "/tmp/input.csv",
+                "csv",
+                b"notes\nJose lives here\n",
+                100,
+                &[],
+            ),
+            Err(PreparedSnapshotError::InvalidSchema)
+        );
     }
 
     #[test]
@@ -603,6 +715,19 @@ mod tests {
     #[test]
     fn rejects_schema_version_and_format_mismatch() {
         let snapshot = snapshot();
+        let mut previous_schema = snapshot.clone();
+        previous_schema.version = 2;
+        assert_eq!(
+            previous_schema.validate(
+                "/tmp/input.csv",
+                "csv",
+                b"notes\nJose lives here\n",
+                100,
+                &[],
+            ),
+            Err(PreparedSnapshotError::VersionMismatch),
+            "version-2 snapshots predate the authoritative evidence profile and must request re-analysis"
+        );
         let mut version = snapshot.clone();
         version.version += 1;
         assert_eq!(

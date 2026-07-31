@@ -109,9 +109,13 @@ impl DataType {
                 PrivacyFindingKind::RecordIdentifier,
                 "Column type indicates identifier-shaped values; review context.",
             )),
-            DataType::Uuid | DataType::IpAddress | DataType::MacAddress => Some((
+            DataType::Uuid => Some((
+                PrivacyFindingKind::RecordIdentifier,
+                "Column type indicates persistent identifier-shaped values; what they identify is unknown.",
+            )),
+            DataType::IpAddress | DataType::MacAddress => Some((
                 PrivacyFindingKind::NetworkOrDeviceId,
-                "Column type indicates network, device, or persistent identifiers.",
+                "Column type indicates network or device identifiers.",
             )),
             DataType::Url => Some((PrivacyFindingKind::Url, "Column type indicates URLs.")),
             DataType::NumericValue
@@ -270,20 +274,17 @@ impl DataType {
             DataType::FirstName | DataType::LastName | DataType::FullName => {
                 Some(RedactionPlaceholder::Person)
             }
-            DataType::Address | DataType::PostalCode => Some(RedactionPlaceholder::Address),
-            DataType::Timestamp => Some(RedactionPlaceholder::Date),
-            // Neither is an account. A bare identifier column is a record key, and
-            // a UUID is a machine-generated handle — which is also what its privacy
-            // finding says (`NetworkOrDeviceId`), so redacting it as an account id
-            // contradicted the classification shown next to it in the report.
-            DataType::NumericId => Some(RedactionPlaceholder::RecordId),
-            DataType::Uuid => Some(RedactionPlaceholder::NetworkId),
+            DataType::Address => Some(RedactionPlaceholder::Address),
             DataType::TaxId => Some(RedactionPlaceholder::GovernmentId),
             DataType::Url => Some(RedactionPlaceholder::Url),
             DataType::IpAddress | DataType::MacAddress => Some(RedactionPlaceholder::NetworkId),
             DataType::String
             | DataType::Unknown
             | DataType::Enum
+            | DataType::Uuid
+            | DataType::Timestamp
+            | DataType::NumericId
+            | DataType::PostalCode
             | DataType::NumericValue
             | DataType::Boolean
             | DataType::Currency
@@ -305,15 +306,13 @@ pub(crate) enum ReportIdentifierClass {
 /// what a value means, not about its shape, so it can only come from evidence — the
 /// IBAN or card validator, or an `account_number` header — which reaches
 /// `[ACCOUNT_ID]` through `placeholder_from_evidence` instead. A column of plain
-/// integers gets `[RECORD_ID]`.
+/// integers gets a non-linkable placeholder derived from its column header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RedactionPlaceholder {
     Email,
     Phone,
     Person,
     Address,
-    Date,
-    RecordId,
     GovernmentId,
     Url,
     NetworkId,
@@ -534,6 +533,95 @@ pub enum ColumnReviewReason {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct FormatEvidence {
+    pub data_type: DataType,
+    pub confidence: Confidence,
+    pub match_count: usize,
+    pub sample_count: usize,
+    pub basis: FormatEvidenceBasis,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub detectors: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FormatEvidenceBasis {
+    DetectionSample,
+    UserOverride,
+    #[default]
+    RetainedPreviewValues,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SemanticSpecificity {
+    Specific,
+    #[default]
+    Generic,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SemanticStatus {
+    Resolved,
+    #[default]
+    Uncertain,
+    Conflicting,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SemanticDecision {
+    pub kind: String,
+    pub confidence: Confidence,
+    pub specificity: SemanticSpecificity,
+    pub status: SemanticStatus,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub supporting_evidence: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conflicting_evidence: Vec<String>,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivacyDecision {
+    pub risk: PiiRisk,
+    pub recommended_strategy: AnonymizationStrategy,
+    pub auto_selected: bool,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RedactionPlaceholderSource {
+    Typed,
+    ColumnHeader,
+    #[default]
+    Generic,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RedactionDecision {
+    pub placeholder: String,
+    pub source: RedactionPlaceholderSource,
+    pub is_typed: bool,
+    pub preserves_equality: bool,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColumnEvidenceProfile {
+    pub format_evidence: FormatEvidence,
+    pub semantic_decision: SemanticDecision,
+    pub privacy_decision: PrivacyDecision,
+    pub redaction_decision: RedactionDecision,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ColumnMetadata {
     pub name: String,
     /// Whether some other column's header reduces to the same placeholder label as
@@ -568,6 +656,8 @@ pub struct ColumnMetadata {
     pub privacy_evidence: Vec<PrivacyEvidenceSummary>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub review_reasons: Vec<ColumnReviewReason>,
+    #[serde(default)]
+    pub evidence_profile: ColumnEvidenceProfile,
     pub pii_risk: PiiRisk,
     pub sample_values: Vec<String>,
     /// The value distribution of the *detection sample*, not of the whole input.
@@ -1796,6 +1886,7 @@ mod tests {
                 detectors: vec!["email".to_string()],
             }],
             review_reasons: vec![ColumnReviewReason::AmbiguousContext],
+            evidence_profile: Default::default(),
             pii_risk: PiiRisk::High,
             sample_values: vec!["ada@example.com".to_string()],
             sample_value_distribution: Default::default(),

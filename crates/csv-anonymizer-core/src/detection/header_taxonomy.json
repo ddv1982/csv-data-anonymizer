@@ -91,6 +91,16 @@
     { "kind": "opaque_identifier", "concept": "identifier.opaque", "dataType": "numericId", "lang": "it", "text": "identificativo", "weight": 82, "matchMode": "token" },
     { "kind": "opaque_identifier", "concept": "identifier.opaque", "dataType": "numericId", "lang": "it", "text": "riferimento", "weight": 80, "matchMode": "token" },
 
+    { "kind": "device_identifier", "concept": "device.identifier", "dataType": "uuid", "lang": "en", "text": "device id", "weight": 94, "matchMode": "suffix" },
+    { "kind": "device_identifier", "concept": "device.identifier", "dataType": "uuid", "lang": "en", "text": "device identifier", "weight": 94, "matchMode": "suffix" },
+    { "kind": "device_identifier", "concept": "device.identifier", "dataType": "uuid", "lang": "en", "text": "hardware id", "weight": 93, "matchMode": "suffix" },
+    { "kind": "device_identifier", "concept": "device.identifier", "dataType": "uuid", "lang": "en", "text": "machine id", "weight": 91, "matchMode": "suffix" },
+    { "kind": "device_identifier", "concept": "device.identifier", "dataType": "uuid", "lang": "en", "text": "network id", "weight": 93, "matchMode": "suffix" },
+    { "kind": "device_identifier", "concept": "device.identifier", "dataType": "uuid", "lang": "nl", "text": "apparaat id", "weight": 94, "matchMode": "allTokens" },
+    { "kind": "device_identifier", "concept": "device.identifier", "dataType": "uuid", "lang": "de", "text": "geräte id", "weight": 94, "matchMode": "allTokens" },
+    { "kind": "device_identifier", "concept": "device.identifier", "dataType": "uuid", "lang": "fr", "text": "identifiant appareil", "weight": 94, "matchMode": "allTokens" },
+    { "kind": "device_identifier", "concept": "device.identifier", "dataType": "uuid", "lang": "es", "text": "identificador dispositivo", "weight": 94, "matchMode": "allTokens" },
+
     { "kind": "private_date", "concept": "person.date_of_birth", "dataType": "timestamp", "lang": "en", "text": "dob", "weight": 96, "matchMode": "exact" },
     { "kind": "private_date", "concept": "person.date_of_birth", "dataType": "timestamp", "lang": "en", "text": "date of birth", "weight": 96, "matchMode": "allTokens" },
     { "kind": "private_date", "concept": "person.date_of_birth", "dataType": "timestamp", "lang": "en", "text": "birthdate", "weight": 95, "matchMode": "suffix" },

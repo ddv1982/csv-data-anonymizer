@@ -7,7 +7,10 @@ mod redaction;
 mod state;
 mod structured;
 
-pub(crate) use redaction::{STRUCTURED_SCALAR_REDACTION_WARNING, base_column_label};
+pub(crate) use redaction::{
+    STRUCTURED_SCALAR_REDACTION_WARNING, base_column_label, build_evidence_profile,
+    refresh_evidence_profile,
+};
 pub use state::TransformState;
 pub(crate) use structured::is_phone_shaped;
 
@@ -59,7 +62,7 @@ pub fn transform_value_with_state(
         AnonymizationStrategy::PassThrough => return value.to_string(),
         AnonymizationStrategy::Mask => return mask_value(value),
         AnonymizationStrategy::Redact => {
-            return redaction::placeholder_for_column(column).to_string();
+            return redaction::placeholder_for_column(column);
         }
         AnonymizationStrategy::Label => {
             let ordinal = state.record_pseudonymized_value(column.index, value);

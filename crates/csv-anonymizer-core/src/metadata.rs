@@ -3,7 +3,7 @@ use crate::detection::{
     candidate_batch, classify_pii_risk, detect_column_type_in_context, detect_empty_format,
     infer_locale_context, max_pii_risk, summarize_privacy_findings, validate_candidates,
 };
-use crate::strategies::base_column_label;
+use crate::strategies::{base_column_label, refresh_evidence_profile};
 use crate::types::{
     AnonymizationStrategy, ColumnMetadata, ColumnReviewReason, ColumnValueDistribution, PiiRisk,
 };
@@ -39,6 +39,7 @@ pub fn build_column_metadata_with_candidate_detector(
         .collect();
     mark_ambiguous_header_labels(&mut metadata);
     let Some(detector) = detector else {
+        metadata.iter_mut().for_each(refresh_evidence_profile);
         return (metadata, CandidateDetectorRunStatus::Disabled);
     };
     let detector_id = detector.detector_id().to_string();
@@ -47,6 +48,7 @@ pub fn build_column_metadata_with_candidate_detector(
     let result = match detector.detect(&batch) {
         Ok(result) => result,
         Err(message) => {
+            metadata.iter_mut().for_each(refresh_evidence_profile);
             return (
                 metadata,
                 CandidateDetectorRunStatus::Failed {
@@ -89,6 +91,7 @@ pub fn build_column_metadata_with_candidate_detector(
             .count();
         column.privacy_evidence =
             summarize_privacy_findings(&column.privacy_findings, sample_count);
+        refresh_evidence_profile(column);
     }
     let status = if coverage.is_incomplete() {
         CandidateDetectorRunStatus::Incomplete {
@@ -109,6 +112,7 @@ pub fn build_column_metadata_with_candidate_detector(
             rejections: validated.rejections,
         }
     };
+    metadata.iter_mut().for_each(refresh_evidence_profile);
     (metadata, status)
 }
 
@@ -207,7 +211,7 @@ fn build_single_column_metadata(
         .cloned()
         .collect();
 
-    ColumnMetadata {
+    let mut column = ColumnMetadata {
         name: name.to_string(),
         // Set by `mark_ambiguous_header_labels` once the whole set is built; a single
         // column compared against nothing is unambiguous by definition.
@@ -220,13 +224,16 @@ fn build_single_column_metadata(
         privacy_findings: privacy.findings,
         privacy_evidence: privacy.evidence,
         review_reasons: Vec::new(),
+        evidence_profile: Default::default(),
         pii_risk,
         sample_values,
         sample_value_distribution: ColumnValueDistribution::from_values(index, values),
         empty_format,
         is_selected: false,
         strategy: default_strategy_for_pii_risk(pii_risk),
-    }
+    };
+    refresh_evidence_profile(&mut column);
+    column
 }
 
 #[cfg(test)]

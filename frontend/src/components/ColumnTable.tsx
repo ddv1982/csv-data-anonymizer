@@ -9,10 +9,10 @@ import {
   detectorConfidenceLabel,
   detectorSourceSummary,
   privacyFindingKindLabel,
-  visibleEvidence,
 } from '../utils/detectorEvidence'
 import { formatToken } from '../utils/format'
 import { hasSampleData, maxVisibleColumns } from '../utils/columns'
+import { columnRedactionPlaceholder } from '../utils/redactionPlaceholder'
 import { GlossaryLabel, HelpPopover } from './GlossaryPopover'
 import { RiskBadge } from './RiskBadge'
 
@@ -60,7 +60,7 @@ export function ColumnTable({
             <th className="checkbox-column" aria-label="Selected"></th>
             <th className="index-column">#</th>
             <th className="column-title-column">Column Name</th>
-            <th className="detected-type-heading">Detected Type</th>
+            <th className="detected-type-heading">Detected Format</th>
             <th className="strategy-heading">
               <GlossaryLabel term="strategy">Strategy</GlossaryLabel>
             </th>
@@ -123,7 +123,7 @@ export function ColumnTable({
                       </span>
                     </td>
                     <td className="detected-type-cell">
-                      <span className="mobile-cell-label">Detected type</span>
+                      <span className="mobile-cell-label">Detected format</span>
                       <span className="detected-type-value">
                         <span className="muted-text">{formatToken(column.detectedType)}</span>
                         <DetectionTracePopover column={column} />
@@ -147,7 +147,12 @@ export function ColumnTable({
                     </td>
                     <td className="privacy-evidence-column">
                       <span className="mobile-cell-label">Evidence</span>
-                      <PrivacyEvidenceCell column={column} />
+                      <DecisionEvidenceCell column={column} />
+                      {(control?.strategy ?? column.strategy) === 'redact' && sampleDataAvailable ? (
+                        <span className="column-note redaction-output">
+                          Output: <span className="mono">{columnRedactionPlaceholder(column)}</span>
+                        </span>
+                      ) : null}
                     </td>
                     <td className="risk-cell">
                       <span className="mobile-cell-label">Risk</span>
@@ -173,53 +178,108 @@ export function ColumnTable({
   )
 }
 
-function PrivacyEvidenceCell({
-  column,
-}: {
-  column: ColumnMetadata
-}) {
-  const evidence = visibleEvidence(column.privacyEvidence, 'balanced')
-  if (evidence.length === 0) {
-    return <span className="muted-text text-sm">None</span>
-  }
-
-  const visible = evidence.slice(0, 2)
-  const hiddenCount = Math.max(evidence.length - visible.length, 0)
+function DecisionEvidenceCell({ column }: { column: ColumnMetadata }) {
+  const profile = column.evidenceProfile
+  const semantic = profile.semanticDecision
+  const format = profile.formatEvidence
+  const statusLabel = semantic.status[0].toLocaleUpperCase() + semantic.status.slice(1)
+  const meaning = semantic.kind === 'unknown'
+    ? 'Meaning unknown'
+    : privacyFindingKindLabel(semantic.kind)
+  const coverage = format.basis === 'userOverride'
+    ? `User override; detector examined ${format.sampleCount.toLocaleString()} samples`
+    : `${format.matchCount.toLocaleString()} of ${format.sampleCount.toLocaleString()} ${
+        format.basis === 'retainedPreviewValues' ? 'retained values' : 'samples'
+      }`
 
   return (
-    <span className="privacy-evidence-cell">
-      {visible.map((item) => (
-        <span
-          key={`${item.kind}-${item.dataType}`}
-          className={`privacy-evidence-chip confidence-${item.confidence}`}
-          title={`${privacyFindingKindLabel(item.kind)}: ${item.matchCount} of ${item.sampleCount} sampled values`}
-        >
-          {privacyFindingKindLabel(item.kind)}
-          <span>{item.matchCount}</span>
-        </span>
-      ))}
-      {hiddenCount > 0 ? <span className="privacy-evidence-more">+{hiddenCount}</span> : null}
-      <HelpPopover title="Privacy evidence" triggerLabel={`Explain privacy evidence for ${column.name}`}>
+    <span className="decision-evidence-cell">
+      <span
+        className={`decision-status status-${semantic.status}`}
+        aria-label={`Semantic decision: ${statusLabel}`}
+      >
+        {statusLabel}
+      </span>
+      <span className="decision-meaning">
+        {meaning}
+        <span className="muted-text">{detectorConfidenceLabel(semantic.confidence)}</span>
+      </span>
+      <span className="column-note">Coverage: {coverage}</span>
+      <HelpPopover title="Column decision" triggerLabel={`Explain column decision for ${column.name}`}>
         <div className="detector-popover-content">
-          {evidence.map((item) => (
-            <div className="detector-candidate" key={`${item.kind}-${item.dataType}`}>
-              <span className={`status-pill ${item.confidence === 'high' ? 'success' : ''}`}>
-                {detectorConfidenceLabel(item.confidence)}
-              </span>
-              <span>
-                <strong>{privacyFindingKindLabel(item.kind)}</strong>
-                <span className="muted-text text-sm">
-                  {detectorSourceSummary(item)} ·{' '}
-                  {item.matchCount.toLocaleString()} of {item.sampleCount.toLocaleString()} samples,
-                  {` ${formatToken(item.dataType)}`}
-                </span>
-              </span>
-              <p className="muted-text text-sm">{item.reason}</p>
-            </div>
-          ))}
+          <p>
+            <strong>Meaning:</strong> {meaning} ({detectorConfidenceLabel(semantic.confidence)})
+          </p>
+          <p>
+            <strong>Format coverage:</strong> {coverage}
+          </p>
+          <p>{semantic.reason}</p>
+          <p>
+            <strong>Privacy action:</strong>{' '}
+            {profile.privacyDecision.recommendedStrategy} — {profile.privacyDecision.reason}
+          </p>
+          <p>
+            <strong>Redaction output:</strong>{' '}
+            <span className="mono">{profile.redactionDecision.placeholder}</span>
+          </p>
+          {semantic.supportingEvidence.length > 0 ? (
+            <EvidenceSources title="Supporting sources" sources={semantic.supportingEvidence} />
+          ) : null}
+          {semantic.conflictingEvidence.length > 0 ? (
+            <EvidenceSources title="Conflicting sources" sources={semantic.conflictingEvidence} />
+          ) : null}
+          <RawEvidenceDetails column={column} />
         </div>
       </HelpPopover>
     </span>
+  )
+}
+
+function EvidenceSources({ title, sources }: { title: string; sources: string[] }) {
+  return (
+    <div>
+      <strong>{title}:</strong>
+      <ul className="decision-reason-list">
+        {sources.map((source) => <li key={source} className="mono">{source}</li>)}
+      </ul>
+    </div>
+  )
+}
+
+function RawEvidenceDetails({ column }: { column: ColumnMetadata }) {
+  const evidence = column.privacyEvidence ?? []
+  if (evidence.length === 0) {
+    return (
+      <div>
+        <strong>Evidence details:</strong>
+        <p className="muted-text text-sm">No privacy evidence was recorded.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <strong>Evidence details:</strong>
+      {evidence.map((item, index) => (
+        <div
+          className="detector-candidate"
+          key={`${item.kind}-${item.dataType}-${item.detector}-${index}`}
+        >
+          <span className={`status-pill ${item.confidence === 'high' ? 'success' : ''}`}>
+            {detectorConfidenceLabel(item.confidence)}
+          </span>
+          <span>
+            <strong>{privacyFindingKindLabel(item.kind)}</strong>
+            <span className="muted-text text-sm">
+              {detectorSourceSummary(item)} ·{' '}
+              {item.matchCount.toLocaleString()} of {item.sampleCount.toLocaleString()} samples ·{' '}
+              {formatToken(item.dataType)}
+            </span>
+          </span>
+          <p className="muted-text text-sm">{item.reason}</p>
+        </div>
+      ))}
+    </div>
   )
 }
 

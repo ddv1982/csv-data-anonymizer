@@ -190,6 +190,58 @@
   gap: 0.35rem;
 }
 
+.decision-evidence-cell {
+  display: grid;
+  min-width: 0;
+  gap: 0.25rem;
+}
+
+.decision-status {
+  width: fit-content;
+  border: 1px solid hsl(var(--border-subtle));
+  border-radius: 999px;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.decision-status.status-resolved {
+  border-color: hsl(var(--success) / 0.4);
+  background: hsl(var(--success) / 0.12);
+  color: hsl(var(--success));
+}
+
+.decision-status.status-uncertain,
+.decision-status.status-conflicting {
+  border-color: hsl(var(--risk-medium) / 0.4);
+  background: hsl(var(--risk-medium) / 0.13);
+  color: hsl(var(--risk-medium-foreground));
+}
+
+.decision-meaning {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  color: hsl(var(--foreground));
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.decision-meaning .muted-text {
+  font-weight: 400;
+}
+
+.redaction-output {
+  overflow-wrap: anywhere;
+}
+
+.decision-reason-list {
+  margin: 0.25rem 0 0;
+  padding-left: 1.25rem;
+}
+
 .privacy-evidence-chip,
 .privacy-evidence-more {
   display: inline-flex;

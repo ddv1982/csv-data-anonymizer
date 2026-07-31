@@ -226,10 +226,12 @@ fn redact_uses_typed_placeholders() {
     assert_eq!(transform_value("Ada", &name_column, &context()), "[PERSON]");
 
     let mut date_column = column(DataType::Timestamp);
+    date_column.name = "event_date".to_string();
     date_column.strategy = AnonymizationStrategy::Redact;
     assert_eq!(
         transform_value("2024-06-15", &date_column, &context()),
-        "[DATE]"
+        "[EVENT_DATE]",
+        "a timestamp shape alone does not prove a private date"
     );
 
     let mut username_column = column(DataType::String);
@@ -298,8 +300,8 @@ fn a_column_the_risk_model_leaves_at_low_gets_no_specific_placeholder() {
 
     assert_eq!(
         transform_value(&values[0], &column, &context()),
-        "[REDACTED]",
-        "the placeholder must not claim a type the risk model declined to trust"
+        "[VALUE]",
+        "the placeholder must name the column without claiming a type the risk model declined to trust"
     );
 }
 
@@ -307,7 +309,7 @@ fn a_column_the_risk_model_leaves_at_low_gets_no_specific_placeholder() {
 ///
 /// Identical fixtures apart from `confidence`, so this isolates that field as the thing
 /// deciding the outcome. Without it, a filter that had collapsed every specific
-/// placeholder to `[REDACTED]` would still look correct.
+/// placeholder to a column-derived marker would still look correct.
 #[test]
 fn redact_names_a_placeholder_only_on_evidence_the_risk_model_trusts() {
     let phone_span_evidence = |confidence| {
@@ -329,8 +331,8 @@ fn redact_names_a_placeholder_only_on_evidence_the_risk_model_trusts() {
     low_only.privacy_evidence = phone_span_evidence(Confidence::Low);
     assert_eq!(
         transform_value("please ring 4915550123 tomorrow", &low_only, &context()),
-        "[REDACTED]",
-        "a Low-only column must not claim the cell held a phone number"
+        "[VALUE]",
+        "a Low-only column must name the column without claiming the cell held a phone number"
     );
 
     let mut medium = column(DataType::Enum);
@@ -970,6 +972,129 @@ fn label_strategy_names_the_column_and_numbers_distinct_values() {
     assert_eq!(second, "[CUSTOMER_NOTES_2]");
     // The whole point of the ordinal: a repeated value is visibly the same value.
     assert_eq!(first_again, "[CUSTOMER_NOTES_1]");
+}
+
+#[test]
+fn uncertain_redaction_uses_one_non_linkable_column_marker() {
+    let mut redacted = column(DataType::Uuid);
+    redacted.name = "custom_reference".to_string();
+    redacted.strategy = AnonymizationStrategy::Redact;
+    let mut state = TransformState::new();
+
+    let first = transform_value_with_state(
+        "00000000-0000-4000-8000-000000000001",
+        &redacted,
+        &context(),
+        &mut state,
+    );
+    let second = transform_value_with_state(
+        "00000000-0000-4000-8000-000000000002",
+        &redacted,
+        &context(),
+        &mut state,
+    );
+
+    assert_eq!(first, "[CUSTOM_REFERENCE]");
+    assert_eq!(second, first);
+    assert!(
+        state.report().column_value_distributions.is_empty(),
+        "Redact must not retain a distinct-value mapping"
+    );
+}
+
+/// A compact property-style walk over awkward headers and many distinct values.
+///
+/// This deliberately does not depend on a random generator: the Cartesian product
+/// is deterministic in CI while exercising the same invariants a property test
+/// would — header-only output, one marker per column, and constant mapping memory
+/// as cardinality grows.
+#[test]
+fn redaction_placeholders_are_bounded_header_only_and_non_linkable() {
+    let cases = [
+        (
+            "customer / reference".to_string(),
+            0,
+            "[CUSTOMER_REFERENCE]",
+        ),
+        ("  déjà-vu klant  ".to_string(), 1, "[DÉJÀ_VU_KLANT]"),
+        ("東京 顧客".to_string(), 2, "[東京_顧客]"),
+        (String::new(), 3, "[COLUMN_3]"),
+        ("***".to_string(), 4, "[COLUMN_4]"),
+        (
+            "a".repeat(200),
+            5,
+            "[AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA]",
+        ),
+    ];
+
+    for (header, index, expected) in cases {
+        let mut redacted = column(DataType::Unknown);
+        redacted.name = header.clone();
+        redacted.index = index;
+        redacted.strategy = AnonymizationStrategy::Redact;
+        let mut state = TransformState::new();
+        let mut observed = None;
+
+        for ordinal in 0..128 {
+            let source = format!("secret-payload-{index}-{ordinal:03}-zulu");
+            let result = transform_value_with_state(&source, &redacted, &context(), &mut state);
+            assert_eq!(result, expected, "header {header:?}, source {source:?}");
+            assert_ne!(result, source);
+            assert!(
+                !result.contains(&source),
+                "a redaction marker must never incorporate source data"
+            );
+            let ordinal_fragment = format!("{ordinal:03}");
+            for fragment in ["SECRET", "PAYLOAD", "ZULU", ordinal_fragment.as_str()] {
+                assert!(
+                    !result.contains(fragment),
+                    "redaction marker {result:?} leaked source fragment {fragment:?}"
+                );
+            }
+            assert_eq!(observed.get_or_insert_with(|| result.clone()), &result);
+        }
+
+        assert!(
+            expected.chars().count() <= 42,
+            "placeholder must stay bounded"
+        );
+        assert_eq!(
+            state.mapping_entries(),
+            0,
+            "Redact must retain no per-value mapping for header {header:?}"
+        );
+        assert!(
+            state.report().column_value_distributions.is_empty(),
+            "Redact must retain no value distribution for header {header:?}"
+        );
+    }
+}
+
+/// Headers that normalize to the same label must remain distinguishable under
+/// Redact too, not only under the explicitly linkable Label strategy.
+#[test]
+fn duplicate_normalized_headers_get_distinct_constant_redaction_markers() {
+    let headers = ["customer id", "customer-id", "CUSTOMER_ID"];
+    let mut outputs = Vec::new();
+
+    for (index, header) in headers.into_iter().enumerate() {
+        let mut redacted = column(DataType::Unknown);
+        redacted.name = header.to_string();
+        redacted.index = index;
+        redacted.strategy = AnonymizationStrategy::Redact;
+        redacted.header_label_is_ambiguous = true;
+        let mut state = TransformState::new();
+
+        let first = transform_value_with_state("alpha-secret", &redacted, &context(), &mut state);
+        let second = transform_value_with_state("beta-secret", &redacted, &context(), &mut state);
+        assert_eq!(first, second, "Redact must collapse distinct values");
+        assert_eq!(first, format!("[CUSTOMER_ID_{index}]"));
+        outputs.push(first);
+    }
+
+    outputs.sort();
+    outputs.dedup();
+    assert_eq!(outputs.len(), headers.len());
 }
 
 /// Separator runs collapse to one underscore and the label never starts or ends

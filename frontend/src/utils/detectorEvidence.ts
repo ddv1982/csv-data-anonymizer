@@ -4,22 +4,6 @@ import type {
   PrivacyFindingKind,
 } from '../types'
 
-export type DetectorStrictness = 'balanced' | 'strict'
-
-export function isDetectorEvidenceVisible(
-  item: Pick<PrivacyEvidenceSummary, 'confidence'>,
-  strictness: DetectorStrictness,
-) {
-  return strictness === 'strict' || item.confidence !== 'low'
-}
-
-export function visibleEvidence(
-  evidence: PrivacyEvidenceSummary[] | undefined,
-  strictness: DetectorStrictness,
-) {
-  return (evidence ?? []).filter((item) => isDetectorEvidenceVisible(item, strictness))
-}
-
 export function privacyFindingKindLabel(kind: PrivacyFindingKind) {
   switch (kind) {
     case 'person':
@@ -35,7 +19,7 @@ export function privacyFindingKindLabel(kind: PrivacyFindingKind) {
     case 'accountOrFinancialId':
       return 'Account ID'
     case 'recordIdentifier':
-      return 'Record ID'
+      return 'Persistent identifier'
     case 'governmentId':
       return 'Government ID'
     case 'credentialOrSecret':

@@ -30,6 +30,63 @@ fn builds_metadata_for_all_columns() {
 }
 
 #[test]
+fn uuid_shape_is_a_persistent_record_identifier_unless_device_context_supports_more() {
+    let headers = vec![
+        "custom_reference".to_string(),
+        "location_id".to_string(),
+        "device_id".to_string(),
+    ];
+    let samples = (0..3)
+        .map(|row| {
+            vec![
+                format!("00000000-0000-4000-8000-{row:012}"),
+                format!("10000000-0000-4000-8000-{row:012}"),
+                format!("20000000-0000-4000-8000-{row:012}"),
+            ]
+        })
+        .collect::<Vec<_>>();
+
+    let metadata = build_column_metadata(&headers, &samples);
+
+    for column in &metadata[..2] {
+        assert_eq!(column.detected_type, DataType::Uuid);
+        assert_eq!(column.pii_risk, PiiRisk::Medium);
+        assert_eq!(column.strategy, AnonymizationStrategy::Redact);
+        assert!(column.privacy_evidence.iter().any(|evidence| {
+            evidence.kind == crate::types::PrivacyFindingKind::RecordIdentifier
+        }));
+        assert!(column.privacy_evidence.iter().all(|evidence| {
+            evidence.kind != crate::types::PrivacyFindingKind::NetworkOrDeviceId
+        }));
+        assert_eq!(
+            column.evidence_profile.semantic_decision.kind,
+            "recordIdentifier"
+        );
+        assert_eq!(
+            column.evidence_profile.redaction_decision.placeholder,
+            format!("[{}]", column.name.to_uppercase())
+        );
+        assert!(!column.evidence_profile.redaction_decision.is_typed);
+        assert!(
+            !column
+                .evidence_profile
+                .redaction_decision
+                .preserves_equality
+        );
+    }
+    assert!(
+        metadata[2].privacy_evidence.iter().any(|evidence| {
+            evidence.kind == crate::types::PrivacyFindingKind::NetworkOrDeviceId
+        })
+    );
+    assert_eq!(
+        metadata[2].evidence_profile.redaction_decision.placeholder,
+        "[NETWORK_ID]"
+    );
+    assert!(metadata[2].evidence_profile.redaction_decision.is_typed);
+}
+
+#[test]
 fn detects_name_types_from_header_context() {
     let headers = vec![
         "first_name".to_string(),

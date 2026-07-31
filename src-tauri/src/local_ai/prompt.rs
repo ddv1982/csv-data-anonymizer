@@ -255,15 +255,47 @@ mod tests {
     use super::*;
     use csv_anonymizer_core::ColumnMetadata;
 
-    /// Built through serde rather than a struct literal so that a field added to
-    /// `ColumnMetadata` by the core crate does not break these prompt tests, which
-    /// care about two fields only.
+    /// Built through serde rather than a struct literal because these prompt tests
+    /// care about two fields only. The evidence profile is intentionally complete:
+    /// schema-v3 metadata treats that derived decision as a required wire contract.
     fn column(name: &str, detected_type: DataType) -> ColumnMetadata {
         serde_json::from_value(json!({
             "name": name,
             "index": 0,
             "detectedType": detected_type,
             "confidence": "high",
+            "evidenceProfile": {
+                "formatEvidence": {
+                    "dataType": detected_type,
+                    "confidence": "high",
+                    "matchCount": 0,
+                    "sampleCount": 0,
+                    "basis": "retainedPreviewValues",
+                    "detectors": []
+                },
+                "semanticDecision": {
+                    "kind": "unknown",
+                    "confidence": "low",
+                    "specificity": "generic",
+                    "status": "uncertain",
+                    "supportingEvidence": [],
+                    "conflictingEvidence": [],
+                    "reason": "Prompt fixture."
+                },
+                "privacyDecision": {
+                    "risk": "high",
+                    "recommendedStrategy": "redact",
+                    "autoSelected": false,
+                    "reason": "Prompt fixture."
+                },
+                "redactionDecision": {
+                    "placeholder": "[VALUE]",
+                    "source": "columnHeader",
+                    "isTyped": false,
+                    "preservesEquality": false,
+                    "reason": "Prompt fixture."
+                }
+            },
             "piiRisk": "high",
             "sampleValues": [],
             "emptyFormat": "emptyString",

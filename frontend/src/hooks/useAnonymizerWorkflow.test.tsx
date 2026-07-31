@@ -127,7 +127,7 @@ describe('useAnonymizerWorkflow', () => {
   it('preserves prepared detection when unrelated settings change', async () => {
     tauriMocks.loadSettings.mockResolvedValue(settingsFixture({ localNerEnabled: true }))
     const preparedAnalysis = {
-      version: 2,
+      version: 3,
       sourceIdentity: '/data/input.csv',
       sourceFingerprint: 'fnv128:test',
       format: 'csv',

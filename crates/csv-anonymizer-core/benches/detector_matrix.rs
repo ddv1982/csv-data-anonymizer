@@ -23,6 +23,24 @@ fn bench_detector_matrix(c: &mut Criterion) {
             }
         })
     });
+
+    // This family protects the performance of the semantic refinement added on
+    // top of UUID shape detection. All cases have the same values; only header
+    // context changes. A regression here therefore points at header taxonomy or
+    // evidence aggregation rather than parsing or validators.
+    let uuid_fixtures = uuid_context_fixtures();
+    c.bench_function("detector_matrix/uuid_semantic_context", |b| {
+        b.iter(|| {
+            for fixture in black_box(uuid_fixtures) {
+                let values = fixture
+                    .values
+                    .iter()
+                    .map(|value| (*value).to_string())
+                    .collect::<Vec<_>>();
+                black_box(detect_column_type_with_name(fixture.header, &values));
+            }
+        })
+    });
 }
 
 fn fixtures() -> &'static [FixtureCase] {
@@ -89,6 +107,50 @@ fn fixtures() -> &'static [FixtureCase] {
         FixtureCase {
             header: "",
             values: &["123456789B01", "987654321B99"],
+        },
+    ]
+}
+
+fn uuid_context_fixtures() -> &'static [FixtureCase] {
+    const UUID_VALUES: &[&str] = &[
+        "550e8400-e29b-41d4-a716-446655440000",
+        "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+        "123e4567-e89b-12d3-a456-426614174000",
+        "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+    ];
+
+    &[
+        FixtureCase {
+            header: "",
+            values: UUID_VALUES,
+        },
+        FixtureCase {
+            header: "entity_id",
+            values: UUID_VALUES,
+        },
+        FixtureCase {
+            header: "customer_id",
+            values: UUID_VALUES,
+        },
+        FixtureCase {
+            header: "device_id",
+            values: UUID_VALUES,
+        },
+        FixtureCase {
+            header: "hardware_identifier",
+            values: UUID_VALUES,
+        },
+        FixtureCase {
+            header: "network_id",
+            values: UUID_VALUES,
+        },
+        FixtureCase {
+            header: "city_name",
+            values: UUID_VALUES,
+        },
+        FixtureCase {
+            header: "identifiant_appareil",
+            values: UUID_VALUES,
         },
     ]
 }

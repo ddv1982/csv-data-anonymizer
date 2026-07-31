@@ -74,8 +74,9 @@ fn bench_standard_csv_streaming(c: &mut Criterion) {
 /// strategies separate peak RSS into ~9 MB of streaming floor, ~155 MB of ledger
 /// and ~325 MB of pseudonym maps:
 ///
-/// - `redact_*`: the streaming floor. Both shapes should stay equal, and equal to
-///   each other over time; drift here is a read/parse/write regression.
+/// - `redact_*`: the streaming floor and the constant column-derived placeholder
+///   path. Both shapes should stay equal, and equal to each other over time;
+///   drift here is a read/parse/write or placeholder-decision regression.
 /// - `label_*`: the floor plus the ledger. The ledger hashes every value on every
 ///   row, so its *time* cost is per-row and both shapes pay it; only its memory
 ///   is per-distinct-value, which is why the RSS harness and not this bench is

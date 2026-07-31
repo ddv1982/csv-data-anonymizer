@@ -3,7 +3,9 @@ use crate::detection::{
 };
 use crate::error::{AnonymizerError, Result};
 use crate::metadata::apply_column_selection;
-use crate::strategies::{MASK_STRUCTURE_DISCLOSURE, STRUCTURED_SCALAR_REDACTION_WARNING};
+use crate::strategies::{
+    MASK_STRUCTURE_DISCLOSURE, STRUCTURED_SCALAR_REDACTION_WARNING, refresh_evidence_profile,
+};
 use crate::types::{
     AnonymizationStrategy, ColumnControl, ColumnMetadata, ColumnValueDistribution,
     FrequencyInversionRisk, PreviewWarning, WarningSeverity,
@@ -104,12 +106,15 @@ pub(crate) fn apply_column_controls(
                 data_type,
                 column.confidence,
             );
-            for finding in privacy.findings {
-                if !column.privacy_findings.contains(&finding) {
-                    column.privacy_findings.push(finding);
+            // Preserve findings from the complete detection sample for reporting:
+            // `sample_values` is only a short display subset and recomputation cannot
+            // rediscover findings in later rows.
+            for finding in &privacy.findings {
+                if !column.privacy_findings.contains(finding) {
+                    column.privacy_findings.push(finding.clone());
                 }
             }
-            for evidence in privacy.evidence {
+            for evidence in &privacy.evidence {
                 let already_recorded = column.privacy_evidence.iter().any(|existing| {
                     existing.kind == evidence.kind
                         && existing.data_type == evidence.data_type
@@ -117,15 +122,26 @@ pub(crate) fn apply_column_controls(
                         && existing.reason == evidence.reason
                 });
                 if !already_recorded {
-                    column.privacy_evidence.push(evidence);
+                    column.privacy_evidence.push(evidence.clone());
                 }
             }
             column.pii_risk = max_pii_risk(
                 column.pii_risk,
                 max_pii_risk(classify_pii_risk(data_type), privacy.pii_risk),
             );
+            // The override itself remains authoritative for the marker decision.
+            // Compute that decision from override evidence, while the column retains
+            // the broader evidence above for privacy reporting.
+            let mut decision_column = column.clone();
+            decision_column.privacy_findings = privacy.findings;
+            decision_column.privacy_evidence = privacy.evidence;
+            refresh_evidence_profile(&mut decision_column);
+            column.evidence_profile = decision_column.evidence_profile;
         }
         column.strategy = control.strategy;
+        if control.type_override.is_none() {
+            refresh_evidence_profile(column);
+        }
     }
     Ok(controlled)
 }

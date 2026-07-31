@@ -798,6 +798,33 @@ fn type_override_preserves_privacy_evidence_beyond_retained_samples() {
 }
 
 #[test]
+fn type_override_reports_full_detector_sample_without_claiming_a_format_match() {
+    use crate::types::FormatEvidenceBasis;
+
+    let headers = vec!["entity_id".to_string()];
+    let rows = (0..12)
+        .map(|row| vec![format!("00000000-0000-4000-8000-{row:012}")])
+        .collect::<Vec<_>>();
+    let metadata = build_column_metadata(&headers, &rows);
+    assert_eq!(metadata[0].sample_values.len(), 5);
+
+    let controlled = apply_column_controls(
+        &metadata,
+        &[typed_control(
+            0,
+            DataType::String,
+            AnonymizationStrategy::Redact,
+        )],
+    )
+    .unwrap();
+    let format = &controlled[0].evidence_profile.format_evidence;
+
+    assert_eq!(format.basis, FormatEvidenceBasis::UserOverride);
+    assert_eq!(format.match_count, 0);
+    assert_eq!(format.sample_count, 12);
+}
+
+#[test]
 fn preview_warns_for_pass_through_and_no_op_columns() {
     let workspace = Workspace::new();
     let input_path = workspace.write_input("warnings.csv", "country,email\nUS,user@example.com\n");
