@@ -24,6 +24,11 @@ export type DataType =
 
 export type Confidence = 'high' | 'medium' | 'low'
 export type PiiRisk = 'high' | 'medium' | 'low'
+export type EvidenceDisposition =
+  | 'detectedSensitive'
+  | 'testedBenign'
+  | 'uncertain'
+  | 'analysisIncomplete'
 export type PrivacyFindingKind =
   | 'person'
   | 'contact'
@@ -216,6 +221,7 @@ export interface ColumnMetadata {
   privacyEvidence?: PrivacyEvidenceSummary[]
   /** Backend-authoritative profile present on every supported analysis schema. */
   evidenceProfile: ColumnEvidenceProfile
+  evidenceDisposition: EvidenceDisposition
   piiRisk: PiiRisk
   sampleValues: string[]
   /** Distribution of the detection sample, not of the whole input. */
@@ -428,6 +434,8 @@ export interface PrivacyReport {
   collisionsAvoided: number
   exhaustedPseudonymPools: number
   opaqueTokenValues: number
+  keyedTokenValues: number
+  keyedTokenColumns: number[]
   smartReplacementValues: number
   smartReplacementRejections: number
   smartReplacementRejectionReasons: SmartReplacementRejectionCount[]

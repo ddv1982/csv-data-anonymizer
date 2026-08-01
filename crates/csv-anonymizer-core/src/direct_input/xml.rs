@@ -63,6 +63,7 @@ fn analyze_xml_with_coverage(
 pub(super) fn preview_xml_with_smart_provider(
     input: PastePreviewParams,
     provider: Option<&mut dyn SmartReplacementProvider>,
+    tokenization_key: Option<&crate::TokenizationKey>,
 ) -> Result<PreviewData> {
     let sample_count = bounded_preview_sample_count(input.sample_count)?;
     let detection_sample_rows = paste_detection_sample_rows(input.sample_row_count)?;
@@ -72,13 +73,14 @@ pub(super) fn preview_xml_with_smart_provider(
     )?;
     preview_from_fields_with_smart_provider(
         &fields,
-        PreviewSelection::from_params(&input, sample_count, provider),
+        PreviewSelection::from_params(&input, sample_count, provider, tokenization_key),
     )
 }
 
 pub(super) fn transform_xml_with_smart_provider(
     input: PasteTransformParams,
     provider: Option<&mut dyn SmartReplacementProvider>,
+    tokenization_key: Option<&crate::TokenizationKey>,
 ) -> Result<PasteTransformData> {
     let (analysis, coverage) = analyze_xml_with_coverage(&input.content, input.sample_row_count)?;
     let metadata = select_columns(&analysis.columns, &input.columns, &input.controls)?;
@@ -92,7 +94,8 @@ pub(super) fn transform_xml_with_smart_provider(
     let smart_replacements =
         smart_replacements_for_fields(&smart_fields, &metadata, &input, provider)?;
     let start_time = Instant::now();
-    let mut state = TransformState::with_smart_replacements_if_active(smart_replacements);
+    let mut state = TransformState::with_smart_replacements_if_active(smart_replacements)
+        .with_tokenization_key(tokenization_key.cloned());
     let output = transform_xml_content(&input.content, &selected_by_path, &mut state)?;
 
     Ok(paste_transform_data(

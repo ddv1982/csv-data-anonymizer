@@ -16,6 +16,9 @@ declare global {
     __CSV_ANONYMIZER_TEST_CALLS__?: Array<{ command: string; args?: Record<string, unknown> }>
     __CSV_ANONYMIZER_COPIED_TEXT__?: string
     __CSV_ANONYMIZER_INCOMPLETE_PROFILE__?: boolean
+    __CSV_ANONYMIZER_WIDE_COLUMNS__?: boolean
+    __CSV_ANONYMIZER_STABLE_PREVIEW__?: boolean
+    __CSV_ANONYMIZER_PREVIEW_DELAY__?: number
   }
 }
 
@@ -85,6 +88,58 @@ test('recovers from preview errors and cancels a running job', async ({ page }) 
 
   await page.getByRole('button', { name: 'Cancel' }).click()
   await expect(page.getByRole('alert').filter({ hasText: 'Output creation canceled.' })).toBeVisible()
+})
+
+test('keeps the viewport stable for preview and column disclosure actions', async ({ page }) => {
+  await page.goto('/')
+  await page.evaluate(() => {
+    window.__CSV_ANONYMIZER_WIDE_COLUMNS__ = true
+    window.__CSV_ANONYMIZER_STABLE_PREVIEW__ = true
+    window.__CSV_ANONYMIZER_PREVIEW_DELAY__ = 500
+  })
+  await page.getByRole('button', { name: 'Browse for CSV file' }).click()
+
+  const showMore = page.getByRole('button', { name: 'Show 5 More Columns' })
+  await showMore.scrollIntoViewIfNeeded()
+  const beforeExpand = await page.evaluate(() => window.scrollY)
+  await showMore.click()
+  await expect(page.getByRole('button', { name: 'Show Less' })).toBeVisible()
+  await page.waitForTimeout(100)
+  expect(await page.evaluate(() => window.scrollY)).toBeCloseTo(beforeExpand, 0)
+
+  const showLess = page.getByRole('button', { name: 'Show Less' })
+  await showLess.scrollIntoViewIfNeeded()
+  const beforeCollapse = await page.evaluate(() => window.scrollY)
+  await showLess.click()
+  await expect(showMore).toBeVisible()
+  await page.waitForTimeout(100)
+  const collapsedViewport = await page.evaluate(() => ({
+    maxScrollY: document.documentElement.scrollHeight - window.innerHeight,
+    scrollY: window.scrollY,
+  }))
+  expect(collapsedViewport.scrollY).toBeCloseTo(Math.min(beforeCollapse, collapsedViewport.maxScrollY), 0)
+
+  const showPreview = page.getByRole('button', { name: 'Show Preview' })
+  await showPreview.scrollIntoViewIfNeeded()
+  const beforePreview = await page.evaluate(() => window.scrollY)
+  await showPreview.click()
+  await expect(showPreview).toHaveAttribute('aria-busy', 'true')
+  await expect(page.locator('.column-table:visible .skeleton')).toHaveCount(0)
+  await page.waitForTimeout(150)
+  expect(await page.evaluate(() => window.scrollY)).toBeCloseTo(beforePreview, 0)
+  await expect(page.getByText('anon@example.test')).toBeVisible()
+  await page.waitForTimeout(100)
+  expect(await page.evaluate(() => window.scrollY)).toBeCloseTo(beforePreview, 0)
+  await expect(showPreview).toBeFocused()
+
+  await showPreview.click()
+  await expect(showPreview).toHaveAttribute('aria-busy', 'true')
+  await page.mouse.wheel(0, -240)
+  await page.waitForTimeout(100)
+  const userChosenPosition = await page.evaluate(() => window.scrollY)
+  await expect(showPreview).toHaveAttribute('aria-busy', 'false')
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeCloseTo(userChosenPosition, 0)
+  expect(userChosenPosition).not.toBe(beforePreview)
 })
 
 test('switches tabs, pastes JSON, copies output, and quick-generates values', async ({ page }) => {
@@ -259,6 +314,14 @@ function buildE2eFixtures() {
         columnFixture(2, 'notes', 'string', 'low'),
       ],
     },
+    wideCsvColumns: Array.from({ length: 55 }, (_, index) =>
+      columnFixture(
+        index,
+        index === 0 ? 'email' : index === 1 ? 'full_name' : `sample_field_${index + 1}`,
+        index === 0 ? 'email' : 'string',
+        index < 2 ? 'high' : 'low',
+      ),
+    ),
     pasteColumns: [columnFixture(0, '[].email', 'email', 'high')],
     // A one-value paste is examined whole, so this fixture exercises the complete-coverage
     // branch: no partial-detection warning should render.
@@ -320,7 +383,9 @@ async function installTauriMock(page: Page) {
               Reflect.deleteProperty(incompleteColumn, 'evidenceProfile')
               return incompleteColumn
             })
-          : fixtures.csvHeaders.columns
+          : window.__CSV_ANONYMIZER_WIDE_COLUMNS__
+            ? fixtures.wideCsvColumns
+            : fixtures.csvHeaders.columns
         return {
           headers: { ...fixtures.csvHeaders, columns },
           selectedColumns: [0, 1],
@@ -330,7 +395,10 @@ async function installTauriMock(page: Page) {
       if (command === 'count_csv_rows') return 150_000
       if (command === 'preview_anonymization') {
         previewAttempts += 1
-        if (previewAttempts === 1) throw new Error('Preview failed from e2e')
+        if (window.__CSV_ANONYMIZER_PREVIEW_DELAY__) {
+          await new Promise((resolve) => window.setTimeout(resolve, window.__CSV_ANONYMIZER_PREVIEW_DELAY__))
+        }
+        if (previewAttempts === 1 && !window.__CSV_ANONYMIZER_STABLE_PREVIEW__) throw new Error('Preview failed from e2e')
         return {
           previews: [
             {

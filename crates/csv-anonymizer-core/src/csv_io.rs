@@ -263,6 +263,9 @@ fn read_str_sample(input: &str, row_count: usize, window: SampleWindow) -> Resul
 struct RowSampler {
     window: SampleWindow,
     rows: SpreadSampler<Vec<String>>,
+    strict_anchor_rows: Vec<Vec<String>>,
+    anchored_columns: Vec<bool>,
+    capacity: usize,
 }
 
 impl RowSampler {
@@ -271,6 +274,9 @@ impl RowSampler {
         let wanted = wanted.max(1);
         Self {
             window,
+            strict_anchor_rows: Vec::new(),
+            anchored_columns: Vec::new(),
+            capacity: wanted,
             rows: match window {
                 SampleWindow::Head => SpreadSampler::head(wanted),
                 SampleWindow::Spread => SpreadSampler::spread(wanted),
@@ -284,8 +290,41 @@ impl RowSampler {
         if self.window == SampleWindow::Head && self.rows.is_full() {
             return false;
         }
+        if self.window == SampleWindow::Spread {
+            self.record_strict_anchor(&row);
+        }
         self.rows.push(row);
         true
+    }
+
+    /// Keeps at most one row per column containing validator-backed High-confidence
+    /// privacy evidence. The ordinary spread sample remains the statistical basis;
+    /// these anchors only ensure a rare strict identifier encountered during the
+    /// same complete streaming pass cannot disappear because its row lost the
+    /// sampling lottery.
+    fn record_strict_anchor(&mut self, row: &[String]) {
+        if self.strict_anchor_rows.len() >= self.capacity {
+            return;
+        }
+        if self.anchored_columns.len() < row.len() {
+            self.anchored_columns.resize(row.len(), false);
+        }
+        let mut matched_new_column = false;
+        for (column, value) in row.iter().enumerate() {
+            if self.anchored_columns[column] || crate::detection::is_empty_value(value) {
+                continue;
+            }
+            if crate::detection::collect_privacy_spans(value)
+                .iter()
+                .any(|span| span.confidence == crate::types::Confidence::High)
+            {
+                self.anchored_columns[column] = true;
+                matched_new_column = true;
+            }
+        }
+        if matched_new_column {
+            self.strict_anchor_rows.push(row.to_vec());
+        }
     }
 
     fn scanned(&self) -> usize {
@@ -293,7 +332,17 @@ impl RowSampler {
     }
 
     fn into_rows(self) -> Vec<Vec<String>> {
-        self.rows.into_items()
+        let mut rows = self.rows.into_items();
+        for anchor in self.strict_anchor_rows {
+            if rows.iter().any(|row| row == &anchor) {
+                continue;
+            }
+            // Anchors are supplemental evidence. Evicting spread rows here lets a
+            // wide file fill the entire statistical sample with exceptional rows,
+            // distorting classification of every unrelated column.
+            rows.push(anchor);
+        }
+        rows
     }
 }
 
@@ -519,6 +568,14 @@ fn process_csv_reader_to_writer<R: Read, W: Write>(
         TransformState::new,
         TransformState::with_smart_replacements_if_active,
     );
+    if options.tokenization_key.is_some() {
+        transform_state = transform_state.with_tokenization_key(options.tokenization_key.cloned());
+    }
+    // Resolving installed memory refreshes operating-system state. Do it once per
+    // transform, never once per row.
+    let mapping_entry_ceiling = options
+        .mapping_entry_ceiling
+        .unwrap_or_else(TransformState::runtime_mapping_entry_ceiling);
 
     check_canceled(&mut control)?;
 
@@ -552,11 +609,7 @@ fn process_csv_reader_to_writer<R: Read, W: Write>(
         // leaves the destination untouched on any `Err`. Without this call the ceiling
         // in `TransformState` would be unreachable code and the process would still be
         // OOM-killed, so this line is the whole guard.
-        transform_state.check_mapping_budget_against(
-            options
-                .mapping_entry_ceiling
-                .unwrap_or(TransformState::MAPPING_ENTRY_CEILING),
-        )?;
+        transform_state.check_mapping_budget_against(mapping_entry_ceiling)?;
         write_csv_output_record(writer, transformed_row.iter().map(String::as_str))?;
         row_count += 1;
         report_progress(&mut control, row_count);

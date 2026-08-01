@@ -5,7 +5,8 @@ use crate::detection::{
 };
 use crate::strategies::{base_column_label, refresh_evidence_profile};
 use crate::types::{
-    AnonymizationStrategy, ColumnMetadata, ColumnReviewReason, ColumnValueDistribution, PiiRisk,
+    AnonymizationStrategy, ColumnMetadata, ColumnReviewReason, ColumnValueDistribution,
+    EvidenceDisposition, PiiRisk,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -84,6 +85,9 @@ pub fn build_column_metadata_with_candidate_detector(
                 .review_reasons
                 .push(ColumnReviewReason::AmbiguousContext);
         }
+        // Supplemental candidates are deliberately review evidence, not proof of
+        // sensitivity or proof that the column is benign.
+        column.evidence_disposition = EvidenceDisposition::Uncertain;
         column.privacy_findings.append(&mut findings);
         let sample_count = column_values[column.index]
             .iter()
@@ -224,6 +228,13 @@ fn build_single_column_metadata(
         privacy_findings: privacy.findings,
         privacy_evidence: privacy.evidence,
         review_reasons: Vec::new(),
+        evidence_disposition: evidence_disposition(
+            name,
+            detected_type,
+            detection.confidence,
+            pii_risk,
+            values,
+        ),
         evidence_profile: Default::default(),
         pii_risk,
         sample_values,
@@ -234,6 +245,38 @@ fn build_single_column_metadata(
     };
     refresh_evidence_profile(&mut column);
     column
+}
+
+fn evidence_disposition(
+    name: &str,
+    detected_type: crate::types::DataType,
+    confidence: crate::types::Confidence,
+    pii_risk: PiiRisk,
+    values: &[String],
+) -> EvidenceDisposition {
+    if pii_risk.is_elevated() {
+        return EvidenceDisposition::DetectedSensitive;
+    }
+
+    let non_empty = values
+        .iter()
+        .filter(|value| !crate::detection::is_empty_value(value))
+        .count();
+    if non_empty == 0 {
+        return EvidenceDisposition::AnalysisIncomplete;
+    }
+
+    let header_is_explanatory = name.chars().filter(|ch| ch.is_alphanumeric()).count() >= 3;
+    let classified_benign = !matches!(
+        detected_type,
+        crate::types::DataType::String | crate::types::DataType::Unknown
+    ) && confidence != crate::types::Confidence::Low;
+
+    if classified_benign && header_is_explanatory {
+        EvidenceDisposition::TestedBenign
+    } else {
+        EvidenceDisposition::Uncertain
+    }
 }
 
 #[cfg(test)]

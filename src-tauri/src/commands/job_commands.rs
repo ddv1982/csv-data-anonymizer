@@ -3,6 +3,7 @@ use super::csv::{
     snapshot_detection_summary,
 };
 use super::shared::authorize_or_confirm_output_file;
+use crate::command_error::CommandError;
 use crate::jobs::{AnonymizeJobStatus, AnonymizeJobStore, run_anonymize_job};
 use crate::local_ai::LocalAiRequest;
 use crate::path_access::PathAccess;
@@ -15,6 +16,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::State;
+use tauri::ipc::Channel;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,6 +33,8 @@ pub struct StartAnonymizeJobRequest {
     pub preview_smart_replacements: Vec<SmartReplacementEntry>,
     pub local_ai: Option<LocalAiRequest>,
     pub prepared_analysis: Option<PreparedAnalysisSnapshot>,
+    #[serde(default)]
+    pub tokenization_key: Option<String>,
 }
 
 #[tauri::command]
@@ -40,12 +44,14 @@ pub async fn start_anonymize_job(
     settings: State<'_, Arc<SettingsStore>>,
     jobs: State<'_, AnonymizeJobStore>,
     request: StartAnonymizeJobRequest,
-) -> Result<AnonymizeJobStatus, String> {
+    on_progress: Channel<AnonymizeJobStatus>,
+) -> Result<AnonymizeJobStatus, CommandError> {
     validate_sample_count(
         request.sample_row_count,
         MAX_SAMPLE_ROW_COUNT,
         "Sample row count",
-    )?;
+    )
+    .map_err(CommandError::invalid_input)?;
     // Refuse a busy app before asking the user anything. `authorize_or_confirm_output_file`
     // can open a blocking native dialog, and running it first walked a user through
     // confirming a destination only to be told afterwards that another job holds the only
@@ -54,28 +60,36 @@ pub async fn start_anonymize_job(
     // dialog — wedging admission for the life of the process. `create_job_for_output` below
     // is still the authority that decides, so a race past this point is refused there.
     jobs.admission_available()?;
-    let file_path = path_access.authorize_input_file(request.file_path)?;
+    let file_path = path_access
+        .authorize_input_file(request.file_path)
+        .map_err(CommandError::path_not_authorized)?;
     let (local_ner_enabled, local_ner_model) = settings
         .load_settings()
         .map(|settings| (settings.local_ner_enabled, settings.local_ai_model))
         .map_err(|error| format!("Could not load settings: {error}"))?;
-    require_prepared_analysis(local_ner_enabled, request.prepared_analysis.as_ref())?;
-    require_snapshot_model(request.prepared_analysis.as_ref(), &local_ner_model)?;
+    require_prepared_analysis(local_ner_enabled, request.prepared_analysis.as_ref())
+        .map_err(CommandError::stale_analysis)?;
+    require_snapshot_model(request.prepared_analysis.as_ref(), &local_ner_model)
+        .map_err(CommandError::stale_analysis)?;
     let validated_input = ValidatedFileInput::prepare(
         request.prepared_analysis.as_ref(),
         file_path,
         request.sample_row_count,
         &request.columns,
-    )?;
+    )
+    .map_err(CommandError::stale_analysis)?;
     let output_path = authorize_or_confirm_output_file(&app, &path_access, request.output_path)?;
     if validated_input.original_path() == output_path {
-        return Err("Output path must differ from the input path.".to_string());
+        return Err(CommandError::invalid_input(
+            "Output path must differ from the input path.",
+        ));
     }
     let local_ai_enabled = settings
         .load_settings()
         .map(|settings| settings.local_ai_enabled)
         .map_err(|error| format!("Could not load settings: {error}"))?;
     let job = jobs.create_job_for_output(request.total_row_count)?;
+    job.attach_progress_channel(on_progress);
     let initial_status = job.snapshot()?;
     let worker_job = job.clone();
     let panic_job = job.clone();
@@ -83,6 +97,12 @@ pub async fn start_anonymize_job(
         .prepared_analysis
         .as_ref()
         .map(snapshot_detection_summary);
+    let tokenization_key = request
+        .tokenization_key
+        .as_deref()
+        .map(csv_anonymizer_core::TokenizationKey::parse_hex)
+        .transpose()
+        .map_err(|error| CommandError::invalid_input(error.to_string()))?;
 
     let _job_handle = tauri::async_runtime::spawn_blocking(move || {
         let result = catch_unwind(AssertUnwindSafe(|| {
@@ -101,6 +121,7 @@ pub async fn start_anonymize_job(
                 request.local_ai,
                 local_ai_enabled,
                 detection_run_summary,
+                tokenization_key,
             );
         }));
         if result.is_err() {
@@ -115,21 +136,21 @@ pub async fn start_anonymize_job(
 pub fn get_anonymize_job_status(
     jobs: State<'_, AnonymizeJobStore>,
     job_id: String,
-) -> Result<AnonymizeJobStatus, String> {
-    jobs.snapshot_job(&job_id)
+) -> Result<AnonymizeJobStatus, CommandError> {
+    jobs.snapshot_job(&job_id).map_err(Into::into)
 }
 
 #[tauri::command]
 pub fn cancel_anonymize_job(
     jobs: State<'_, AnonymizeJobStore>,
     job_id: String,
-) -> Result<AnonymizeJobStatus, String> {
+) -> Result<AnonymizeJobStatus, CommandError> {
     let job = jobs.get_job(&job_id)?;
     let status = job.snapshot()?;
     if status.state.is_terminal() {
         return Ok(status);
     }
-    job.request_cancel()
+    job.request_cancel().map_err(Into::into)
 }
 
 #[cfg(test)]

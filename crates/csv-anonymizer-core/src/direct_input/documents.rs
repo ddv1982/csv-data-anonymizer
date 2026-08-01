@@ -24,6 +24,7 @@ pub(super) fn preview_value_document_with_smart_provider(
     value: Value,
     format: PasteDataFormat,
     provider: Option<&mut dyn SmartReplacementProvider>,
+    tokenization_key: Option<&crate::TokenizationKey>,
 ) -> Result<PreviewData> {
     let sample_count = bounded_preview_sample_count(input.sample_count)?;
     let detection_sample_rows = paste_detection_sample_rows(input.sample_row_count)?;
@@ -37,16 +38,23 @@ pub(super) fn preview_value_document_with_smart_provider(
     )?;
     preview_from_fields_with_smart_provider(
         &fields,
-        PreviewSelection::from_params(&input, sample_count, provider),
+        PreviewSelection::from_params(&input, sample_count, provider, tokenization_key),
     )
 }
 
 pub(super) fn transform_json_with_smart_provider(
     input: PasteTransformParams,
     provider: Option<&mut dyn SmartReplacementProvider>,
+    tokenization_key: Option<&crate::TokenizationKey>,
 ) -> Result<PasteTransformData> {
     let value = parse_json(&input.content)?;
-    let (output, result) = transform_value_document(input, value, PasteDataFormat::Json, provider)?;
+    let (output, result) = transform_value_document(
+        input,
+        value,
+        PasteDataFormat::Json,
+        provider,
+        tokenization_key,
+    )?;
     let output = serde_json::to_string_pretty(&output)
         .map_err(|error| AnonymizerError::input_parse("JSON", error.to_string()))?;
     Ok(PasteTransformData { output, ..result })
@@ -55,9 +63,16 @@ pub(super) fn transform_json_with_smart_provider(
 pub(super) fn transform_yaml_with_smart_provider(
     input: PasteTransformParams,
     provider: Option<&mut dyn SmartReplacementProvider>,
+    tokenization_key: Option<&crate::TokenizationKey>,
 ) -> Result<PasteTransformData> {
     let value = parse_yaml(&input.content)?;
-    let (output, result) = transform_value_document(input, value, PasteDataFormat::Yaml, provider)?;
+    let (output, result) = transform_value_document(
+        input,
+        value,
+        PasteDataFormat::Yaml,
+        provider,
+        tokenization_key,
+    )?;
     let output = yaml_serde::to_string(&output)
         .map_err(|error| AnonymizerError::input_parse("YAML", error.to_string()))?;
     Ok(PasteTransformData { output, ..result })
@@ -68,6 +83,7 @@ fn transform_value_document(
     mut value: Value,
     format: PasteDataFormat,
     provider: Option<&mut dyn SmartReplacementProvider>,
+    tokenization_key: Option<&crate::TokenizationKey>,
 ) -> Result<(Value, PasteTransformData)> {
     let (analysis, coverage) =
         analyze_value_document_with_coverage(format, &value, input.sample_row_count)?;
@@ -76,7 +92,8 @@ fn transform_value_document(
     let smart_replacements =
         prepare_value_smart_replacements(&value, format, &metadata, &input, provider)?;
     let start_time = Instant::now();
-    let mut state = TransformState::with_smart_replacements_if_active(smart_replacements);
+    let mut state = TransformState::with_smart_replacements_if_active(smart_replacements)
+        .with_tokenization_key(tokenization_key.cloned());
     let mut row_indices = HashMap::new();
 
     let mut context = ValueTransformContext {

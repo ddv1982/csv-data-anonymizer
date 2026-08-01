@@ -14,6 +14,7 @@ import { formatToken } from '../utils/format'
 import { hasSampleData, maxVisibleColumns } from '../utils/columns'
 import { columnRedactionPlaceholder } from '../utils/redactionPlaceholder'
 import { completeEvidenceProfile } from '../utils/analysisContract'
+import { useStableViewportAction } from '../hooks/useStableViewportAction'
 import { GlossaryLabel, HelpPopover } from './GlossaryPopover'
 import { RiskBadge } from './RiskBadge'
 
@@ -43,6 +44,7 @@ export function ColumnTable({
   onToggleShowAll: () => void
 }) {
   const columnSpan = 7
+  const runWithStableViewport = useStableViewportAction()
 
   return (
     <div className="table-frame">
@@ -112,14 +114,18 @@ export function ColumnTable({
                         <span className={sampleDataAvailable ? 'column-name' : 'column-name no-data'}>
                           {column.name}
                         </span>
-                        {column.reviewReasons?.length ? (
+                        {column.reviewReasons?.length || column.evidenceDisposition === 'uncertain' || column.evidenceDisposition === 'analysisIncomplete' ? (
                           <span className="status-pill warning">Review</span>
                         ) : null}
                         {!sampleDataAvailable ? (
                           <span className="column-note">No sample data</span>
+                        ) : column.evidenceDisposition === 'testedBenign' ? (
+                          <span className="column-note">
+                            Analysis found no sensitive evidence
+                          </span>
                         ) : column.piiRisk === 'low' ? (
                           <span className="column-note">
-                            No obvious sensitive fields detected
+                            No sensitive fields were confidently detected; review this column before sharing
                           </span>
                         ) : null}
                       </span>
@@ -167,7 +173,7 @@ export function ColumnTable({
           {!loading && allColumnCount > maxVisibleColumns ? (
             <tr className="show-more-row">
               <td colSpan={columnSpan} className="show-more-cell">
-                <button type="button" className="button button-ghost button-sm" disabled={disabled} onClick={onToggleShowAll}>
+                <button type="button" className="button button-ghost button-sm" disabled={disabled} onClick={() => void runWithStableViewport(onToggleShowAll)}>
                   {showAllColumns ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
                   {showAllColumns ? 'Show Less' : `Show ${hiddenColumnCount} More Columns`}
                 </button>

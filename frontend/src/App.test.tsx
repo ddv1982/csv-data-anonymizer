@@ -353,15 +353,19 @@ describe('App input mode tabs', () => {
 
     await user.click(screen.getByRole('button', { name: /transform pasted sample/i }))
 
-    expect(tauriMocks.transformPasteData).toHaveBeenCalledWith(
-      '[{"email":"ada@example.com"}]',
-      'json',
-      [0],
-      [],
-      100,
-      [{ columnIndex: 0, original: 'ada@example.com', replacement: 'masked@example.com' }],
-      { enabled: false, model: 'gemma3:4b' },
-    )
+    expect(tauriMocks.transformPasteData).toHaveBeenCalledWith({
+      content: '[{"email":"ada@example.com"}]',
+      format: 'json',
+      columns: [0],
+      controls: [],
+      sampleRowCount: 100,
+      previewSmartReplacements: [
+        { columnIndex: 0, original: 'ada@example.com', replacement: 'masked@example.com' },
+      ],
+      localAi: { enabled: false, model: 'gemma3:4b' },
+      preparedAnalysis: undefined,
+      tokenizationKey: null,
+    })
     expect(await screen.findByDisplayValue('[{"email":"masked@example.com"}]')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /privacy report/i })).toBeInTheDocument()
     expect(screen.getByText('Direct identifiers')).toBeInTheDocument()
@@ -394,11 +398,11 @@ describe('App input mode tabs', () => {
     await user.tab()
 
     await waitFor(() => {
-      expect(tauriMocks.analyzePasteData).toHaveBeenCalledWith(
-        '[{"email":"ada@example.com"}]',
-        'auto',
-        defaultSettings.sampleRowCount,
-      )
+      expect(tauriMocks.analyzePasteData).toHaveBeenCalledWith({
+        content: '[{"email":"ada@example.com"}]',
+        format: 'auto',
+        sampleRowCount: defaultSettings.sampleRowCount,
+      })
     })
     expect(await screen.findByText('[].email')).toBeInTheDocument()
     expect(screen.getByText('Detected: JSON')).toBeInTheDocument()
@@ -512,9 +516,12 @@ describe('App input mode tabs', () => {
     await user.click(screen.getByRole('tab', { name: /quick by data type/i }))
     await user.click(screen.getByRole('button', { name: /generate values/i }))
 
-    expect(tauriMocks.generateQuickValues).toHaveBeenCalledWith('email', 'auto', 1, {
-      enabled: false,
-      model: 'gemma3:4b',
+    expect(tauriMocks.generateQuickValues).toHaveBeenCalledWith({
+      dataType: 'email',
+      strategy: 'auto',
+      count: 1,
+      localAi: { enabled: false, model: 'gemma3:4b' },
+      tokenizationKey: null,
     })
     expect(screen.queryByLabelText(/values to anonymize/i)).not.toBeInTheDocument()
     expect(await screen.findByLabelText(/generated values/i)).toHaveValue('masked@example.com')

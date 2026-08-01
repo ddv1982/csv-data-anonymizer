@@ -1,4 +1,5 @@
 use super::shared::{pick_file_path, selected_dialog_path};
+use crate::command_error::CommandError;
 use crate::path_access::PathAccess;
 use std::path::{Path, PathBuf};
 use tauri::State;
@@ -9,7 +10,7 @@ pub async fn pick_input_csv(
     app: tauri::AppHandle,
     path_access: State<'_, PathAccess>,
     initial_directory: Option<PathBuf>,
-) -> Result<Option<PathBuf>, String> {
+) -> Result<Option<PathBuf>, CommandError> {
     let picked = pick_file_path(
         &app,
         "Select CSV file",
@@ -22,6 +23,7 @@ pub async fn pick_input_csv(
     picked
         .map(|path| path_access.grant_input_file(path))
         .transpose()
+        .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -29,7 +31,7 @@ pub async fn pick_output_csv(
     app: tauri::AppHandle,
     path_access: State<'_, PathAccess>,
     suggested_output_path: Option<PathBuf>,
-) -> Result<Option<PathBuf>, String> {
+) -> Result<Option<PathBuf>, CommandError> {
     let suggested_output_file = suggested_output_path.as_ref().filter(|path| !path.is_dir());
     let default_name = suggested_output_file
         .and_then(|path| path.file_name())
@@ -58,20 +60,22 @@ pub async fn pick_output_csv(
         .transpose()?
         .map(|path| path_access.grant_output_file(path))
         .transpose()
+        .map_err(Into::into)
 }
 
 #[tauri::command]
 pub fn open_output_location(
     path_access: State<'_, PathAccess>,
     output_path: PathBuf,
-) -> Result<(), String> {
+) -> Result<(), CommandError> {
     let output_path = path_access.authorize_output_file(output_path)?;
     let location = output_path
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or(output_path);
-    open::that_detached(&location)
-        .map_err(|error| format!("Could not open {}: {error}", location.display()))
+    open::that_detached(&location).map_err(|error| {
+        CommandError::from(format!("Could not open {}: {error}", location.display()))
+    })
 }
 
 #[cfg(test)]

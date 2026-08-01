@@ -531,6 +531,22 @@ pub enum ColumnReviewReason {
     InsufficientSample,
 }
 
+/// How conclusive the analysis of a column was, independently of its privacy risk.
+///
+/// Risk answers "what would this expose if the finding is correct?" while this
+/// disposition answers "did the available evidence justify a conclusion?" Keeping
+/// them separate prevents an unrecognised string column from being presented as
+/// tested-benign merely because no detector raised its risk.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum EvidenceDisposition {
+    DetectedSensitive,
+    TestedBenign,
+    #[default]
+    Uncertain,
+    AnalysisIncomplete,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FormatEvidence {
@@ -656,6 +672,8 @@ pub struct ColumnMetadata {
     pub privacy_evidence: Vec<PrivacyEvidenceSummary>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub review_reasons: Vec<ColumnReviewReason>,
+    #[serde(default)]
+    pub evidence_disposition: EvidenceDisposition,
     #[serde(default)]
     pub evidence_profile: ColumnEvidenceProfile,
     pub pii_risk: PiiRisk,
@@ -876,6 +894,8 @@ pub struct DetectionCoverageSummary {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ProcessOptions<'a> {
     pub smart_replacements: Option<&'a crate::smart::SmartReplacementMap>,
+    /// Validated run-only secret. The key type cannot be serialized.
+    pub tokenization_key: Option<&'a crate::strategies::TokenizationKey>,
     /// Mapping entries this run may hold before it refuses to continue, or `None` for
     /// `TransformState::MAPPING_ENTRY_CEILING`.
     ///
@@ -1229,12 +1249,26 @@ pub struct TransformReport {
     pub collisions_avoided: usize,
     pub exhausted_pseudonym_pools: usize,
     pub opaque_token_values: usize,
+    pub keyed_token_values: usize,
+    pub keyed_token_columns: Vec<usize>,
     pub smart_replacement_requests: usize,
     pub smart_replacement_values: usize,
     pub smart_replacement_rejections: usize,
     pub smart_replacement_rejection_reasons: Vec<SmartReplacementRejectionCount>,
     pub smart_replacement_fallbacks: usize,
     pub shape_fallback_values: usize,
+    /// Selected values that a strategy claiming to transform returned byte-for-byte
+    /// unchanged after trimming. This is the exact residual-leak guard; it is not a
+    /// heuristic scan for merely realistic-looking replacement data.
+    pub unchanged_sensitive_values: usize,
+    pub unchanged_sensitive_columns: Vec<usize>,
+    /// Unique selected high/medium-risk source values fingerprinted for the broad
+    /// residual audit, and released cell fingerprints compared against them.
+    pub residual_audit_source_values: usize,
+    pub residual_audit_output_values: usize,
+    pub residual_audit_matches: usize,
+    /// True when either fingerprint set reached its independent memory ceiling.
+    pub residual_audit_incomplete: bool,
     pub column_value_distributions: Vec<ColumnValueDistribution>,
     pub row_uniqueness: Option<RowUniquenessSummary>,
 }
@@ -1762,6 +1796,10 @@ pub struct PrivacyReport {
     pub collisions_avoided: usize,
     pub exhausted_pseudonym_pools: usize,
     pub opaque_token_values: usize,
+    #[serde(default)]
+    pub keyed_token_values: usize,
+    #[serde(default)]
+    pub keyed_token_columns: Vec<usize>,
     pub smart_replacement_values: usize,
     #[serde(default)]
     pub smart_replacement_rejections: usize,
@@ -1886,6 +1924,7 @@ mod tests {
                 detectors: vec!["email".to_string()],
             }],
             review_reasons: vec![ColumnReviewReason::AmbiguousContext],
+            evidence_disposition: EvidenceDisposition::DetectedSensitive,
             evidence_profile: Default::default(),
             pii_risk: PiiRisk::High,
             sample_values: vec!["ada@example.com".to_string()],
@@ -1975,6 +2014,8 @@ mod tests {
             collisions_avoided: 0,
             exhausted_pseudonym_pools: 0,
             opaque_token_values: 0,
+            keyed_token_values: 0,
+            keyed_token_columns: Vec::new(),
             smart_replacement_values: 2,
             smart_replacement_rejections: 1,
             smart_replacement_rejection_reasons: vec![SmartReplacementRejectionCount {

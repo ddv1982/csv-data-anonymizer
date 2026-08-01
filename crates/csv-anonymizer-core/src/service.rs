@@ -18,6 +18,7 @@ mod controls;
 mod path_validation;
 mod preflight;
 mod preview;
+pub(crate) use preview::PreviewRowsRequest;
 mod privacy_report;
 
 pub(crate) use controls::{
@@ -238,6 +239,15 @@ impl AnonymizerService {
         input: PreviewParams,
         provider: Option<&mut dyn SmartReplacementProvider>,
     ) -> Result<PreviewData> {
+        self.preview_anonymization_with_run_secrets(input, provider, None)
+    }
+
+    pub fn preview_anonymization_with_run_secrets(
+        &self,
+        input: PreviewParams,
+        provider: Option<&mut dyn SmartReplacementProvider>,
+        tokenization_key: Option<&crate::TokenizationKey>,
+    ) -> Result<PreviewData> {
         let file_path = normalize_path(&input.file_path)?;
         // Detect on `sample_row_count`, the figure analyze and the run are given,
         // so the preview cannot show a different detected type — and therefore a
@@ -253,14 +263,17 @@ impl AnonymizerService {
         preview::preview_rows_with_smart_provider(
             &metadata,
             &display.rows,
-            &input.columns,
-            &input.controls,
-            input.sample_count,
-            // The file's row count, from the pass that just classified it — not the
-            // sample size, which is what made the cardinality warning miss columns
-            // whose values repeat across a file far larger than the sample.
-            detection_sample.data_rows_scanned,
+            preview::PreviewRowsRequest {
+                columns: &input.columns,
+                controls: &input.controls,
+                sample_count: input.sample_count,
+                // The file's row count, from the pass that just classified it — not the
+                // sample size, which is what made the cardinality warning miss columns
+                // whose values repeat across a file far larger than the sample.
+                population_values: detection_sample.data_rows_scanned,
+            },
             provider,
+            tokenization_key,
         )
     }
 
@@ -311,8 +324,19 @@ impl AnonymizerService {
         &self,
         input: AnonymizeParams,
         sample_rows: usize,
+        control: Option<&mut ProcessControl<'_>>,
+        provider: Option<&mut dyn SmartReplacementProvider>,
+    ) -> Result<AnonymizeData> {
+        self.anonymize_csv_with_run_secrets(input, sample_rows, control, provider, None)
+    }
+
+    pub fn anonymize_csv_with_run_secrets(
+        &self,
+        input: AnonymizeParams,
+        sample_rows: usize,
         mut control: Option<&mut ProcessControl<'_>>,
         provider: Option<&mut dyn SmartReplacementProvider>,
+        tokenization_key: Option<&crate::TokenizationKey>,
     ) -> Result<AnonymizeData> {
         let input_path = normalize_path(&input.file_path)?;
         ensure_output_differs_from_input(&input_path, &input.output_path)?;
@@ -338,6 +362,7 @@ impl AnonymizerService {
             &selected_metadata,
             ProcessOptions {
                 smart_replacements: smart_replacements.as_ref(),
+                tokenization_key,
                 mapping_entry_ceiling: None,
             },
             control,

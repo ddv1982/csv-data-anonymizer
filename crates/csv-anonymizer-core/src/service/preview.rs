@@ -21,6 +21,13 @@ pub(crate) fn display_row_count(sample_count: usize) -> usize {
     sample_count.saturating_mul(2).max(1)
 }
 
+pub(crate) struct PreviewRowsRequest<'a> {
+    pub columns: &'a [usize],
+    pub controls: &'a [ColumnControl],
+    pub sample_count: usize,
+    pub population_values: usize,
+}
+
 /// `population_values` is how many values each column holds in the whole input, not
 /// in `rows` — the cardinality warning is judged against the column's real size, and
 /// a caller that passes the sample size back gets only the absolute test. See
@@ -28,24 +35,23 @@ pub(crate) fn display_row_count(sample_count: usize) -> usize {
 pub(crate) fn preview_rows_with_smart_provider(
     metadata: &[ColumnMetadata],
     rows: &[Vec<String>],
-    columns: &[usize],
-    controls: &[ColumnControl],
-    sample_count: usize,
-    population_values: usize,
+    request: PreviewRowsRequest<'_>,
     provider: Option<&mut dyn SmartReplacementProvider>,
+    tokenization_key: Option<&crate::TokenizationKey>,
 ) -> Result<PreviewData> {
-    let selected_metadata = select_columns(metadata, columns, controls)?;
+    let selected_metadata = select_columns(metadata, request.columns, request.controls)?;
     let smart_replacements =
         prepare_smart_replacements_from_rows(rows, &selected_metadata, None, provider)?;
     let smart_replacement_entries = smart_replacements.to_entries();
-    let mut state = TransformState::with_smart_replacements_if_active(smart_replacements);
+    let mut state = TransformState::with_smart_replacements_if_active(smart_replacements)
+        .with_tokenization_key(tokenization_key.cloned());
     let mut previews = Vec::new();
 
     for column in selected_metadata.iter().filter(|column| column.is_selected) {
         previews.push(generate_column_preview(
             column,
             rows,
-            sample_count,
+            request.sample_count,
             &mut state,
         ));
     }
@@ -58,7 +64,10 @@ pub(crate) fn preview_rows_with_smart_provider(
             // for a column that is being transformed.
             if column.is_selected {
                 column_warnings.extend(preview_warning_for_column(column));
-                column_warnings.extend(cardinality_warning_for_column(column, population_values));
+                column_warnings.extend(cardinality_warning_for_column(
+                    column,
+                    request.population_values,
+                ));
             }
             // Outside that gate on purpose, and it is the whole point of this one: it
             // reports a column the app did *not* pick up but which may hold people. A

@@ -41,13 +41,14 @@ pub use prepared_snapshot::{
 };
 pub use service::AnonymizerService;
 pub use smart::{SmartReplacement, SmartReplacementProvider, SmartReplacementRequest};
+pub use strategies::TokenizationKey;
 pub use types::{
     AnonymizationStrategy, AnonymizeData, AnonymizeParams, ColumnControl, ColumnEvidenceProfile,
     ColumnMetadata, ColumnPreview, ColumnReleaseReport, ColumnReviewReason,
     ColumnValueDistribution, Confidence, DataType, DetectionCoverageSummary, DetectionCoverageUnit,
     DetectionResult, DetectionRunSummary, DetectionTrace, DetectionTraceItem,
-    DeterministicDetectionStatus, DropColumnEffect, EmptyFormat, FormatEvidence,
-    FormatEvidenceBasis, HeadersData, LocalNerRunStatus, MAX_PREVIEW_SAMPLE_COUNT,
+    DeterministicDetectionStatus, DropColumnEffect, EmptyFormat, EvidenceDisposition,
+    FormatEvidence, FormatEvidenceBasis, HeadersData, LocalNerRunStatus, MAX_PREVIEW_SAMPLE_COUNT,
     MAX_SAMPLE_ROW_COUNT, MatchedColumn, MatchedPart, ParsedSample, PasteAnalyzeData,
     PasteAnalyzeParams, PasteDataFormat, PastePreviewParams, PasteTransformData,
     PasteTransformParams, PiiRisk, PreflightData, PreflightMode, PreflightParams, PreviewData,

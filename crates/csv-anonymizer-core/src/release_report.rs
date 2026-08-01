@@ -489,6 +489,30 @@ pub(crate) fn build_readiness(
             report.shape_fallback_values
         ));
     }
+    if let Some(report) = context.transform_report
+        && report.unchanged_sensitive_values > 0
+    {
+        review_items.push(format!(
+            "{} selected high/medium-risk value(s) remained unchanged despite a transforming strategy; do not share this output.",
+            report.unchanged_sensitive_values
+        ));
+    }
+    if let Some(report) = context.transform_report
+        && report.residual_audit_matches > 0
+    {
+        review_items.push(format!(
+            "{} protected source value fingerprint(s) also occur somewhere in the released output; inspect it before sharing.",
+            report.residual_audit_matches
+        ));
+    }
+    if let Some(report) = context.transform_report
+        && report.residual_audit_incomplete
+    {
+        review_items.push(
+            "The broad residual-value audit reached its memory bound and is incomplete."
+                .to_string(),
+        );
+    }
     // A review item rather than a blocker. Whether few distinct values matter depends
     // on what the column holds — a six-valued column may carry nothing sensitive — so
     // a measured heuristic should inform the reviewer, not refuse the release. Note
@@ -599,6 +623,67 @@ pub(crate) fn build_evidence(
                     String::new()
                 }
             ),
+        });
+    }
+
+    if let Some(report) = context.transform_report {
+        if report.keyed_token_values > 0 {
+            evidence.push(ReleaseEvidenceItem {
+                id: "keyed-tokenization".to_string(),
+                label: "Repeatable keyed tokenization".to_string(),
+                status: ReleaseEvidenceStatus::Info,
+                detail: format!(
+                    "{} unique value(s) in column(s) {:?} used repeatable keyed tokens. The key is not included in this report. Reusing it makes those releases linkable; losing it prevents reproducing the tokens.",
+                    report.keyed_token_values, report.keyed_token_columns
+                ),
+            });
+        }
+        evidence.push(ReleaseEvidenceItem {
+            id: "residual-unchanged-values".to_string(),
+            label: "Residual unchanged-value check".to_string(),
+            status: if report.unchanged_sensitive_values == 0 {
+                ReleaseEvidenceStatus::Verified
+            } else {
+                // The transform API still returns the artifact, so claiming it was
+                // blocked would overstate enforcement. Readiness correctly remains
+                // in review until a caller chooses not to publish it.
+                ReleaseEvidenceStatus::Review
+            },
+            detail: if report.unchanged_sensitive_values == 0 {
+                "No selected high/medium-risk value was returned unchanged by a strategy that claimed to transform it. This exact check does not detect unrelated or newly introduced identifiers."
+                    .to_string()
+            } else {
+                format!(
+                    "{} selected high/medium-risk value(s) were returned unchanged in column(s) {:?}.",
+                    report.unchanged_sensitive_values, report.unchanged_sensitive_columns
+                )
+            },
+        });
+
+        evidence.push(ReleaseEvidenceItem {
+            id: "broad-residual-value-audit".to_string(),
+            label: "Broad residual-value audit".to_string(),
+            status: if report.residual_audit_matches > 0 || report.residual_audit_incomplete {
+                ReleaseEvidenceStatus::Review
+            } else {
+                ReleaseEvidenceStatus::Verified
+            },
+            detail: if report.residual_audit_incomplete {
+                format!(
+                    "The bounded audit reached its capacity after fingerprinting {} protected source value(s) and {} released value(s); its result is incomplete and must not be treated as a pass.",
+                    report.residual_audit_source_values, report.residual_audit_output_values
+                )
+            } else if report.residual_audit_matches > 0 {
+                format!(
+                    "{} unique selected high/medium-risk source value fingerprint(s) also occur somewhere in the released output. Review the output before sharing.",
+                    report.residual_audit_matches
+                )
+            } else {
+                format!(
+                    "No match was found between {} selected high/medium-risk source value fingerprint(s) and {} released value fingerprint(s). This broad comparison does not detect related, reformatted, or newly introduced identifiers.",
+                    report.residual_audit_source_values, report.residual_audit_output_values
+                )
+            },
         });
     }
 

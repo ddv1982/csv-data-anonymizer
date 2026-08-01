@@ -6,11 +6,76 @@ use crate::types::{
 };
 use crate::uniqueness::RowUniquenessTracker;
 use rand::Rng;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, hash_map::DefaultHasher};
+use std::hash::{Hash, Hasher};
 
 const GENERATED_ATTEMPT_LIMIT: usize = 512;
 pub(super) const TOKEN_CHARSET: &str = "abcdefghijklmnopqrstuvwxyz0123456789";
 pub(super) const LETTER_CHARSET: &str = "abcdefghijklmnopqrstuvwxyz";
+
+/// Validated run-only key. No serde implementation is intentional: this type cannot
+/// be written into settings, prepared snapshots, job status, or privacy reports.
+#[derive(Clone, PartialEq, Eq)]
+pub struct TokenizationKey([u8; 32]);
+
+impl std::fmt::Debug for TokenizationKey {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("TokenizationKey([REDACTED])")
+    }
+}
+
+impl TokenizationKey {
+    pub fn parse_hex(value: &str) -> Result<Self> {
+        if value.len() != 64 {
+            return Err(AnonymizerError::InvalidTokenizationKey);
+        }
+        let mut bytes = [0_u8; 32];
+        for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+            let pair =
+                std::str::from_utf8(pair).map_err(|_| AnonymizerError::InvalidTokenizationKey)?;
+            bytes[index] = u8::from_str_radix(pair, 16)
+                .map_err(|_| AnonymizerError::InvalidTokenizationKey)?;
+        }
+        Ok(Self(bytes))
+    }
+
+    pub(super) fn token_for(&self, column_index: usize, column_name: &str, value: &str) -> String {
+        let mut hasher = blake3::Hasher::new_keyed(&self.0);
+        hasher.update(b"csv-anonymizer/keyed-token/v1\0");
+        hasher.update(&column_index.to_le_bytes());
+        hasher.update(column_name.as_bytes());
+        hasher.update(b"\0");
+        hasher.update(value_identity_key(value).as_bytes());
+        format!("tok_{}", &hasher.finalize().to_hex()[..24])
+    }
+}
+
+fn insert_bounded_fingerprint(
+    set: &mut HashSet<u128>,
+    value: &str,
+    ceiling: usize,
+    incomplete: &mut bool,
+) {
+    let fingerprint = value_fingerprint(value);
+    if set.contains(&fingerprint) {
+        return;
+    }
+    if set.len() >= ceiling {
+        *incomplete = true;
+        return;
+    }
+    set.insert(fingerprint);
+}
+
+fn value_fingerprint(value: &str) -> u128 {
+    fn half(value: &str, domain: u8) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        domain.hash(&mut hasher);
+        value.hash(&mut hasher);
+        hasher.finish()
+    }
+    u128::from(half(value, 0)) << 64 | u128::from(half(value, 1))
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct TransformState {
@@ -33,6 +98,10 @@ pub struct TransformState {
     /// memory is proportional to, and a distinct value costs a different number of
     /// them per strategy — see [`Self::mapping_entries_per_distinct_value`].
     mapping_entries: usize,
+    residual_source_fingerprints: HashSet<u128>,
+    residual_output_fingerprints: HashSet<u128>,
+    residual_audit_incomplete: bool,
+    tokenization_key: Option<TokenizationKey>,
 }
 
 impl TransformState {
@@ -71,10 +140,52 @@ impl TransformState {
                 ..TransformReport::default()
             },
             mapping_entries: 0,
+            residual_source_fingerprints: HashSet::new(),
+            residual_output_fingerprints: HashSet::new(),
+            residual_audit_incomplete: false,
+            tokenization_key: None,
+        }
+    }
+
+    pub fn with_tokenization_key(mut self, key: Option<TokenizationKey>) -> Self {
+        self.tokenization_key = key;
+        self
+    }
+
+    pub(super) fn keyed_token(
+        &self,
+        column_index: usize,
+        column_name: &str,
+        value: &str,
+    ) -> Option<String> {
+        self.tokenization_key
+            .as_ref()
+            .map(|key| key.token_for(column_index, column_name, value))
+    }
+
+    pub(super) fn record_keyed_token(&mut self, column_index: usize, value: &str) {
+        // `record_pseudonymized_value` runs immediately before token generation and
+        // already owns the per-column distinct-value ledger. Reuse it instead of
+        // retaining a second unbounded set outside the mapping budget.
+        let is_first_occurrence = self
+            .ledgers
+            .get(&column_index)
+            .and_then(|ledger| ledger.values.get(&value_identity_key(value)))
+            .is_some_and(|entry| entry.occurrences == 1);
+        if is_first_occurrence {
+            self.report.opaque_token_values += 1;
+            self.report.keyed_token_values += 1;
+            if !self.report.keyed_token_columns.contains(&column_index) {
+                self.report.keyed_token_columns.push(column_index);
+            }
         }
     }
 
     pub fn report(&self) -> TransformReport {
+        let residual_audit_matches = self
+            .residual_source_fingerprints
+            .intersection(&self.residual_output_fingerprints)
+            .count();
         TransformReport {
             // Held in the ledgers rather than accumulated into `report` as values
             // arrive, because a distribution is not a running total: distinct and
@@ -84,6 +195,10 @@ impl TransformState {
             // no rows to speak of — unstructured text, a single pasted value — report an
             // absent measurement rather than a clean one.
             row_uniqueness: self.row_uniqueness.summary(),
+            residual_audit_source_values: self.residual_source_fingerprints.len(),
+            residual_audit_output_values: self.residual_output_fingerprints.len(),
+            residual_audit_matches,
+            residual_audit_incomplete: self.residual_audit_incomplete,
             ..self.report.clone()
         }
     }
@@ -104,6 +219,74 @@ impl TransformState {
     /// through `measurement_incomplete`, and lets the run finish.
     pub fn record_released_row(&mut self, released: &[String], columns: &[ColumnMetadata]) {
         self.row_uniqueness.record_row(released, columns);
+    }
+
+    pub fn record_unchanged_sensitive_values(
+        &mut self,
+        source: &[String],
+        released: &[String],
+        columns: &[ColumnMetadata],
+    ) {
+        for (index, ((source, released), column)) in
+            source.iter().zip(released).zip(columns).enumerate()
+        {
+            if !column.is_selected
+                || !column.pii_risk.is_elevated()
+                || column.strategy == AnonymizationStrategy::PassThrough
+                || (matches!(
+                    column.strategy,
+                    AnonymizationStrategy::Auto | AnonymizationStrategy::Pseudonymize
+                ) && column.detected_type.uses_default_pass_through())
+                || crate::detection::is_empty_value(source.trim())
+                || source.trim() != released.trim()
+            {
+                continue;
+            }
+            self.report.unchanged_sensitive_values += 1;
+            if !self.report.unchanged_sensitive_columns.contains(&index) {
+                self.report.unchanged_sensitive_columns.push(index);
+            }
+        }
+    }
+
+    /// Broad post-transform audit over value fingerprints. Unlike the exact same-cell
+    /// guard above, this catches a protected source value surviving in any output column.
+    /// It retains no source text and stops collecting rather than growing without bound.
+    pub fn record_residual_audit(
+        &mut self,
+        source: &[String],
+        released: &[String],
+        columns: &[ColumnMetadata],
+    ) {
+        const VALUE_CEILING: usize = 1_000_000;
+        for (value, column) in source.iter().zip(columns) {
+            if column.is_selected
+                && column.pii_risk.is_elevated()
+                && column.strategy != AnonymizationStrategy::PassThrough
+                && !(matches!(
+                    column.strategy,
+                    AnonymizationStrategy::Auto | AnonymizationStrategy::Pseudonymize
+                ) && column.detected_type.uses_default_pass_through())
+                && !crate::detection::is_empty_value(value)
+            {
+                insert_bounded_fingerprint(
+                    &mut self.residual_source_fingerprints,
+                    value.trim(),
+                    VALUE_CEILING,
+                    &mut self.residual_audit_incomplete,
+                );
+            }
+        }
+        for value in released {
+            if !crate::detection::is_empty_value(value) {
+                insert_bounded_fingerprint(
+                    &mut self.residual_output_fingerprints,
+                    value.trim(),
+                    VALUE_CEILING,
+                    &mut self.residual_audit_incomplete,
+                );
+            }
+        }
     }
 
     /// Bytes of resident memory one mapping entry costs, measured.
@@ -135,6 +318,24 @@ impl TransformState {
     /// and would make the privacy report's post-run distribution figures wrong, both
     /// invisibly. Refusing says so.
     pub(crate) const MAPPING_ENTRY_CEILING: usize = 32_000_000;
+
+    /// A conservative per-machine ceiling: at most 20% of installed RAM and never
+    /// above the calibrated absolute ceiling. Installed rather than currently free
+    /// memory keeps preflight and execution stable while other processes fluctuate.
+    pub(crate) fn runtime_mapping_entry_ceiling() -> usize {
+        let system = sysinfo::System::new_with_specifics(
+            sysinfo::RefreshKind::nothing().with_memory(sysinfo::MemoryRefreshKind::everything()),
+        );
+        let total_memory = system.total_memory();
+        if total_memory == 0 {
+            return Self::MAPPING_ENTRY_CEILING;
+        }
+        let memory_budget = total_memory / 5;
+        let entries = memory_budget / Self::APPROXIMATE_BYTES_PER_MAPPING_ENTRY as u64;
+        usize::try_from(entries)
+            .unwrap_or(Self::MAPPING_ENTRY_CEILING)
+            .clamp(1, Self::MAPPING_ENTRY_CEILING)
+    }
 
     /// Entries one distinct value costs on `strategy`.
     ///

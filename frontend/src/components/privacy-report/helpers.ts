@@ -6,7 +6,7 @@ export function readinessSummary(privacyReport: PrivacyReport) {
   const readiness = privacyReport.readiness
   if (readiness.status === 'blocked') return pluralize(readiness.blockers.length, 'blocker')
   if (readiness.status === 'review') return pluralize(readiness.reviewItems.length, 'review item')
-  if (readiness.verifiedItems.length > 0) return pluralize(readiness.verifiedItems.length, 'verified check')
+  if (readiness.verifiedItems.length > 0) return pluralize(readiness.verifiedItems.length, 'passed check')
   return 'No blockers'
 }
 
@@ -65,7 +65,7 @@ export function statusPillClass(status: ReportStatus) {
 }
 
 export function statusLabel(status: ReportStatus) {
-  if (status === 'verified') return 'Verified'
+  if (status === 'verified') return 'Check passed'
   if (status === 'blocked') return 'Blocked'
   if (status === 'review') return 'Review'
   return 'Info'

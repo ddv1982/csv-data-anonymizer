@@ -1,6 +1,7 @@
 import { AlertCircle, Eraser, Loader2, Wand2 } from 'lucide-react'
 import { type FocusEvent } from 'react'
 import type { PasteDataWorkflowState } from '../hooks/usePasteDataWorkflow'
+import { useStableViewportAction } from '../hooks/useStableViewportAction'
 import { formatByteLimit, MAX_PASTE_CONTENT_BYTES } from '../limits'
 import type { DetectionCoverageSummary, PasteDataFormat } from '../types'
 import { formatRowCount, formatTransformStats } from '../utils/format'
@@ -43,6 +44,7 @@ export function PasteDataWorkflowView({
   onOpenLocalAiSettings: () => void
 }) {
   const { analysis, busy, content, format, preview, result, selection } = workflow
+  const runWithStableViewport = useStableViewportAction()
   const contentLimitLabel = formatByteLimit(MAX_PASTE_CONTENT_BYTES)
 
   async function handlePasteInputBlur(event: FocusEvent<HTMLTextAreaElement>) {
@@ -146,6 +148,11 @@ export function PasteDataWorkflowView({
               disabled: workflow.isBusy || selection.detectedRiskColumns.length === 0,
               onClick: () => workflow.setColumnSelection(selection.detectedRiskColumns),
             },
+            {
+              label: 'Select Uncertain',
+              disabled: workflow.isBusy || selection.uncertainColumns.length === 0,
+              onClick: () => workflow.setColumnSelection(selection.uncertainColumns),
+            },
           ]}
           footer={(
             <>
@@ -191,7 +198,17 @@ export function PasteDataWorkflowView({
         title="3. Preview (Optional)"
         disabled={!analysis || selection.selectedColumns.length === 0}
         action={
-          <button type="button" className="button button-outline button-sm" disabled={!workflow.canRun} onClick={workflow.showPreview}>
+          <button
+            type="button"
+            className="button button-outline button-sm"
+            disabled={!workflow.canRun && busy !== 'previewing'}
+            aria-busy={busy === 'previewing'}
+            aria-disabled={busy === 'previewing' || undefined}
+            onClick={() => {
+              if (busy !== 'idle') return
+              void runWithStableViewport(workflow.showPreview)
+            }}
+          >
             {busy === 'previewing' ? <Loader2 className="spin" aria-hidden="true" /> : null}
             Show Preview
           </button>

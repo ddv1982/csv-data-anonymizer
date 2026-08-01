@@ -93,10 +93,17 @@ pub(super) fn replay_text_candidate_evidence(
     snapshot: &PreparedAnalysisSnapshot,
     confirmed_candidate_ids: &[String],
     provider: Option<&mut dyn SmartReplacementProvider>,
+    tokenization_key: Option<&crate::TokenizationKey>,
 ) -> Result<PasteTransformData> {
     let start_time = Instant::now();
-    let replay =
-        execute_text_candidate_replay(input, format, snapshot, confirmed_candidate_ids, provider)?;
+    let replay = execute_text_candidate_replay(
+        input,
+        format,
+        snapshot,
+        confirmed_candidate_ids,
+        provider,
+        tokenization_key,
+    )?;
     let row_count = input.content.split('\n').count();
     Ok(paste_transform_data(
         replay.output,
@@ -114,6 +121,7 @@ pub(super) fn preview_text_candidate_evidence(
     snapshot: &PreparedAnalysisSnapshot,
     confirmed_candidate_ids: &[String],
     provider: Option<&mut dyn SmartReplacementProvider>,
+    tokenization_key: Option<&crate::TokenizationKey>,
 ) -> Result<PreviewData> {
     let sample_count = bounded_preview_sample_count(input.sample_count)?;
     let replay_input = PasteTransformParams {
@@ -130,6 +138,7 @@ pub(super) fn preview_text_candidate_evidence(
         snapshot,
         confirmed_candidate_ids,
         provider,
+        tokenization_key,
     )?;
     let samples = input
         .content
@@ -171,6 +180,7 @@ fn execute_text_candidate_replay(
     snapshot: &PreparedAnalysisSnapshot,
     confirmed_candidate_ids: &[String],
     provider: Option<&mut dyn SmartReplacementProvider>,
+    tokenization_key: Option<&crate::TokenizationKey>,
 ) -> Result<TextCandidateReplay> {
     let validated = snapshot
         .validate(
@@ -266,7 +276,8 @@ fn execute_text_candidate_replay(
     let smart_replacement_entries = smart_replacements.to_entries();
     let mut output = String::with_capacity(input.content.len());
     let mut last_end = 0;
-    let mut state = TransformState::with_smart_replacements_if_active(smart_replacements);
+    let mut state = TransformState::with_smart_replacements_if_active(smart_replacements)
+        .with_tokenization_key(tokenization_key.cloned());
     for (row_index, (start, end, column, data_type, _candidate)) in spans.into_iter().enumerate() {
         output.push_str(&input.content[last_end..start]);
         let mut replay_column = column.clone();
@@ -341,6 +352,7 @@ pub(super) fn preview_text_content_with_smart_provider(
     input: PastePreviewParams,
     _format: PasteDataFormat,
     provider: Option<&mut dyn SmartReplacementProvider>,
+    tokenization_key: Option<&crate::TokenizationKey>,
 ) -> Result<PreviewData> {
     let sample_count = bounded_preview_sample_count(input.sample_count)?;
     let detection_sample_rows = paste_detection_sample_rows(input.sample_row_count)?;
@@ -351,7 +363,7 @@ pub(super) fn preview_text_content_with_smart_provider(
     )?;
     preview_from_fields_with_smart_provider(
         &fields,
-        PreviewSelection::from_params(&input, sample_count, provider),
+        PreviewSelection::from_params(&input, sample_count, provider, tokenization_key),
     )
 }
 
@@ -359,6 +371,7 @@ pub(super) fn transform_text_with_smart_provider(
     input: PasteTransformParams,
     format: PasteDataFormat,
     provider: Option<&mut dyn SmartReplacementProvider>,
+    tokenization_key: Option<&crate::TokenizationKey>,
 ) -> Result<PasteTransformData> {
     let detection_sample_rows = paste_detection_sample_rows(input.sample_row_count)?;
     let matches = collect_text_matches(&input.content)?;
@@ -378,7 +391,8 @@ pub(super) fn transform_text_with_smart_provider(
     let smart_replacements =
         smart_replacements_for_fields(&smart_fields, &metadata, &input, provider)?;
     let start_time = Instant::now();
-    let mut state = TransformState::with_smart_replacements_if_active(smart_replacements);
+    let mut state = TransformState::with_smart_replacements_if_active(smart_replacements)
+        .with_tokenization_key(tokenization_key.cloned());
     let mut row_indices = HashMap::new();
     let mut output = String::with_capacity(input.content.len());
     let mut last_end = 0;

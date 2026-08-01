@@ -802,6 +802,34 @@ fn generates_tokenized_quick_values() {
 }
 
 #[test]
+fn paste_tokenization_repeats_across_explicit_run_contexts_without_serializing_the_key() {
+    let key_text = "7f".repeat(32);
+    let input = PasteTransformParams {
+        content: "email\nalice@example.com\n".to_string(),
+        format: PasteDataFormat::Csv,
+        columns: vec![0],
+        controls: vec![ColumnControl {
+            column_index: 0,
+            type_override: Some(DataType::Email),
+            strategy: AnonymizationStrategy::Tokenize,
+        }],
+        sample_row_count: 10,
+        preview_smart_replacements: vec![],
+    };
+    let first_key = crate::TokenizationKey::parse_hex(&key_text).unwrap();
+    let second_key = crate::TokenizationKey::parse_hex(&key_text).unwrap();
+    let first =
+        transform_paste_data_with_run_secrets(input.clone(), None, Some(&first_key)).unwrap();
+    let second = transform_paste_data_with_run_secrets(input, None, Some(&second_key)).unwrap();
+
+    assert_eq!(first.output, second.output);
+    assert_eq!(first.privacy_report.keyed_token_values, 1);
+    assert_eq!(first.privacy_report.keyed_token_columns, vec![0]);
+    let serialized = serde_json::to_string(&first).unwrap();
+    assert!(!serialized.contains(&key_text));
+}
+
+#[test]
 fn quick_generation_rejects_input_only_strategies() {
     let error = generate_quick_values(QuickGenerateParams {
         data_type: DataType::Email,

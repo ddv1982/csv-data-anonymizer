@@ -21,6 +21,7 @@ export function useAnonymizerWorkflow() {
   const [error, setError] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [preparedAnalysis, setPreparedAnalysis] = useState<PreparedAnalysis | null>(null)
+  const [tokenizationKey, setTokenizationKey] = useState<string | null>(null)
   const {
     headers,
     setHeaders,
@@ -33,6 +34,7 @@ export function useAnonymizerWorkflow() {
     selectedControls,
     highRiskColumns,
     detectedRiskColumns,
+    uncertainColumns,
     visibleColumns,
     hiddenColumnCount,
     allSelected,
@@ -44,6 +46,7 @@ export function useAnonymizerWorkflow() {
     setColumnControls,
     controlsForColumns,
     selectionUsesLocalAi,
+    selectionUsesTokenization,
     updateColumnStrategy: updateCsvColumnStrategy,
     toggleColumn: toggleCsvColumn,
   } = useCsvSelection()
@@ -86,8 +89,10 @@ export function useAnonymizerWorkflow() {
     localAiBlocked,
     controlsForColumns,
     selectionUsesLocalAi,
+    selectionUsesTokenization,
     setPreview,
     preparedAnalysis,
+    tokenizationKey,
   })
   const anonymizeJob = useAnonymizeJob(shell, {
     inputPath,
@@ -102,6 +107,8 @@ export function useAnonymizerWorkflow() {
     persistSettings,
     refreshSettings,
     preparedAnalysis,
+    tokenizationKey,
+    selectedUsesTokenization: selectionUsesTokenization(selectedColumns),
   })
   const invalidatingSelection = useSelectionInvalidation(
     { setSelectedColumns: setCsvSelectedColumns, toggleColumn: toggleCsvColumn, updateColumnStrategy: updateCsvColumnStrategy },
@@ -129,6 +136,11 @@ export function useAnonymizerWorkflow() {
     void persistSettings(nextSettings)
   }
 
+  function updateTokenizationKey(key: string | null) {
+    setTokenizationKey(key)
+    clearArtifacts()
+  }
+
   function resetData() {
     setPreparedAnalysis(null)
     resetCsvSelection()
@@ -143,6 +155,8 @@ export function useAnonymizerWorkflow() {
     outputPath,
     headers,
     preparedAnalysis,
+    tokenizationKey,
+    setTokenizationKey: updateTokenizationKey,
     selectedColumns,
     columnControls,
     preview,
@@ -158,6 +172,7 @@ export function useAnonymizerWorkflow() {
     selectedSet,
     highRiskColumns,
     detectedRiskColumns,
+    uncertainColumns,
     visibleColumns,
     hiddenColumnCount,
     allSelected,

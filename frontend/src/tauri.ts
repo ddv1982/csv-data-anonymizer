@@ -1,5 +1,5 @@
 import { setTheme as setTauriTheme } from '@tauri-apps/api/app'
-import { invoke } from '@tauri-apps/api/core'
+import { Channel, invoke } from '@tauri-apps/api/core'
 import { defaultSettings } from './defaults'
 import { validateAnalyzeResponse, validatePasteAnalyzeData } from './utils/analysisContract'
 import type {
@@ -34,12 +34,43 @@ type TestInvoke = (command: string, args?: Record<string, unknown>) => unknown
 // `scripts/check-contracts.mjs`.
 type WithLocalAi<Params> = Params & { localAi: LocalAiRequest }
 type WithPreparedAnalysis<Params> = Params & { preparedAnalysis?: PreparedAnalysis | null }
-type PreflightCommandRequest = WithPreparedAnalysis<WithLocalAi<
+type WithTokenizationKey<Params> = Params & { tokenizationKey?: string | null }
+export type AnalyzeCsvRequest = {
+  filePath: string
+  sampleRowCount: number
+  outputSuffix: string
+}
+export type AnalyzePasteDataRequest = {
+  content: string
+  format: PasteDataFormat
+  sampleRowCount: number
+}
+export type PreflightCommandRequest = WithPreparedAnalysis<WithLocalAi<
   Omit<PreflightParams, 'localAiReady' | 'localAiMessage'>
 >>
-type PreviewCommandRequest = WithPreparedAnalysis<WithLocalAi<PreviewParams>>
-type PastePreviewCommandRequest = WithPreparedAnalysis<WithLocalAi<PastePreviewParams>>
-type PasteTransformCommandRequest = WithPreparedAnalysis<WithLocalAi<PasteTransformParams>>
+export type PreviewCommandRequest = WithTokenizationKey<WithPreparedAnalysis<WithLocalAi<PreviewParams>>>
+export type PastePreviewCommandRequest = WithTokenizationKey<WithPreparedAnalysis<WithLocalAi<PastePreviewParams>>>
+export type PasteTransformCommandRequest = WithTokenizationKey<WithPreparedAnalysis<WithLocalAi<PasteTransformParams>>>
+export type QuickGenerateCommandRequest = WithTokenizationKey<{
+  dataType: DataType
+  strategy: ColumnControl['strategy']
+  count: number
+  localAi: LocalAiRequest
+}>
+export type StartAnonymizeJobRequest = WithTokenizationKey<WithPreparedAnalysis<WithLocalAi<{
+  filePath: string
+  outputPath: string
+  columns: number[]
+  controls: ColumnControl[]
+  force: boolean
+  sampleRowCount: number
+  totalRowCount: number | null
+  previewSmartReplacements: SmartReplacementEntry[]
+}>>>
+export type StartAnonymizeJobCall = {
+  request: StartAnonymizeJobRequest
+  onProgress: (status: AnonymizeJobStatus) => void
+}
 
 declare global {
   interface Window {
@@ -64,12 +95,8 @@ export function pickOutputCsv(suggestedOutputPath: string | null): Promise<strin
   return invokeCommand('pick_output_csv', { suggestedOutputPath })
 }
 
-export function analyzeCsv(
-  filePath: string,
-  sampleRowCount: number,
-  outputSuffix: string,
-): Promise<AnalyzeResponse> {
-  return invokeCommand<AnalyzeResponse>('analyze_csv', { filePath, sampleRowCount, outputSuffix })
+export function analyzeCsv(request: AnalyzeCsvRequest): Promise<AnalyzeResponse> {
+  return invokeCommand<AnalyzeResponse>('analyze_csv', request)
     .then(validateAnalyzeResponse)
 }
 
@@ -77,128 +104,31 @@ export function countCsvRows(filePath: string): Promise<number> {
   return invokeCommand('count_csv_rows', { filePath })
 }
 
-export function analyzePasteData(
-  content: string,
-  format: PasteDataFormat,
-  sampleRowCount: number,
-): Promise<PasteAnalyzeData> {
+export function analyzePasteData(request: AnalyzePasteDataRequest): Promise<PasteAnalyzeData> {
   return invokeCommand<PasteAnalyzeData>('analyze_pasted_data', {
-    request: {
-      content,
-      format,
-      sampleRowCount,
-    },
+    request,
   }).then(validatePasteAnalyzeData)
 }
 
-export function previewPasteData(
-  content: string,
-  format: PasteDataFormat,
-  columns: number[],
-  controls: ColumnControl[],
-  sampleCount: number,
-  sampleRowCount: number,
-  localAi: LocalAiRequest,
-  preparedAnalysis?: PreparedAnalysis | null,
-): Promise<PreviewData> {
-  const request: PastePreviewCommandRequest = {
-    content,
-    format,
-    columns,
-    controls,
-    sampleCount,
-    sampleRowCount,
-    localAi,
-    ...(preparedAnalysis ? { preparedAnalysis } : {}),
-  }
+export function previewPasteData(request: PastePreviewCommandRequest): Promise<PreviewData> {
   return invokeCommand('preview_pasted_data', { request })
 }
 
-export function transformPasteData(
-  content: string,
-  format: PasteDataFormat,
-  columns: number[],
-  controls: ColumnControl[],
-  sampleRowCount: number,
-  previewSmartReplacements: SmartReplacementEntry[],
-  localAi: LocalAiRequest,
-  preparedAnalysis?: PreparedAnalysis | null,
-): Promise<PasteTransformData> {
-  const request: PasteTransformCommandRequest = {
-    content,
-    format,
-    columns,
-    controls,
-    sampleRowCount,
-    previewSmartReplacements,
-    localAi,
-    ...(preparedAnalysis ? { preparedAnalysis } : {}),
-  }
+export function transformPasteData(request: PasteTransformCommandRequest): Promise<PasteTransformData> {
   return invokeCommand('anonymize_pasted_data', { request })
 }
 
-export function generateQuickValues(
-  dataType: DataType,
-  strategy: ColumnControl['strategy'],
-  count: number,
-  localAi: LocalAiRequest,
-): Promise<QuickTransformData> {
+export function generateQuickValues(request: QuickGenerateCommandRequest): Promise<QuickTransformData> {
   return invokeCommand('generate_quick_values', {
-    request: {
-      dataType,
-      strategy,
-      count,
-      localAi,
-    },
+    request,
   })
 }
 
-export function previewAnonymization(
-  filePath: string,
-  columns: number[],
-  controls: ColumnControl[],
-  sampleCount: number,
-  sampleRowCount: number,
-  localAi: LocalAiRequest,
-  preparedAnalysis?: PreparedAnalysis | null,
-): Promise<PreviewData> {
-  const request: PreviewCommandRequest = {
-    filePath,
-    columns,
-    controls,
-    sampleCount,
-    sampleRowCount,
-    localAi,
-    ...(preparedAnalysis ? { preparedAnalysis } : {}),
-  }
+export function previewAnonymization(request: PreviewCommandRequest): Promise<PreviewData> {
   return invokeCommand('preview_anonymization', { request })
 }
 
-export function preflightAnonymization(
-  mode: PreflightMode,
-  filePath: string,
-  outputPath: string | null,
-  columns: number[],
-  controls: ColumnControl[],
-  force: boolean,
-  sampleRowCount: number,
-  previewSmartReplacements: SmartReplacementEntry[],
-  localAi: LocalAiRequest,
-  preparedAnalysis?: PreparedAnalysis | null,
-): Promise<PreflightData> {
-  const request: PreflightCommandRequest = {
-    mode,
-    filePath,
-    outputPath,
-    columns,
-    controls,
-    force,
-    sampleRowCount,
-    previewSmartReplacements,
-    localAi,
-    ...(preparedAnalysis ? { preparedAnalysis } : {}),
-  }
-
+export function preflightAnonymization(request: PreflightCommandRequest): Promise<PreflightData> {
   return invokeCommand('preflight_anonymization', {
     request,
   })
@@ -208,31 +138,13 @@ export function firstPreflightBlocker(preflight: PreflightData): string | null {
   return preflight.readiness.blockers[0] ?? null
 }
 
-export function startAnonymizeJob(
-  filePath: string,
-  outputPath: string,
-  columns: number[],
-  controls: ColumnControl[],
-  force: boolean,
-  sampleRowCount: number,
-  totalRowCount: number | null,
-  previewSmartReplacements: SmartReplacementEntry[],
-  localAi: LocalAiRequest,
-  preparedAnalysis?: PreparedAnalysis | null,
-): Promise<AnonymizeJobStatus> {
+export function startAnonymizeJob({ request, onProgress }: StartAnonymizeJobCall): Promise<AnonymizeJobStatus> {
+  // Constructing a Tauri Channel itself requires the native callback registry.
+  // Browser previews and E2E use the invoke seam below and have no such registry.
+  const progressChannel = isTauriRuntime() ? new Channel<AnonymizeJobStatus>(onProgress) : null
   return invokeCommand('start_anonymize_job', {
-    request: {
-      filePath,
-      outputPath,
-      columns,
-      controls,
-      force,
-      sampleRowCount,
-      totalRowCount,
-      previewSmartReplacements,
-      localAi,
-      ...(preparedAnalysis ? { preparedAnalysis } : {}),
-    },
+    request,
+    onProgress: progressChannel,
   })
 }
 

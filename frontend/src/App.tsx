@@ -25,11 +25,13 @@ function App() {
     settingsLoaded: workflow.settingsLoaded,
     localAi: workflow.localAi,
     onError: workflow.setError,
+    tokenizationKey: workflow.tokenizationKey,
   })
   const quickWorkflow = useQuickGenerateWorkflow({
     settingsLoaded: workflow.settingsLoaded,
     localAi: workflow.localAi,
     onError: workflow.setError,
+    tokenizationKey: workflow.tokenizationKey,
   })
   const [activeMode, setActiveMode] = useState<InputMode>('csv')
   const [localAiSettingsOpen, setLocalAiSettingsOpen] = useState(false)

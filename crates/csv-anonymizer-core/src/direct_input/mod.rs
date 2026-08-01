@@ -108,11 +108,21 @@ pub fn preview_paste_data_with_smart_provider(
     input: PastePreviewParams,
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<PreviewData> {
+    preview_paste_data_with_run_secrets(input, provider, None)
+}
+
+pub fn preview_paste_data_with_run_secrets(
+    input: PastePreviewParams,
+    provider: Option<&mut dyn SmartReplacementProvider>,
+    tokenization_key: Option<&crate::TokenizationKey>,
+) -> Result<PreviewData> {
     shared::validate_paste_content(&input.content)?;
     let format = format_detection::resolve_format(input.format, &input.content);
 
     match format {
-        PasteDataFormat::Csv => csv_text::preview_csv_text_with_smart_provider(input, provider),
+        PasteDataFormat::Csv => {
+            csv_text::preview_csv_text_with_smart_provider(input, provider, tokenization_key)
+        }
         PasteDataFormat::Json => {
             let value = documents::parse_json(&input.content)?;
             documents::preview_value_document_with_smart_provider(
@@ -120,6 +130,7 @@ pub fn preview_paste_data_with_smart_provider(
                 value,
                 PasteDataFormat::Json,
                 provider,
+                tokenization_key,
             )
         }
         PasteDataFormat::Yaml => {
@@ -129,11 +140,19 @@ pub fn preview_paste_data_with_smart_provider(
                 value,
                 PasteDataFormat::Yaml,
                 provider,
+                tokenization_key,
             )
         }
-        PasteDataFormat::Xml => xml::preview_xml_with_smart_provider(input, provider),
+        PasteDataFormat::Xml => {
+            xml::preview_xml_with_smart_provider(input, provider, tokenization_key)
+        }
         PasteDataFormat::PlainText | PasteDataFormat::Logs => {
-            text::preview_text_content_with_smart_provider(input, format, provider)
+            text::preview_text_content_with_smart_provider(
+                input,
+                format,
+                provider,
+                tokenization_key,
+            )
         }
         PasteDataFormat::Auto => unreachable!("auto format must resolve before preview"),
     }
@@ -147,22 +166,41 @@ pub fn transform_paste_data_with_smart_provider(
     input: PasteTransformParams,
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<PasteTransformData> {
+    transform_paste_data_with_run_secrets(input, provider, None)
+}
+
+pub fn transform_paste_data_with_run_secrets(
+    input: PasteTransformParams,
+    provider: Option<&mut dyn SmartReplacementProvider>,
+    tokenization_key: Option<&crate::TokenizationKey>,
+) -> Result<PasteTransformData> {
     shared::validate_paste_content(&input.content)?;
     let format = format_detection::resolve_format(input.format, &input.content);
 
     match format {
-        PasteDataFormat::Csv => csv_text::transform_csv_text_with_smart_provider(input, provider),
-        PasteDataFormat::Json => documents::transform_json_with_smart_provider(input, provider),
-        PasteDataFormat::Yaml => documents::transform_yaml_with_smart_provider(input, provider),
-        PasteDataFormat::Xml => xml::transform_xml_with_smart_provider(input, provider),
+        PasteDataFormat::Csv => {
+            csv_text::transform_csv_text_with_smart_provider(input, provider, tokenization_key)
+        }
+        PasteDataFormat::Json => {
+            documents::transform_json_with_smart_provider(input, provider, tokenization_key)
+        }
+        PasteDataFormat::Yaml => {
+            documents::transform_yaml_with_smart_provider(input, provider, tokenization_key)
+        }
+        PasteDataFormat::Xml => {
+            xml::transform_xml_with_smart_provider(input, provider, tokenization_key)
+        }
         PasteDataFormat::PlainText | PasteDataFormat::Logs => {
-            text::transform_text_with_smart_provider(input, format, provider)
+            text::transform_text_with_smart_provider(input, format, provider, tokenization_key)
         }
         PasteDataFormat::Auto => unreachable!("auto format must resolve before transform"),
     }
 }
 
-pub use quick::{generate_quick_values, generate_quick_values_with_smart_provider};
+pub use quick::{
+    generate_quick_values, generate_quick_values_with_run_secrets,
+    generate_quick_values_with_smart_provider,
+};
 
 pub fn replay_paste_text_candidate_evidence(
     input: &PasteTransformParams,
@@ -183,6 +221,22 @@ pub fn replay_paste_text_candidate_evidence_with_smart_provider(
     confirmed_candidate_ids: &[String],
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<PasteTransformData> {
+    replay_paste_text_candidate_evidence_with_run_secrets(
+        input,
+        snapshot,
+        confirmed_candidate_ids,
+        provider,
+        None,
+    )
+}
+
+pub fn replay_paste_text_candidate_evidence_with_run_secrets(
+    input: &PasteTransformParams,
+    snapshot: &crate::PreparedAnalysisSnapshot,
+    confirmed_candidate_ids: &[String],
+    provider: Option<&mut dyn SmartReplacementProvider>,
+    tokenization_key: Option<&crate::TokenizationKey>,
+) -> Result<PasteTransformData> {
     shared::validate_paste_content(&input.content)?;
     let format = format_detection::resolve_format(input.format, &input.content);
     if !matches!(format, PasteDataFormat::PlainText | PasteDataFormat::Logs) {
@@ -191,7 +245,14 @@ pub fn replay_paste_text_candidate_evidence_with_smart_provider(
             "Candidate span replay is only available for plain text and logs.",
         ));
     }
-    text::replay_text_candidate_evidence(input, format, snapshot, confirmed_candidate_ids, provider)
+    text::replay_text_candidate_evidence(
+        input,
+        format,
+        snapshot,
+        confirmed_candidate_ids,
+        provider,
+        tokenization_key,
+    )
 }
 
 pub fn preview_paste_text_candidate_evidence(
@@ -213,6 +274,22 @@ pub fn preview_paste_text_candidate_evidence_with_smart_provider(
     confirmed_candidate_ids: &[String],
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<PreviewData> {
+    preview_paste_text_candidate_evidence_with_run_secrets(
+        input,
+        snapshot,
+        confirmed_candidate_ids,
+        provider,
+        None,
+    )
+}
+
+pub fn preview_paste_text_candidate_evidence_with_run_secrets(
+    input: &PastePreviewParams,
+    snapshot: &crate::PreparedAnalysisSnapshot,
+    confirmed_candidate_ids: &[String],
+    provider: Option<&mut dyn SmartReplacementProvider>,
+    tokenization_key: Option<&crate::TokenizationKey>,
+) -> Result<PreviewData> {
     shared::validate_paste_content(&input.content)?;
     let format = format_detection::resolve_format(input.format, &input.content);
     if !matches!(format, PasteDataFormat::PlainText | PasteDataFormat::Logs) {
@@ -227,5 +304,6 @@ pub fn preview_paste_text_candidate_evidence_with_smart_provider(
         snapshot,
         confirmed_candidate_ids,
         provider,
+        tokenization_key,
     )
 }

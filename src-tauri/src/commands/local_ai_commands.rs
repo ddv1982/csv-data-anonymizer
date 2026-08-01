@@ -1,3 +1,4 @@
+use crate::command_error::CommandError;
 use crate::local_ai::{
     LocalAiDownloadStatus, LocalAiDownloadStore, LocalAiRequest, LocalAiStatus,
     ensure_obviously_local_model, ensure_ollama_runtime_available, local_ai_status, open_setup_url,
@@ -7,15 +8,17 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use tauri::State;
 
 #[tauri::command]
-pub async fn get_local_ai_status(request: LocalAiRequest) -> Result<LocalAiStatus, String> {
-    super::shared::run_blocking(move || local_ai_status(request)).await
+pub async fn get_local_ai_status(request: LocalAiRequest) -> Result<LocalAiStatus, CommandError> {
+    super::shared::run_blocking(move || local_ai_status(request))
+        .await
+        .map_err(Into::into)
 }
 
 #[tauri::command]
 pub async fn start_local_ai_model_download(
     downloads: State<'_, LocalAiDownloadStore>,
     request: LocalAiRequest,
-) -> Result<LocalAiDownloadStatus, String> {
+) -> Result<LocalAiDownloadStatus, CommandError> {
     ensure_obviously_local_model(&request.model_name())?;
     // The runtime probe is a blocking HTTP call (up to 120s); keep it off the
     // main thread like the sibling status command.
@@ -39,26 +42,26 @@ pub async fn start_local_ai_model_download(
 pub fn get_local_ai_model_download_status(
     downloads: State<'_, LocalAiDownloadStore>,
     job_id: String,
-) -> Result<LocalAiDownloadStatus, String> {
-    downloads.snapshot_job(&job_id)
+) -> Result<LocalAiDownloadStatus, CommandError> {
+    downloads.snapshot_job(&job_id).map_err(Into::into)
 }
 
 #[tauri::command]
 pub fn cancel_local_ai_model_download(
     downloads: State<'_, LocalAiDownloadStore>,
     job_id: String,
-) -> Result<LocalAiDownloadStatus, String> {
+) -> Result<LocalAiDownloadStatus, CommandError> {
     let job = downloads.get_job(&job_id)?;
     let status = job.snapshot()?;
     if status.state.is_terminal() {
         return Ok(status);
     }
-    job.request_cancel()
+    job.request_cancel().map_err(Into::into)
 }
 
 #[tauri::command]
-pub fn open_local_ai_setup_url() -> Result<(), String> {
-    open_setup_url()
+pub fn open_local_ai_setup_url() -> Result<(), CommandError> {
+    open_setup_url().map_err(Into::into)
 }
 
 #[cfg(test)]

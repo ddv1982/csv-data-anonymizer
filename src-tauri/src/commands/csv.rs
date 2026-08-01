@@ -4,6 +4,7 @@ use super::shared::{
 };
 mod snapshot;
 
+use crate::command_error::CommandError;
 use crate::local_ai::candidate_detector::local_candidate_detector;
 use crate::local_ai::{
     LOCAL_AI_DISABLED_MESSAGE, LocalAiRequest, local_ai_status, selection_requires_local_ai,
@@ -46,7 +47,7 @@ pub struct AnalyzeResponse {
     pub prepared_analysis: Option<PreparedAnalysisSnapshot>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PreviewRequest {
     pub file_path: PathBuf,
@@ -57,9 +58,11 @@ pub struct PreviewRequest {
     pub sample_row_count: usize,
     pub local_ai: Option<LocalAiRequest>,
     pub prepared_analysis: Option<PreparedAnalysisSnapshot>,
+    #[serde(default)]
+    pub tokenization_key: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PreflightRequest {
     pub mode: PreflightMode,
@@ -76,30 +79,36 @@ pub struct PreflightRequest {
     pub prepared_analysis: Option<PreparedAnalysisSnapshot>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PastePreviewRequest {
     #[serde(flatten)]
     pub params: PastePreviewParams,
     pub local_ai: Option<LocalAiRequest>,
     pub prepared_analysis: Option<PreparedAnalysisSnapshot>,
+    #[serde(default)]
+    pub tokenization_key: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PasteTransformRequest {
     #[serde(flatten)]
     pub params: PasteTransformParams,
     pub local_ai: Option<LocalAiRequest>,
     pub prepared_analysis: Option<PreparedAnalysisSnapshot>,
+    #[serde(default)]
+    pub tokenization_key: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QuickGenerateRequest {
     #[serde(flatten)]
     pub params: QuickGenerateParams,
     pub local_ai: Option<LocalAiRequest>,
+    #[serde(default)]
+    pub tokenization_key: Option<String>,
 }
 
 fn load_local_ai_enabled(settings: &State<'_, Arc<SettingsStore>>) -> Result<bool, String> {
@@ -107,6 +116,15 @@ fn load_local_ai_enabled(settings: &State<'_, Arc<SettingsStore>>) -> Result<boo
         .load_settings()
         .map(|settings| settings.local_ai_enabled)
         .map_err(|error| format!("Could not load settings: {error}"))
+}
+
+fn parse_tokenization_key(
+    value: Option<&str>,
+) -> Result<Option<csv_anonymizer_core::TokenizationKey>, String> {
+    value
+        .map(csv_anonymizer_core::TokenizationKey::parse_hex)
+        .transpose()
+        .map_err(|error| error.to_string())
 }
 
 fn load_local_ner_settings(
@@ -210,8 +228,9 @@ pub async fn analyze_csv(
     file_path: PathBuf,
     sample_row_count: usize,
     output_suffix: String,
-) -> Result<AnalyzeResponse, String> {
-    validate_sample_count(sample_row_count, MAX_SAMPLE_ROW_COUNT, "Sample row count")?;
+) -> Result<AnalyzeResponse, CommandError> {
+    validate_sample_count(sample_row_count, MAX_SAMPLE_ROW_COUNT, "Sample row count")
+        .map_err(CommandError::invalid_input)?;
     let file_path = authorize_or_confirm_input_file(&app, &path_access, file_path)?;
     // Persisted consent is authoritative; invoke payloads cannot override it.
     let (local_ner_enabled, local_ner_model) = load_local_ner_settings(&settings)?;
@@ -227,6 +246,7 @@ pub async fn analyze_csv(
         )
     })
     .await
+    .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -234,31 +254,40 @@ pub async fn preview_anonymization(
     path_access: State<'_, PathAccess>,
     settings: State<'_, Arc<SettingsStore>>,
     request: PreviewRequest,
-) -> Result<PreviewData, String> {
+) -> Result<PreviewData, CommandError> {
     validate_sample_count(
         request.sample_count,
         MAX_PREVIEW_SAMPLE_COUNT,
         "Preview sample count",
-    )?;
+    )
+    .map_err(CommandError::invalid_input)?;
     // The preview classifies on the same figure analyze and the run are given, so
     // it is bounded by that limit rather than by the display one.
     validate_sample_count(
         request.sample_row_count,
         MAX_SAMPLE_ROW_COUNT,
         "Sample row count",
-    )?;
-    let file_path = path_access.authorize_input_file(request.file_path)?;
+    )
+    .map_err(CommandError::invalid_input)?;
+    let file_path = path_access
+        .authorize_input_file(request.file_path)
+        .map_err(CommandError::path_not_authorized)?;
     let (local_ner_enabled, local_ner_model) = load_local_ner_settings(&settings)?;
-    require_prepared_analysis(local_ner_enabled, request.prepared_analysis.as_ref())?;
-    require_snapshot_model(request.prepared_analysis.as_ref(), &local_ner_model)?;
+    require_prepared_analysis(local_ner_enabled, request.prepared_analysis.as_ref())
+        .map_err(CommandError::stale_analysis)?;
+    require_snapshot_model(request.prepared_analysis.as_ref(), &local_ner_model)
+        .map_err(CommandError::stale_analysis)?;
     let validated_input = ValidatedFileInput::prepare(
         request.prepared_analysis.as_ref(),
         file_path,
         request.sample_row_count,
         &request.columns,
-    )?;
+    )
+    .map_err(CommandError::stale_analysis)?;
     let processing_path = validated_input.processing_path();
     let local_ai_enabled = load_local_ai_enabled(&settings)?;
+    let tokenization_key = parse_tokenization_key(request.tokenization_key.as_deref())
+        .map_err(CommandError::invalid_input)?;
     run_blocking(move || {
         let _validated_input = validated_input;
         let mut provider = smart_provider_for_request(
@@ -271,7 +300,7 @@ pub async fn preview_anonymization(
             .as_mut()
             .map(|provider| provider as &mut dyn SmartReplacementProvider);
         service()
-            .preview_anonymization_with_smart_provider(
+            .preview_anonymization_with_run_secrets(
                 PreviewParams {
                     file_path: processing_path,
                     columns: request.columns,
@@ -280,10 +309,12 @@ pub async fn preview_anonymization(
                     sample_row_count: request.sample_row_count,
                 },
                 provider,
+                tokenization_key.as_ref(),
             )
             .map_err(|error| error.to_string())
     })
     .await
+    .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -292,17 +323,20 @@ pub async fn preflight_anonymization(
     path_access: State<'_, PathAccess>,
     settings: State<'_, Arc<SettingsStore>>,
     request: PreflightRequest,
-) -> Result<PreflightData, String> {
+) -> Result<PreflightData, CommandError> {
     validate_sample_count(
         request.sample_row_count,
         MAX_SAMPLE_ROW_COUNT,
         "Sample row count",
-    )?;
+    )
+    .map_err(CommandError::invalid_input)?;
     let mode = request.mode;
     let file_path = authorize_or_confirm_input_file(&app, &path_access, request.file_path.clone())?;
     let (local_ner_enabled, local_ner_model) = load_local_ner_settings(&settings)?;
-    require_prepared_analysis(local_ner_enabled, request.prepared_analysis.as_ref())?;
-    require_snapshot_model(request.prepared_analysis.as_ref(), &local_ner_model)?;
+    require_prepared_analysis(local_ner_enabled, request.prepared_analysis.as_ref())
+        .map_err(CommandError::stale_analysis)?;
+    require_snapshot_model(request.prepared_analysis.as_ref(), &local_ner_model)
+        .map_err(CommandError::stale_analysis)?;
     let output_path = match (mode, request.output_path.clone()) {
         (PreflightMode::Anonymize, Some(path)) => {
             Some(authorize_or_confirm_output_file(&app, &path_access, path)?)
@@ -310,7 +344,7 @@ pub async fn preflight_anonymization(
         (_, output_path) => output_path,
     };
     if output_path.as_deref() == Some(file_path.as_path()) {
-        return Err("Output path must differ from the input path.".to_string());
+        return Err("Output path must differ from the input path.".into());
     }
     let validated_input = ValidatedFileInput::prepare(
         request.prepared_analysis.as_ref(),
@@ -360,27 +394,31 @@ pub async fn preflight_anonymization(
             .map_err(|error| error.to_string())
     })
     .await
+    .map_err(Into::into)
 }
 
 #[tauri::command]
 pub async fn count_csv_rows(
     path_access: State<'_, PathAccess>,
     file_path: PathBuf,
-) -> Result<usize, String> {
-    let file_path = path_access.authorize_input_file(file_path)?;
+) -> Result<usize, CommandError> {
+    let file_path = path_access
+        .authorize_input_file(file_path)
+        .map_err(CommandError::path_not_authorized)?;
     run_blocking(move || {
         service()
             .count_csv_rows(&file_path)
             .map_err(|error| error.to_string())
     })
     .await
+    .map_err(Into::into)
 }
 
 #[tauri::command]
 pub async fn analyze_pasted_data(
     settings: State<'_, Arc<SettingsStore>>,
     request: PasteAnalyzeParams,
-) -> Result<PasteAnalyzeData, String> {
+) -> Result<PasteAnalyzeData, CommandError> {
     let (local_ner_enabled, local_ner_model) = load_local_ner_settings(&settings)?;
     run_blocking(move || {
         let content = request.content.clone();
@@ -430,16 +468,19 @@ pub async fn analyze_pasted_data(
         Ok(analysis)
     })
     .await
+    .map_err(Into::into)
 }
 
 #[tauri::command]
 pub async fn preview_pasted_data(
     settings: State<'_, Arc<SettingsStore>>,
     request: PastePreviewRequest,
-) -> Result<PreviewData, String> {
+) -> Result<PreviewData, CommandError> {
     let (local_ner_enabled, local_ner_model) = load_local_ner_settings(&settings)?;
-    require_prepared_analysis(local_ner_enabled, request.prepared_analysis.as_ref())?;
-    require_snapshot_model(request.prepared_analysis.as_ref(), &local_ner_model)?;
+    require_prepared_analysis(local_ner_enabled, request.prepared_analysis.as_ref())
+        .map_err(CommandError::stale_analysis)?;
+    require_snapshot_model(request.prepared_analysis.as_ref(), &local_ner_model)
+        .map_err(CommandError::stale_analysis)?;
     if let Some(snapshot) = &request.prepared_analysis {
         validate_paste_snapshot(
             snapshot,
@@ -447,9 +488,12 @@ pub async fn preview_pasted_data(
             request.params.format,
             request.params.sample_row_count,
             &request.params.columns,
-        )?;
+        )
+        .map_err(CommandError::stale_analysis)?;
     }
     let local_ai_enabled = load_local_ai_enabled(&settings)?;
+    let tokenization_key = parse_tokenization_key(request.tokenization_key.as_deref())
+        .map_err(CommandError::invalid_input)?;
     run_blocking(move || {
         let mut provider = smart_provider_for_request(
             request.local_ai,
@@ -466,32 +510,37 @@ pub async fn preview_pasted_data(
             .filter(|snapshot| matches!(snapshot.format.as_str(), "plainText" | "logs"))
         {
             let confirmed = selected_candidate_ids(snapshot, &request.params.columns);
-            csv_anonymizer_core::direct_input::preview_paste_text_candidate_evidence_with_smart_provider(
+            csv_anonymizer_core::direct_input::preview_paste_text_candidate_evidence_with_run_secrets(
                 &request.params,
                 snapshot,
                 &confirmed,
                 provider,
+                tokenization_key.as_ref(),
             )
             .map_err(|error| error.to_string())
         } else {
-            csv_anonymizer_core::direct_input::preview_paste_data_with_smart_provider(
+            csv_anonymizer_core::direct_input::preview_paste_data_with_run_secrets(
                 request.params,
                 provider,
+                tokenization_key.as_ref(),
             )
             .map_err(|error| error.to_string())
         }
     })
     .await
+    .map_err(Into::into)
 }
 
 #[tauri::command]
 pub async fn anonymize_pasted_data(
     settings: State<'_, Arc<SettingsStore>>,
     request: PasteTransformRequest,
-) -> Result<PasteTransformData, String> {
+) -> Result<PasteTransformData, CommandError> {
     let (local_ner_enabled, local_ner_model) = load_local_ner_settings(&settings)?;
-    require_prepared_analysis(local_ner_enabled, request.prepared_analysis.as_ref())?;
-    require_snapshot_model(request.prepared_analysis.as_ref(), &local_ner_model)?;
+    require_prepared_analysis(local_ner_enabled, request.prepared_analysis.as_ref())
+        .map_err(CommandError::stale_analysis)?;
+    require_snapshot_model(request.prepared_analysis.as_ref(), &local_ner_model)
+        .map_err(CommandError::stale_analysis)?;
     if let Some(snapshot) = &request.prepared_analysis {
         validate_paste_snapshot(
             snapshot,
@@ -499,9 +548,12 @@ pub async fn anonymize_pasted_data(
             request.params.format,
             request.params.sample_row_count,
             &request.params.columns,
-        )?;
+        )
+        .map_err(CommandError::stale_analysis)?;
     }
     let local_ai_enabled = load_local_ai_enabled(&settings)?;
+    let tokenization_key = parse_tokenization_key(request.tokenization_key.as_deref())
+        .map_err(CommandError::invalid_input)?;
     run_blocking(move || {
         let mut provider = smart_provider_for_request(
             request.local_ai,
@@ -518,17 +570,19 @@ pub async fn anonymize_pasted_data(
             .filter(|snapshot| matches!(snapshot.format.as_str(), "plainText" | "logs"))
         {
             let confirmed = selected_candidate_ids(snapshot, &request.params.columns);
-            csv_anonymizer_core::direct_input::replay_paste_text_candidate_evidence_with_smart_provider(
+            csv_anonymizer_core::direct_input::replay_paste_text_candidate_evidence_with_run_secrets(
                 &request.params,
                 snapshot,
                 &confirmed,
                 provider,
+                tokenization_key.as_ref(),
             )
             .map_err(|error| error.to_string())
         } else {
-            csv_anonymizer_core::direct_input::transform_paste_data_with_smart_provider(
+            csv_anonymizer_core::direct_input::transform_paste_data_with_run_secrets(
                 request.params,
                 provider,
+                tokenization_key.as_ref(),
             )
             .map_err(|error| error.to_string())
         }?;
@@ -539,14 +593,17 @@ pub async fn anonymize_pasted_data(
         Ok(result)
     })
     .await
+    .map_err(Into::into)
 }
 
 #[tauri::command]
 pub async fn generate_quick_values(
     settings: State<'_, Arc<SettingsStore>>,
     request: QuickGenerateRequest,
-) -> Result<QuickTransformData, String> {
+) -> Result<QuickTransformData, CommandError> {
     let local_ai_enabled = load_local_ai_enabled(&settings)?;
+    let tokenization_key = parse_tokenization_key(request.tokenization_key.as_deref())
+        .map_err(CommandError::invalid_input)?;
     run_blocking(move || {
         let mut provider = smart_provider_for_strategy(
             request.local_ai,
@@ -556,13 +613,15 @@ pub async fn generate_quick_values(
         let provider = provider
             .as_mut()
             .map(|provider| provider as &mut dyn SmartReplacementProvider);
-        csv_anonymizer_core::direct_input::generate_quick_values_with_smart_provider(
+        csv_anonymizer_core::direct_input::generate_quick_values_with_run_secrets(
             request.params,
             provider,
+            tokenization_key.as_ref(),
         )
         .map_err(|error| error.to_string())
     })
     .await
+    .map_err(Into::into)
 }
 
 #[cfg(test)]
@@ -601,7 +660,7 @@ mod tests {
                 .expect_err("an ungranted path must not be readable");
 
         assert!(
-            error.contains("has not been granted"),
+            error.message.contains("has not been granted"),
             "refusal should name the missing grant, got {error:?}"
         );
     }

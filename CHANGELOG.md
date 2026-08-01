@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.0.89 - 2026-08-01
+
+- Add keyed tokenization as an explicit, opt-in protection strategy with ephemeral key handling, cross-workflow validation, deterministic domain-separated tokens, memory-budget safeguards, and documentation for safe operational use.
+- Measure and explain what a transformed release still exposes: report joint row distinguishability, surviving value or format signals, useful column-removal advice, and copyable release-context guidance without turning contextual risk into a misleading pass/fail claim.
+- Preserve the reader's place when Show, preview, selection, and related workflow actions update content, including a representative sample CSV and browser regressions for the long-file review path.
+- Make file, paste, quick-generate, preview, and anonymization flows share stricter typed boundaries: backend-issued prepared evidence is validated consistently, command failures carry stable codes and remedies, and clipboard failures remain visible and recoverable.
+- Harden asynchronous anonymization by throttling progress traffic while retaining exact snapshots, preferring the live channel before polling, and preventing a terminal channel event from being overwritten by a stale running response.
+- Keep rare validator-backed privacy evidence alongside rather than instead of the statistical spread sample, and add architecture decisions, focused regressions, contract checks, and release-quality coverage for the new boundaries.
+
 ## v1.0.88 - 2026-07-31
 
 - Make the Rust-to-React evidence contract describe the wire format it actually receives: empty detector and semantic-evidence collections are optional, their normalized form is explicit, and CI now checks the five format, semantic, privacy, redaction, and combined evidence structures plus their enums instead of leaving that nested decision surface outside the contract gate.

@@ -1,7 +1,6 @@
 use super::controls::keeps_consistent_mapping;
 use super::controls::select_columns_reporting_errors;
 use super::{ensure_output_differs_from_input, validate_output_path};
-use crate::csv_io::count_csv_data_rows;
 use crate::error::Result;
 use crate::release_report::{ReportContext, build_column_reports, build_evidence, build_readiness};
 use crate::report_notes::detection_coverage_disclosure;
@@ -52,7 +51,12 @@ pub(super) fn run_preflight(
         &mut state,
     );
     add_detection_coverage_review(detection_coverage, &selected_metadata, &mut state);
-    add_mapping_memory_review(file_path, &input, &selected_metadata, &mut state);
+    add_mapping_memory_review(
+        detection_coverage.total(),
+        &input,
+        &selected_metadata,
+        &mut state,
+    );
     add_release_readiness_evidence(&selected_metadata, &mut state);
 
     let (readiness, evidence) = state.into_readiness_and_evidence();
@@ -329,7 +333,7 @@ fn add_detection_coverage_review(
 /// Blocking on that would refuse runs that would have finished in a few hundred MB.
 /// The run itself refuses on measured entries, not on this estimate.
 fn add_mapping_memory_review(
-    file_path: &Path,
+    row_count: usize,
     input: &PreflightParams,
     selected_metadata: &[ColumnMetadata],
     state: &mut PreflightState,
@@ -344,18 +348,6 @@ fn add_mapping_memory_review(
     if mapping_columns.is_empty() {
         return;
     }
-
-    // Counted rather than taken from the detection sample, because the projection
-    // scales per-column cardinality by the file's real size and the sample's size
-    // says nothing about that. Behind the emptiness check above so a run made
-    // entirely of Redact and Mask columns does not pay for a pass it cannot use.
-    //
-    // A count that fails is left to the run to report: this projection is not the
-    // place to introduce a second, differently worded file error, and the detection
-    // pass that has already succeeded is the evidence that the file is readable.
-    let Ok(row_count) = count_csv_data_rows(file_path) else {
-        return;
-    };
 
     let mut projected_entries: usize = 0;
     let mut largest: Option<(&str, usize)> = None;
@@ -392,6 +384,7 @@ fn mapping_memory_review_message(
     row_count: usize,
     largest_column: Option<&str>,
 ) -> String {
+    let runtime_ceiling = TransformState::runtime_mapping_entry_ceiling();
     let megabytes = TransformState::approximate_mapping_megabytes(projected_entries);
     let mut message = format!(
         "Keeping repeated values linkable could hold up to {projected_entries} mapping entries \
@@ -407,12 +400,12 @@ fn mapping_memory_review_message(
     // `TransformState::check_mapping_budget` once per row. Kept conditional on the
     // projection clearing the ceiling: below it the run is expected to finish, and
     // naming a refusal that will not happen is how a warning stops being read.
-    if projected_entries > TransformState::MAPPING_ENTRY_CEILING {
+    if projected_entries > runtime_ceiling {
         message.push_str(&format!(
             " That is past the {}-entry ceiling this transform is sized for, so a run whose \
              values really are this varied will stop part-way through with no output written, \
              rather than running the machine out of memory.",
-            TransformState::MAPPING_ENTRY_CEILING
+            runtime_ceiling
         ));
     }
     message.push_str(

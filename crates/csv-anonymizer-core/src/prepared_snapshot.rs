@@ -502,6 +502,7 @@ mod tests {
             privacy_findings: vec![finding],
             privacy_evidence: vec![],
             review_reasons: vec![ColumnReviewReason::AmbiguousContext],
+            evidence_disposition: crate::types::EvidenceDisposition::Uncertain,
             evidence_profile: Default::default(),
             pii_risk: PiiRisk::Low,
             sample_values: vec!["José lives here".into()],

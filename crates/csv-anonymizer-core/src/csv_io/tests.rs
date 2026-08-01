@@ -97,6 +97,25 @@ fn detection_sample_keeps_exactly_the_requested_row_count() {
     }
 }
 
+#[test]
+fn strict_anchors_are_supplemental_to_the_statistical_sample() {
+    let mut sampler = RowSampler::new(SampleWindow::Spread, 2);
+    sampler.push(vec!["ordinary-a".to_string()]);
+    sampler.push(vec!["ordinary-b".to_string()]);
+
+    // Model a strict identifier discovered after the spread sample is full. The
+    // anchor must add evidence without evicting either representative row.
+    sampler
+        .strict_anchor_rows
+        .push(vec!["rare.person@example.com".to_string()]);
+
+    let rows = sampler.into_rows();
+    assert_eq!(rows.len(), 3);
+    assert!(rows.contains(&vec!["ordinary-a".to_string()]));
+    assert!(rows.contains(&vec!["ordinary-b".to_string()]));
+    assert!(rows.contains(&vec!["rare.person@example.com".to_string()]));
+}
+
 fn build_numbered_csv(row_count: usize) -> String {
     let mut content = String::from("n\n");
     for row in 0..row_count {
@@ -124,6 +143,7 @@ fn processes_csv_text() {
         &columns,
         ProcessOptions {
             smart_replacements: None,
+            tokenization_key: None,
             mapping_entry_ceiling: None,
         },
     )
@@ -149,6 +169,7 @@ fn processes_selected_columns() {
         &columns,
         ProcessOptions {
             smart_replacements: None,
+            tokenization_key: None,
             mapping_entry_ceiling: None,
         },
     )
@@ -198,6 +219,7 @@ fn rejects_non_empty_fields_beyond_headers_without_committing_output() {
         &columns,
         ProcessOptions {
             smart_replacements: None,
+            tokenization_key: None,
             mapping_entry_ceiling: None,
         },
     )
@@ -227,6 +249,7 @@ fn pads_short_rows_and_truncates_empty_extra_cells() {
         &columns,
         ProcessOptions {
             smart_replacements: None,
+            tokenization_key: None,
             mapping_entry_ceiling: None,
         },
     )
@@ -259,6 +282,7 @@ fn neutralizes_formula_like_headers_and_cells_in_standard_output() {
         &columns,
         ProcessOptions {
             smart_replacements: None,
+            tokenization_key: None,
             mapping_entry_ceiling: None,
         },
     )
@@ -310,6 +334,7 @@ fn process_row_count_skips_blank_data_rows_but_preserves_them() {
         &columns,
         ProcessOptions {
             smart_replacements: None,
+            tokenization_key: None,
             mapping_entry_ceiling: None,
         },
     )
@@ -359,6 +384,7 @@ fn process_control_reports_progress_and_cancels_before_next_row() {
             &columns,
             ProcessOptions {
                 smart_replacements: None,
+                tokenization_key: None,
                 mapping_entry_ceiling: None,
             },
             Some(&mut control),
@@ -396,6 +422,7 @@ fn process_control_cancels_after_final_progress_before_output_commit() {
             &columns,
             ProcessOptions {
                 smart_replacements: None,
+                tokenization_key: None,
                 mapping_entry_ceiling: None,
             },
             Some(&mut control),
@@ -465,6 +492,7 @@ fn refuses_a_run_that_outgrows_its_mapping_ceiling_without_committing_output() {
         &columns,
         ProcessOptions {
             smart_replacements: None,
+            tokenization_key: None,
             // Every row here introduces a distinct value, so a ceiling this small is
             // passed within the first few rows: the refusal lands mid-file, which is
             // the case that matters for the output-commit assertion below.
@@ -596,6 +624,7 @@ fn refuses_utf16_input_on_the_transform_path_with_the_same_message() {
         &[],
         ProcessOptions {
             smart_replacements: None,
+            tokenization_key: None,
             mapping_entry_ceiling: None,
         },
     )
@@ -699,6 +728,7 @@ fn released_quasi_identifiers_are_measured_together() {
         &columns,
         ProcessOptions {
             smart_replacements: None,
+            tokenization_key: None,
             mapping_entry_ceiling: None,
         },
     )

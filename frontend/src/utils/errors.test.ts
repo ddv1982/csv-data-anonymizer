@@ -40,4 +40,13 @@ describe('messageFrom', () => {
       'Rejected 1/2 records in src/input.csv',
     )
   })
+
+  it('reads structured command errors without depending on their code for display text', () => {
+    expect(messageFrom({
+      code: 'STALE_ANALYSIS',
+      message: 'Analyze the source again.',
+      remedy: 'Analyze the source again.',
+      retryable: false,
+    })).toBe('Analyze the source again.')
+  })
 })

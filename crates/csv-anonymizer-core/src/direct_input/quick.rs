@@ -21,6 +21,14 @@ pub fn generate_quick_values_with_smart_provider(
     input: QuickGenerateParams,
     provider: Option<&mut dyn SmartReplacementProvider>,
 ) -> Result<QuickTransformData> {
+    generate_quick_values_with_run_secrets(input, provider, None)
+}
+
+pub fn generate_quick_values_with_run_secrets(
+    input: QuickGenerateParams,
+    provider: Option<&mut dyn SmartReplacementProvider>,
+    tokenization_key: Option<&crate::TokenizationKey>,
+) -> Result<QuickTransformData> {
     if input.count == 0 {
         return Err(AnonymizerError::input_parse(
             "quick generation",
@@ -51,7 +59,8 @@ pub fn generate_quick_values_with_smart_provider(
         .collect::<Vec<_>>();
     let smart_replacements =
         prepare_smart_replacements_from_rows(&source_rows, &selected_columns, None, provider)?;
-    let mut state = TransformState::with_smart_replacements_if_active(smart_replacements);
+    let mut state = TransformState::with_smart_replacements_if_active(smart_replacements)
+        .with_tokenization_key(tokenization_key.cloned());
     let mut output_values = Vec::with_capacity(input.count);
     let mut samples = Vec::with_capacity(input.count);
 
@@ -101,6 +110,11 @@ fn quick_column(
         privacy_findings: Vec::new(),
         privacy_evidence: Vec::new(),
         review_reasons: Vec::new(),
+        evidence_disposition: if classify_pii_risk(data_type).is_elevated() {
+            crate::types::EvidenceDisposition::DetectedSensitive
+        } else {
+            crate::types::EvidenceDisposition::TestedBenign
+        },
         evidence_profile: Default::default(),
         pii_risk: classify_pii_risk(data_type),
         sample_values: values

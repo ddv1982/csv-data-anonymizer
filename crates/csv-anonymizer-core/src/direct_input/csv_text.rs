@@ -78,6 +78,7 @@ fn analyze_csv_text_with_coverage_and_candidate_detector(
 pub(super) fn preview_csv_text_with_smart_provider(
     input: PastePreviewParams,
     provider: Option<&mut dyn SmartReplacementProvider>,
+    tokenization_key: Option<&crate::TokenizationKey>,
 ) -> Result<PreviewData> {
     let sample_count = bounded_preview_sample_count(input.sample_count)?;
     // Detect on the same rows, and the same number of them, as `analyze_csv_text`
@@ -98,13 +99,14 @@ pub(super) fn preview_csv_text_with_smart_provider(
         &metadata,
         // A pasted CSV is read whole, so this is the paste's true row count.
         detection_sample.data_rows_scanned,
-        PreviewSelection::from_params(&input, sample_count, provider),
+        PreviewSelection::from_params(&input, sample_count, provider, tokenization_key),
     )
 }
 
 pub(super) fn transform_csv_text_with_smart_provider(
     input: PasteTransformParams,
     provider: Option<&mut dyn SmartReplacementProvider>,
+    tokenization_key: Option<&crate::TokenizationKey>,
 ) -> Result<PasteTransformData> {
     let (analysis, coverage) =
         analyze_csv_text_with_coverage(&input.content, input.sample_row_count)?;
@@ -125,6 +127,7 @@ pub(super) fn transform_csv_text_with_smart_provider(
         &metadata,
         ProcessOptions {
             smart_replacements: smart_replacements.as_ref(),
+            tokenization_key,
             mapping_entry_ceiling: None,
         },
     )?;

@@ -9,6 +9,7 @@ import type {
   PreviewData,
 } from '../types'
 import { messageFrom } from '../utils/errors'
+import { confirmEphemeralTokenizationKey, isValidTokenizationKey } from '../utils/tokenizationKey'
 import { useColumnSelection } from './useColumnSelection'
 import { useCopyOutput } from './useCopyOutput'
 import type { LocalAiState } from './useLocalAi'
@@ -21,6 +22,7 @@ type PasteDataWorkflowOptions = {
   settingsLoaded: boolean
   localAi: LocalAiState
   onError: (message: string | null) => void
+  tokenizationKey?: string | null
 }
 
 export function usePasteDataWorkflow({
@@ -28,6 +30,7 @@ export function usePasteDataWorkflow({
   settingsLoaded,
   localAi,
   onError,
+  tokenizationKey = null,
 }: PasteDataWorkflowOptions) {
   const [format, setFormatState] = useState<PasteDataFormat>('auto')
   const [content, setContentState] = useState('')
@@ -45,6 +48,8 @@ export function usePasteDataWorkflow({
   const contentByteLength = useMemo(() => byteLength(content), [content])
   const isContentTooLarge = contentByteLength > MAX_PASTE_CONTENT_BYTES
   const selectedUsesLocalAi = selection.selectionUsesLocalAi(selection.selectedColumns)
+  const selectedUsesTokenization = selection.selectionUsesTokenization(selection.selectedColumns)
+  const activeTokenizationKey = selectedUsesTokenization ? tokenizationKey : null
   const localAiBlocked = selectedUsesLocalAi && (!localAi.ready || localAi.downloadRunning)
   const canAnalyze = settingsLoaded && content.trim().length > 0 && !isBusy && !isContentTooLarge
   const canClear = !isBusy && (content.length > 0 || analysis !== null || preview !== null || result !== null || copyStatus !== null)
@@ -57,7 +62,8 @@ export function usePasteDataWorkflow({
     selection.selectedColumns.length > 0 &&
     (!settings.localNerEnabled || Boolean(analysis?.preparedAnalysis)) &&
     !isBusy &&
-    !localAiBlocked
+    !localAiBlocked &&
+    isValidTokenizationKey(activeTokenizationKey)
 
   useEffect(() => () => {
     operationSequence.current += 1
@@ -106,11 +112,11 @@ export function usePasteDataWorkflow({
     setPreview(null)
     setResult(null)
     try {
-      const nextAnalysis = await analyzePasteData(
+      const nextAnalysis = await analyzePasteData({
         content,
         format,
-        settings.sampleRowCount,
-      )
+        sampleRowCount: settings.sampleRowCount,
+      })
       if (sequence !== operationSequence.current) return
       setAnalysis(nextAnalysis)
       selection.setSelectedColumns(
@@ -141,22 +147,27 @@ export function usePasteDataWorkflow({
       onError('Analyze the content again before previewing.')
       return
     }
+    if (!isValidTokenizationKey(activeTokenizationKey)) {
+      onError('Enter a valid 64-character hexadecimal tokenization key before previewing.')
+      return
+    }
     const sequence = ++operationSequence.current
     onError(null)
     setBusy('previewing')
     setCopyStatus(null)
     setResult(null)
     try {
-      const nextPreview = await previewPasteData(
+      const nextPreview = await previewPasteData({
         content,
-        analysis.format,
-        selection.selectedColumns,
-        selection.controlsForColumns(selection.selectedColumns),
-        settings.previewSampleCount,
-        settings.sampleRowCount,
-        localAi.request,
-        ...(analysis.preparedAnalysis ? [analysis.preparedAnalysis] : []),
-      )
+        format: analysis.format,
+        columns: selection.selectedColumns,
+        controls: selection.controlsForColumns(selection.selectedColumns),
+        sampleCount: settings.previewSampleCount,
+        sampleRowCount: settings.sampleRowCount,
+        localAi: localAi.request,
+        preparedAnalysis: analysis.preparedAnalysis,
+        tokenizationKey: activeTokenizationKey,
+      })
       if (sequence === operationSequence.current) setPreview(nextPreview)
     } catch (caught) {
       if (sequence === operationSequence.current) onError(messageFrom(caught))
@@ -175,21 +186,27 @@ export function usePasteDataWorkflow({
       onError('Analyze the content again before transforming.')
       return
     }
+    if (!isValidTokenizationKey(activeTokenizationKey)) {
+      onError('Enter a valid 64-character hexadecimal tokenization key before transforming.')
+      return
+    }
+    if (!confirmEphemeralTokenizationKey(activeTokenizationKey)) return
     const sequence = ++operationSequence.current
     onError(null)
     setBusy('transforming')
     setCopyStatus(null)
     try {
-      const nextResult = await transformPasteData(
+      const nextResult = await transformPasteData({
         content,
-        analysis.format,
-        selection.selectedColumns,
-        selection.controlsForColumns(selection.selectedColumns),
-        settings.sampleRowCount,
-        preview?.smartReplacements ?? [],
-        localAi.request,
-        ...(analysis.preparedAnalysis ? [analysis.preparedAnalysis] : []),
-      )
+        format: analysis.format,
+        columns: selection.selectedColumns,
+        controls: selection.controlsForColumns(selection.selectedColumns),
+        sampleRowCount: settings.sampleRowCount,
+        previewSmartReplacements: preview?.smartReplacements ?? [],
+        localAi: localAi.request,
+        preparedAnalysis: analysis.preparedAnalysis,
+        tokenizationKey: activeTokenizationKey,
+      })
       if (sequence === operationSequence.current) setResult(nextResult)
     } catch (caught) {
       if (sequence === operationSequence.current) onError(messageFrom(caught))

@@ -6,8 +6,8 @@ use crate::metadata::{
 };
 use crate::sampling::SpreadSampler;
 use crate::service::{
-    build_privacy_report, count_transforming_selected_columns, display_row_count,
-    preview_rows_with_smart_provider as build_preview_from_rows,
+    PreviewRowsRequest, build_privacy_report, count_transforming_selected_columns,
+    display_row_count, preview_rows_with_smart_provider as build_preview_from_rows,
 };
 use crate::smart::{
     SmartReplacementMap, SmartReplacementProvider, prepare_smart_replacements_from_rows,
@@ -36,6 +36,7 @@ pub(super) struct PreviewSelection<'a, 'provider> {
     pub(super) controls: &'a [ColumnControl],
     pub(super) sample_count: usize,
     pub(super) provider: Option<&'provider mut dyn SmartReplacementProvider>,
+    pub(super) tokenization_key: Option<&'a crate::TokenizationKey>,
 }
 
 impl<'a, 'provider> PreviewSelection<'a, 'provider> {
@@ -48,12 +49,14 @@ impl<'a, 'provider> PreviewSelection<'a, 'provider> {
         input: &'a PastePreviewParams,
         sample_count: usize,
         provider: Option<&'provider mut dyn SmartReplacementProvider>,
+        tokenization_key: Option<&'a crate::TokenizationKey>,
     ) -> Self {
         Self {
             columns: &input.columns,
             controls: &input.controls,
             sample_count,
             provider,
+            tokenization_key,
         }
     }
 }
@@ -108,11 +111,14 @@ pub(super) fn preview_from_rows_with_smart_provider(
     build_preview_from_rows(
         metadata,
         rows,
-        selection.columns,
-        selection.controls,
-        selection.sample_count,
-        population_values,
+        PreviewRowsRequest {
+            columns: selection.columns,
+            controls: selection.controls,
+            sample_count: selection.sample_count,
+            population_values,
+        },
         selection.provider,
+        selection.tokenization_key,
     )
 }
 

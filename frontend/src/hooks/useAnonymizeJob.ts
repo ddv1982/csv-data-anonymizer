@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useReducer, useRef } from 'react'
 import {
   cancelAnonymizeJob,
   firstPreflightBlocker,
@@ -16,11 +16,15 @@ import type {
   SmartReplacementEntry,
 } from '../types'
 import { messageFrom } from '../utils/errors'
+import { confirmEphemeralTokenizationKey } from '../utils/tokenizationKey'
+import { isValidTokenizationKey } from '../utils/tokenizationKey'
 import { directoryOf } from '../utils/paths'
 import type { WorkflowShell } from './workflowTypes'
 
 /** Gap between successful status polls. */
 const POLL_INTERVAL_MS = 300
+/** Status-query fallback begins only after the live progress channel falls silent. */
+const CHANNEL_SILENCE_BEFORE_POLL_MS = 5_000
 /**
  * Failed polls tolerated silently before the user is told contact was lost.
  *
@@ -114,9 +118,38 @@ type AnonymizeJobArgs = {
   headers: HeadersData | null
   previewSmartReplacements: SmartReplacementEntry[]
   preparedAnalysis: PreparedAnalysis | null
+  tokenizationKey: string | null
+  selectedUsesTokenization: boolean
   localAiBlocked: boolean
   persistSettings: (settings: AppSettings) => Promise<void>
   refreshSettings: () => Promise<void>
+}
+
+type JobTrackerState =
+  | { tag: 'idle'; status: null }
+  | { tag: 'running'; jobId: string; status: AnonymizeJobStatus }
+
+type JobTrackerEvent =
+  | { type: 'started'; status: AnonymizeJobStatus }
+  | { type: 'progress'; status: AnonymizeJobStatus }
+  | { type: 'cleared' }
+
+const idleJobTracker: JobTrackerState = { tag: 'idle', status: null }
+
+function jobTrackerReducer(state: JobTrackerState, event: JobTrackerEvent): JobTrackerState {
+  switch (event.type) {
+    case 'started':
+      return event.status.state === 'running'
+        ? { tag: 'running', jobId: event.status.jobId, status: event.status }
+        : idleJobTracker
+    case 'progress':
+      if (state.tag !== 'running' || event.status.jobId !== state.jobId) return state
+      return event.status.state === 'running'
+        ? { ...state, status: event.status }
+        : idleJobTracker
+    case 'cleared':
+      return idleJobTracker
+  }
 }
 
 export function useAnonymizeJob(
@@ -131,6 +164,8 @@ export function useAnonymizeJob(
     headers,
     previewSmartReplacements,
     preparedAnalysis,
+    tokenizationKey,
+    selectedUsesTokenization,
     localAiBlocked,
     persistSettings,
     refreshSettings,
@@ -139,9 +174,12 @@ export function useAnonymizeJob(
   const { busy, setBusy, setError, setResult, settings, localAi } = shell
   const localAiRequest = localAi.request
 
-  const [activeJobId, setActiveJobId] = useState<string | null>(null)
-  const [jobStatus, setJobStatus] = useState<AnonymizeJobStatus | null>(null)
+  const [jobTracker, dispatchJob] = useReducer(jobTrackerReducer, idleJobTracker)
+  const activeJobId = jobTracker.tag === 'running' ? jobTracker.jobId : null
+  const jobStatus = jobTracker.status
   const handleJobStatusRef = useRef(handleJobStatus)
+  const terminalJobIdsRef = useRef(new Set<string>())
+  const lastChannelUpdateRef = useRef<number | null>(null)
   const consecutivePollFailuresRef = useRef(0)
   /** When the current run of consecutive poll failures started, for the lost-contact deadline. */
   const lostContactSinceRef = useRef<number | null>(null)
@@ -160,7 +198,8 @@ export function useAnonymizeJob(
       outputPath &&
       busy === 'idle' &&
       (!settings.localNerEnabled || Boolean(preparedAnalysis)) &&
-      !localAiBlocked,
+      !localAiBlocked &&
+      isValidTokenizationKey(selectedUsesTokenization ? tokenizationKey : null),
   )
 
   useEffect(() => {
@@ -192,6 +231,17 @@ export function useAnonymizeJob(
     }
 
     async function pollJob() {
+      const lastChannelUpdate = lastChannelUpdateRef.current
+      if (lastChannelUpdate !== null) {
+        const channelAge = Date.now() - lastChannelUpdate
+        if (channelAge < CHANNEL_SILENCE_BEFORE_POLL_MS) {
+          timeoutId = window.setTimeout(
+            pollJob,
+            CHANNEL_SILENCE_BEFORE_POLL_MS - channelAge,
+          )
+          return
+        }
+      }
       try {
         const status = await getAnonymizeJobStatus(jobId)
         if (!isMounted) return
@@ -219,8 +269,7 @@ export function useAnonymizeJob(
           // again. Not rescheduling is the point: this is the only exit from `running`
           // when the failure is permanent.
           lostContactMessageRef.current = null
-          setActiveJobId(null)
-          setJobStatus(null)
+          dispatchJob({ type: 'cleared' })
           setBusy('idle')
           setError(LOST_CONTACT_GIVE_UP_MESSAGE)
           return
@@ -242,18 +291,21 @@ export function useAnonymizeJob(
   }, [activeJobId, busy, setBusy, setError])
 
   function handleJobStatus(status: AnonymizeJobStatus) {
-    setJobStatus(status)
-
     if (status.state === 'running') {
+      // A channel can deliver completion before the start command resolves with
+      // its earlier running snapshot. Never let that stale response resurrect a
+      // terminal job.
+      if (terminalJobIdsRef.current.has(status.jobId)) return true
+      dispatchJob({ type: activeJobId ? 'progress' : 'started', status })
       return false
     }
 
-    setActiveJobId(null)
+    terminalJobIdsRef.current.add(status.jobId)
+    dispatchJob({ type: 'progress', status })
     setBusy('idle')
 
     if (status.state === 'succeeded' && status.result) {
       setResult(status.result)
-      setJobStatus(null)
       const nextSettings = settingsAfterSuccessfulRun(settings, status.result)
       if (nextSettings !== settings) {
         void persistSettings(nextSettings)
@@ -263,7 +315,6 @@ export function useAnonymizeJob(
       return true
     }
 
-    setJobStatus(null)
     if (status.state === 'canceled') {
       setError('Output creation canceled.')
     } else {
@@ -287,47 +338,58 @@ export function useAnonymizeJob(
       return
     }
 
+    const activeTokenizationKey = selectedUsesTokenization ? tokenizationKey : null
+    if (!isValidTokenizationKey(activeTokenizationKey)) {
+      setError('Enter a valid 64-character hexadecimal tokenization key before creating output.')
+      return
+    }
+    if (!confirmEphemeralTokenizationKey(activeTokenizationKey)) return
     setBusy('running')
     setError(null)
     setResult(null)
-    setJobStatus(null)
+    dispatchJob({ type: 'cleared' })
 
     try {
-      const preflight = await preflightAnonymization(
-        'anonymize',
-        inputPath,
+      const preflight = await preflightAnonymization({
+        mode: 'anonymize',
+        filePath: inputPath,
         outputPath,
-        selectedColumns,
-        selectedControls,
-        settings.overwriteOutput,
-        settings.sampleRowCount,
+        columns: selectedColumns,
+        controls: selectedControls,
+        force: settings.overwriteOutput,
+        sampleRowCount: settings.sampleRowCount,
         previewSmartReplacements,
-        localAiRequest,
-        ...(preparedAnalysis ? [preparedAnalysis] : []),
-      )
+        localAi: localAiRequest,
+        preparedAnalysis,
+      })
       const blocker = firstPreflightBlocker(preflight)
       if (blocker) {
         setBusy('idle')
         setError(blocker)
         return
       }
-      const status = await startAnonymizeJob(
-        inputPath,
-        outputPath,
-        selectedColumns,
-        selectedControls,
-        settings.overwriteOutput,
-        settings.sampleRowCount,
-        headers?.rowCountIsComplete ? headers.rowCount : null,
-        previewSmartReplacements,
-        localAiRequest,
-        ...(preparedAnalysis ? [preparedAnalysis] : []),
-      )
-      setActiveJobId(status.jobId)
+      const status = await startAnonymizeJob({
+        request: {
+          filePath: inputPath,
+          outputPath,
+          columns: selectedColumns,
+          controls: selectedControls,
+          force: settings.overwriteOutput,
+          sampleRowCount: settings.sampleRowCount,
+          totalRowCount: headers?.rowCountIsComplete ? headers.rowCount : null,
+          previewSmartReplacements,
+          localAi: localAiRequest,
+          preparedAnalysis,
+          tokenizationKey: activeTokenizationKey,
+        },
+        onProgress: (nextStatus) => {
+          lastChannelUpdateRef.current = Date.now()
+          handleJobStatusRef.current(nextStatus)
+        },
+      })
       handleJobStatus(status)
     } catch (caught) {
-      setActiveJobId(null)
-      setJobStatus(null)
+      dispatchJob({ type: 'cleared' })
       setBusy('idle')
       setError(messageFrom(caught))
     }
@@ -345,8 +407,7 @@ export function useAnonymizeJob(
   }
 
   function clearJobState() {
-    setActiveJobId(null)
-    setJobStatus(null)
+    dispatchJob({ type: 'cleared' })
   }
 
   return {

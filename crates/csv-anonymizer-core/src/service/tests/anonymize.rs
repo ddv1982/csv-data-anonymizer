@@ -77,6 +77,30 @@ fn late_starting_pii_is_offered_for_selection_and_not_written_to_the_output() {
 }
 
 #[test]
+fn one_rare_validated_identifier_is_anchored_in_the_detection_basis() {
+    let workspace = Workspace::new();
+    let input_path = workspace.path("rare-email.csv");
+    let mut content = String::from("contact\n");
+    for row in 0..10_000 {
+        if row == 9_999 {
+            content.push_str("rare.person@example.com\n");
+        } else {
+            content.push_str("ordinary-value\n");
+        }
+    }
+    fs::write(&input_path, content).unwrap();
+
+    let headers = workspace.service.analyze_csv(&input_path).unwrap();
+    let column = &headers.columns[0];
+    assert_eq!(column.pii_risk, crate::types::PiiRisk::High);
+    assert_eq!(
+        column.evidence_disposition,
+        crate::types::EvidenceDisposition::DetectedSensitive
+    );
+    assert!(crate::should_auto_select_column(column));
+}
+
+#[test]
 fn anonymize_csv_with_control_reports_progress() {
     let workspace = Workspace::new();
     let output_path = workspace.path("sample-anonymized.csv");
@@ -426,7 +450,9 @@ fn anonymize_reports_partial_detection_coverage_in_privacy_notes() {
         .unwrap();
 
     let note = coverage_note(&result.privacy_report).expect("coverage note should be present");
-    assert!(note.contains("100 of 400 rows"), "note was {note:?}");
+    // The 100-row statistical sample is supplemented by one strict email
+    // evidence row instead of sacrificing a representative spread row.
+    assert!(note.contains("101 of 400 rows"), "note was {note:?}");
 }
 
 #[test]
@@ -481,7 +507,7 @@ fn anonymize_states_the_mistyping_risk_when_no_column_was_left_unselected() {
         .unwrap();
 
     let note = coverage_note(&result.privacy_report).expect("coverage note should be present");
-    assert!(note.contains("100 of 400 rows"), "note was {note:?}");
+    assert!(note.contains("101 of 400 rows"), "note was {note:?}");
     assert!(
         !note.contains("left unselected"),
         "nothing was left unselected, so this claim is false: {note:?}"

@@ -13,6 +13,7 @@ import {
 import { PrivacyMetricGrid } from './PrivacyMetricGrid'
 import { PrivacyReportColumnDecisions } from './PrivacyReportColumnDecisions'
 import { ReportDisclosure } from './ReportDisclosure'
+import { ReleaseContextReview } from './ReleaseContextReview'
 import type { PrivacyMetric } from './types'
 
 export function PrivacyReportSummary({ privacyReport }: { privacyReport: PrivacyReport }) {
@@ -32,6 +33,7 @@ export function PrivacyReportSummary({ privacyReport }: { privacyReport: Privacy
     { label: 'Redacted columns', value: privacyReport.redactedColumns, glossaryTerm: 'redactedColumns' },
     { label: 'Unique pseudonyms', value: privacyReport.uniquePseudonymValues, glossaryTerm: 'uniquePseudonyms' },
     { label: 'Opaque token values', value: privacyReport.opaqueTokenValues, glossaryTerm: 'opaqueTokenValues' },
+    { label: 'Repeatable keyed token values', value: privacyReport.keyedTokenValues },
     {
       label: 'Repeated source reuses',
       value: privacyReport.reusedPseudonymValues,
@@ -63,7 +65,7 @@ export function PrivacyReportSummary({ privacyReport }: { privacyReport: Privacy
     smartMetrics.length > 0 || privacyReport.smartReplacementRejectionReasons.length > 0
   const overviewMetrics: PrivacyMetric[] = [
     {
-      label: 'Readiness',
+      label: 'Technical checks',
       value: statusLabel(privacyReport.readiness.status),
       detail: readinessSummary(privacyReport),
     },
@@ -92,8 +94,13 @@ export function PrivacyReportSummary({ privacyReport }: { privacyReport: Privacy
         <SectionHelp topic="privacyReport" label="How to read this report" />
       </div>
       <div className="preview-frame privacy-report-frame">
+        <p className="muted-text text-sm">
+          These checks inspect this output only. They do not assess its recipient, other available data,
+          access controls, or related releases. A human release decision is still required.
+        </p>
         <PrivacyMetricGrid metrics={overviewMetrics} variant="overview" />
         <ReadinessNotes privacyReport={privacyReport} />
+        <ReleaseContextReview privacyReport={privacyReport} />
 
         {hasSmartReplacementActivity ? (
           <ReportDisclosure title="Smart Replacement" countLabel={pluralize(smartMetrics.length, 'metric')}>

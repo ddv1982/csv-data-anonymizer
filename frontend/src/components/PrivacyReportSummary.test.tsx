@@ -1,5 +1,5 @@
-import { render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, screen, within } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import { columnReportFixture, privacyReportFixture, rowUniquenessFixture } from '../test-utils/builders'
 import { PrivacyReportSummary } from './PrivacyReportSummary'
 
@@ -11,6 +11,38 @@ const matchedWholeValue = (columnIndex: number) => ({
 })
 
 describe('PrivacyReportSummary', () => {
+  it('exports release context beside its report and resets it for a new artifact', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const report = privacyReportFixture({ directIdentifiers: 2 })
+    const view = render(<PrivacyReportSummary privacyReport={report} />)
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Intended release' }), { target: { value: 'public' } })
+    fireEvent.click(screen.getByRole('checkbox', { name: /auxiliary data/i }))
+    fireEvent.click(screen.getByRole('button', { name: /copy report with context/i }))
+
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledOnce())
+    const exported = JSON.parse(writeText.mock.calls[0][0])
+    expect(exported.privacyReport.directIdentifiers).toBe(2)
+    expect(exported.releaseContext).toMatchObject({ releaseType: 'public', auxiliaryData: true })
+
+    view.rerender(<PrivacyReportSummary privacyReport={privacyReportFixture({ directIdentifiers: 1 })} />)
+    expect(screen.getByRole('combobox', { name: 'Intended release' })).toHaveValue('unassessed')
+    expect(screen.getByRole('checkbox', { name: /auxiliary data/i })).not.toBeChecked()
+  })
+
+  it('reports clipboard failure while exporting release context', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue(new Error('clipboard denied')) },
+    })
+    render(<PrivacyReportSummary privacyReport={privacyReportFixture()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /copy report with context/i }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Could not copy the report')
+  })
+
   it('shows a compact overview and omits zero-only advanced metrics', () => {
     render(
       <PrivacyReportSummary
@@ -24,7 +56,8 @@ describe('PrivacyReportSummary', () => {
     )
 
     expect(screen.getByText('Privacy Report')).toBeInTheDocument()
-    expect(screen.getByText('Readiness')).toBeInTheDocument()
+    expect(screen.getByText('Technical checks')).toBeInTheDocument()
+    expect(screen.getByText(/These checks inspect this output only/)).toBeInTheDocument()
     expect(screen.getByText('Columns transformed')).toBeInTheDocument()
     expect(screen.getByText('1 pseudonymized')).toBeInTheDocument()
     expect(screen.getByText('Pass-through/no-op')).toBeInTheDocument()

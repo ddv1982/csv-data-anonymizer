@@ -10,6 +10,10 @@ pub(super) fn transform_opaque_token(
     context: &TransformContext<'_>,
     state: &mut TransformState,
 ) -> String {
+    if let Some(token) = state.keyed_token(context.column_index, context.column_name, value) {
+        state.record_keyed_token(context.column_index, value);
+        return token;
+    }
     let source_key = format!(
         "{}:{}:{}",
         context.column_name,

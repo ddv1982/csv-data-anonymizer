@@ -7,10 +7,12 @@ use csv_anonymizer_core::{
 use serde::Serialize;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use tauri::ipc::Channel;
 
 const MAX_RETAINED_TERMINAL_JOBS: usize = 20;
 const TERMINAL_JOB_TTL: Duration = Duration::from_secs(30 * 60);
+const PROGRESS_PUBLISH_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Refusal shown when the single anonymization slot is taken.
 ///
@@ -54,10 +56,22 @@ pub struct AnonymizeJobStore {
     active_job: Arc<Mutex<bool>>,
 }
 
-#[derive(Debug)]
 pub struct AnonymizeJob {
     lifecycle: JobLifecycle<AnonymizeJobStatus>,
     active_job_lease: Mutex<Option<ActiveJobLease>>,
+    progress_channel: Mutex<Option<Channel<AnonymizeJobStatus>>>,
+    last_progress_publish: Mutex<Instant>,
+}
+
+impl std::fmt::Debug for AnonymizeJob {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("AnonymizeJob")
+            .field("lifecycle", &self.lifecycle)
+            .field("active_job_lease", &self.active_job_lease)
+            .field("progress_channel", &"[IPC channel]")
+            .finish()
+    }
 }
 
 #[derive(Debug)]
@@ -106,6 +120,8 @@ impl AnonymizeJobStore {
                 "Anonymization job status is unavailable.",
             ),
             active_job_lease: Mutex::new(None),
+            progress_channel: Mutex::new(None),
+            last_progress_publish: Mutex::new(Instant::now()),
         })
     }
 
@@ -166,6 +182,8 @@ impl AnonymizeJobStore {
                 "Anonymization job status is unavailable.",
             ),
             active_job_lease: Mutex::new(Some(ActiveJobLease { active_job })),
+            progress_channel: Mutex::new(None),
+            last_progress_publish: Mutex::new(Instant::now()),
         });
         if result.is_err()
             && let Ok(mut active) = self.active_job.lock()
@@ -202,6 +220,23 @@ impl JobRegistryEntry for AnonymizeJob {
 }
 
 impl AnonymizeJob {
+    pub fn attach_progress_channel(&self, channel: Channel<AnonymizeJobStatus>) {
+        if let Ok(mut slot) = self.progress_channel.lock() {
+            *slot = Some(channel);
+        }
+        self.publish_status();
+    }
+
+    fn publish_status(&self) {
+        let Ok(status) = self.snapshot() else { return };
+        let Ok(channel) = self.progress_channel.lock() else {
+            return;
+        };
+        if let Some(channel) = channel.as_ref() {
+            let _ = channel.send(status);
+        }
+    }
+
     pub fn snapshot(&self) -> Result<AnonymizeJobStatus, String> {
         self.lifecycle.snapshot()
     }
@@ -212,14 +247,30 @@ impl AnonymizeJob {
                 status.rows_processed = rows_processed;
             }
         });
+        if self.progress_publish_due() {
+            self.publish_status();
+        }
+    }
+
+    fn progress_publish_due(&self) -> bool {
+        let Ok(mut last_publish) = self.last_progress_publish.lock() else {
+            return false;
+        };
+        if last_publish.elapsed() < PROGRESS_PUBLISH_INTERVAL {
+            return false;
+        }
+        *last_publish = Instant::now();
+        true
     }
 
     pub fn request_cancel(&self) -> Result<AnonymizeJobStatus, String> {
-        self.lifecycle.request_cancel(|status| {
+        let status = self.lifecycle.request_cancel(|status| {
             if status.state == AnonymizeJobState::Running {
                 status.cancel_requested = true;
             }
-        })
+        })?;
+        self.publish_status();
+        Ok(status)
     }
 
     pub fn should_cancel(&self) -> bool {
@@ -248,6 +299,7 @@ impl AnonymizeJob {
             }
         });
         self.lifecycle.mark_terminal();
+        self.publish_status();
     }
 
     pub(super) fn finish_panic(&self) {
@@ -257,6 +309,7 @@ impl AnonymizeJob {
             status.error = Some("Anonymization job failed unexpectedly.".to_string());
         });
         self.lifecycle.mark_terminal();
+        self.publish_status();
     }
 
     fn release_active_job_lease(&self) {
@@ -279,6 +332,7 @@ pub fn run_anonymize_job(
     local_ai: Option<LocalAiRequest>,
     local_ai_enabled: bool,
     detection_run_summary: Option<DetectionRunSummary>,
+    tokenization_key: Option<csv_anonymizer_core::TokenizationKey>,
 ) {
     let progress_job = job.clone();
     let mut on_progress = move |progress: ProcessProgress| {
@@ -301,11 +355,12 @@ pub fn run_anonymize_job(
             let provider = provider
                 .as_mut()
                 .map(|provider| provider as &mut dyn SmartReplacementProvider);
-            service().anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+            service().anonymize_csv_with_run_secrets(
                 input,
                 sample_row_count,
                 Some(&mut control),
                 provider,
+                tokenization_key.as_ref(),
             )
         }
         Err(error) => Err(AnonymizerError::SmartReplacement(error)),
@@ -327,6 +382,7 @@ mod tests {
         AnonymizationStrategy, ColumnControl, DataType, PrivacyReport, SmartReplacementEntry,
     };
     use std::fs;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn age_terminal_job(job: &AnonymizeJob) {
         job.lifecycle.set_terminal_at(
@@ -344,6 +400,27 @@ mod tests {
         assert_eq!(status.state, AnonymizeJobState::Running);
         assert_eq!(status.rows_processed, 0);
         assert_eq!(status.total_rows, Some(10));
+    }
+
+    #[test]
+    fn progress_channel_throttles_rows_but_always_receives_terminal_status() {
+        let store = AnonymizeJobStore::default();
+        let job = store.create_job(Some(10)).unwrap();
+        let messages = Arc::new(AtomicUsize::new(0));
+        let observed = messages.clone();
+        job.attach_progress_channel(Channel::new(move |_| {
+            observed.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }));
+
+        for row in 1..=3 {
+            job.report_progress(row);
+        }
+        assert_eq!(job.snapshot().unwrap().rows_processed, 3);
+        assert_eq!(messages.load(Ordering::SeqCst), 1);
+        job.finish(Err(AnonymizerError::Canceled));
+
+        assert_eq!(messages.load(Ordering::SeqCst), 2);
     }
 
     /// Admission is global: one job at a time, whatever it writes.
@@ -600,6 +677,7 @@ mod tests {
             None,
             false,
             None,
+            None,
         );
 
         let status = job.snapshot().unwrap();
@@ -637,6 +715,7 @@ mod tests {
             10,
             None,
             false,
+            None,
             None,
         );
 
@@ -680,6 +759,7 @@ mod tests {
             None,
             false,
             None,
+            None,
         );
 
         let status = job.snapshot().unwrap();
@@ -718,6 +798,7 @@ mod tests {
             None,
             false,
             None,
+            None,
         );
 
         let status = job.snapshot().unwrap();
@@ -755,6 +836,8 @@ mod tests {
                 collisions_avoided: 0,
                 exhausted_pseudonym_pools: 0,
                 opaque_token_values: 0,
+                keyed_token_values: 0,
+                keyed_token_columns: Vec::new(),
                 smart_replacement_values: 0,
                 smart_replacement_rejections: 0,
                 smart_replacement_rejection_reasons: Vec::new(),

@@ -1,7 +1,32 @@
+export type CommandErrorCode =
+  | 'INVALID_INPUT'
+  | 'PATH_NOT_AUTHORIZED'
+  | 'STALE_ANALYSIS'
+  | 'INTERNAL_ERROR'
+
+export interface CommandError {
+  code: CommandErrorCode
+  message: string
+  remedy: string | null
+  retryable: boolean
+}
+
 export function messageFrom(value: unknown) {
   if (value instanceof Error) return sanitizeErrorMessage(value.message)
   if (typeof value === 'string') return sanitizeErrorMessage(value)
+  if (isCommandError(value)) return sanitizeErrorMessage(value.message)
   return 'Unexpected application error.'
+}
+
+export function isCommandError(value: unknown): value is CommandError {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<CommandError>
+  return (
+    typeof candidate.code === 'string' &&
+    typeof candidate.message === 'string' &&
+    (candidate.remedy === null || typeof candidate.remedy === 'string') &&
+    typeof candidate.retryable === 'boolean'
+  )
 }
 
 function sanitizeErrorMessage(message: string) {

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { generateQuickValues } from '../tauri'
 import type { AnonymizationStrategy, DataType, QuickTransformData } from '../types'
 import { messageFrom } from '../utils/errors'
+import { confirmEphemeralTokenizationKey, isValidTokenizationKey } from '../utils/tokenizationKey'
 import { useCopyOutput } from './useCopyOutput'
 import type { LocalAiState } from './useLocalAi'
 
@@ -14,6 +15,7 @@ type QuickGenerateWorkflowOptions = {
   settingsLoaded: boolean
   localAi: LocalAiState
   onError: (message: string | null) => void
+  tokenizationKey?: string | null
 }
 
 /**
@@ -27,6 +29,7 @@ export function useQuickGenerateWorkflow({
   settingsLoaded,
   localAi,
   onError,
+  tokenizationKey = null,
 }: QuickGenerateWorkflowOptions) {
   const [dataType, setDataTypeState] = useState<DataType>('email')
   const [strategy, setStrategyState] = useState<AnonymizationStrategy>('auto')
@@ -37,9 +40,12 @@ export function useQuickGenerateWorkflow({
   const isBusy = busy !== 'idle'
   const { copyOutput, copyStatus, setCopyStatus } = useCopyOutput({ isBusy, onError, setBusy })
   const usesLocalAi = strategy === 'localAi'
+  const usesTokenization = strategy === 'tokenize'
+  const activeTokenizationKey = usesTokenization ? tokenizationKey : null
   const localAiBlocked = usesLocalAi && (!localAi.ready || localAi.downloadRunning)
   const canGenerate =
-    settingsLoaded && count >= QUICK_MIN_COUNT && count <= QUICK_MAX_COUNT && !isBusy && !localAiBlocked
+    settingsLoaded && count >= QUICK_MIN_COUNT && count <= QUICK_MAX_COUNT && !isBusy && !localAiBlocked &&
+    isValidTokenizationKey(activeTokenizationKey)
 
   /** Any input change invalidates the values on screen: they were generated for the old settings. */
   function clearOutput() {
@@ -68,11 +74,22 @@ export function useQuickGenerateWorkflow({
       onError('Set up Local AI before generating Smart replacement values.')
       return
     }
+    if (!isValidTokenizationKey(activeTokenizationKey)) {
+      onError('Enter a valid 64-character hexadecimal tokenization key before generating values.')
+      return
+    }
+    if (!confirmEphemeralTokenizationKey(activeTokenizationKey)) return
     onError(null)
     setBusy('generating')
     setCopyStatus(null)
     try {
-      const generated = await generateQuickValues(dataType, strategy, count, localAi.request)
+      const generated = await generateQuickValues({
+        dataType,
+        strategy,
+        count,
+        localAi: localAi.request,
+        tokenizationKey: activeTokenizationKey,
+      })
       setResult(generated)
     } catch (caught) {
       onError(messageFrom(caught))

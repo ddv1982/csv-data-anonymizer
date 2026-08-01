@@ -614,6 +614,119 @@ fn tokenize_strategy_emits_consistent_opaque_tokens() {
 }
 
 #[test]
+fn keyed_tokens_repeat_across_states_and_are_domain_separated() {
+    let key = TokenizationKey::parse_hex(&"42".repeat(32)).unwrap();
+    let mut first_state = TransformState::new().with_tokenization_key(Some(key.clone()));
+    let mut second_state = TransformState::new().with_tokenization_key(Some(key));
+    let mut token_column = column(DataType::Email);
+    token_column.strategy = AnonymizationStrategy::Tokenize;
+    let first = transform_value_with_state(
+        "alice@example.com",
+        &token_column,
+        &context(),
+        &mut first_state,
+    );
+    let repeated = transform_value_with_state(
+        "alice@example.com",
+        &token_column,
+        &context(),
+        &mut second_state,
+    );
+    let other_key = TokenizationKey::parse_hex(&"24".repeat(32)).unwrap();
+    let mut other_state = TransformState::new().with_tokenization_key(Some(other_key));
+    let different_key = transform_value_with_state(
+        "alice@example.com",
+        &token_column,
+        &context(),
+        &mut other_state,
+    );
+    let mut other_column = token_column.clone();
+    other_column.index = 1;
+    other_column.name = "backup_email".to_string();
+    let other_context = TransformContext::for_column(&other_column, 0);
+    let different_column = transform_value_with_state(
+        "alice@example.com",
+        &other_column,
+        &other_context,
+        &mut second_state,
+    );
+    let distinct = transform_value_with_state(
+        "bob@example.com",
+        &token_column,
+        &context(),
+        &mut first_state,
+    );
+
+    assert_eq!(first, repeated);
+    assert_ne!(first, distinct);
+    assert_ne!(first, different_key);
+    assert_ne!(first, different_column);
+    assert_eq!(first.len(), 28);
+    assert_eq!(first_state.report().keyed_token_values, 2);
+    assert_eq!(first_state.mapping_entries(), 2);
+}
+
+#[test]
+fn tokenization_key_debug_and_errors_never_echo_secret_material() {
+    let secret = "not-a-valid-secret";
+    let error = TokenizationKey::parse_hex(secret).unwrap_err().to_string();
+    assert!(!error.contains(secret));
+    let key = TokenizationKey::parse_hex(&"ab".repeat(32)).unwrap();
+    assert_eq!(format!("{key:?}"), "TokenizationKey([REDACTED])");
+}
+
+#[test]
+fn broad_residual_audit_finds_a_protected_value_in_another_output_column() {
+    let protected = crate::test_support::selected_column(
+        0,
+        "email",
+        DataType::Email,
+        AnonymizationStrategy::Redact,
+    );
+    let mut notes = crate::test_support::selected_column(
+        1,
+        "notes",
+        DataType::String,
+        AnonymizationStrategy::PassThrough,
+    );
+    notes.is_selected = false;
+    notes.pii_risk = PiiRisk::Low;
+    let columns = vec![protected, notes];
+    let source = vec![
+        "alice@example.com".to_string(),
+        "alice@example.com".to_string(),
+    ];
+    let mut state = TransformState::new();
+
+    let released = transform_row_with_state(&source, &columns, 0, &mut state);
+    let report = state.report();
+
+    assert_ne!(released[0], source[0]);
+    assert_eq!(report.unchanged_sensitive_values, 0);
+    assert_eq!(report.residual_audit_source_values, 1);
+    assert_eq!(report.residual_audit_matches, 1);
+    assert!(!report.residual_audit_incomplete);
+}
+
+#[test]
+fn unchanged_sensitive_check_compares_trimmed_values_on_both_sides() {
+    let protected = crate::test_support::selected_column(
+        0,
+        "email",
+        DataType::Email,
+        AnonymizationStrategy::Redact,
+    );
+    let mut state = TransformState::new();
+    state.record_unchanged_sensitive_values(
+        &["  alice@example.com  ".to_string()],
+        &["  alice@example.com  ".to_string()],
+        &[protected],
+    );
+
+    assert_eq!(state.report().unchanged_sensitive_values, 1);
+}
+
+#[test]
 fn local_ai_strategy_uses_validated_replacement_map() {
     let mut local_ai_column = column(DataType::FullName);
     local_ai_column.strategy = AnonymizationStrategy::LocalAi;

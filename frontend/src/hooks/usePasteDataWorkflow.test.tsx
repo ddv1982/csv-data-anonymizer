@@ -40,11 +40,11 @@ describe('usePasteDataWorkflow', () => {
     act(() => harness.workflow.setContent('[{"email":"ada@example.com"}]'))
     await act(async () => harness.workflow.analyze())
 
-    expect(tauriMocks.analyzePasteData).toHaveBeenCalledWith(
-      '[{"email":"ada@example.com"}]',
-      'auto',
-      defaultSettings.sampleRowCount,
-    )
+    expect(tauriMocks.analyzePasteData).toHaveBeenCalledWith({
+      content: '[{"email":"ada@example.com"}]',
+      format: 'auto',
+      sampleRowCount: defaultSettings.sampleRowCount,
+    })
     expect(harness.workflow.analysis?.format).toBe('json')
     expect(harness.workflow.selectedUsesLocalAi).toBe(false)
 
@@ -166,26 +166,26 @@ describe('usePasteDataWorkflow', () => {
     await act(async () => harness.workflow.showPreview())
     await act(async () => harness.workflow.transform())
 
-    expect(tauriMocks.previewPasteData).toHaveBeenCalledWith(
-      expect.any(String),
-      'json',
-      [1],
-      [],
-      expect.any(Number),
-      defaultSettings.sampleRowCount,
-      expect.any(Object),
+    expect(tauriMocks.previewPasteData).toHaveBeenCalledWith(expect.objectContaining({
+      content: expect.any(String),
+      format: 'json',
+      columns: [1],
+      controls: [],
+      sampleCount: expect.any(Number),
+      sampleRowCount: defaultSettings.sampleRowCount,
+      localAi: expect.any(Object),
       preparedAnalysis,
-    )
-    expect(tauriMocks.transformPasteData).toHaveBeenCalledWith(
-      expect.any(String),
-      'json',
-      [1],
-      [],
-      defaultSettings.sampleRowCount,
-      expect.any(Array),
-      expect.any(Object),
+    }))
+    expect(tauriMocks.transformPasteData).toHaveBeenCalledWith(expect.objectContaining({
+      content: expect.any(String),
+      format: 'json',
+      columns: [1],
+      controls: [],
+      sampleRowCount: defaultSettings.sampleRowCount,
+      previewSmartReplacements: expect.any(Array),
+      localAi: expect.any(Object),
       preparedAnalysis,
-    )
+    }))
   })
 
   it('keeps column controls locked until a preview operation finishes', async () => {

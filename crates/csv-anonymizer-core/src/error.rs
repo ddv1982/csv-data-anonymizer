@@ -66,6 +66,9 @@ pub enum AnonymizerError {
     #[error("Smart replacement error: {0}")]
     SmartReplacement(String),
 
+    #[error("Tokenization key must contain exactly 64 hexadecimal characters.")]
+    InvalidTokenizationKey,
+
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 }

@@ -53,6 +53,7 @@ export const enumContracts = [
   'DataType',
   'Confidence',
   'PiiRisk',
+  'EvidenceDisposition',
   'PrivacyFindingKind',
   'EmptyFormat',
   'AnonymizationStrategy',

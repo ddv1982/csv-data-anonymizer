@@ -11,7 +11,7 @@ pub(crate) use redaction::{
     STRUCTURED_SCALAR_REDACTION_WARNING, base_column_label, build_evidence_profile,
     refresh_evidence_profile,
 };
-pub use state::TransformState;
+pub use state::{TokenizationKey, TransformState};
 pub(crate) use structured::is_phone_shaped;
 
 /// What survives [`mask_value`], stated in the words the report and the preview both
@@ -149,6 +149,8 @@ pub fn transform_row_with_state(
     state: &mut TransformState,
 ) -> Vec<String> {
     let released = transform_row_values(row, columns, row_index, state);
+    state.record_unchanged_sensitive_values(row, &released, columns);
+    state.record_residual_audit(row, &released, columns);
     // After the row is complete, because the joint measure is over the released row and
     // there is no such thing as a partial one. Fed here rather than from the CSV loop so
     // that every caller driving rows through this function is measured, not only the

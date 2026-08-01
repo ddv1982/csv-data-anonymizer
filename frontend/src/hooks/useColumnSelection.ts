@@ -26,6 +26,12 @@ export function useColumnSelection(
     () => columns.filter((column) => column.piiRisk === 'high' || column.piiRisk === 'medium').map((column) => column.index),
     [columns],
   )
+  const uncertainColumns = useMemo(
+    () => columns
+      .filter((column) => column.evidenceDisposition === 'uncertain' || column.evidenceDisposition === 'analysisIncomplete')
+      .map((column) => column.index),
+    [columns],
+  )
   const visibleColumns = showAllColumns ? columns : columns.slice(0, maxVisibleColumns)
   const hiddenColumnCount = Math.max(0, columns.length - visibleColumns.length)
   const allSelected = columns.length > 0 && columns.every((column) => selectedSet.has(column.index))
@@ -51,9 +57,20 @@ export function useColumnSelection(
   }
 
   function selectionUsesLocalAi(columnIndexes: number[]) {
+    return selectionUsesStrategy(columnIndexes, 'localAi')
+  }
+
+  function selectionUsesTokenization(columnIndexes: number[]) {
+    return selectionUsesStrategy(columnIndexes, 'tokenize')
+  }
+
+  function selectionUsesStrategy(
+    columnIndexes: number[],
+    strategy: AnonymizationStrategy,
+  ) {
     return columnIndexes.some((index) => {
       const column = columns.find((candidate) => candidate.index === index)
-      return (columnControls[index]?.strategy ?? column?.strategy ?? 'auto') === 'localAi'
+      return (columnControls[index]?.strategy ?? column?.strategy ?? 'auto') === strategy
     })
   }
 
@@ -95,6 +112,7 @@ export function useColumnSelection(
     selectedControls,
     highRiskColumns,
     detectedRiskColumns,
+    uncertainColumns,
     visibleColumns,
     hiddenColumnCount,
     allSelected,
@@ -104,6 +122,7 @@ export function useColumnSelection(
     resetColumnControls,
     controlsForColumns,
     selectionUsesLocalAi,
+    selectionUsesTokenization,
     updateColumnStrategy,
     toggleColumn,
   }

@@ -28,6 +28,8 @@ pub(crate) fn build_privacy_report(
         collisions_avoided: transform_report.collisions_avoided,
         exhausted_pseudonym_pools: transform_report.exhausted_pseudonym_pools,
         opaque_token_values: transform_report.opaque_token_values,
+        keyed_token_values: transform_report.keyed_token_values,
+        keyed_token_columns: transform_report.keyed_token_columns.clone(),
         smart_replacement_values: transform_report.smart_replacement_values,
         smart_replacement_rejections: transform_report.smart_replacement_rejections,
         smart_replacement_rejection_reasons: transform_report

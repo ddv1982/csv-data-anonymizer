@@ -54,7 +54,11 @@ describe('useAnonymizerWorkflow', () => {
     await flushPromises()
 
     expect(tauriMocks.pickInputCsv).toHaveBeenCalledWith('/last/input')
-    expect(tauriMocks.analyzeCsv).toHaveBeenCalledWith('/data/input.csv', 100, '_private_output')
+    expect(tauriMocks.analyzeCsv).toHaveBeenCalledWith({
+      filePath: '/data/input.csv',
+      sampleRowCount: 100,
+      outputSuffix: '_private_output',
+    })
     expect(tauriMocks.countCsvRows).toHaveBeenCalledWith('/data/input.csv')
     expect(harness.workflow.inputPath).toBe('/data/input.csv')
     expect(harness.workflow.outputPath).toBe('/data/input_private_output.csv')
@@ -94,14 +98,46 @@ describe('useAnonymizerWorkflow', () => {
     })
 
     expect(harness.workflow.selectedColumns).toEqual([0, 1])
-    expect(tauriMocks.previewAnonymization).toHaveBeenCalledWith(
-      '/data/input.csv',
-      [0, 1],
-      [{ columnIndex: 1, typeOverride: null, strategy: 'mask' }],
-      5,
-      100,
-      { enabled: false, model: 'gemma3:4b' },
-    )
+    expect(tauriMocks.previewAnonymization).toHaveBeenCalledWith({
+      filePath: '/data/input.csv',
+      columns: [0, 1],
+      controls: [{ columnIndex: 1, typeOverride: null, strategy: 'mask' }],
+      sampleCount: 5,
+      sampleRowCount: 100,
+      localAi: { enabled: false, model: 'gemma3:4b' },
+      preparedAnalysis: null,
+      tokenizationKey: null,
+    })
+  })
+
+  it('gates an invalid key only when the selection actually tokenizes', async () => {
+    tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())
+    const harness = renderWorkflow()
+    await flushPromises()
+    await act(async () => harness.workflow.handlePickInput())
+
+    act(() => {
+      harness.workflow.updateColumnStrategy(harness.workflow.columns[0], 'tokenize')
+      harness.workflow.setTokenizationKey('abc')
+    })
+    expect(harness.workflow.canPreview).toBe(false)
+    expect(harness.workflow.canAnonymize).toBe(false)
+
+    act(() => harness.workflow.updateColumnStrategy(harness.workflow.columns[0], 'mask'))
+    expect(harness.workflow.canPreview).toBe(true)
+    expect(harness.workflow.canAnonymize).toBe(true)
+    await act(async () => harness.workflow.previewCsv())
+
+    expect(tauriMocks.previewAnonymization).toHaveBeenCalledWith({
+      filePath: '/data/input.csv',
+      columns: [0, 1],
+      controls: [{ columnIndex: 0, typeOverride: null, strategy: 'mask' }],
+      sampleCount: 5,
+      sampleRowCount: 100,
+      localAi: { enabled: false, model: 'gemma3:4b' },
+      preparedAnalysis: null,
+      tokenizationKey: null,
+    })
   })
 
   it('invalidates detection results when local NER changes but preserves paths', async () => {
@@ -179,17 +215,22 @@ describe('useAnonymizerWorkflow', () => {
       await harness.workflow.runAnonymization()
     })
 
-    expect(tauriMocks.startAnonymizeJob).toHaveBeenCalledWith(
-      '/data/input.csv',
-      '/data/input_private_output.csv',
-      [0, 1],
-      [],
-      false,
-      100,
-      2,
-      [],
-      { enabled: false, model: 'gemma3:4b' },
-    )
+    expect(tauriMocks.startAnonymizeJob).toHaveBeenCalledWith({
+      request: {
+        filePath: '/data/input.csv',
+        outputPath: '/data/input_private_output.csv',
+        columns: [0, 1],
+        controls: [],
+        force: false,
+        sampleRowCount: 100,
+        totalRowCount: 2,
+        previewSmartReplacements: [],
+        localAi: { enabled: false, model: 'gemma3:4b' },
+        preparedAnalysis: null,
+        tokenizationKey: null,
+      },
+      onProgress: expect.any(Function),
+    })
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300)
@@ -201,6 +242,24 @@ describe('useAnonymizerWorkflow', () => {
     expect(tauriMocks.saveSettings).toHaveBeenCalledWith(
       expect.objectContaining({ lastOutputDirectory: '/out' }),
     )
+  })
+
+  it('does not resurrect a job when the channel finishes before start resolves', async () => {
+    tauriMocks.analyzeCsv.mockResolvedValue(analyzeResponseFixture())
+    tauriMocks.startAnonymizeJob.mockImplementation(async ({ onProgress }) => {
+      onProgress(succeededJobStatus())
+      return runningJobStatus()
+    })
+    const harness = renderWorkflow()
+    await flushPromises()
+
+    await act(async () => harness.workflow.handlePickInput())
+    await act(async () => harness.workflow.runAnonymization())
+
+    expect(harness.workflow.busy).toBe('idle')
+    expect(harness.workflow.jobStatus).toBeNull()
+    expect(harness.workflow.result?.outputPath).toBe('/out/final.csv')
+    expect(tauriMocks.getAnonymizeJobStatus).not.toHaveBeenCalled()
   })
 
   it('cancels an active job and reports cancellation', async () => {

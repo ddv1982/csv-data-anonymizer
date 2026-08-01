@@ -81,11 +81,11 @@ export function useCsvAnalysis(
     selection.setColumnControls({})
 
     try {
-      const response = await analyzeCsv(
-        normalized,
-        settings.sampleRowCount,
-        settings.defaultOutputSuffix,
-      )
+      const response = await analyzeCsv({
+        filePath: normalized,
+        sampleRowCount: settings.sampleRowCount,
+        outputSuffix: settings.defaultOutputSuffix,
+      })
       setPreparedAnalysis(response.preparedAnalysis ?? null)
       setInputPath(response.headers.filePath)
       selection.setLoadedCsv(response.headers, response.selectedColumns)

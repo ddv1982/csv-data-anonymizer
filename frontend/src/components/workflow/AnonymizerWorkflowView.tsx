@@ -7,6 +7,7 @@ import {
   X,
 } from 'lucide-react'
 import type { AnonymizerWorkflowState } from '../../hooks/useAnonymizerWorkflow'
+import { useStableViewportAction } from '../../hooks/useStableViewportAction'
 import { formatRowCount } from '../../utils/format'
 import { Alert } from '../Alert'
 import { AppSettingsPanel } from '../AppSettingsPanel'
@@ -158,6 +159,11 @@ function ColumnSelectionStep({
             disabled: workflow.busy === 'loading' || workflow.detectedRiskColumns.length === 0,
             onClick: () => workflow.setColumnSelection(workflow.detectedRiskColumns),
           },
+          {
+            label: 'Select Uncertain',
+            disabled: workflow.busy === 'loading' || workflow.uncertainColumns.length === 0,
+            onClick: () => workflow.setColumnSelection(workflow.uncertainColumns),
+          },
         ]}
         notice={(
           <>
@@ -186,7 +192,7 @@ function ColumnSelectionStep({
           columns={workflow.visibleColumns}
           allColumnCount={workflow.columns.length}
           selectedSet={workflow.selectedSet}
-          loading={workflow.isLoading}
+          loading={workflow.busy === 'loading'}
           showAllColumns={workflow.showAllColumns}
           hiddenColumnCount={workflow.hiddenColumnCount}
           onToggleColumn={workflow.toggleColumn}
@@ -250,6 +256,8 @@ function ConfigurationStep({
           disabled={workflow.settingsDisabled}
           onToggleOpen={() => workflow.setSettingsOpen((current) => !current)}
           onUpdateSetting={workflow.updateSetting}
+          tokenizationKey={workflow.tokenizationKey}
+          onTokenizationKeyChange={workflow.setTokenizationKey}
         />
       </div>
     </Card>
@@ -257,6 +265,8 @@ function ConfigurationStep({
 }
 
 function PreviewStep({ workflow }: { workflow: AnonymizerWorkflowState }) {
+  const runWithStableViewport = useStableViewportAction()
+
   return (
     <Card
       title="4. Preview (Optional)"
@@ -265,8 +275,13 @@ function PreviewStep({ workflow }: { workflow: AnonymizerWorkflowState }) {
         <button
           type="button"
           className="button button-outline button-sm"
-          disabled={!workflow.canPreview}
-          onClick={() => void workflow.previewCsv()}
+          disabled={!workflow.canPreview && workflow.busy !== 'preview'}
+          aria-busy={workflow.busy === 'preview'}
+          aria-disabled={workflow.busy === 'preview' || undefined}
+          onClick={() => {
+            if (workflow.busy !== 'idle') return
+            void runWithStableViewport(workflow.previewCsv)
+          }}
         >
           {workflow.busy === 'preview' ? <Loader2 className="spin" aria-hidden="true" /> : null}
           Show Preview

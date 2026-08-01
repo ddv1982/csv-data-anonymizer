@@ -1,3 +1,4 @@
+mod command_error;
 mod commands;
 mod job_registry;
 mod jobs;
