@@ -86,7 +86,7 @@ export function ColumnTable({
                 const control = controls[column.index]
                 const selected = selectedSet.has(column.index)
                 const redactionPlaceholder = columnRedactionPlaceholder(column)
-                const rowClassName = ['clickable-row', selected ? 'selected-row' : '']
+                const rowClassName = ['clickable-row', `risk-row-${column.piiRisk}`, selected ? 'selected-row' : '']
                   .filter(Boolean)
                   .join(' ')
                 return (
@@ -227,8 +227,11 @@ function DecisionEvidenceCell({ column }: { column: ColumnMetadata }) {
         {meaning}
         <span className="muted-text">{detectorConfidenceLabel(semantic.confidence)}</span>
       </span>
-      <span className="column-note">Coverage: {coverage}</span>
-      <HelpPopover title="Column decision" triggerLabel={`Explain column decision for ${column.name}`}>
+      {/* The trigger sits inside the coverage line so the evidence stack keeps one
+          rhythm instead of spending a row on a lone icon. */}
+      <span className="column-note decision-coverage">
+        Coverage: {coverage}
+        <HelpPopover title="Column decision" triggerLabel={`Explain column decision for ${column.name}`}>
         <div className="detector-popover-content">
           <p>
             <strong>Meaning:</strong> {meaning} ({detectorConfidenceLabel(semantic.confidence)})
@@ -253,7 +256,8 @@ function DecisionEvidenceCell({ column }: { column: ColumnMetadata }) {
           ) : null}
           <RawEvidenceDetails column={column} />
         </div>
-      </HelpPopover>
+        </HelpPopover>
+      </span>
     </span>
   )
 }

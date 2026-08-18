@@ -1,165 +1,12 @@
+/* Element-level base styles. Colors come from tokens only; nothing here branches on theme. */
 :root {
-  --background: 222.2 84% 4.9%;
-  --foreground: 210 40% 98%;
-  --card: 222.2 84% 4.9%;
-  --card-foreground: 210 40% 98%;
-  --primary: 217.2 91.2% 59.8%;
-  --primary-foreground: 222.2 47.4% 11.2%;
-  --secondary: 217.2 32.6% 17.5%;
-  --secondary-foreground: 210 40% 98%;
-  --muted: 217.2 32.6% 17.5%;
-  --muted-foreground: 215 20.2% 65.1%;
-  --accent: 217.2 32.6% 17.5%;
-  --accent-foreground: 210 40% 98%;
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 217.2 32.6% 17.5%;
-  --input: 217.2 32.6% 17.5%;
-  --ring: 224.3 76.3% 48%;
-  --success: 142.1 70.6% 45.3%;
-  --success-foreground: 144.9 80.4% 10%;
-  --success-subtle: 142 68% 38%;
-  --success-subtle-foreground: 142 62% 34%;
-  --risk-high: 0 72% 51%;
-  --risk-high-foreground: 0 91% 71%;
-  --risk-medium: 38 92% 50%;
-  --risk-medium-foreground: 43 96% 64%;
-  --risk-low: 142 70% 45%;
-  --risk-low-foreground: 142 76% 72%;
-  --preview-output: 142 76% 72%;
-  --surface-app: var(--background);
-  --surface-app-top: var(--background);
-  --surface-card: var(--card);
-  --surface-raised: var(--card);
-  --surface-panel: var(--muted);
-  --surface-panel-strong: var(--secondary);
-  --surface-inset: var(--background);
-  --surface-hover: var(--accent);
-  --row-hover: var(--accent);
-  --row-selected: var(--primary);
-  --row-selected-hover: var(--primary);
-  --selection-border: var(--primary);
-  --border-subtle: var(--border);
-  --border-strong: var(--input);
-  --border-focus: var(--ring);
-  --text-secondary: var(--muted-foreground);
-  --text-tertiary: var(--muted-foreground);
-  --brand: var(--primary);
-  --brand-container: var(--accent);
-  --privacy: var(--success);
-  --privacy-container: var(--success);
-  --info: var(--primary);
-  --info-container: var(--accent);
-  --warning: var(--risk-medium);
-  --warning-foreground: var(--risk-medium-foreground);
-  --warning-container: var(--risk-medium);
-  --danger-container: var(--destructive);
-  --success-container: var(--success);
-  --focus-ring: var(--ring);
-  --overlay: 0 0% 0% / 0.58;
-  --shadow-card:
-    0 1px 2px hsl(0 0% 0% / 0.24),
-    0 10px 30px hsl(0 0% 0% / 0.18);
-  --shadow-popover:
-    0 8px 24px hsl(0 0% 0% / 0.32),
-    0 1px 2px hsl(0 0% 0% / 0.28);
-  --shadow-modal:
-    0 24px 64px hsl(0 0% 0% / 0.42),
-    0 2px 8px hsl(0 0% 0% / 0.28);
-  --shadow-toast:
-    0 10px 30px hsl(0 0% 0% / 0.32),
-    0 0 0 1px hsl(var(--destructive) / 0.2);
-  --shadow-control-thumb: 0 1px 2px hsl(0 0% 0% / 0.35);
-  --radius: 0.5rem;
-  font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
+  font-synthesis: none;
   color: hsl(var(--foreground));
   background: hsl(var(--background));
-  color-scheme: dark;
-  font-synthesis: none;
+  letter-spacing: var(--tracking-normal);
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-}
-
-:root[data-resolved-theme='light'],
-:root.theme-resolved-light {
-  --background: 216 33% 97%;
-  --foreground: 221 39% 11%;
-  --card: 0 0% 100%;
-  --card-foreground: 221 39% 11%;
-  --primary: 211 89% 39%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 214 30% 94%;
-  --secondary-foreground: 221 34% 18%;
-  --muted: 214 30% 92%;
-  --muted-foreground: 217 18% 34%;
-  --accent: 204 86% 94%;
-  --accent-foreground: 210 78% 24%;
-  --destructive: 358 73% 45%;
-  --destructive-foreground: 358 72% 27%;
-  --border: 214 26% 84%;
-  --input: 215 17% 55%;
-  --ring: 211 89% 39%;
-  --success: 151 66% 31%;
-  --success-foreground: 151 66% 22%;
-  --success-subtle: 151 66% 31%;
-  --success-subtle-foreground: 151 66% 22%;
-  --risk-high: 358 73% 45%;
-  --risk-high-foreground: 358 72% 27%;
-  --risk-medium: 33 94% 42%;
-  --risk-medium-foreground: 28 86% 25%;
-  --risk-low: 151 66% 31%;
-  --risk-low-foreground: 151 66% 22%;
-  --preview-output: 151 66% 22%;
-  --surface-app: 216 33% 97%;
-  --surface-app-top: 210 45% 99%;
-  --surface-card: 0 0% 100%;
-  --surface-raised: 210 40% 99%;
-  --surface-panel: 214 38% 95%;
-  --surface-panel-strong: 214 31% 92%;
-  --surface-inset: 216 35% 96%;
-  --surface-hover: 210 64% 96%;
-  --row-hover: 210 58% 96%;
-  --row-selected: 171 52% 93%;
-  --row-selected-hover: 171 48% 90%;
-  --selection-border: 174 72% 31%;
-  --border-subtle: 214 28% 87%;
-  --border-strong: 215 17% 55%;
-  --border-focus: 211 89% 39%;
-  --text-secondary: 217 18% 34%;
-  --text-tertiary: 217 14% 46%;
-  --brand: 211 89% 39%;
-  --brand-container: 210 86% 94%;
-  --privacy: 174 72% 31%;
-  --privacy-container: 171 52% 93%;
-  --info: 199 89% 32%;
-  --info-container: 199 86% 93%;
-  --warning: 36 93% 43%;
-  --warning-foreground: 31 86% 24%;
-  --warning-container: 42 96% 91%;
-  --danger-container: 0 86% 96%;
-  --success-container: 151 58% 91%;
-  --focus-ring: 211 89% 39%;
-  --overlay: 224 18% 14% / 0.42;
-  --shadow-card:
-    0 1px 2px hsl(220 35% 16% / 0.06),
-    0 10px 26px hsl(220 35% 16% / 0.08);
-  --shadow-popover:
-    0 16px 42px hsl(220 35% 16% / 0.18),
-    0 1px 2px hsl(220 35% 16% / 0.1);
-  --shadow-modal:
-    0 26px 68px hsl(220 35% 16% / 0.22),
-    0 2px 8px hsl(220 35% 16% / 0.12);
-  --shadow-toast:
-    0 14px 36px hsl(220 35% 16% / 0.16),
-    0 0 0 1px hsl(var(--destructive) / 0.16);
-  --shadow-control-thumb: 0 1px 2px hsl(220 35% 16% / 0.2);
-  color-scheme: light;
-}
-
-:root[data-resolved-theme='dark'],
-:root.theme-resolved-dark {
-  color-scheme: dark;
 }
 
 * {
@@ -177,6 +24,8 @@ body {
   min-width: 320px;
   min-height: 100vh;
   background: hsl(var(--background));
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
 }
 
 button,
@@ -184,6 +33,7 @@ input,
 select,
 textarea {
   font: inherit;
+  letter-spacing: inherit;
 }
 
 button {
@@ -204,28 +54,36 @@ textarea {
   width: 100%;
   min-width: 0;
   border: 1px solid hsl(var(--border-strong));
-  border-radius: calc(var(--radius) - 2px);
-  background: hsl(var(--background));
+  border-radius: var(--radius-sm);
+  background: hsl(var(--surface-panel));
   color: hsl(var(--foreground));
-  padding: 0.5rem 0.75rem;
+  padding: var(--space-2) var(--space-3);
   outline: none;
+  transition: var(--transition-control);
 }
 
-:root[data-resolved-theme='light'] input,
-:root[data-resolved-theme='light'] select,
-:root[data-resolved-theme='light'] textarea,
-:root.theme-resolved-light input,
-:root.theme-resolved-light select,
-:root.theme-resolved-light textarea {
-  background: hsl(var(--surface-card));
-  box-shadow:
-    inset 0 1px 1px hsl(220 35% 16% / 0.04),
-    0 1px 0 hsl(220 35% 16% / 0.03);
+input:hover:not(:disabled),
+select:hover:not(:disabled),
+textarea:hover:not(:disabled) {
+  border-color: hsl(var(--brand) / 0.45);
 }
 
 input,
 select {
-  height: 2.5rem;
+  height: var(--control-height-md);
+}
+
+select {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, hsl(var(--text-tertiary)) 50%),
+    linear-gradient(135deg, hsl(var(--text-tertiary)) 50%, transparent 50%);
+  background-position:
+    right var(--space-4) center,
+    right calc(var(--space-4) - 4px) center;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+  padding-right: var(--space-8);
 }
 
 textarea {
@@ -233,7 +91,7 @@ textarea {
 }
 
 input::placeholder {
-  color: hsl(var(--muted-foreground));
+  color: hsl(var(--text-tertiary));
 }
 
 input:focus-visible,
@@ -241,12 +99,13 @@ select:focus-visible,
 textarea:focus-visible,
 button:focus-visible {
   border-color: hsl(var(--border-focus));
-  box-shadow: 0 0 0 3px hsl(var(--focus-ring) / 0.28);
+  box-shadow: 0 0 0 3px hsl(var(--focus-ring) / 0.32);
   outline: none;
 }
 
 code {
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", ui-monospace, monospace;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 h1,
@@ -257,29 +116,31 @@ p {
 }
 
 h1 {
-  font-size: 1.5rem;
-  font-weight: 700;
-  line-height: 1.25;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-display);
 }
 
 h2 {
   color: hsl(var(--card-foreground));
-  font-size: 1.25rem;
-  font-weight: 600;
-  line-height: 1.2;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-display);
 }
 
 h3 {
   color: hsl(var(--card-foreground));
-  font-size: 0.95rem;
-  font-weight: 600;
-  line-height: 1.35;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-snug);
 }
 
 label {
   color: hsl(var(--foreground));
-  font-size: 0.875rem;
-  font-weight: 500;
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
 }
 
 table {
@@ -290,26 +151,23 @@ table {
 th,
 td {
   border-bottom: 1px solid hsl(var(--border-subtle));
-  padding: 0.75rem 1rem;
+  padding: var(--space-3) var(--space-4);
   text-align: left;
   vertical-align: middle;
 }
 
 th {
-  height: 3rem;
-  color: hsl(var(--foreground));
-  font-size: 0.875rem;
-  font-weight: 600;
-}
-
-:root[data-resolved-theme='light'] th,
-:root.theme-resolved-light th {
+  height: var(--space-12);
   color: hsl(var(--text-secondary));
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
 }
 
 td {
   color: hsl(var(--foreground));
-  font-size: 0.875rem;
+  font-size: var(--text-base);
 }
 
 tr:last-child td {

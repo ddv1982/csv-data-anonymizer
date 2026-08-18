@@ -165,11 +165,9 @@ function ColumnSelectionStep({
             onClick: () => workflow.setColumnSelection(workflow.uncertainColumns),
           },
         ]}
+        help={<SectionHelp topic="selectColumns" />}
         notice={(
           <>
-            <div className="table-help-row">
-              <SectionHelp topic="selectColumns" />
-            </div>
             <DetectionRunNotice
               summary={workflow.headers?.detectionRunSummary}
               columns={workflow.columns}

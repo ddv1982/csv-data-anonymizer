@@ -1,10 +1,10 @@
 @media (max-width: 820px) {
   .container {
-    width: min(100% - 1rem, 56rem);
+    width: min(100% - var(--space-4), 56rem);
   }
 
   .app-main {
-    padding: 1rem 0;
+    padding: var(--space-4) 0 var(--space-8);
   }
 
   .app-topbar-actions {
@@ -18,49 +18,17 @@
 
   .mode-tabs {
     grid-template-columns: 1fr;
-    border-bottom: 0;
   }
 
   .mode-tab {
     justify-content: flex-start;
-    border: 1px solid hsl(var(--border));
-    border-radius: calc(var(--radius) - 2px);
-    background: hsl(var(--card));
-    padding-inline: 0.75rem;
-  }
-
-  .mode-tab.active {
-    border-color: hsl(var(--primary) / 0.45);
-    background: hsl(var(--accent));
-  }
-
-  :root[data-resolved-theme='light'] .mode-tabs,
-  :root.theme-resolved-light .mode-tabs {
-    border: 0;
-    background: transparent;
-    padding: 0;
-    box-shadow: none;
-  }
-
-  :root[data-resolved-theme='light'] .mode-tab,
-  :root.theme-resolved-light .mode-tab {
-    border-color: hsl(var(--border-subtle));
-    background: hsl(var(--surface-card));
-    box-shadow: 0 1px 2px hsl(220 35% 16% / 0.05);
-  }
-
-  :root[data-resolved-theme='light'] .mode-tab.active,
-  :root.theme-resolved-light .mode-tab.active {
-    border-color: hsl(var(--brand) / 0.34);
-    background: hsl(var(--brand-container));
-    color: hsl(var(--brand));
-    box-shadow: inset 3px 0 0 hsl(var(--brand));
+    padding-inline: var(--space-3);
   }
 
   .card-header,
   .card-content,
   .anonymize-card-content {
-    padding: 1rem;
+    padding: var(--space-4);
   }
 
   .card-header + .card-content {
@@ -106,26 +74,26 @@
   }
 
   .button-icon {
-    width: 2.5rem;
+    width: var(--control-height-md);
   }
 
   .toast-region {
     top: 4.5rem;
-    right: 0.5rem;
-    left: 0.5rem;
+    right: var(--space-2);
+    left: var(--space-2);
     width: auto;
   }
 
   .toast-region .alert-line {
     align-items: stretch;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .alert-line {
     align-items: stretch;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .toast-region .button {
@@ -141,7 +109,7 @@
   .release-column-frame {
     overflow: auto;
     border: 1px solid hsl(var(--border-subtle));
-    border-radius: calc(var(--radius) - 2px);
+    border-radius: var(--radius-md);
   }
 
   .column-table {
@@ -159,39 +127,18 @@
 
   .column-table tbody {
     display: grid;
-    gap: 0.75rem;
+    gap: var(--space-3);
   }
 
   .column-table tr {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: start;
-    gap: 0.55rem 0.75rem;
+    gap: var(--space-2) var(--space-3);
     border: 1px solid hsl(var(--border-subtle));
-    border-radius: var(--radius);
-    background: hsl(var(--muted) / 0.16);
-    padding: 0.75rem;
-  }
-
-  :root[data-resolved-theme='light'] .column-table tr,
-  :root.theme-resolved-light .column-table tr {
-    border-color: hsl(var(--border-subtle));
-    background: hsl(var(--surface-card));
-    box-shadow: 0 1px 2px hsl(220 35% 16% / 0.05);
-  }
-
-  :root[data-resolved-theme='light'] .column-table tr.selected-row,
-  :root.theme-resolved-light .column-table tr.selected-row {
-    border-color: hsl(var(--selection-border) / 0.28);
-    background: hsl(var(--row-selected));
-    box-shadow:
-      inset 3px 0 0 hsl(var(--selection-border)),
-      0 1px 2px hsl(220 35% 16% / 0.05);
-  }
-
-  :root[data-resolved-theme='light'] .column-table tr.selected-row:hover,
-  :root.theme-resolved-light .column-table tr.selected-row:hover {
-    background: hsl(var(--row-selected-hover));
+    border-radius: var(--radius-lg);
+    background: hsl(var(--surface-panel));
+    padding: var(--space-3);
   }
 
   .column-table td {
@@ -226,7 +173,7 @@
     display: grid;
     grid-column: 1 / -1;
     min-width: 0;
-    gap: 0.35rem;
+    gap: var(--space-1);
   }
 
   .risk-cell {
@@ -246,7 +193,7 @@
 
   .column-note {
     display: block;
-    margin-top: 0.25rem;
+    margin-top: var(--space-1);
     margin-left: 0;
   }
 
@@ -277,7 +224,7 @@
 
   th,
   td {
-    padding: 0.75rem;
+    padding: var(--space-3);
   }
 
   .column-table td {

@@ -2,26 +2,23 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--space-4);
 }
 
 .progress-state {
-  color: hsl(var(--primary));
-  font-weight: 600;
+  color: hsl(var(--brand));
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
 }
 
 .progress-track {
   position: relative;
   overflow: hidden;
-  height: 0.625rem;
-  border-radius: 999px;
-  background: hsl(var(--secondary));
-}
-
-:root[data-resolved-theme='light'] .progress-track,
-:root.theme-resolved-light .progress-track {
+  height: 0.5rem;
+  border-radius: var(--radius-pill);
   background: hsl(var(--surface-panel-strong));
-  box-shadow: inset 0 1px 2px hsl(220 35% 16% / 0.1);
 }
 
 .progress-bar-determinate {
@@ -29,13 +26,8 @@
   width: 0;
   height: 100%;
   border-radius: inherit;
-  background: hsl(var(--primary));
-  transition: width 180ms ease;
-}
-
-:root[data-resolved-theme='light'] .progress-bar-determinate,
-:root.theme-resolved-light .progress-bar-determinate {
-  background: linear-gradient(90deg, hsl(var(--primary)), hsl(var(--info)));
+  background: linear-gradient(90deg, hsl(var(--brand-600)), hsl(var(--brand-400)));
+  transition: width var(--duration-base) var(--ease-out);
 }
 
 .progress-bar-indeterminate {
@@ -45,13 +37,8 @@
   left: -35%;
   width: 35%;
   border-radius: inherit;
-  background: hsl(var(--primary));
+  background: linear-gradient(90deg, hsl(var(--brand-600)), hsl(var(--brand-400)));
   animation: progress-slide 1.2s ease-in-out infinite;
-}
-
-:root[data-resolved-theme='light'] .progress-bar-indeterminate,
-:root.theme-resolved-light .progress-bar-indeterminate {
-  background: linear-gradient(90deg, hsl(var(--primary)), hsl(var(--info)));
 }
 
 .progress-actions {
@@ -62,14 +49,9 @@
 .skeleton {
   display: block;
   overflow: hidden;
-  border-radius: calc(var(--radius) - 2px);
-  background: hsl(var(--muted));
-  animation: pulse 1.4s ease-in-out infinite;
-}
-
-:root[data-resolved-theme='light'] .skeleton,
-:root.theme-resolved-light .skeleton {
+  border-radius: var(--radius-sm);
   background: hsl(var(--surface-panel-strong));
+  animation: pulse 1.4s ease-in-out infinite;
 }
 
 .skeleton-checkbox {
@@ -96,7 +78,7 @@
 .skeleton-badge {
   width: 3.75rem;
   height: 1.25rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .skeleton-preview-title {

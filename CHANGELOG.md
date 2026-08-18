@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.0.91 - 2026-08-18
+
+- Give the interface one design system: spacing, type, radius, motion, control-height, and z-index scales plus both colour themes now live in `frontend/src/styles/tokens/`, and component CSS reads tokens instead of branching on the active theme.
+- Re-cut the dark theme on a neutral ramp with four distinct surface steps, hairline borders, and a single cool accent, so panels, cards, and tables no longer share one flat background; warm hues stay reserved for risk and warnings.
+- Rebuild buttons, status pills, risk badges, alerts, switches, the mode switcher, and selects on component-level tokens, so a variant overrides values rather than repeating rules.
+- Present column review as a ledger: top-aligned cells on a single rhythm, a sticky header, retuned column widths, one pill treatment for decision status, a risk edge on the row so risk is not signalled by colour alone, and bulk actions sharing a toolbar row with section help.
+- Keep contrast within WCAG AA where the previous styling did not: a step that is not ready yet reads as a recessed surface instead of dimmed text, and light-theme tertiary text is dark enough on white surfaces.
+- Record the design direction, findings, constraints, and remaining phases in `docs/ui-design-system-plan-2026-08-18.md`.
+
 ## v1.0.90 - 2026-08-18
 
 - Freeze `Object.prototype` in the packaged webview so frontend script cannot patch the object root when the custom protocol serves the app.

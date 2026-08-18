@@ -1,0 +1,116 @@
+/*
+ * Dark theme (the default). Colors are stored as bare HSL components so component
+ * CSS can add alpha with `hsl(var(--token) / 0.12)`.
+ *
+ * Surfaces step in real luminance increments (5% -> 8% -> 11% -> 15%) because on a
+ * near-black canvas depth has to come from the surface itself; shadows alone are
+ * invisible. Borders are hairlines that carry the remaining elevation cue.
+ *
+ * Accent discipline: one cool brand hue for action, focus, selection and active
+ * state. Warm hues stay reserved for risk and warnings so they keep meaning
+ * something when they appear.
+ */
+:root {
+  /* Neutral ramp */
+  --neutral-950: 240 6% 5%;
+  --neutral-900: 240 6% 8%;
+  --neutral-850: 240 5% 11%;
+  --neutral-800: 240 5% 15%;
+  --neutral-700: 240 5% 22%;
+  --neutral-600: 240 5% 30%;
+  --neutral-400: 240 5% 55%;
+  --neutral-300: 240 6% 72%;
+  --neutral-100: 240 12% 96%;
+
+  /* Brand ramp: cool, single accent */
+  --brand-500: 205 90% 58%;
+  --brand-600: 205 88% 48%;
+  --brand-400: 202 92% 70%;
+
+  --background: var(--neutral-950);
+  --foreground: var(--neutral-100);
+  --card: var(--neutral-900);
+  --card-foreground: var(--neutral-100);
+  --primary: var(--brand-500);
+  --primary-foreground: 222 45% 7%;
+  --secondary: var(--neutral-800);
+  --secondary-foreground: var(--neutral-100);
+  --muted: var(--neutral-850);
+  --muted-foreground: var(--neutral-300);
+  --accent: var(--neutral-800);
+  --accent-foreground: var(--neutral-100);
+  --destructive: 4 74% 52%;
+  --destructive-foreground: 6 90% 80%;
+  --border: var(--neutral-700);
+  --input: var(--neutral-700);
+  --ring: var(--brand-500);
+
+  /* Status: warm hues are risk-only, greens are slightly desaturated for dark. */
+  --success: 152 52% 44%;
+  --success-foreground: 152 58% 76%;
+  --success-subtle: 152 52% 44%;
+  --success-subtle-foreground: 152 58% 76%;
+  --risk-high: 4 74% 55%;
+  --risk-high-foreground: 6 88% 78%;
+  --risk-medium: 36 88% 54%;
+  --risk-medium-foreground: 40 94% 74%;
+  --risk-low: 152 52% 44%;
+  --risk-low-foreground: 152 58% 76%;
+  --preview-output: 152 60% 74%;
+
+  /* Surfaces */
+  --surface-app: var(--neutral-950);
+  --surface-app-top: 240 6% 7%;
+  --surface-card: var(--neutral-900);
+  --surface-raised: 240 5% 10%;
+  --surface-panel: var(--neutral-850);
+  --surface-panel-strong: 240 5% 14%;
+  --surface-inset: 240 7% 6%;
+  --surface-hover: var(--neutral-800);
+  --surface-overlay: 240 5% 13%;
+  --row-hover: 240 5% 12%;
+  --row-selected: 205 38% 12%;
+  --row-selected-hover: 205 38% 15%;
+  --selection-border: var(--brand-500);
+
+  /* Lines and text roles */
+  --border-subtle: 240 5% 17%;
+  --border-strong: var(--neutral-700);
+  --border-focus: var(--ring);
+  --text-secondary: var(--neutral-300);
+  --text-tertiary: var(--neutral-400);
+
+  --brand: var(--brand-500);
+  --brand-container: 205 46% 15%;
+  --privacy: var(--success);
+  --privacy-container: 152 32% 13%;
+  --info: var(--brand-500);
+  --info-container: 205 46% 15%;
+  --warning: var(--risk-medium);
+  --warning-foreground: var(--risk-medium-foreground);
+  --warning-container: 36 40% 14%;
+  --danger-container: 4 40% 14%;
+  --success-container: 152 32% 13%;
+  --focus-ring: var(--ring);
+  --overlay: 240 10% 2% / 0.66;
+
+  --shadow-card:
+    0 1px 2px hsl(0 0% 0% / 0.4),
+    0 12px 32px hsl(0 0% 0% / 0.28);
+  --shadow-popover:
+    0 10px 28px hsl(0 0% 0% / 0.55),
+    0 1px 2px hsl(0 0% 0% / 0.4);
+  --shadow-modal:
+    0 28px 68px hsl(0 0% 0% / 0.62),
+    0 2px 10px hsl(0 0% 0% / 0.4);
+  --shadow-toast:
+    0 12px 34px hsl(0 0% 0% / 0.5),
+    0 0 0 1px hsl(var(--destructive) / 0.24);
+  --shadow-control-thumb: 0 1px 2px hsl(0 0% 0% / 0.45);
+
+  /* Faint texture so the canvas does not read as a void. */
+  --app-texture:
+    radial-gradient(80rem 40rem at 50% -12rem, hsl(var(--brand) / 0.07), transparent 70%);
+
+  color-scheme: dark;
+}

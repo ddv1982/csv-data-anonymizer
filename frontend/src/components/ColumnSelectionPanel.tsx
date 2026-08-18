@@ -7,7 +7,8 @@ type SelectionAction = {
 }
 
 /**
- * The chrome around a column table: bulk-select buttons, an optional notice above
+ * The chrome around a column table: a toolbar of bulk-select buttons plus optional
+ * section help, an optional notice above
  * the table and a summary below it.
  *
  * The table itself arrives as `children` rather than through forwarded props, so a
@@ -15,29 +16,34 @@ type SelectionAction = {
  */
 export function ColumnSelectionPanel({
   actions,
+  help,
   notice,
   footer,
   children,
 }: {
   actions: SelectionAction[]
+  help?: ReactNode
   notice?: ReactNode
   footer: ReactNode
   children: ReactNode
 }) {
   return (
     <div className="columns-stack">
-      <div className="bulk-actions">
-        {actions.map((action) => (
-          <button
-            key={action.label}
-            type="button"
-            className="button button-outline button-sm"
-            disabled={action.disabled}
-            onClick={action.onClick}
-          >
-            {action.label}
-          </button>
-        ))}
+      <div className="column-toolbar">
+        <div className="bulk-actions">
+          {actions.map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              className="button button-outline button-sm"
+              disabled={action.disabled}
+              onClick={action.onClick}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+        {help ? <div className="table-help-row">{help}</div> : null}
       </div>
 
       {notice}

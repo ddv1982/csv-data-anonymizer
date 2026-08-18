@@ -1,0 +1,108 @@
+/*
+ * Light theme. Same token names as the dark theme, different values only — component
+ * CSS must never branch on the theme itself.
+ */
+:root[data-resolved-theme='light'],
+:root.theme-resolved-light {
+  --neutral-950: 221 39% 11%;
+  --neutral-900: 217 18% 34%;
+  --neutral-850: 217 14% 46%;
+  --neutral-800: 215 17% 55%;
+  --neutral-700: 214 26% 84%;
+  --neutral-600: 214 28% 87%;
+  --neutral-400: 214 30% 92%;
+  --neutral-300: 216 33% 97%;
+  --neutral-100: 0 0% 100%;
+
+  --brand-500: 211 89% 39%;
+  --brand-600: 211 89% 32%;
+  --brand-400: 205 86% 52%;
+
+  --background: 216 33% 97%;
+  --foreground: 221 39% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 221 39% 11%;
+  --primary: var(--brand-500);
+  --primary-foreground: 0 0% 100%;
+  --secondary: 214 30% 94%;
+  --secondary-foreground: 221 34% 18%;
+  --muted: 214 30% 92%;
+  --muted-foreground: 217 18% 34%;
+  --accent: 204 86% 94%;
+  --accent-foreground: 210 78% 24%;
+  --destructive: 358 73% 45%;
+  --destructive-foreground: 358 72% 27%;
+  --border: 214 26% 84%;
+  --input: 215 17% 55%;
+  --ring: var(--brand-500);
+
+  --success: 151 66% 31%;
+  --success-foreground: 151 66% 22%;
+  --success-subtle: 151 66% 31%;
+  --success-subtle-foreground: 151 66% 22%;
+  --risk-high: 358 73% 45%;
+  --risk-high-foreground: 358 72% 27%;
+  --risk-medium: 33 94% 42%;
+  --risk-medium-foreground: 28 86% 25%;
+  --risk-low: 151 66% 31%;
+  --risk-low-foreground: 151 66% 22%;
+  --preview-output: 151 66% 22%;
+
+  --surface-app: 216 33% 97%;
+  --surface-app-top: 210 45% 99%;
+  --surface-card: 0 0% 100%;
+  --surface-raised: 210 40% 99%;
+  --surface-panel: 214 38% 95%;
+  --surface-panel-strong: 214 31% 92%;
+  --surface-inset: 216 35% 96%;
+  --surface-hover: 210 64% 96%;
+  --surface-overlay: 0 0% 100%;
+  --row-hover: 210 58% 96%;
+  --row-selected: 205 62% 95%;
+  --row-selected-hover: 205 58% 92%;
+  --selection-border: var(--brand-500);
+
+  --border-subtle: 214 28% 87%;
+  --border-strong: 215 17% 55%;
+  --border-focus: var(--brand-500);
+  --text-secondary: 217 18% 34%;
+  --text-tertiary: 217 17% 40%;
+
+  --brand: var(--brand-500);
+  --brand-container: 210 86% 94%;
+  --privacy: 174 72% 31%;
+  --privacy-container: 171 52% 93%;
+  --info: 199 89% 32%;
+  --info-container: 199 86% 93%;
+  --warning: 36 93% 43%;
+  --warning-foreground: 31 86% 24%;
+  --warning-container: 42 96% 91%;
+  --danger-container: 0 86% 96%;
+  --success-container: 151 58% 91%;
+  --focus-ring: var(--brand-500);
+  --overlay: 224 18% 14% / 0.42;
+
+  --shadow-card:
+    0 1px 2px hsl(220 35% 16% / 0.06),
+    0 10px 26px hsl(220 35% 16% / 0.08);
+  --shadow-popover:
+    0 16px 42px hsl(220 35% 16% / 0.18),
+    0 1px 2px hsl(220 35% 16% / 0.1);
+  --shadow-modal:
+    0 26px 68px hsl(220 35% 16% / 0.22),
+    0 2px 8px hsl(220 35% 16% / 0.12);
+  --shadow-toast:
+    0 14px 36px hsl(220 35% 16% / 0.16),
+    0 0 0 1px hsl(var(--destructive) / 0.16);
+  --shadow-control-thumb: 0 1px 2px hsl(220 35% 16% / 0.2);
+
+  --app-texture:
+    linear-gradient(180deg, hsl(var(--surface-app-top)) 0, hsl(var(--surface-app)) 18rem);
+
+  color-scheme: light;
+}
+
+:root[data-resolved-theme='dark'],
+:root.theme-resolved-dark {
+  color-scheme: dark;
+}
