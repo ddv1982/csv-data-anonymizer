@@ -12,6 +12,7 @@ CSV Anonymizer is a local-first desktop application with three runtime boundarie
 - Prepared analysis is backend-issued and bound to source bytes, detector inputs, and selected columns.
 - Tokenization keys are run-only secrets. They are not serializable, persisted, logged, or included in reports.
 - Local AI is opt-in, loopback-only, and rejects obvious cloud model forms before making a request.
+- The packaged webview freezes `Object.prototype` so frontend script cannot patch the object root.
 - Output is staged and atomically published. Cancellation or failure must not leave a partial destination.
 - Release readiness separates measured technical evidence from user assertions.
 
