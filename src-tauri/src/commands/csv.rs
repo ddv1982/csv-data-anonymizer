@@ -2,13 +2,15 @@ use super::shared::{
     authorize_or_confirm_input_file, authorize_or_confirm_output_file,
     default_output_path_with_suffix, run_blocking, service,
 };
+mod paste;
+mod quick;
 mod snapshot;
 
 use crate::command_error::CommandError;
 use crate::local_ai::candidate_detector::local_candidate_detector;
 use crate::local_ai::{
     LOCAL_AI_DISABLED_MESSAGE, LocalAiRequest, local_ai_status, selection_requires_local_ai,
-    smart_provider_for_request, smart_provider_for_strategy,
+    smart_provider_for_request,
 };
 use crate::path_access::PathAccess;
 use crate::settings::{
@@ -17,10 +19,9 @@ use crate::settings::{
 #[cfg(test)]
 use csv_anonymizer_core::SourceFingerprint;
 use csv_anonymizer_core::{
-    ColumnControl, HeadersData, LocalNerRunStatus, PasteAnalyzeData, PasteAnalyzeParams,
-    PastePreviewParams, PasteTransformData, PasteTransformParams, PreflightData, PreflightMode,
-    PreflightParams, PreparedAnalysisSnapshot, PreviewData, PreviewParams, QuickGenerateParams,
-    QuickTransformData, SmartReplacementEntry, SmartReplacementProvider, should_auto_select_column,
+    ColumnControl, HeadersData, LocalNerRunStatus, PreflightData, PreflightMode, PreflightParams,
+    PreparedAnalysisSnapshot, PreviewData, PreviewParams, SmartReplacementEntry,
+    SmartReplacementProvider, should_auto_select_column,
 };
 use serde::{Deserialize, Serialize};
 #[cfg(test)]
@@ -29,10 +30,10 @@ pub(crate) use snapshot::{
     ValidatedFileInput, require_prepared_analysis, require_snapshot_model,
     snapshot_detection_summary,
 };
-use snapshot::{
-    paste_format_name, register_prepared_analysis, selected_candidate_ids, stage_private_csv_file,
-    validate_paste_snapshot,
-};
+use snapshot::{register_prepared_analysis, stage_private_csv_file};
+
+pub use paste::{analyze_pasted_data, anonymize_pasted_data, preview_pasted_data};
+pub use quick::generate_quick_values;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::State;
@@ -77,38 +78,6 @@ pub struct PreflightRequest {
     pub preview_smart_replacements: Vec<SmartReplacementEntry>,
     pub local_ai: Option<LocalAiRequest>,
     pub prepared_analysis: Option<PreparedAnalysisSnapshot>,
-}
-
-#[derive(Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PastePreviewRequest {
-    #[serde(flatten)]
-    pub params: PastePreviewParams,
-    pub local_ai: Option<LocalAiRequest>,
-    pub prepared_analysis: Option<PreparedAnalysisSnapshot>,
-    #[serde(default)]
-    pub tokenization_key: Option<String>,
-}
-
-#[derive(Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PasteTransformRequest {
-    #[serde(flatten)]
-    pub params: PasteTransformParams,
-    pub local_ai: Option<LocalAiRequest>,
-    pub prepared_analysis: Option<PreparedAnalysisSnapshot>,
-    #[serde(default)]
-    pub tokenization_key: Option<String>,
-}
-
-#[derive(Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct QuickGenerateRequest {
-    #[serde(flatten)]
-    pub params: QuickGenerateParams,
-    pub local_ai: Option<LocalAiRequest>,
-    #[serde(default)]
-    pub tokenization_key: Option<String>,
 }
 
 fn load_local_ai_enabled(settings: &State<'_, Arc<SettingsStore>>) -> Result<bool, String> {
@@ -414,223 +383,15 @@ pub async fn count_csv_rows(
     .map_err(Into::into)
 }
 
-#[tauri::command]
-pub async fn analyze_pasted_data(
-    settings: State<'_, Arc<SettingsStore>>,
-    request: PasteAnalyzeParams,
-) -> Result<PasteAnalyzeData, CommandError> {
-    let (local_ner_enabled, local_ner_model) = load_local_ner_settings(&settings)?;
-    run_blocking(move || {
-        let content = request.content.clone();
-        let sample_row_count = request.sample_row_count;
-        let mut analysis = if local_ner_enabled {
-            if let Some(message) = local_ner_unavailable_message(&local_ner_model)? {
-                let mut analysis = csv_anonymizer_core::direct_input::analyze_paste_data(request)
-                    .map_err(|error| error.to_string())?;
-                analysis.detection_run_summary.local_ner = LocalNerRunStatus::Unavailable;
-                analysis.detection_run_summary.message = Some(message);
-                analysis
-            } else {
-                let mut detector = local_candidate_detector(&local_ner_model)?;
-                csv_anonymizer_core::direct_input::analyze_paste_data_with_candidate_detector(
-                    request,
-                    &mut detector,
-                )
-                .map_err(|error| error.to_string())?
-            }
-        } else {
-            csv_anonymizer_core::direct_input::analyze_paste_data(request)
-                .map_err(|error| error.to_string())?
-        };
-        let prepared_analysis = if local_ner_enabled {
-            if analysis.prepared_analysis.is_some() {
-                analysis.prepared_analysis.take()
-            } else {
-                Some(
-                    PreparedAnalysisSnapshot::new(
-                        "paste",
-                        paste_format_name(analysis.format),
-                        content.as_bytes(),
-                        sample_row_count,
-                        analysis.columns.clone(),
-                        &analysis.detection_run_summary,
-                    )
-                    .map_err(|error| format!("Could not prepare analysis: {error}"))?,
-                )
-            }
-        } else {
-            None
-        };
-        analysis.prepared_analysis = prepared_analysis;
-        if let Some(snapshot) = &analysis.prepared_analysis {
-            register_prepared_analysis(snapshot)?;
-        }
-        Ok(analysis)
-    })
-    .await
-    .map_err(Into::into)
-}
-
-#[tauri::command]
-pub async fn preview_pasted_data(
-    settings: State<'_, Arc<SettingsStore>>,
-    request: PastePreviewRequest,
-) -> Result<PreviewData, CommandError> {
-    let (local_ner_enabled, local_ner_model) = load_local_ner_settings(&settings)?;
-    require_prepared_analysis(local_ner_enabled, request.prepared_analysis.as_ref())
-        .map_err(CommandError::stale_analysis)?;
-    require_snapshot_model(request.prepared_analysis.as_ref(), &local_ner_model)
-        .map_err(CommandError::stale_analysis)?;
-    if let Some(snapshot) = &request.prepared_analysis {
-        validate_paste_snapshot(
-            snapshot,
-            &request.params.content,
-            request.params.format,
-            request.params.sample_row_count,
-            &request.params.columns,
-        )
-        .map_err(CommandError::stale_analysis)?;
-    }
-    let local_ai_enabled = load_local_ai_enabled(&settings)?;
-    let tokenization_key = parse_tokenization_key(request.tokenization_key.as_deref())
-        .map_err(CommandError::invalid_input)?;
-    run_blocking(move || {
-        let mut provider = smart_provider_for_request(
-            request.local_ai,
-            &request.params.controls,
-            &request.params.columns,
-            local_ai_enabled,
-        )?;
-        let provider = provider
-            .as_mut()
-            .map(|provider| provider as &mut dyn SmartReplacementProvider);
-        if let Some(snapshot) = request
-            .prepared_analysis
-            .as_ref()
-            .filter(|snapshot| matches!(snapshot.format.as_str(), "plainText" | "logs"))
-        {
-            let confirmed = selected_candidate_ids(snapshot, &request.params.columns);
-            csv_anonymizer_core::direct_input::preview_paste_text_candidate_evidence_with_run_secrets(
-                &request.params,
-                snapshot,
-                &confirmed,
-                provider,
-                tokenization_key.as_ref(),
-            )
-            .map_err(|error| error.to_string())
-        } else {
-            csv_anonymizer_core::direct_input::preview_paste_data_with_run_secrets(
-                request.params,
-                provider,
-                tokenization_key.as_ref(),
-            )
-            .map_err(|error| error.to_string())
-        }
-    })
-    .await
-    .map_err(Into::into)
-}
-
-#[tauri::command]
-pub async fn anonymize_pasted_data(
-    settings: State<'_, Arc<SettingsStore>>,
-    request: PasteTransformRequest,
-) -> Result<PasteTransformData, CommandError> {
-    let (local_ner_enabled, local_ner_model) = load_local_ner_settings(&settings)?;
-    require_prepared_analysis(local_ner_enabled, request.prepared_analysis.as_ref())
-        .map_err(CommandError::stale_analysis)?;
-    require_snapshot_model(request.prepared_analysis.as_ref(), &local_ner_model)
-        .map_err(CommandError::stale_analysis)?;
-    if let Some(snapshot) = &request.prepared_analysis {
-        validate_paste_snapshot(
-            snapshot,
-            &request.params.content,
-            request.params.format,
-            request.params.sample_row_count,
-            &request.params.columns,
-        )
-        .map_err(CommandError::stale_analysis)?;
-    }
-    let local_ai_enabled = load_local_ai_enabled(&settings)?;
-    let tokenization_key = parse_tokenization_key(request.tokenization_key.as_deref())
-        .map_err(CommandError::invalid_input)?;
-    run_blocking(move || {
-        let mut provider = smart_provider_for_request(
-            request.local_ai,
-            &request.params.controls,
-            &request.params.columns,
-            local_ai_enabled,
-        )?;
-        let provider = provider
-            .as_mut()
-            .map(|provider| provider as &mut dyn SmartReplacementProvider);
-        let mut result = if let Some(snapshot) = request
-            .prepared_analysis
-            .as_ref()
-            .filter(|snapshot| matches!(snapshot.format.as_str(), "plainText" | "logs"))
-        {
-            let confirmed = selected_candidate_ids(snapshot, &request.params.columns);
-            csv_anonymizer_core::direct_input::replay_paste_text_candidate_evidence_with_run_secrets(
-                &request.params,
-                snapshot,
-                &confirmed,
-                provider,
-                tokenization_key.as_ref(),
-            )
-            .map_err(|error| error.to_string())
-        } else {
-            csv_anonymizer_core::direct_input::transform_paste_data_with_run_secrets(
-                request.params,
-                provider,
-                tokenization_key.as_ref(),
-            )
-            .map_err(|error| error.to_string())
-        }?;
-        if let Some(snapshot) = &request.prepared_analysis {
-            result.privacy_report.detection_run_summary =
-                Some(snapshot_detection_summary(snapshot));
-        }
-        Ok(result)
-    })
-    .await
-    .map_err(Into::into)
-}
-
-#[tauri::command]
-pub async fn generate_quick_values(
-    settings: State<'_, Arc<SettingsStore>>,
-    request: QuickGenerateRequest,
-) -> Result<QuickTransformData, CommandError> {
-    let local_ai_enabled = load_local_ai_enabled(&settings)?;
-    let tokenization_key = parse_tokenization_key(request.tokenization_key.as_deref())
-        .map_err(CommandError::invalid_input)?;
-    run_blocking(move || {
-        let mut provider = smart_provider_for_strategy(
-            request.local_ai,
-            request.params.strategy,
-            local_ai_enabled,
-        )?;
-        let provider = provider
-            .as_mut()
-            .map(|provider| provider as &mut dyn SmartReplacementProvider);
-        csv_anonymizer_core::direct_input::generate_quick_values_with_run_secrets(
-            request.params,
-            provider,
-            tokenization_key.as_ref(),
-        )
-        .map_err(|error| error.to_string())
-    })
-    .await
-    .map_err(Into::into)
-}
-
 #[cfg(test)]
 mod tests {
+    use super::paste::{PastePreviewRequest, PasteTransformRequest};
+    use super::quick::QuickGenerateRequest;
     use super::*;
     use crate::settings::AppSettings;
     use csv_anonymizer_core::{
         AnonymizationStrategy, ColumnMetadata, DataType, DetectionRunSummary, LocalNerRunStatus,
-        PasteDataFormat,
+        PasteAnalyzeParams, PasteDataFormat,
     };
     use serde_json::{Value, json};
     use tauri::Manager;
