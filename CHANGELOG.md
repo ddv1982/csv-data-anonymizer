@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.90 - 2026-08-18
+
+- Freeze `Object.prototype` in the packaged webview so frontend script cannot patch the object root when the custom protocol serves the app.
+- Clear the high frontend audit findings that blocked CI: pin `brace-expansion` 5.0.9, `nanoid` 3.3.18, and `undici` 7.29.0.
+- Run the present-tense comment house rule on `validate` and the shared CI action, and stop dated July plans from claiming the simplicity overhaul never landed.
+- Keep file, paste, and quick Tauri commands as separate modules next to the existing snapshot helper, without a command framework.
+
 ## v1.0.89 - 2026-08-01
 
 - Add keyed tokenization as an explicit, opt-in protection strategy with ephemeral key handling, cross-workflow validation, deterministic domain-separated tokens, memory-budget safeguards, and documentation for safe operational use.
