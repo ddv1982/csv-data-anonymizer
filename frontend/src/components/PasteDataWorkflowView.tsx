@@ -13,7 +13,7 @@ import { CopyableOutputCard } from './CopyableOutputCard'
 import { DetectionRunNotice } from './DetectionRunNotice'
 import { LocalAiBlockedAlert } from './LocalAiBlockedAlert'
 import { PreviewTable } from './PreviewTable'
-import { PrivacyReportSummary } from './PrivacyReportSummary'
+import { PrivacyReportSummary } from './privacy-report/PrivacyReportSummary'
 import { SectionHelp } from './SectionHelp'
 
 const formatLabels: Record<PasteDataFormat, string> = {

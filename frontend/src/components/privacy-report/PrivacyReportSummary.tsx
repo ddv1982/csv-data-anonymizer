@@ -256,9 +256,8 @@ function JointReIdentifiability({ privacyReport }: { privacyReport: PrivacyRepor
   ]
 
   // The one figure not taken over the matched subset, so it is labelled as the different
-  // question it answers. Absent rather than zero when its own histogram outgrew the check,
-  // and omitted here in that case: the alternative was computing it, budgeting memory for it
-  // and then rendering it nowhere, which is what it did before.
+  // question it answers. Absent rather than zero when its own histogram outgrew the check.
+  // Omit it then. Computing a figure this panel never renders still spends the mapping budget.
   if (summary.distinctRowsAllColumns !== null) {
     metrics.push({
       label: 'Distinct released rows',
@@ -270,12 +269,11 @@ function JointReIdentifiability({ privacyReport }: { privacyReport: PrivacyRepor
   return (
     <ReportDisclosure title="Joint re-identifiability" countLabel={pluralize(countedCount, 'column')}>
       <PrivacyMetricGrid metrics={metrics} />
-      {/* One self-contained line per kind of match, rather than one list with the partial
-          matches folded into it. A pseudonymized email and a shifted date used to be named
-          alongside a released postcode, which reads as a claim that all three cells were
-          published as they stand — and a reader told their rows are unique "on customer_id"
-          would remove the wrong column. Each line also stands alone, so none of them opens on
-          a conjunction whose antecedent was not rendered. */}
+      {/* One self-contained line per kind of match. Folding a pseudonymized email and a
+          shifted date into the same list as a released postcode reads as a claim that all
+          three cells were published as they stand. A reader told their rows are unique
+          "on customer_id" would then remove the wrong column. Each line also stands alone,
+          so none of them opens on a conjunction whose antecedent was not rendered. */}
       <MatchedColumnLine
         names={namesMatchedOn('wholeValue')}
         lead="Counted over"

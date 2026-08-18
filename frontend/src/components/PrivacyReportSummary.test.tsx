@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { columnReportFixture, privacyReportFixture, rowUniquenessFixture } from '../test-utils/builders'
-import { PrivacyReportSummary } from './PrivacyReportSummary'
+import { PrivacyReportSummary } from './privacy-report/PrivacyReportSummary'
 
 /** A column an outsider can match cell for cell — the plain case the other `matchedOn` values are read against. */
 const matchedWholeValue = (columnIndex: number) => ({

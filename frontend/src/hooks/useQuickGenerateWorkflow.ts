@@ -21,9 +21,7 @@ type QuickGenerateWorkflowOptions = {
 /**
  * The generator behind the "Quick by Data Type" tab.
  *
- * Lifted out of the view so `App` can read `isBusy` during its own render. The view
- * used to mirror this flag up through an effect, which meant the tab strip decided
- * whether to disable itself from a value that only arrived after the next paint.
+ * Lives in `App` so the tab strip can read `isBusy` during the same render.
  */
 export function useQuickGenerateWorkflow({
   settingsLoaded,

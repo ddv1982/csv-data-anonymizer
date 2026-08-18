@@ -6,7 +6,7 @@ export const defaultLocalAiModel = 'gemma3:4b'
  * Mirrors `MAX_SAMPLE_ROW_COUNT` in the core crate, which is the single ceiling
  * every workflow honours. `scripts/check-contracts.mjs` compares the two numbers,
  * because a settings panel offering a value the engine rejects is the drift this
- * pair used to have.
+ * pair must not drift.
  */
 export const maxSampleRowCount = 10000
 

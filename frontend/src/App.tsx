@@ -16,10 +16,8 @@ import { normalizeThemeMode, useTheme } from './hooks/useTheme'
 
 function App() {
   const workflow = useAnonymizerWorkflow()
-  // The three workflows are owned here, not by their views, because the tab strip and
-  // the topbar controls have to know during this render whether any of them is busy.
-  // The paste and quick views used to mirror their busy flag up through an effect, so
-  // that answer only arrived a paint late.
+  // Own the three workflows here so the tab strip and topbar can read busy state
+  // during this render, not from a child effect after the next paint.
   const pasteWorkflow = usePasteDataWorkflow({
     settings: workflow.settings,
     settingsLoaded: workflow.settingsLoaded,
