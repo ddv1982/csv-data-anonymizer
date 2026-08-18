@@ -34,10 +34,8 @@ const smartReplacementStrategies: AnonymizationStrategy[] = [
 ]
 
 /**
- * Every strategy a column can be given, for both the CSV and the paste workflow.
- *
- * The two used to be separate byte-identical lists, which meant a strategy added to
- * one silently went missing from the other.
+ * Every strategy a column can be given. CSV and paste share this list so a new
+ * strategy cannot appear in one workflow and not the other.
  */
 export const columnStrategies: AnonymizationStrategy[] = [
   ...smartReplacementStrategies,

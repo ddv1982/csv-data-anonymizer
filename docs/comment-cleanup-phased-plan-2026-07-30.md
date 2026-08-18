@@ -1,7 +1,7 @@
 # Comment Cleanup — Phased Plan
 
 **Date:** 2026-07-30
-**Status:** proposed, no code changes made
+**Status:** implemented through v1.0.89. `scripts/check-comments.mjs` is the house rule.
 **Companion to:** `docs/simplicity-overhaul-plan-2026-07-30.md` (Phase 4 and Phase 5 there,
 expanded here into executable batches)
 

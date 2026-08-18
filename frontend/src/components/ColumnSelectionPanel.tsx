@@ -10,10 +10,8 @@ type SelectionAction = {
  * The chrome around a column table: bulk-select buttons, an optional notice above
  * the table and a summary below it.
  *
- * The table itself arrives as `children` rather than through forwarded props. This
- * used to re-declare every `ColumnTable` prop and pass it straight through, so each
- * call site drilled eleven props across two levels and every new table prop had to
- * be added in three files.
+ * The table itself arrives as `children` rather than through forwarded props, so a
+ * new `ColumnTable` prop is added at the call site only.
  */
 export function ColumnSelectionPanel({
   actions,

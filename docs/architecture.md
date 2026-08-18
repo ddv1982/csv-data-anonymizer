@@ -1,6 +1,6 @@
 # Architecture
 
-CSV Anonymizer is a local-first desktop application with three runtime boundaries.
+CSV Anonymizer is a local-first desktop application with three runtime boundaries. Dated review notes under `docs/` are historical. This file is the current architecture.
 
 - `csv-anonymizer-core` owns detection, transformation, release evidence, and reusable domain contracts. It has no Tauri dependency.
 - `src-tauri` owns filesystem authority, persisted settings, Local AI adapters, background jobs, and IPC translation.
@@ -27,4 +27,4 @@ CSV Anonymizer is a local-first desktop application with three runtime boundarie
 
 ## Change policy
 
-Boundary refactors land separately from behavioral changes. Every phase must pass Rust tests, Clippy, TypeScript, ESLint, frontend tests, IPC contract checks, and browser workflow tests before the next phase begins.
+Boundary refactors land separately from behavioral changes. Every phase must pass Rust tests, Clippy, TypeScript, ESLint, frontend tests, IPC contract checks, comment narration checks, and browser workflow tests before the next phase begins.

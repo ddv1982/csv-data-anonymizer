@@ -32,6 +32,10 @@ runs:
       shell: bash
       run: npm run docs:check
 
+    - name: Reject past-tense source comments
+      shell: bash
+      run: npm run comments:check
+
     - name: Test release tooling
       shell: bash
       run: npm run tooling:test

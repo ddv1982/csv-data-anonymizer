@@ -10,7 +10,7 @@ import { formatToken } from '../utils/format'
 import { Card } from './Card'
 import { CopyableOutputCard } from './CopyableOutputCard'
 import { LocalAiBlockedAlert } from './LocalAiBlockedAlert'
-import { PrivacyReportSummary } from './PrivacyReportSummary'
+import { PrivacyReportSummary } from './privacy-report/PrivacyReportSummary'
 
 export function QuickDataTypeWorkflowView({
   workflow,

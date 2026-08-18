@@ -1,9 +1,13 @@
 # Simplicity Overhaul — Phased Plan
 
 **Date:** 2026-07-30
-**Status:** proposed, no code changes made
+**Status:** implemented through v1.0.89. The phases below are the original worklist, not open work.
 **Method:** six parallel audit workers (structure, DRY, comments, dead code, frontend, tests);
 every finding below was re-verified against source by the orchestrator before inclusion.
+
+What is still open is not a rewrite. `types.rs` stays one contract file. The eight
+exhaustive strategy matches stay separate. `comments:check` now belongs on the
+canonical validate path so past-tense narration cannot return unnoticed.
 
 ---
 

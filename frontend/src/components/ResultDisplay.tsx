@@ -4,7 +4,7 @@ import type { AnonymizeData } from '../types'
 import { messageFrom } from '../utils/errors'
 import { formatTransformStats } from '../utils/format'
 import { Alert } from './Alert'
-import { PrivacyReportSummary } from './PrivacyReportSummary'
+import { PrivacyReportSummary } from './privacy-report/PrivacyReportSummary'
 
 export function ResultDisplay({
   result,
