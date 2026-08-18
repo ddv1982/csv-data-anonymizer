@@ -146,8 +146,12 @@
 }
 
 .card-content {
+  /* Published as a variable so full-bleed children (the column ledger) can cancel the
+     card inset without hard-coding it. */
+  --card-inset: var(--space-6);
+
   min-width: 0;
-  padding: 0 var(--space-6) var(--space-6);
+  padding: 0 var(--card-inset) var(--card-inset);
 }
 
 .card-header + .card-content {

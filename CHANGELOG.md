@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.92 - 2026-08-19
+
+- Stop the per-column Action dropdowns from clipping their text: a short control box inherited the body line-height, so the line box overflowed the select and cut the glyphs.
+- Rebuild the light theme on a brand-tinted neutral ramp with explicit step roles for canvas, raised surface, component background, hover, selection, borders, and the two text levels, so the surfaces, borders, and accent belong to one palette instead of three unrelated blues.
+- Give light-theme elevation the brand's temperature rather than flat black, and let each element carry one edge treatment — a hairline or a shadow — instead of both.
+- Remove a level of nesting: the column ledger runs the full width of its card rather than sitting as a framed table inside a framed card, and the settings, Local AI, and preview panels read as recessed wells without a border of their own.
+- Record the light-theme findings, direction, and remaining phases in `docs/light-theme-plan-2026-08-19.md`.
+
 ## v1.0.91 - 2026-08-18
 
 - Give the interface one design system: spacing, type, radius, motion, control-height, and z-index scales plus both colour themes now live in `frontend/src/styles/tokens/`, and component CSS reads tokens instead of branching on the active theme.

@@ -4,12 +4,16 @@
  * inside every cell, hairline dividers, and risk carried by a row edge as well as a
  * badge so colour is never the only signal.
  */
+/* The ledger runs the full width of its card: one bordered level instead of a framed
+   table inside a framed card. */
 .table-frame {
-  max-width: 100%;
+  /* The negative inset widens the box past the content column, so the intrinsic
+     max-width cap has to come off or the right edge stops short of the card. */
+  max-width: none;
   overflow: auto;
-  border: 1px solid hsl(var(--border-subtle));
-  border-radius: var(--radius-lg);
-  background: hsl(var(--surface-card));
+  margin-inline: calc(var(--card-inset, 0rem) * -1);
+  border-block: 1px solid hsl(var(--border-subtle));
+  background: transparent;
 }
 
 .column-toolbar {
@@ -395,9 +399,8 @@
   max-width: 100%;
   min-width: 0;
   gap: var(--space-2);
-  border: 1px solid hsl(var(--border-subtle));
   border-radius: var(--radius-lg);
-  background: hsl(var(--surface-panel));
+  background: hsl(var(--surface-inset));
   padding: var(--space-4);
 }
 
@@ -646,6 +649,9 @@
 }
 
 .release-column-frame {
+  max-width: 100%;
+  margin-inline: 0;
+  border: 1px solid hsl(var(--border-subtle));
   border-radius: var(--radius-md);
 }
 

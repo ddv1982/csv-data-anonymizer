@@ -1,103 +1,111 @@
 /*
  * Light theme. Same token names as the dark theme, different values only — component
- * CSS must never branch on the theme itself.
+ * CSS must never branch on the theme.
+ *
+ * Every neutral carries 2-4% of the brand hue, so the accent lands in a field that
+ * already leans the same direction instead of sitting on unrelated grey. Steps follow
+ * the 12-step role model: 1-2 backgrounds, 3-5 component background / hover /
+ * selected, 6-8 borders (static, interactive, focus), 9-10 solid fills, 11-12 text.
  */
 :root[data-resolved-theme='light'],
 :root.theme-resolved-light {
-  --neutral-950: 221 39% 11%;
-  --neutral-900: 217 18% 34%;
-  --neutral-850: 217 14% 46%;
-  --neutral-800: 215 17% 55%;
-  --neutral-700: 214 26% 84%;
-  --neutral-600: 214 28% 87%;
-  --neutral-400: 214 30% 92%;
-  --neutral-300: 216 33% 97%;
-  --neutral-100: 0 0% 100%;
+  /* Brand-tinted neutral ramp */
+  --neutral-100: 210 45% 99.5%; /* raised surfaces */
+  --neutral-300: 213 34% 97.5%; /* canvas */
+  --neutral-400: 213 30% 95.5%; /* component background */
+  --neutral-600: 213 28% 92.5%; /* hover */
+  --neutral-700: 212 30% 89%; /* selected / pressed */
+  --neutral-800: 213 22% 86%; /* static border */
+  --neutral-850: 213 18% 78%; /* interactive border */
+  --neutral-900: 214 15% 42%; /* low-contrast text */
+  --neutral-950: 217 32% 14%; /* high-contrast text */
 
-  --brand-500: 211 89% 39%;
-  --brand-600: 211 89% 32%;
-  --brand-400: 205 86% 52%;
+  --brand-400: 205 82% 52%;
+  --brand-500: 209 84% 41%;
+  --brand-600: 211 86% 33%;
 
-  --background: 216 33% 97%;
-  --foreground: 221 39% 11%;
-  --card: 0 0% 100%;
-  --card-foreground: 221 39% 11%;
+  --background: var(--neutral-300);
+  --foreground: var(--neutral-950);
+  --card: var(--neutral-100);
+  --card-foreground: var(--neutral-950);
   --primary: var(--brand-500);
-  --primary-foreground: 0 0% 100%;
-  --secondary: 214 30% 94%;
-  --secondary-foreground: 221 34% 18%;
-  --muted: 214 30% 92%;
-  --muted-foreground: 217 18% 34%;
-  --accent: 204 86% 94%;
-  --accent-foreground: 210 78% 24%;
-  --destructive: 358 73% 45%;
-  --destructive-foreground: 358 72% 27%;
-  --border: 214 26% 84%;
-  --input: 215 17% 55%;
+  --primary-foreground: 210 45% 99.5%;
+  --secondary: var(--neutral-400);
+  --secondary-foreground: var(--neutral-950);
+  --muted: var(--neutral-400);
+  --muted-foreground: var(--neutral-900);
+  --accent: 205 68% 94%;
+  --accent-foreground: var(--brand-600);
+  --destructive: 356 66% 43%;
+  --destructive-foreground: 356 62% 32%;
+  --border: var(--neutral-800);
+  --input: var(--neutral-850);
   --ring: var(--brand-500);
 
-  --success: 151 66% 31%;
-  --success-foreground: 151 66% 22%;
-  --success-subtle: 151 66% 31%;
-  --success-subtle-foreground: 151 66% 22%;
-  --risk-high: 358 73% 45%;
-  --risk-high-foreground: 358 72% 27%;
-  --risk-medium: 33 94% 42%;
-  --risk-medium-foreground: 28 86% 25%;
-  --risk-low: 151 66% 31%;
-  --risk-low-foreground: 151 66% 22%;
-  --preview-output: 151 66% 22%;
+  --success: 152 54% 29%;
+  --success-foreground: 154 58% 22%;
+  --success-subtle: 152 54% 29%;
+  --success-subtle-foreground: 154 58% 22%;
+  --risk-high: 356 66% 43%;
+  --risk-high-foreground: 356 62% 32%;
+  --risk-medium: 32 86% 37%;
+  --risk-medium-foreground: 28 78% 26%;
+  --risk-low: 152 54% 29%;
+  --risk-low-foreground: 154 58% 22%;
+  --preview-output: 154 58% 24%;
 
-  --surface-app: 216 33% 97%;
-  --surface-app-top: 210 45% 99%;
-  --surface-card: 0 0% 100%;
-  --surface-raised: 210 40% 99%;
-  --surface-panel: 214 38% 95%;
-  --surface-panel-strong: 214 31% 92%;
-  --surface-inset: 216 35% 96%;
-  --surface-hover: 210 64% 96%;
-  --surface-overlay: 0 0% 100%;
-  --row-hover: 210 58% 96%;
-  --row-selected: 205 62% 95%;
-  --row-selected-hover: 205 58% 92%;
+  --surface-app: var(--neutral-300);
+  --surface-app-top: 210 42% 99%;
+  --surface-card: var(--neutral-100);
+  --surface-raised: 210 45% 99.5%;
+  --surface-panel: var(--neutral-400);
+  --surface-panel-strong: var(--neutral-600);
+  --surface-inset: 213 32% 96.5%;
+  --surface-hover: var(--neutral-600);
+  --surface-overlay: 210 45% 99.5%;
+  --row-hover: 210 40% 97%;
+  --row-selected: 205 62% 96%;
+  --row-selected-hover: 205 58% 93.5%;
   --selection-border: var(--brand-500);
 
-  --border-subtle: 214 28% 87%;
-  --border-strong: 215 17% 55%;
+  --border-subtle: var(--neutral-800);
+  --border-strong: var(--neutral-850);
   --border-focus: var(--brand-500);
-  --text-secondary: 217 18% 34%;
-  --text-tertiary: 217 17% 40%;
+  --text-secondary: 215 20% 32%;
+  --text-tertiary: var(--neutral-900);
 
   --brand: var(--brand-500);
-  --brand-container: 210 86% 94%;
-  --privacy: 174 72% 31%;
-  --privacy-container: 171 52% 93%;
-  --info: 199 89% 32%;
-  --info-container: 199 86% 93%;
-  --warning: 36 93% 43%;
-  --warning-foreground: 31 86% 24%;
-  --warning-container: 42 96% 91%;
-  --danger-container: 0 86% 96%;
-  --success-container: 151 58% 91%;
+  --brand-container: 205 68% 94%;
+  --privacy: 174 66% 28%;
+  --privacy-container: 172 46% 92%;
+  --info: var(--brand-500);
+  --info-container: 205 68% 94%;
+  --warning: var(--risk-medium);
+  --warning-foreground: var(--risk-medium-foreground);
+  --warning-container: 40 84% 91%;
+  --danger-container: 356 72% 95.5%;
+  --success-container: 150 44% 92%;
   --focus-ring: var(--brand-500);
-  --overlay: 224 18% 14% / 0.42;
+  --overlay: 215 35% 16% / 0.38;
 
+  /* Shadows carry the brand temperature rather than flat black, so elevation reads as
+     a property of the surface instead of an effect painted over it. */
   --shadow-card:
-    0 1px 2px hsl(220 35% 16% / 0.06),
-    0 10px 26px hsl(220 35% 16% / 0.08);
+    0 1px 2px hsl(214 44% 24% / 0.06),
+    0 4px 14px hsl(214 44% 24% / 0.05);
   --shadow-popover:
-    0 16px 42px hsl(220 35% 16% / 0.18),
-    0 1px 2px hsl(220 35% 16% / 0.1);
+    0 12px 32px hsl(214 44% 24% / 0.14),
+    0 2px 6px hsl(214 44% 24% / 0.08);
   --shadow-modal:
-    0 26px 68px hsl(220 35% 16% / 0.22),
-    0 2px 8px hsl(220 35% 16% / 0.12);
+    0 24px 60px hsl(214 44% 24% / 0.18),
+    0 3px 10px hsl(214 44% 24% / 0.1);
   --shadow-toast:
-    0 14px 36px hsl(220 35% 16% / 0.16),
+    0 14px 36px hsl(214 44% 24% / 0.16),
     0 0 0 1px hsl(var(--destructive) / 0.16);
-  --shadow-control-thumb: 0 1px 2px hsl(220 35% 16% / 0.2);
+  --shadow-control-thumb: 0 1px 2px hsl(214 44% 24% / 0.24);
 
   --app-texture:
-    linear-gradient(180deg, hsl(var(--surface-app-top)) 0, hsl(var(--surface-app)) 18rem);
+    linear-gradient(180deg, hsl(var(--surface-app-top)) 0, hsl(var(--surface-app)) 20rem);
 
   color-scheme: light;
 }

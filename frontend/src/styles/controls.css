@@ -228,13 +228,14 @@
   transform: rotate(180deg);
 }
 
+/* Recessed wells rather than boxes: one level of separation, carried by the surface
+   step instead of a surface step plus a border. */
 .settings-panel,
 .local-ai-panel {
   display: grid;
   gap: var(--space-4);
-  border: 1px solid hsl(var(--border-subtle));
   border-radius: var(--radius-lg);
-  background: hsl(var(--surface-panel));
+  background: hsl(var(--surface-inset));
   padding: var(--space-4);
 }
 
