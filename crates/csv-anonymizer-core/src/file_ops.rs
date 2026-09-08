@@ -11,9 +11,7 @@ pub(crate) fn replace_file_atomically<T>(
     overwrite: bool,
     write_temporary: impl FnOnce(&Path) -> Result<T>,
 ) -> Result<T> {
-    replace_file_atomically_with_handle(output_path, overwrite, |path, _file| {
-        write_temporary(path)
-    })
+    replace_file_atomically_with_handle(output_path, overwrite, |path, _file| write_temporary(path))
 }
 
 pub(crate) fn replace_file_atomically_with_handle<T>(
@@ -280,13 +278,14 @@ mod tests {
         let victim_path = temp_dir.path().join("victim.csv");
         fs::write(&victim_path, "victim").unwrap();
 
-        let error = replace_file_atomically_with_handle(&output_path, true, |temporary_path, file| {
-            fs::remove_file(temporary_path).unwrap();
-            std::os::unix::fs::symlink(&victim_path, temporary_path).unwrap();
-            file.write_all(b"anonymized").unwrap();
-            Ok(())
-        })
-        .unwrap_err();
+        let error =
+            replace_file_atomically_with_handle(&output_path, true, |temporary_path, file| {
+                fs::remove_file(temporary_path).unwrap();
+                std::os::unix::fs::symlink(&victim_path, temporary_path).unwrap();
+                file.write_all(b"anonymized").unwrap();
+                Ok(())
+            })
+            .unwrap_err();
 
         assert!(matches!(error, AnonymizerError::Io(_)));
         assert_eq!(fs::read_to_string(&victim_path).unwrap(), "victim");

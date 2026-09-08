@@ -221,8 +221,7 @@ fn process_download_line(job: &LocalAiDownloadJob, line: &[u8]) -> Result<bool, 
     job.report_progress(progress);
     Ok(completed)
 }
-const INCOMPLETE_DOWNLOAD_ERROR: &str =
-    "Ollama ended the model download before reporting success.";
+const INCOMPLETE_DOWNLOAD_ERROR: &str = "Ollama ended the model download before reporting success.";
 
 #[cfg(test)]
 mod tests {

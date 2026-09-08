@@ -223,7 +223,6 @@ impl SmartReplacementMap {
             *self.rejection_counts.entry(reason).or_default() += 1;
         }
     }
-
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

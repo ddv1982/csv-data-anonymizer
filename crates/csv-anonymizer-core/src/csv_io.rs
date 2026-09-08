@@ -509,17 +509,21 @@ pub(crate) fn process_file_with_control_and_overwrite(
 ) -> Result<ProcessResult> {
     validate_file(input_path)?;
     let start_time = Instant::now();
-    let mut result = replace_file_atomically_with_handle(output_path, overwrite, |temporary_output_path, temporary_output_file| {
-        process_file_to_temporary_output(
-            input_path,
-            temporary_output_path,
-            temporary_output_file,
-            columns,
-            options,
-            control,
-            start_time,
-        )
-    })?;
+    let mut result = replace_file_atomically_with_handle(
+        output_path,
+        overwrite,
+        |temporary_output_path, temporary_output_file| {
+            process_file_to_temporary_output(
+                input_path,
+                temporary_output_path,
+                temporary_output_file,
+                columns,
+                options,
+                control,
+                start_time,
+            )
+        },
+    )?;
     result.output_path = output_path.to_path_buf();
     Ok(result)
 }

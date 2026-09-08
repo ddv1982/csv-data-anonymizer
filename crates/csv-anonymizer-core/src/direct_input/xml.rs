@@ -236,7 +236,11 @@ fn transform_xml_content(
                 if selected_xml_text_path(&path, selected_by_path) {
                     append_pending_xml_scalar(&mut pending_scalar, &path, raw.into_owned(), false);
                 } else {
-                    flush_pending_xml_scalar(&mut pending_scalar, &mut writer, &mut transform_context)?;
+                    flush_pending_xml_scalar(
+                        &mut pending_scalar,
+                        &mut writer,
+                        &mut transform_context,
+                    )?;
                     writer.write_event(Event::Text(event)).map_err(xml_error)?;
                 }
             }
@@ -245,19 +249,28 @@ fn transform_xml_content(
                 if selected_xml_text_path(&path, selected_by_path) {
                     append_pending_xml_scalar(&mut pending_scalar, &path, raw.into_owned(), true);
                 } else {
-                    flush_pending_xml_scalar(&mut pending_scalar, &mut writer, &mut transform_context)?;
+                    flush_pending_xml_scalar(
+                        &mut pending_scalar,
+                        &mut writer,
+                        &mut transform_context,
+                    )?;
                     writer.write_event(Event::CData(event)).map_err(xml_error)?;
                 }
             }
             Event::GeneralRef(event) => {
                 if selected_xml_text_path(&path, selected_by_path) {
-                    let raw = decode_xml_general_ref(event.as_ref()).ok_or_else(|| {
-                        xml_error("unsupported XML general reference")
-                    })?;
+                    let raw = decode_xml_general_ref(event.as_ref())
+                        .ok_or_else(|| xml_error("unsupported XML general reference"))?;
                     append_pending_xml_scalar(&mut pending_scalar, &path, raw, false);
                 } else {
-                    flush_pending_xml_scalar(&mut pending_scalar, &mut writer, &mut transform_context)?;
-                    writer.write_event(Event::GeneralRef(event)).map_err(xml_error)?;
+                    flush_pending_xml_scalar(
+                        &mut pending_scalar,
+                        &mut writer,
+                        &mut transform_context,
+                    )?;
+                    writer
+                        .write_event(Event::GeneralRef(event))
+                        .map_err(xml_error)?;
                 }
             }
             Event::End(event) => {
@@ -318,11 +331,7 @@ fn flush_pending_xml_scalar(
     let Some(pending_scalar) = pending.take() else {
         return Ok(());
     };
-    let replacement = xml_text_replacement(
-        &pending_scalar.path,
-        &pending_scalar.raw,
-        context,
-    );
+    let replacement = xml_text_replacement(&pending_scalar.path, &pending_scalar.raw, context);
     match replacement.as_deref() {
         Some(anonymized) if pending_scalar.all_cdata => writer
             .write_event(Event::CData(BytesCData::new(anonymized)))
@@ -356,7 +365,6 @@ fn decode_xml_general_ref(raw: &[u8]) -> Option<String> {
         _ => None,
     }
 }
-
 
 /// Wraps any XML reader/writer failure as an input-parse error.
 ///

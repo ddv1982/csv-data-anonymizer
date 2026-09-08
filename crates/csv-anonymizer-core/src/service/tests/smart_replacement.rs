@@ -375,7 +375,10 @@ fn anonymize_revalidates_preview_replacement_against_tail_values() {
     let output = read_sample(&output_path, 10).unwrap();
     assert_ne!(output.rows[0][0], "Charlie Ray");
     assert_ne!(output.rows[1][0], "Charlie Ray");
-    assert_eq!(provider.requests, vec![vec!["Alice Smith".to_string(), "Charlie Ray".to_string()]]);
+    assert_eq!(
+        provider.requests,
+        vec![vec!["Alice Smith".to_string(), "Charlie Ray".to_string()]]
+    );
     assert!(result.privacy_report.smart_replacement_rejections >= 1);
 }
 

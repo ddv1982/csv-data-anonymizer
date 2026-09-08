@@ -346,7 +346,12 @@ mod tests {
         // otherwise-unused lease instead of being rejected as a concurrent run.
         let valid = "11".repeat(32);
         assert!(csv_anonymizer_core::TokenizationKey::parse_hex(&valid).is_ok());
-        let job = jobs.create_job_for_output(None).expect("valid retry admitted");
-        assert_eq!(job.snapshot().expect("status").state, AnonymizeJobState::Running);
+        let job = jobs
+            .create_job_for_output(None)
+            .expect("valid retry admitted");
+        assert_eq!(
+            job.snapshot().expect("status").state,
+            AnonymizeJobState::Running
+        );
     }
 }

@@ -937,10 +937,7 @@ fn transforms_xml_text_cdata_and_references_as_one_scalar() {
     .unwrap();
     let mut reader = quick_xml::Reader::from_str(&result.output);
     loop {
-        if matches!(
-            reader.read_event().unwrap(),
-            quick_xml::events::Event::Eof
-        ) {
+        if matches!(reader.read_event().unwrap(), quick_xml::events::Event::Eof) {
             break;
         }
     }
