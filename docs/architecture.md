@@ -26,6 +26,13 @@ CSV Anonymizer is a local-first desktop application with three runtime boundarie
 6. UI workflow phases must not encode contradictory combinations of busy, job, and result state.
 7. Showing a preview must preserve the user's reading position.
 
+## Source and workflow boundaries
+
+- Core CSV entry points take explicit execution inputs: `CsvAnalysisOptions` carries sampling and optional candidate detection, `TransformRuntime` carries run-only Smart replacement and tokenization dependencies, and `CsvRunOptions` adds processing control. CLI and Tauri construct those borrowed inputs at their boundary; lower-level processing inputs remain separate.
+- `types.rs` remains the internal wire façade. Its declarations are physically owned by `types/column.rs`, `types/sampling.rs`, `types/processing.rs`, `types/workflow.rs`, and `types/report.rs`, while crate-root type paths and serialized contracts remain unchanged.
+- Frontend protection readiness is derived by the pure `workflowReadiness` helper. Each CSV, paste, and quick workflow combines it with its own source, selection, and busy prerequisites so disabled controls and direct actions make the same decision.
+- `useAnonymizeJob` submits and handles terminal workflow outcomes. `useAnonymizeJobTracker` owns live-channel updates, stale-channel polling, cancellation requests, and lost-contact recovery without changing the parent hook's public shape.
+
 ## Change policy
 
 Boundary refactors land separately from behavioral changes. Every phase must pass Rust tests, Clippy, TypeScript, ESLint, frontend tests, IPC contract checks, comment narration checks, and browser workflow tests before the next phase begins.

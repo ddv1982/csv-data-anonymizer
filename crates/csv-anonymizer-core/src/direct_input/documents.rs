@@ -13,10 +13,9 @@ use std::time::Instant;
 
 use super::shared::{
     FieldSampleLimits, FieldSamples, PreviewSelection, analysis_from_fields,
-    analysis_from_fields_with_candidate_detector, bounded_preview_sample_count, escape_path_key,
-    next_row_index, paste_detection_sample_rows, paste_transform_data, preview_field_sample_limits,
-    preview_from_fields_with_smart_provider, push_identified_field_sample,
-    selected_columns_by_source, smart_replacements_for_fields,
+    bounded_preview_sample_count, escape_path_key, next_row_index, paste_detection_sample_rows,
+    paste_transform_data, preview_field_sample_limits, preview_from_fields_with_smart_provider,
+    push_identified_field_sample, selected_columns_by_source, smart_replacements_for_fields,
 };
 
 pub(super) fn preview_value_document_with_smart_provider(
@@ -42,39 +41,22 @@ pub(super) fn preview_value_document_with_smart_provider(
     )
 }
 
-pub(super) fn transform_json_with_smart_provider(
+pub(super) fn transform_value_document_with_smart_provider(
     input: PasteTransformParams,
+    format: PasteDataFormat,
     provider: Option<&mut dyn SmartReplacementProvider>,
     tokenization_key: Option<&crate::TokenizationKey>,
 ) -> Result<PasteTransformData> {
-    let value = parse_json(&input.content)?;
-    let (output, result) = transform_value_document(
-        input,
-        value,
-        PasteDataFormat::Json,
-        provider,
-        tokenization_key,
-    )?;
-    let output = serde_json::to_string_pretty(&output)
-        .map_err(|error| AnonymizerError::input_parse("JSON", error.to_string()))?;
-    Ok(PasteTransformData { output, ..result })
-}
-
-pub(super) fn transform_yaml_with_smart_provider(
-    input: PasteTransformParams,
-    provider: Option<&mut dyn SmartReplacementProvider>,
-    tokenization_key: Option<&crate::TokenizationKey>,
-) -> Result<PasteTransformData> {
-    let value = parse_yaml(&input.content)?;
-    let (output, result) = transform_value_document(
-        input,
-        value,
-        PasteDataFormat::Yaml,
-        provider,
-        tokenization_key,
-    )?;
-    let output = yaml_serde::to_string(&output)
-        .map_err(|error| AnonymizerError::input_parse("YAML", error.to_string()))?;
+    let value = parse_value_document(format, &input.content)?;
+    let (output, result) =
+        transform_value_document(input, value, format, provider, tokenization_key)?;
+    let output = match format {
+        PasteDataFormat::Json => serde_json::to_string_pretty(&output)
+            .map_err(|error| AnonymizerError::input_parse("JSON", error.to_string()))?,
+        PasteDataFormat::Yaml => yaml_serde::to_string(&output)
+            .map_err(|error| AnonymizerError::input_parse("YAML", error.to_string()))?,
+        _ => unreachable!("value documents require JSON or YAML"),
+    };
     Ok(PasteTransformData { output, ..result })
 }
 
@@ -87,7 +69,7 @@ fn transform_value_document(
 ) -> Result<(Value, PasteTransformData)> {
     let start_time = Instant::now();
     let (analysis, coverage) =
-        analyze_value_document_with_coverage(format, &value, input.sample_row_count)?;
+        analyze_value_document(format, &value, input.sample_row_count, None)?;
     let metadata = select_columns(&analysis.columns, &input.columns, &input.controls)?;
     let selected_by_path = selected_columns_by_source(&metadata);
     let smart_replacements =
@@ -146,41 +128,7 @@ pub(super) fn analyze_value_document(
     format: PasteDataFormat,
     value: &Value,
     sample_row_count: usize,
-) -> Result<PasteAnalyzeData> {
-    analyze_value_document_with_coverage(format, value, sample_row_count)
-        .map(|(analysis, _)| analysis)
-}
-
-pub(super) fn analyze_value_document_with_candidate_detector(
-    format: PasteDataFormat,
-    value: &Value,
-    sample_row_count: usize,
-    detector: &mut dyn CandidateDetector,
-) -> Result<PasteAnalyzeData> {
-    let sample_row_count = paste_detection_sample_rows(sample_row_count)?;
-    let mut fields = Vec::new();
-    collect_json_fields(
-        value,
-        format,
-        &mut Vec::new(),
-        &mut fields,
-        FieldSampleLimits::detection_only(sample_row_count),
-    )?;
-    Ok(analysis_from_fields_with_candidate_detector(
-        format,
-        &fields,
-        infer_value_row_count(value),
-        Some(detector),
-    )
-    .0)
-}
-
-/// [`analyze_value_document`] plus how much of the input it classified. Split for
-/// the same reason as the XML pair: only the transform path reports coverage.
-fn analyze_value_document_with_coverage(
-    format: PasteDataFormat,
-    value: &Value,
-    sample_row_count: usize,
+    detector: Option<&mut dyn CandidateDetector>,
 ) -> Result<(PasteAnalyzeData, DetectionCoverage)> {
     let sample_row_count = paste_detection_sample_rows(sample_row_count)?;
     let mut fields = Vec::new();
@@ -196,6 +144,7 @@ fn analyze_value_document_with_coverage(
         format,
         &fields,
         infer_value_row_count(value),
+        detector,
     ))
 }
 
@@ -257,6 +206,14 @@ pub(super) fn parse_json(content: &str) -> Result<Value> {
 pub(super) fn parse_yaml(content: &str) -> Result<Value> {
     yaml_serde::from_str(content)
         .map_err(|error| AnonymizerError::input_parse("YAML", error.to_string()))
+}
+
+pub(super) fn parse_value_document(format: PasteDataFormat, content: &str) -> Result<Value> {
+    match format {
+        PasteDataFormat::Json => parse_json(content),
+        PasteDataFormat::Yaml => parse_yaml(content),
+        _ => unreachable!("value documents require JSON or YAML"),
+    }
 }
 
 fn collect_json_fields(

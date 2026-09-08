@@ -82,7 +82,7 @@ pub(super) fn preview_from_fields_with_smart_provider(
     selection: PreviewSelection<'_, '_>,
 ) -> Result<PreviewData> {
     let (headers, detection_rows) = fields_to_rows(fields, FieldWindow::Detection);
-    let metadata = metadata_from_fields(fields, &headers, &detection_rows);
+    let metadata = metadata_from_fields(fields, &headers, &detection_rows, None).0;
     let (_, display_rows) = fields_to_rows(fields, FieldWindow::Display);
     // A field-shaped paste knows how many values it sampled, not how many the source
     // document holds, so the cardinality warning here rests on the absolute test
@@ -183,19 +183,10 @@ pub(super) fn analysis_from_fields(
     format: PasteDataFormat,
     fields: &[FieldSamples],
     row_count: usize,
-) -> (PasteAnalyzeData, DetectionCoverage) {
-    analysis_from_fields_with_candidate_detector(format, fields, row_count, None)
-}
-
-pub(super) fn analysis_from_fields_with_candidate_detector(
-    format: PasteDataFormat,
-    fields: &[FieldSamples],
-    row_count: usize,
     detector: Option<&mut dyn CandidateDetector>,
 ) -> (PasteAnalyzeData, DetectionCoverage) {
     let (headers, rows) = fields_to_rows(fields, FieldWindow::Detection);
-    let (columns, detector_status) =
-        metadata_from_fields_with_candidate_detector(fields, &headers, &rows, detector);
+    let (columns, detector_status) = metadata_from_fields(fields, &headers, &rows, detector);
     let coverage = detection_coverage(fields, rows.len());
 
     (
@@ -470,14 +461,6 @@ pub(super) fn fields_to_rows(
 }
 
 pub(super) fn metadata_from_fields(
-    fields: &[FieldSamples],
-    headers: &[String],
-    rows: &[Vec<String>],
-) -> Vec<ColumnMetadata> {
-    metadata_from_fields_with_candidate_detector(fields, headers, rows, None).0
-}
-
-fn metadata_from_fields_with_candidate_detector(
     fields: &[FieldSamples],
     headers: &[String],
     rows: &[Vec<String>],

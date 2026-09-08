@@ -16,6 +16,7 @@ pub(crate) mod csv_io;
 pub mod detection;
 pub mod direct_input;
 pub mod error;
+mod execution;
 mod file_ops;
 pub(crate) mod metadata;
 mod prepared_snapshot;
@@ -34,6 +35,7 @@ pub(crate) mod types;
 mod uniqueness;
 
 pub use error::{AnonymizerError, Result};
+pub use execution::{CsvAnalysisOptions, CsvRunOptions, TransformRuntime};
 pub use metadata::should_auto_select_column;
 pub use prepared_snapshot::{
     PREPARED_ANALYSIS_VERSION, PreparedAnalysisSnapshot, PreparedCandidateEvidence,

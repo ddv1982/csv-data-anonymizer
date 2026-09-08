@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { checkContracts, enumContracts, limitContracts, structContracts } from '../check-contracts.mjs'
+import { checkContracts, enumContracts, limitContracts, rustSources, structContracts } from '../check-contracts.mjs'
 
 // The fixture is generated from the contract lists the gate itself exports, so it
 // agrees with them by construction. A contract added to the gate is covered here
@@ -56,28 +56,27 @@ function generatedTsDefaults() {
   return `${limitContracts.map(([, tsName]) => `export const ${tsName} = 10`).join('\n')}\n`
 }
 
-// `jobs` lands in src-tauri/src/jobs.rs, the third entry in the gate's rustSources,
-// which makes it the natural place to plant a second declaration: it is read after
-// the core types file, so the copy is the later one and a first-match lookup would
-// never see it.
+// `jobs` lands in src-tauri/src/jobs.rs. Every checked source is materialized
+// below, so adding a source to the gate cannot silently omit it from fixtures.
 function fixture({
   coreTypes = generatedRustTypes(),
+  reportTypes = '',
   jobs = '',
   types = generatedTsTypes(),
   defaults = generatedTsDefaults(),
 } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'csv-anonymizer-contracts-'))
-  fs.mkdirSync(path.join(root, 'crates/csv-anonymizer-core/src'), { recursive: true })
-  fs.mkdirSync(path.join(root, 'src-tauri/src/commands'), { recursive: true })
-  fs.mkdirSync(path.join(root, 'src-tauri/src/local_ai'), { recursive: true })
-  fs.mkdirSync(path.join(root, 'src-tauri/src/settings'), { recursive: true })
+  const rustContent = new Map([
+    ['crates/csv-anonymizer-core/src/types.rs', coreTypes],
+    ['crates/csv-anonymizer-core/src/types/report.rs', reportTypes],
+    ['src-tauri/src/jobs.rs', jobs],
+  ])
+  for (const source of rustSources) {
+    const filename = path.join(root, source)
+    fs.mkdirSync(path.dirname(filename), { recursive: true })
+    fs.writeFileSync(filename, rustContent.get(source) ?? '')
+  }
   fs.mkdirSync(path.join(root, 'frontend/src'), { recursive: true })
-
-  fs.writeFileSync(path.join(root, 'crates/csv-anonymizer-core/src/types.rs'), coreTypes)
-  fs.writeFileSync(path.join(root, 'src-tauri/src/jobs.rs'), jobs)
-  fs.writeFileSync(path.join(root, 'src-tauri/src/commands/csv.rs'), '')
-  fs.writeFileSync(path.join(root, 'src-tauri/src/local_ai/types.rs'), '')
-  fs.writeFileSync(path.join(root, 'src-tauri/src/settings/model.rs'), '')
   fs.writeFileSync(path.join(root, 'frontend/src/types.ts'), types)
   fs.writeFileSync(path.join(root, 'frontend/src/defaults.ts'), defaults)
   return root

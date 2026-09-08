@@ -132,7 +132,13 @@ fn analyze_csv_data(
     let mut headers = if local_ner_enabled {
         if let Some(message) = local_ner_unavailable_message(local_ner_model)? {
             let mut headers = service
-                .analyze_csv_with_sample_rows(analysis_path, sample_row_count)
+                .analyze_csv(
+                    analysis_path,
+                    csv_anonymizer_core::CsvAnalysisOptions {
+                        sample_rows: sample_row_count,
+                        ..Default::default()
+                    },
+                )
                 .map_err(|error| error.to_string())?;
             headers.detection_run_summary.local_ner = LocalNerRunStatus::Unavailable;
             headers.detection_run_summary.message = Some(message);
@@ -140,16 +146,24 @@ fn analyze_csv_data(
         } else {
             let mut detector = local_candidate_detector(local_ner_model)?;
             service
-                .analyze_csv_with_sample_rows_and_candidate_detector(
+                .analyze_csv(
                     analysis_path,
-                    sample_row_count,
-                    Some(&mut detector),
+                    csv_anonymizer_core::CsvAnalysisOptions {
+                        sample_rows: sample_row_count,
+                        candidate_detector: Some(&mut detector),
+                    },
                 )
                 .map_err(|error| error.to_string())?
         }
     } else {
         service
-            .analyze_csv_with_sample_rows(analysis_path, sample_row_count)
+            .analyze_csv(
+                analysis_path,
+                csv_anonymizer_core::CsvAnalysisOptions {
+                    sample_rows: sample_row_count,
+                    ..Default::default()
+                },
+            )
             .map_err(|error| error.to_string())?
     };
     // The staged path is an implementation detail. Keep the public analysis and
@@ -269,7 +283,7 @@ pub async fn preview_anonymization(
             .as_mut()
             .map(|provider| provider as &mut dyn SmartReplacementProvider);
         service()
-            .preview_anonymization_with_run_secrets(
+            .preview_anonymization(
                 PreviewParams {
                     file_path: processing_path,
                     columns: request.columns,
@@ -277,8 +291,10 @@ pub async fn preview_anonymization(
                     sample_count: request.sample_count,
                     sample_row_count: request.sample_row_count,
                 },
-                provider,
-                tokenization_key.as_ref(),
+                csv_anonymizer_core::TransformRuntime {
+                    provider,
+                    tokenization_key: tokenization_key.as_ref(),
+                },
             )
             .map_err(|error| error.to_string())
     })
@@ -598,13 +614,16 @@ mod tests {
         std::fs::write(&input_path, "name\nGrace\n").expect("replace original");
 
         let preview = service()
-            .preview_anonymization(PreviewParams {
-                file_path: validated.processing_path(),
-                columns: vec![0],
-                controls: Vec::new(),
-                sample_count: 1,
-                sample_row_count: 100,
-            })
+            .preview_anonymization(
+                PreviewParams {
+                    file_path: validated.processing_path(),
+                    columns: vec![0],
+                    controls: Vec::new(),
+                    sample_count: 1,
+                    sample_row_count: 100,
+                },
+                csv_anonymizer_core::TransformRuntime::default(),
+            )
             .expect("preview staged input");
 
         assert_eq!(preview.previews[0].samples[0].original, "Alice");

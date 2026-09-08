@@ -14,49 +14,26 @@ use std::time::Instant;
 
 use super::shared::{
     FieldSampleLimits, FieldSamples, PreviewSelection, analysis_from_fields,
-    analysis_from_fields_with_candidate_detector, bounded_preview_sample_count, escape_path_key,
-    format_path, next_row_index, paste_detection_sample_rows, paste_transform_data,
-    preview_field_sample_limits, preview_from_fields_with_smart_provider,
-    push_identified_field_sample, selected_columns_by_source, smart_replacements_for_fields,
+    bounded_preview_sample_count, escape_path_key, format_path, next_row_index,
+    paste_detection_sample_rows, paste_transform_data, preview_field_sample_limits,
+    preview_from_fields_with_smart_provider, push_identified_field_sample,
+    selected_columns_by_source, smart_replacements_for_fields,
 };
 
-pub(super) fn analyze_xml(content: &str, sample_row_count: usize) -> Result<PasteAnalyzeData> {
-    analyze_xml_with_coverage(content, sample_row_count).map(|(analysis, _)| analysis)
-}
-
-pub(super) fn analyze_xml_with_candidate_detector(
+/// XML analysis plus the coverage used by transforms for the privacy report.
+pub(super) fn analyze_xml(
     content: &str,
     sample_row_count: usize,
-    detector: &mut dyn CandidateDetector,
-) -> Result<PasteAnalyzeData> {
-    let sample_row_count = paste_detection_sample_rows(sample_row_count)?;
-    let fields = collect_xml_fields(content, FieldSampleLimits::detection_only(sample_row_count))?;
-    Ok(analysis_from_fields_with_candidate_detector(
-        PasteDataFormat::Xml,
-        &fields,
-        infer_xml_row_count(&fields),
-        Some(detector),
-    )
-    .0)
-}
-
-/// [`analyze_xml`] plus how much of the input it classified.
-///
-/// Split out rather than widening `analyze_xml` because only the transform path
-/// builds a privacy report and so only it needs the coverage; the analyze command
-/// returns the DTO alone.
-fn analyze_xml_with_coverage(
-    content: &str,
-    sample_row_count: usize,
+    detector: Option<&mut dyn CandidateDetector>,
 ) -> Result<(PasteAnalyzeData, DetectionCoverage)> {
     let sample_row_count = paste_detection_sample_rows(sample_row_count)?;
     let fields = collect_xml_fields(content, FieldSampleLimits::detection_only(sample_row_count))?;
     let row_count = infer_xml_row_count(&fields);
-
     Ok(analysis_from_fields(
         PasteDataFormat::Xml,
         &fields,
         row_count,
+        detector,
     ))
 }
 
@@ -82,7 +59,7 @@ pub(super) fn transform_xml_with_smart_provider(
     provider: Option<&mut dyn SmartReplacementProvider>,
     tokenization_key: Option<&crate::TokenizationKey>,
 ) -> Result<PasteTransformData> {
-    let (analysis, coverage) = analyze_xml_with_coverage(&input.content, input.sample_row_count)?;
+    let (analysis, coverage) = analyze_xml(&input.content, input.sample_row_count, None)?;
     let metadata = select_columns(&analysis.columns, &input.columns, &input.controls)?;
     let selected_by_path = selected_columns_by_source(&metadata);
     // Collected over every value rather than over the detection window, so each value

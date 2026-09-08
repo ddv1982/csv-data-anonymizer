@@ -187,7 +187,7 @@ fn preview_uses_local_ai_provider_for_smart_replacement_columns() {
 
     let preview = workspace
         .service
-        .preview_anonymization_with_smart_provider(
+        .preview_anonymization(
             PreviewParams {
                 controls: vec![typed_control(
                     0,
@@ -197,7 +197,10 @@ fn preview_uses_local_ai_provider_for_smart_replacement_columns() {
                 sample_count: 2,
                 ..preview_params(input_path, vec![0])
             },
-            Some(&mut provider),
+            crate::TransformRuntime {
+                provider: Some(&mut provider),
+                tokenization_key: None,
+            },
         )
         .unwrap();
 
@@ -221,7 +224,7 @@ fn anonymize_uses_local_ai_provider_and_reports_smart_replacements() {
 
     let result = workspace
         .service
-        .anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+        .anonymize_csv(
             AnonymizeParams {
                 controls: vec![typed_control(
                     0,
@@ -230,9 +233,14 @@ fn anonymize_uses_local_ai_provider_and_reports_smart_replacements() {
                 )],
                 ..anonymize_params(input_path, output_path.clone(), vec![0])
             },
-            10,
-            None,
-            Some(&mut provider),
+            crate::CsvRunOptions {
+                sample_rows: 10,
+                control: None,
+                transform: crate::TransformRuntime {
+                    provider: Some(&mut provider),
+                    tokenization_key: None,
+                },
+            },
         )
         .unwrap();
 
@@ -259,20 +267,23 @@ fn anonymize_reuses_preview_smart_replacements_and_generates_missing_values() {
 
     let preview = workspace
         .service
-        .preview_anonymization_with_smart_provider(
+        .preview_anonymization(
             PreviewParams {
                 controls: controls.clone(),
                 sample_count: 1,
                 ..preview_params(input_path.clone(), vec![0])
             },
-            Some(&mut preview_provider),
+            crate::TransformRuntime {
+                provider: Some(&mut preview_provider),
+                tokenization_key: None,
+            },
         )
         .unwrap();
     let mut final_provider = RecordingSmartProvider::new("Final");
 
     workspace
         .service
-        .anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+        .anonymize_csv(
             AnonymizeParams {
                 file_path: input_path,
                 output_path: output_path.clone(),
@@ -281,9 +292,14 @@ fn anonymize_reuses_preview_smart_replacements_and_generates_missing_values() {
                 force: false,
                 preview_smart_replacements: preview.smart_replacements.clone(),
             },
-            10,
-            None,
-            Some(&mut final_provider),
+            crate::CsvRunOptions {
+                sample_rows: 10,
+                control: None,
+                transform: crate::TransformRuntime {
+                    provider: Some(&mut final_provider),
+                    tokenization_key: None,
+                },
+            },
         )
         .unwrap();
 
@@ -308,7 +324,7 @@ fn anonymize_rejects_invalid_preview_smart_replacements_and_generates_missing_va
 
     let result = workspace
         .service
-        .anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+        .anonymize_csv(
             AnonymizeParams {
                 controls: vec![typed_control(
                     0,
@@ -322,9 +338,14 @@ fn anonymize_rejects_invalid_preview_smart_replacements_and_generates_missing_va
                 }],
                 ..anonymize_params(input_path, output_path.clone(), vec![0])
             },
-            10,
-            None,
-            Some(&mut provider),
+            crate::CsvRunOptions {
+                sample_rows: 10,
+                control: None,
+                transform: crate::TransformRuntime {
+                    provider: Some(&mut provider),
+                    tokenization_key: None,
+                },
+            },
         )
         .unwrap();
 
@@ -352,7 +373,7 @@ fn anonymize_revalidates_preview_replacement_against_tail_values() {
 
     let result = workspace
         .service
-        .anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+        .anonymize_csv(
             AnonymizeParams {
                 controls: vec![typed_control(
                     0,
@@ -366,9 +387,14 @@ fn anonymize_revalidates_preview_replacement_against_tail_values() {
                 }],
                 ..anonymize_params(input_path, output_path.clone(), vec![0])
             },
-            10,
-            None,
-            Some(&mut provider),
+            crate::CsvRunOptions {
+                sample_rows: 10,
+                control: None,
+                transform: crate::TransformRuntime {
+                    provider: Some(&mut provider),
+                    tokenization_key: None,
+                },
+            },
         )
         .unwrap();
 
@@ -392,7 +418,7 @@ fn anonymize_rejects_smart_replacements_carrying_another_rows_value() {
 
     let result = workspace
         .service
-        .anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+        .anonymize_csv(
             AnonymizeParams {
                 controls: vec![typed_control(
                     0,
@@ -401,9 +427,14 @@ fn anonymize_rejects_smart_replacements_carrying_another_rows_value() {
                 )],
                 ..anonymize_params(input_path, output_path.clone(), vec![0])
             },
-            10,
-            None,
-            Some(&mut provider),
+            crate::CsvRunOptions {
+                sample_rows: 10,
+                control: None,
+                transform: crate::TransformRuntime {
+                    provider: Some(&mut provider),
+                    tokenization_key: None,
+                },
+            },
         )
         .unwrap();
 
@@ -518,7 +549,7 @@ fn anonymize_rejects_smart_replacements_carrying_an_earlier_chunks_value() {
 
     let result = workspace
         .service
-        .anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+        .anonymize_csv(
             AnonymizeParams {
                 controls: vec![typed_control(
                     0,
@@ -527,9 +558,14 @@ fn anonymize_rejects_smart_replacements_carrying_an_earlier_chunks_value() {
                 )],
                 ..anonymize_params(input_path, output_path.clone(), vec![0])
             },
-            30,
-            None,
-            Some(&mut provider),
+            crate::CsvRunOptions {
+                sample_rows: 30,
+                control: None,
+                transform: crate::TransformRuntime {
+                    provider: Some(&mut provider),
+                    tokenization_key: None,
+                },
+            },
         )
         .unwrap();
 
@@ -638,7 +674,7 @@ fn anonymize_reports_all_rejected_smart_replacement_batches() {
 
     let result = workspace
         .service
-        .anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+        .anonymize_csv(
             AnonymizeParams {
                 controls: vec![typed_control(
                     0,
@@ -647,9 +683,14 @@ fn anonymize_reports_all_rejected_smart_replacement_batches() {
                 )],
                 ..anonymize_params(input_path, output_path.clone(), vec![0])
             },
-            10,
-            None,
-            Some(&mut provider),
+            crate::CsvRunOptions {
+                sample_rows: 10,
+                control: None,
+                transform: crate::TransformRuntime {
+                    provider: Some(&mut provider),
+                    tokenization_key: None,
+                },
+            },
         )
         .unwrap();
 
@@ -682,7 +723,7 @@ fn anonymize_caps_local_ai_unique_values_and_falls_back_for_excess_values() {
 
     let result = workspace
         .service
-        .anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+        .anonymize_csv(
             AnonymizeParams {
                 file_path: input_path,
                 output_path,
@@ -695,9 +736,14 @@ fn anonymize_caps_local_ai_unique_values_and_falls_back_for_excess_values() {
                 force: false,
                 preview_smart_replacements: vec![],
             },
-            10,
-            None,
-            Some(&mut provider),
+            crate::CsvRunOptions {
+                sample_rows: 10,
+                control: None,
+                transform: crate::TransformRuntime {
+                    provider: Some(&mut provider),
+                    tokenization_key: None,
+                },
+            },
         )
         .unwrap();
     let requested_values = provider.requests.iter().map(Vec::len).sum::<usize>();
@@ -724,7 +770,7 @@ fn anonymize_rejects_duplicate_smart_outputs_across_provider_chunks() {
 
     let result = workspace
         .service
-        .anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+        .anonymize_csv(
             AnonymizeParams {
                 file_path: input_path,
                 output_path,
@@ -737,9 +783,14 @@ fn anonymize_rejects_duplicate_smart_outputs_across_provider_chunks() {
                 force: false,
                 preview_smart_replacements: vec![],
             },
-            30,
-            None,
-            Some(&mut provider),
+            crate::CsvRunOptions {
+                sample_rows: 30,
+                control: None,
+                transform: crate::TransformRuntime {
+                    provider: Some(&mut provider),
+                    tokenization_key: None,
+                },
+            },
         )
         .unwrap();
 
@@ -762,15 +813,18 @@ fn local_ai_strategy_requires_provider_before_processing() {
 
     let error = workspace
         .service
-        .preview_anonymization(PreviewParams {
-            controls: vec![typed_control(
-                0,
-                DataType::FullName,
-                AnonymizationStrategy::LocalAi,
-            )],
-            sample_count: 1,
-            ..preview_params(input_path, vec![0])
-        })
+        .preview_anonymization(
+            PreviewParams {
+                controls: vec![typed_control(
+                    0,
+                    DataType::FullName,
+                    AnonymizationStrategy::LocalAi,
+                )],
+                sample_count: 1,
+                ..preview_params(input_path, vec![0])
+            },
+            crate::TransformRuntime::default(),
+        )
         .unwrap_err();
 
     assert!(error.to_string().contains("Local AI"));
@@ -828,14 +882,19 @@ fn a_local_ai_column_rejected_wholesale_releases_no_source_value() {
 
     let result = workspace
         .service
-        .anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+        .anonymize_csv(
             AnonymizeParams {
                 controls: vec![control(0, AnonymizationStrategy::LocalAi)],
                 ..anonymize_params(input_path, output_path.clone(), vec![0])
             },
-            100,
-            None,
-            Some(&mut provider),
+            crate::CsvRunOptions {
+                sample_rows: 100,
+                control: None,
+                transform: crate::TransformRuntime {
+                    provider: Some(&mut provider),
+                    tokenization_key: None,
+                },
+            },
         )
         .unwrap();
 
@@ -908,13 +967,16 @@ fn pass_through_types_are_still_unchanged_under_auto_and_pseudonymize() {
 
         workspace
             .service
-            .anonymize_csv_with_sample_rows_and_control(
+            .anonymize_csv(
                 AnonymizeParams {
                     controls: vec![control(0, strategy)],
                     ..anonymize_params(input_path, output_path.clone(), vec![0])
                 },
-                100,
-                None,
+                crate::CsvRunOptions {
+                    sample_rows: 100,
+                    control: None,
+                    ..Default::default()
+                },
             )
             .unwrap();
 
@@ -940,7 +1002,7 @@ fn wholesale_leak_guard_fallback_is_explained_without_naming_unproven_columns() 
 
     let result = workspace
         .service
-        .anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+        .anonymize_csv(
             AnonymizeParams {
                 controls: vec![typed_control(
                     0,
@@ -949,9 +1011,14 @@ fn wholesale_leak_guard_fallback_is_explained_without_naming_unproven_columns() 
                 )],
                 ..anonymize_params(input_path, output_path.clone(), vec![0])
             },
-            10,
-            None,
-            Some(&mut provider),
+            crate::CsvRunOptions {
+                sample_rows: 10,
+                control: None,
+                transform: crate::TransformRuntime {
+                    provider: Some(&mut provider),
+                    tokenization_key: None,
+                },
+            },
         )
         .unwrap();
 
@@ -986,14 +1053,19 @@ fn accepted_local_ai_replacements_draw_no_wholesale_fallback_note() {
 
     let result = workspace
         .service
-        .anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+        .anonymize_csv(
             AnonymizeParams {
                 controls: vec![control(0, AnonymizationStrategy::LocalAi)],
                 ..anonymize_params(input_path, output_path.clone(), vec![0])
             },
-            100,
-            None,
-            Some(&mut provider),
+            crate::CsvRunOptions {
+                sample_rows: 100,
+                control: None,
+                transform: crate::TransformRuntime {
+                    provider: Some(&mut provider),
+                    tokenization_key: None,
+                },
+            },
         )
         .unwrap();
 

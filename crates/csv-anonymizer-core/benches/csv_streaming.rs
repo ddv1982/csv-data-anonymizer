@@ -38,25 +38,28 @@ fn bench_standard_csv_streaming(c: &mut Criterion) {
     c.bench_function("anonymize_standard_streaming_10k", |b| {
         b.iter(|| {
             service
-                .anonymize_csv(AnonymizeParams {
-                    file_path: black_box(input_path.clone()),
-                    output_path: output_path.clone(),
-                    columns: vec![1, 2],
-                    controls: vec![
-                        ColumnControl {
-                            column_index: 1,
-                            type_override: Some(DataType::Email),
-                            strategy: AnonymizationStrategy::Auto,
-                        },
-                        ColumnControl {
-                            column_index: 2,
-                            type_override: Some(DataType::FullName),
-                            strategy: AnonymizationStrategy::Auto,
-                        },
-                    ],
-                    force: true,
-                    preview_smart_replacements: vec![],
-                })
+                .anonymize_csv(
+                    AnonymizeParams {
+                        file_path: black_box(input_path.clone()),
+                        output_path: output_path.clone(),
+                        columns: vec![1, 2],
+                        controls: vec![
+                            ColumnControl {
+                                column_index: 1,
+                                type_override: Some(DataType::Email),
+                                strategy: AnonymizationStrategy::Auto,
+                            },
+                            ColumnControl {
+                                column_index: 2,
+                                type_override: Some(DataType::FullName),
+                                strategy: AnonymizationStrategy::Auto,
+                            },
+                        ],
+                        force: true,
+                        preview_smart_replacements: vec![],
+                    },
+                    csv_anonymizer_core::CsvRunOptions::default(),
+                )
                 .expect("standard anonymization should succeed")
         })
     });
@@ -108,18 +111,21 @@ fn bench_cardinality(c: &mut Criterion) {
             group.bench_function(format!("{strategy_label}_{shape_label}_10k"), |b| {
                 b.iter(|| {
                     service
-                        .anonymize_csv(AnonymizeParams {
-                            file_path: black_box(input_path.clone()),
-                            output_path: output_path.clone(),
-                            columns: vec![1],
-                            controls: vec![ColumnControl {
-                                column_index: 1,
-                                type_override: Some(DataType::String),
-                                strategy,
-                            }],
-                            force: true,
-                            preview_smart_replacements: vec![],
-                        })
+                        .anonymize_csv(
+                            AnonymizeParams {
+                                file_path: black_box(input_path.clone()),
+                                output_path: output_path.clone(),
+                                columns: vec![1],
+                                controls: vec![ColumnControl {
+                                    column_index: 1,
+                                    type_override: Some(DataType::String),
+                                    strategy,
+                                }],
+                                force: true,
+                                preview_smart_replacements: vec![],
+                            },
+                            csv_anonymizer_core::CsvRunOptions::default(),
+                        )
                         .expect("cardinality anonymization should succeed")
                 })
             });

@@ -355,12 +355,16 @@ pub fn run_anonymize_job(
             let provider = provider
                 .as_mut()
                 .map(|provider| provider as &mut dyn SmartReplacementProvider);
-            service().anonymize_csv_with_run_secrets(
+            service().anonymize_csv(
                 input,
-                sample_row_count,
-                Some(&mut control),
-                provider,
-                tokenization_key.as_ref(),
+                csv_anonymizer_core::CsvRunOptions {
+                    sample_rows: sample_row_count,
+                    control: Some(&mut control),
+                    transform: csv_anonymizer_core::TransformRuntime {
+                        provider,
+                        tokenization_key: tokenization_key.as_ref(),
+                    },
+                },
             )
         }
         Err(error) => Err(AnonymizerError::SmartReplacement(error)),

@@ -1,4 +1,5 @@
 use super::*;
+use crate::ProcessControl;
 use crate::types::{MatchedPart, ReleaseEvidenceStatus, ReleaseReadinessStatus};
 use std::io::Write;
 
@@ -9,11 +10,10 @@ fn anonymizes_selected_columns_without_web_runtime() {
 
     let result = workspace
         .service
-        .anonymize_csv(anonymize_params(
-            fixture("sample.csv"),
-            output_path.clone(),
-            vec![1],
-        ))
+        .anonymize_csv(
+            anonymize_params(fixture("sample.csv"), output_path.clone(), vec![1]),
+            crate::CsvRunOptions::default(),
+        )
         .unwrap();
 
     assert_eq!(result.output_path, output_path);
@@ -47,7 +47,10 @@ fn late_starting_pii_is_offered_for_selection_and_not_written_to_the_output() {
     fs::write(&input_path, &content).unwrap();
 
     // Select exactly the columns the app would offer to anonymize by default.
-    let headers = workspace.service.analyze_csv(&input_path).unwrap();
+    let headers = workspace
+        .service
+        .analyze_csv(&input_path, crate::CsvAnalysisOptions::default())
+        .unwrap();
     let auto_selected: Vec<usize> = headers
         .columns
         .iter()
@@ -62,11 +65,10 @@ fn late_starting_pii_is_offered_for_selection_and_not_written_to_the_output() {
 
     workspace
         .service
-        .anonymize_csv(anonymize_params(
-            input_path,
-            output_path.clone(),
-            auto_selected,
-        ))
+        .anonymize_csv(
+            anonymize_params(input_path, output_path.clone(), auto_selected),
+            crate::CsvRunOptions::default(),
+        )
         .unwrap();
 
     let output = fs::read_to_string(&output_path).unwrap();
@@ -90,7 +92,10 @@ fn one_rare_validated_identifier_is_anchored_in_the_detection_basis() {
     }
     fs::write(&input_path, content).unwrap();
 
-    let headers = workspace.service.analyze_csv(&input_path).unwrap();
+    let headers = workspace
+        .service
+        .analyze_csv(&input_path, crate::CsvAnalysisOptions::default())
+        .unwrap();
     let column = &headers.columns[0];
     assert_eq!(column.pii_risk, crate::types::PiiRisk::High);
     assert_eq!(
@@ -116,9 +121,12 @@ fn anonymize_csv_with_control_reports_progress() {
 
         workspace
             .service
-            .anonymize_csv_with_control(
+            .anonymize_csv(
                 anonymize_params(fixture("sample.csv"), output_path.clone(), vec![1]),
-                &mut control,
+                crate::CsvRunOptions {
+                    control: Some(&mut control),
+                    ..Default::default()
+                },
             )
             .unwrap()
     };
@@ -136,9 +144,12 @@ fn selected_sample_empty_columns_transform_later_values() {
 
     let result = workspace
         .service
-        .anonymize_csv_with_sample_rows(
+        .anonymize_csv(
             anonymize_params(input_path, output_path.clone(), vec![1]),
-            2,
+            crate::CsvRunOptions {
+                sample_rows: 2,
+                ..Default::default()
+            },
         )
         .unwrap();
 
@@ -163,16 +174,19 @@ fn anonymize_preserves_numeric_shapes_in_output_file() {
 
     workspace
         .service
-        .anonymize_csv(AnonymizeParams {
-            controls: vec![
-                control(0, AnonymizationStrategy::Auto),
-                control(1, AnonymizationStrategy::Auto),
-                control(2, AnonymizationStrategy::Auto),
-                control(3, AnonymizationStrategy::Auto),
-                control(4, AnonymizationStrategy::Auto),
-            ],
-            ..anonymize_params(input_path, output_path.clone(), vec![0, 1, 2, 3, 4])
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                controls: vec![
+                    control(0, AnonymizationStrategy::Auto),
+                    control(1, AnonymizationStrategy::Auto),
+                    control(2, AnonymizationStrategy::Auto),
+                    control(3, AnonymizationStrategy::Auto),
+                    control(4, AnonymizationStrategy::Auto),
+                ],
+                ..anonymize_params(input_path, output_path.clone(), vec![0, 1, 2, 3, 4])
+            },
+            crate::CsvRunOptions::default(),
+        )
         .unwrap();
 
     let output = read_sample(&output_path, 10).unwrap();
@@ -214,14 +228,17 @@ fn anonymize_reuses_repeated_name_sources_in_random_mode() {
 
     workspace
         .service
-        .anonymize_csv(AnonymizeParams {
-            controls: vec![typed_control(
-                0,
-                DataType::FirstName,
-                AnonymizationStrategy::Auto,
-            )],
-            ..anonymize_params(input_path, output_path.clone(), vec![0])
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                controls: vec![typed_control(
+                    0,
+                    DataType::FirstName,
+                    AnonymizationStrategy::Auto,
+                )],
+                ..anonymize_params(input_path, output_path.clone(), vec![0])
+            },
+            crate::CsvRunOptions::default(),
+        )
         .unwrap();
 
     let output = read_sample(&output_path, 10).unwrap();
@@ -242,14 +259,17 @@ fn anonymize_random_mode_avoids_duplicate_names_for_distinct_sources() {
 
     workspace
         .service
-        .anonymize_csv(AnonymizeParams {
-            controls: vec![typed_control(
-                0,
-                DataType::FirstName,
-                AnonymizationStrategy::Auto,
-            )],
-            ..anonymize_params(input_path, output_path.clone(), vec![0])
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                controls: vec![typed_control(
+                    0,
+                    DataType::FirstName,
+                    AnonymizationStrategy::Auto,
+                )],
+                ..anonymize_params(input_path, output_path.clone(), vec![0])
+            },
+            crate::CsvRunOptions::default(),
+        )
         .unwrap();
 
     let output = read_sample(&output_path, 20).unwrap();
@@ -276,14 +296,17 @@ fn anonymize_reuses_repeated_values_in_single_output() {
 
     workspace
         .service
-        .anonymize_csv(AnonymizeParams {
-            controls: vec![
-                typed_control(0, DataType::FirstName, AnonymizationStrategy::Auto),
-                typed_control(1, DataType::LastName, AnonymizationStrategy::Auto),
-                typed_control(2, DataType::Email, AnonymizationStrategy::Auto),
-            ],
-            ..anonymize_params(input_path.clone(), output_path.clone(), vec![0, 1, 2])
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                controls: vec![
+                    typed_control(0, DataType::FirstName, AnonymizationStrategy::Auto),
+                    typed_control(1, DataType::LastName, AnonymizationStrategy::Auto),
+                    typed_control(2, DataType::Email, AnonymizationStrategy::Auto),
+                ],
+                ..anonymize_params(input_path.clone(), output_path.clone(), vec![0, 1, 2])
+            },
+            crate::CsvRunOptions::default(),
+        )
         .unwrap();
 
     let output = read_sample(&output_path, 10).unwrap();
@@ -304,10 +327,13 @@ fn anonymize_applies_pass_through_control() {
 
     let result = workspace
         .service
-        .anonymize_csv(AnonymizeParams {
-            controls: vec![control(0, AnonymizationStrategy::PassThrough)],
-            ..anonymize_params(input_path, output_path.clone(), vec![0])
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                controls: vec![control(0, AnonymizationStrategy::PassThrough)],
+                ..anonymize_params(input_path, output_path.clone(), vec![0])
+            },
+            crate::CsvRunOptions::default(),
+        )
         .unwrap();
 
     assert_eq!(result.columns_anonymized, 0);
@@ -328,14 +354,17 @@ fn anonymize_does_not_count_auto_noop_selected_columns() {
 
     let result = workspace
         .service
-        .anonymize_csv(AnonymizeParams {
-            controls: vec![
-                typed_control(0, DataType::Email, AnonymizationStrategy::PassThrough),
-                typed_control(1, DataType::CountryCode, AnonymizationStrategy::Auto),
-                typed_control(2, DataType::String, AnonymizationStrategy::Mask),
-            ],
-            ..anonymize_params(input_path, output_path.clone(), vec![0, 1, 2])
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                controls: vec![
+                    typed_control(0, DataType::Email, AnonymizationStrategy::PassThrough),
+                    typed_control(1, DataType::CountryCode, AnonymizationStrategy::Auto),
+                    typed_control(2, DataType::String, AnonymizationStrategy::Mask),
+                ],
+                ..anonymize_params(input_path, output_path.clone(), vec![0, 1, 2])
+            },
+            crate::CsvRunOptions::default(),
+        )
         .unwrap();
 
     let output = read_sample(&output_path, 10).unwrap();
@@ -353,10 +382,13 @@ fn anonymize_rejects_output_path_equal_to_input_even_with_force() {
 
     let error = workspace
         .service
-        .anonymize_csv(AnonymizeParams {
-            force: true,
-            ..anonymize_params(input_path.clone(), input_path.clone(), vec![0])
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                force: true,
+                ..anonymize_params(input_path.clone(), input_path.clone(), vec![0])
+            },
+            crate::CsvRunOptions::default(),
+        )
         .unwrap_err();
 
     assert!(
@@ -376,14 +408,17 @@ fn anonymize_rejects_absolute_input_matching_bare_relative_output() {
     let output_path = input_path.file_name().unwrap().into();
 
     let error = service
-        .anonymize_csv(AnonymizeParams {
-            file_path: input_path.clone(),
-            output_path,
-            columns: vec![0],
-            controls: vec![],
-            force: true,
-            preview_smart_replacements: vec![],
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                file_path: input_path.clone(),
+                output_path,
+                columns: vec![0],
+                controls: vec![],
+                force: true,
+                preview_smart_replacements: vec![],
+            },
+            crate::CsvRunOptions::default(),
+        )
         .unwrap_err();
 
     assert!(
@@ -407,14 +442,17 @@ fn anonymize_counts_iban_evidence_as_quasi_identifier() {
 
     let result = workspace
         .service
-        .anonymize_csv(AnonymizeParams {
-            file_path: input_path,
-            output_path,
-            columns: vec![0],
-            controls: vec![],
-            force: false,
-            preview_smart_replacements: vec![],
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                file_path: input_path,
+                output_path,
+                columns: vec![0],
+                controls: vec![],
+                force: false,
+                preview_smart_replacements: vec![],
+            },
+            crate::CsvRunOptions::default(),
+        )
         .unwrap();
 
     assert_eq!(result.privacy_report.direct_identifiers, 0);
@@ -443,9 +481,12 @@ fn anonymize_reports_partial_detection_coverage_in_privacy_notes() {
 
     let result = workspace
         .service
-        .anonymize_csv_with_sample_rows(
+        .anonymize_csv(
             anonymize_params(input_path, output_path.clone(), vec![1]),
-            10,
+            crate::CsvRunOptions {
+                sample_rows: 10,
+                ..Default::default()
+            },
         )
         .unwrap();
 
@@ -468,9 +509,12 @@ fn anonymize_omits_coverage_note_when_every_row_was_examined() {
 
     let result = workspace
         .service
-        .anonymize_csv_with_sample_rows(
+        .anonymize_csv(
             anonymize_params(input_path, output_path.clone(), vec![1]),
-            10,
+            crate::CsvRunOptions {
+                sample_rows: 10,
+                ..Default::default()
+            },
         )
         .unwrap();
 
@@ -500,9 +544,12 @@ fn anonymize_states_the_mistyping_risk_when_no_column_was_left_unselected() {
 
     let result = workspace
         .service
-        .anonymize_csv_with_sample_rows(
+        .anonymize_csv(
             anonymize_params(input_path, output_path.clone(), vec![0, 1]),
-            10,
+            crate::CsvRunOptions {
+                sample_rows: 10,
+                ..Default::default()
+            },
         )
         .unwrap();
 
@@ -552,7 +599,10 @@ fn the_release_report_states_how_many_rows_the_released_columns_single_out() {
     let output_path = workspace.path("quasi-identifiers-anonymized.csv");
     write_quasi_identifier_fixture(&input_path);
 
-    let headers = workspace.service.analyze_csv(&input_path).unwrap();
+    let headers = workspace
+        .service
+        .analyze_csv(&input_path, crate::CsvAnalysisOptions::default())
+        .unwrap();
     let name_index = headers
         .columns
         .iter()
@@ -562,14 +612,17 @@ fn the_release_report_states_how_many_rows_the_released_columns_single_out() {
 
     let result = workspace
         .service
-        .anonymize_csv(AnonymizeParams {
-            file_path: input_path,
-            output_path,
-            columns: vec![name_index],
-            controls: vec![control(name_index, AnonymizationStrategy::Redact)],
-            force: false,
-            preview_smart_replacements: vec![],
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                file_path: input_path,
+                output_path,
+                columns: vec![name_index],
+                controls: vec![control(name_index, AnonymizationStrategy::Redact)],
+                force: false,
+                preview_smart_replacements: vec![],
+            },
+            crate::CsvRunOptions::default(),
+        )
         .unwrap();
 
     let summary = result
@@ -658,7 +711,10 @@ fn a_fully_redacted_release_reports_no_applicable_measure_rather_than_a_pass() {
     let output_path = workspace.path("all-redacted-anonymized.csv");
     write_quasi_identifier_fixture(&input_path);
 
-    let headers = workspace.service.analyze_csv(&input_path).unwrap();
+    let headers = workspace
+        .service
+        .analyze_csv(&input_path, crate::CsvAnalysisOptions::default())
+        .unwrap();
     let all: Vec<usize> = headers.columns.iter().map(|column| column.index).collect();
     let controls = all
         .iter()
@@ -667,14 +723,17 @@ fn a_fully_redacted_release_reports_no_applicable_measure_rather_than_a_pass() {
 
     let result = workspace
         .service
-        .anonymize_csv(AnonymizeParams {
-            file_path: input_path,
-            output_path,
-            columns: all,
-            controls,
-            force: false,
-            preview_smart_replacements: vec![],
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                file_path: input_path,
+                output_path,
+                columns: all,
+                controls,
+                force: false,
+                preview_smart_replacements: vec![],
+            },
+            crate::CsvRunOptions::default(),
+        )
         .unwrap();
 
     let item = result
@@ -719,7 +778,10 @@ fn the_finding_separates_released_values_from_surviving_formats() {
     content.push_str("123456789,1011AB\n");
     fs::write(&input_path, content).unwrap();
 
-    let headers = workspace.service.analyze_csv(&input_path).unwrap();
+    let headers = workspace
+        .service
+        .analyze_csv(&input_path, crate::CsvAnalysisOptions::default())
+        .unwrap();
     let customer_id = headers
         .columns
         .iter()
@@ -729,18 +791,21 @@ fn the_finding_separates_released_values_from_surviving_formats() {
 
     let result = workspace
         .service
-        .anonymize_csv(AnonymizeParams {
-            file_path: input_path,
-            output_path,
-            columns: vec![customer_id],
-            controls: vec![typed_control(
-                customer_id,
-                DataType::NumericId,
-                AnonymizationStrategy::Pseudonymize,
-            )],
-            force: false,
-            preview_smart_replacements: vec![],
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                file_path: input_path,
+                output_path,
+                columns: vec![customer_id],
+                controls: vec![typed_control(
+                    customer_id,
+                    DataType::NumericId,
+                    AnonymizationStrategy::Pseudonymize,
+                )],
+                force: false,
+                preview_smart_replacements: vec![],
+            },
+            crate::CsvRunOptions::default(),
+        )
         .unwrap();
 
     let summary = result
@@ -801,7 +866,9 @@ fn city_fixture_uniqueness(
     output_path: &std::path::Path,
 ) -> crate::types::AnonymizeData {
     let service = AnonymizerService::new("test-version");
-    let headers = service.analyze_csv(input_path).unwrap();
+    let headers = service
+        .analyze_csv(input_path, crate::CsvAnalysisOptions::default())
+        .unwrap();
     let name_index = headers
         .columns
         .iter()
@@ -810,14 +877,17 @@ fn city_fixture_uniqueness(
         .index;
 
     service
-        .anonymize_csv(AnonymizeParams {
-            controls: vec![control(name_index, AnonymizationStrategy::Redact)],
-            ..anonymize_params(
-                input_path.to_path_buf(),
-                output_path.to_path_buf(),
-                vec![name_index],
-            )
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                controls: vec![control(name_index, AnonymizationStrategy::Redact)],
+                ..anonymize_params(
+                    input_path.to_path_buf(),
+                    output_path.to_path_buf(),
+                    vec![name_index],
+                )
+            },
+            crate::CsvRunOptions::default(),
+        )
         .unwrap()
 }
 
@@ -1005,7 +1075,10 @@ fn a_partial_match_is_named_as_the_part_it_matched() {
     }
     fs::write(&input_path, content).unwrap();
 
-    let headers = workspace.service.analyze_csv(&input_path).unwrap();
+    let headers = workspace
+        .service
+        .analyze_csv(&input_path, crate::CsvAnalysisOptions::default())
+        .unwrap();
     let indices: Vec<usize> = headers.columns.iter().map(|column| column.index).collect();
     let controls = headers
         .columns
@@ -1025,14 +1098,17 @@ fn a_partial_match_is_named_as_the_part_it_matched() {
 
     let result = workspace
         .service
-        .anonymize_csv(AnonymizeParams {
-            file_path: input_path,
-            output_path,
-            columns: indices,
-            controls,
-            force: false,
-            preview_smart_replacements: vec![],
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                file_path: input_path,
+                output_path,
+                columns: indices,
+                controls,
+                force: false,
+                preview_smart_replacements: vec![],
+            },
+            crate::CsvRunOptions::default(),
+        )
         .unwrap();
 
     let item = result

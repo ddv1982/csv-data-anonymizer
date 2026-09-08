@@ -41,17 +41,23 @@ const INVERSION_MECHANISM: &str = FREQUENCY_INVERSION_MECHANISM;
 fn repeated_values_columns() -> Vec<ColumnMetadata> {
     let service = AnonymizerService::new("test-version");
     service
-        .analyze_csv(fixture("repeated-values.csv"))
+        .analyze_csv(
+            fixture("repeated-values.csv"),
+            crate::CsvAnalysisOptions::default(),
+        )
         .unwrap()
         .columns
 }
 
 fn cardinality_warnings(columns: Vec<usize>, controls: Vec<ColumnControl>) -> Vec<String> {
     let preview = AnonymizerService::new("test-version")
-        .preview_anonymization(PreviewParams {
-            controls,
-            ..preview_params(fixture("repeated-values.csv"), columns)
-        })
+        .preview_anonymization(
+            PreviewParams {
+                controls,
+                ..preview_params(fixture("repeated-values.csv"), columns)
+            },
+            crate::TransformRuntime::default(),
+        )
         .unwrap();
 
     preview
@@ -206,14 +212,17 @@ fn warning_about_cardinality_does_not_count_the_column_as_pass_through() {
 
     let result = workspace
         .service
-        .anonymize_csv(AnonymizeParams {
-            controls: vec![control(1, AnonymizationStrategy::Pseudonymize)],
-            ..anonymize_params(
-                fixture("repeated-values.csv"),
-                workspace.path("repeated-values-anonymized.csv"),
-                vec![1],
-            )
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                controls: vec![control(1, AnonymizationStrategy::Pseudonymize)],
+                ..anonymize_params(
+                    fixture("repeated-values.csv"),
+                    workspace.path("repeated-values-anonymized.csv"),
+                    vec![1],
+                )
+            },
+            crate::CsvRunOptions::default(),
+        )
         .unwrap();
 
     let report = result.privacy_report;
@@ -230,14 +239,17 @@ fn the_run_reports_the_exact_distribution_of_each_pseudonymized_column() {
 
     let result = workspace
         .service
-        .anonymize_csv(AnonymizeParams {
-            controls: vec![control(1, AnonymizationStrategy::Pseudonymize)],
-            ..anonymize_params(
-                fixture("repeated-values.csv"),
-                workspace.path("repeated-values-anonymized.csv"),
-                vec![1],
-            )
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                controls: vec![control(1, AnonymizationStrategy::Pseudonymize)],
+                ..anonymize_params(
+                    fixture("repeated-values.csv"),
+                    workspace.path("repeated-values-anonymized.csv"),
+                    vec![1],
+                )
+            },
+            crate::CsvRunOptions::default(),
+        )
         .unwrap();
 
     let distributions = result.privacy_report.column_value_distributions;
@@ -256,14 +268,17 @@ fn a_redacted_column_reports_no_distribution() {
 
     let result = workspace
         .service
-        .anonymize_csv(AnonymizeParams {
-            controls: vec![control(1, AnonymizationStrategy::Redact)],
-            ..anonymize_params(
-                fixture("repeated-values.csv"),
-                workspace.path("repeated-values-redacted.csv"),
-                vec![1],
-            )
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                controls: vec![control(1, AnonymizationStrategy::Redact)],
+                ..anonymize_params(
+                    fixture("repeated-values.csv"),
+                    workspace.path("repeated-values-redacted.csv"),
+                    vec![1],
+                )
+            },
+            crate::CsvRunOptions::default(),
+        )
         .unwrap();
 
     assert!(
@@ -283,14 +298,17 @@ fn the_report_names_the_invertible_columns_and_the_pseudonymization_caveat() {
 
     let result = workspace
         .service
-        .anonymize_csv(AnonymizeParams {
-            controls: vec![control(1, AnonymizationStrategy::Pseudonymize)],
-            ..anonymize_params(
-                fixture("repeated-values.csv"),
-                workspace.path("repeated-values-reported.csv"),
-                vec![1],
-            )
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                controls: vec![control(1, AnonymizationStrategy::Pseudonymize)],
+                ..anonymize_params(
+                    fixture("repeated-values.csv"),
+                    workspace.path("repeated-values-reported.csv"),
+                    vec![1],
+                )
+            },
+            crate::CsvRunOptions::default(),
+        )
         .unwrap();
     let report = result.privacy_report;
 
@@ -332,14 +350,17 @@ fn a_redacted_run_reports_no_frequency_or_pseudonymization_caveat() {
 
     let result = workspace
         .service
-        .anonymize_csv(AnonymizeParams {
-            controls: vec![control(1, AnonymizationStrategy::Redact)],
-            ..anonymize_params(
-                fixture("repeated-values.csv"),
-                workspace.path("repeated-values-redacted-notes.csv"),
-                vec![1],
-            )
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                controls: vec![control(1, AnonymizationStrategy::Redact)],
+                ..anonymize_params(
+                    fixture("repeated-values.csv"),
+                    workspace.path("repeated-values-redacted-notes.csv"),
+                    vec![1],
+                )
+            },
+            crate::CsvRunOptions::default(),
+        )
         .unwrap();
 
     for note in &result.privacy_report.notes {
@@ -373,10 +394,13 @@ fn cardinality_warnings_for(
     strategy: AnonymizationStrategy,
 ) -> Vec<crate::types::PreviewWarning> {
     AnonymizerService::new("test-version")
-        .preview_anonymization(PreviewParams {
-            controls: vec![control(1, strategy)],
-            ..preview_params(file_path, vec![1])
-        })
+        .preview_anonymization(
+            PreviewParams {
+                controls: vec![control(1, strategy)],
+                ..preview_params(file_path, vec![1])
+            },
+            crate::TransformRuntime::default(),
+        )
         .unwrap()
         .warnings
         .into_iter()
@@ -557,7 +581,12 @@ fn dominant_value_column_file(
 #[test]
 fn the_dominant_value_fixture_has_the_shape_these_tests_depend_on() {
     let service = AnonymizerService::new("test-version");
-    let analysis = service.analyze_csv(fixture("dominant-value.csv")).unwrap();
+    let analysis = service
+        .analyze_csv(
+            fixture("dominant-value.csv"),
+            crate::CsvAnalysisOptions::default(),
+        )
+        .unwrap();
     assert_eq!(analysis.row_count, 200);
 
     let queue = &analysis.columns[1];
@@ -690,14 +719,17 @@ fn the_post_run_report_names_the_dominant_value_rather_than_the_distinct_count()
 
     let result = workspace
         .service
-        .anonymize_csv(AnonymizeParams {
-            controls: vec![control(1, AnonymizationStrategy::Pseudonymize)],
-            ..anonymize_params(
-                fixture("dominant-value.csv"),
-                workspace.path("dominant-value-reported.csv"),
-                vec![1],
-            )
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                controls: vec![control(1, AnonymizationStrategy::Pseudonymize)],
+                ..anonymize_params(
+                    fixture("dominant-value.csv"),
+                    workspace.path("dominant-value-reported.csv"),
+                    vec![1],
+                )
+            },
+            crate::CsvRunOptions::default(),
+        )
         .unwrap();
     let report = result.privacy_report;
 
@@ -798,14 +830,17 @@ fn the_run_reports_the_dominant_value_the_preview_warned_about() {
 
     let result = workspace
         .service
-        .anonymize_csv(AnonymizeParams {
-            controls: vec![control(1, AnonymizationStrategy::Pseudonymize)],
-            ..anonymize_params(
-                fixture("dominant-value.csv"),
-                workspace.path("dominant-value-anonymized.csv"),
-                vec![1],
-            )
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                controls: vec![control(1, AnonymizationStrategy::Pseudonymize)],
+                ..anonymize_params(
+                    fixture("dominant-value.csv"),
+                    workspace.path("dominant-value-anonymized.csv"),
+                    vec![1],
+                )
+            },
+            crate::CsvRunOptions::default(),
+        )
         .unwrap();
 
     let distributions = result.privacy_report.column_value_distributions;
@@ -910,7 +945,9 @@ fn a_dominant_value_its_runner_up_nearly_matches_is_warned_about_anyway() {
     // distinct values is well past the absolute term's ten, and 33 singletons put coverage
     // at 0.67, below the ratio term's gate.
     let service = AnonymizerService::new("test-version");
-    let analysis = service.analyze_csv(path.clone()).unwrap();
+    let analysis = service
+        .analyze_csv(path.clone(), crate::CsvAnalysisOptions::default())
+        .unwrap();
     assert_eq!(analysis.row_count, 100);
 
     let column = &analysis.columns[1];

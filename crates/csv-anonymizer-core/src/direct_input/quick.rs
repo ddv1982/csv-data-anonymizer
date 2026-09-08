@@ -1,8 +1,9 @@
 use crate::detection::{classify_pii_risk, detect_column_type_with_name, detect_empty_format};
 use crate::error::{AnonymizerError, Result};
+use crate::execution::TransformRuntime;
 use crate::random::{random_string, random_uuid_v4};
 use crate::service::build_privacy_report;
-use crate::smart::{SmartReplacementProvider, prepare_smart_replacements_from_rows};
+use crate::smart::prepare_smart_replacements_from_rows;
 use crate::strategies::{TransformState, transform_value_with_state};
 use crate::types::{
     AnonymizationStrategy, ColumnMetadata, ColumnValueDistribution, DataType, DetectionCoverage,
@@ -13,22 +14,14 @@ use rand::Rng;
 const QUICK_GENERATE_MAX_COUNT: usize = 1_000;
 const HEX_CHARSET: &str = "0123456789abcdef";
 
-pub fn generate_quick_values(input: QuickGenerateParams) -> Result<QuickTransformData> {
-    generate_quick_values_with_smart_provider(input, None)
-}
-
-pub fn generate_quick_values_with_smart_provider(
+pub fn generate_quick_values(
     input: QuickGenerateParams,
-    provider: Option<&mut dyn SmartReplacementProvider>,
+    runtime: TransformRuntime<'_, '_>,
 ) -> Result<QuickTransformData> {
-    generate_quick_values_with_run_secrets(input, provider, None)
-}
-
-pub fn generate_quick_values_with_run_secrets(
-    input: QuickGenerateParams,
-    provider: Option<&mut dyn SmartReplacementProvider>,
-    tokenization_key: Option<&crate::TokenizationKey>,
-) -> Result<QuickTransformData> {
+    let TransformRuntime {
+        provider,
+        tokenization_key,
+    } = runtime;
     if input.count == 0 {
         return Err(AnonymizerError::input_parse(
             "quick generation",

@@ -20,42 +20,14 @@ use super::shared::{
     paste_transform_data, preview_rows_with_smart_provider,
 };
 
-pub(super) fn analyze_csv_text(content: &str, sample_row_count: usize) -> Result<PasteAnalyzeData> {
-    analyze_csv_text_with_coverage(content, sample_row_count).map(|(analysis, _)| analysis)
-}
-
-pub(super) fn analyze_csv_text_with_candidate_detector(
-    content: &str,
-    sample_row_count: usize,
-    detector: &mut dyn CandidateDetector,
-) -> Result<PasteAnalyzeData> {
-    analyze_csv_text_with_coverage_and_candidate_detector(content, sample_row_count, Some(detector))
-        .map(|(analysis, _)| analysis)
-}
-
-/// [`analyze_csv_text`] plus how much of the paste it classified, in the crate's own
-/// coverage type.
-///
-/// Still split even though the DTO now carries a summary of the same figures: the
-/// transform path feeds `build_privacy_report`, which takes a [`DetectionCoverage`],
-/// and rebuilding one from the wire summary would re-open the invariant that type's
-/// constructor exists to hold.
-fn analyze_csv_text_with_coverage(
-    content: &str,
-    sample_row_count: usize,
-) -> Result<(PasteAnalyzeData, DetectionCoverage)> {
-    analyze_csv_text_with_coverage_and_candidate_detector(content, sample_row_count, None)
-}
-
-fn analyze_csv_text_with_coverage_and_candidate_detector(
+/// CSV analysis plus how much of the paste it classified. The transform path
+/// retains the coverage invariant for the privacy report.
+pub(super) fn analyze_csv_text(
     content: &str,
     sample_row_count: usize,
     detector: Option<&mut dyn CandidateDetector>,
 ) -> Result<(PasteAnalyzeData, DetectionCoverage)> {
     let sample_row_count = paste_detection_sample_rows(sample_row_count)?;
-    // Spread the sample over the whole paste: pasted content can exceed the
-    // sample cap, and a head window would leave detection blind to values that
-    // only appear in the tail.
     let sample = read_csv_detection_sample_from_str(content, sample_row_count)?;
     let (columns, detector_status) =
         build_column_metadata_with_candidate_detector(&sample.headers, &sample.rows, detector);
@@ -108,8 +80,7 @@ pub(super) fn transform_csv_text_with_smart_provider(
     provider: Option<&mut dyn SmartReplacementProvider>,
     tokenization_key: Option<&crate::TokenizationKey>,
 ) -> Result<PasteTransformData> {
-    let (analysis, coverage) =
-        analyze_csv_text_with_coverage(&input.content, input.sample_row_count)?;
+    let (analysis, coverage) = analyze_csv_text(&input.content, input.sample_row_count, None)?;
     let metadata = select_columns(&analysis.columns, &input.columns, &input.controls)?;
     let rows = read_csv_sample_from_str(&input.content, usize::MAX)?.rows;
     let existing_smart_replacements =

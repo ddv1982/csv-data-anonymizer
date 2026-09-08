@@ -1,16 +1,13 @@
 use crate::csv_io::{count_csv_data_rows, read_detection_sample, read_sample};
-use crate::detection::{CandidateDetector, CandidateDetectorRunStatus};
+use crate::detection::CandidateDetectorRunStatus;
 use crate::error::Result;
+use crate::execution::{CsvAnalysisOptions, CsvRunOptions, TransformRuntime};
 use crate::metadata::{build_column_metadata, build_column_metadata_with_candidate_detector};
-use crate::smart::{
-    SmartReplacementProvider, prepare_smart_replacements_from_csv,
-    reusable_preview_smart_replacements,
-};
+use crate::smart::{prepare_smart_replacements_from_csv, reusable_preview_smart_replacements};
 use crate::types::{
     AnonymizeData, AnonymizeParams, DETECTION_SAMPLE_ROW_FLOOR, DetectionCoverage,
     DetectionReviewReason, DetectionRunSummary, DeterministicDetectionStatus, HeadersData,
-    LocalNerRunStatus, PreflightData, PreflightParams, PreviewData, PreviewParams, ProcessControl,
-    ProcessOptions,
+    LocalNerRunStatus, PreflightData, PreflightParams, PreviewData, PreviewParams, ProcessOptions,
 };
 use std::path::Path;
 
@@ -156,45 +153,25 @@ impl AnonymizerService {
         &self.version
     }
 
-    pub fn analyze_csv(&self, file_path: impl AsRef<Path>) -> Result<HeadersData> {
-        self.analyze_csv_with_sample_rows(file_path, DETECTION_SAMPLE_ROW_FLOOR)
-    }
-
     /// Detection reads the whole file in one streaming pass and keeps
-    /// `sample_rows` values spread across it, so the exact row count falls out
-    /// of the same pass that classifies the columns.
-    ///
-    /// `sample_rows` is a request, floored by `detection_sample_rows`.
-    pub fn analyze_csv_with_sample_rows(
+    /// `options.sample_rows` values spread across it, so the exact row count falls
+    /// out of the same pass that classifies the columns.
+    pub fn analyze_csv(
         &self,
         file_path: impl AsRef<Path>,
-        sample_rows: usize,
+        options: CsvAnalysisOptions<'_>,
     ) -> Result<HeadersData> {
-        self.analyze_csv_with_sample_rows_and_candidate_detector(file_path, sample_rows, None)
-    }
-
-    pub fn analyze_csv_with_candidate_detector(
-        &self,
-        file_path: impl AsRef<Path>,
-        detector: &mut dyn CandidateDetector,
-    ) -> Result<HeadersData> {
-        self.analyze_csv_with_sample_rows_and_candidate_detector(
-            file_path,
-            DETECTION_SAMPLE_ROW_FLOOR,
-            Some(detector),
-        )
-    }
-
-    pub fn analyze_csv_with_sample_rows_and_candidate_detector(
-        &self,
-        file_path: impl AsRef<Path>,
-        sample_rows: usize,
-        detector: Option<&mut dyn CandidateDetector>,
-    ) -> Result<HeadersData> {
+        let CsvAnalysisOptions {
+            sample_rows,
+            candidate_detector,
+        } = options;
         let file_path = normalize_path(file_path.as_ref())?;
         let sample = read_detection_sample(&file_path, detection_sample_rows(sample_rows))?;
-        let (metadata, detector_status) =
-            build_column_metadata_with_candidate_detector(&sample.headers, &sample.rows, detector);
+        let (metadata, detector_status) = build_column_metadata_with_candidate_detector(
+            &sample.headers,
+            &sample.rows,
+            candidate_detector,
+        );
 
         Ok(HeadersData {
             file_path: file_path.clone(),
@@ -219,7 +196,13 @@ impl AnonymizerService {
     /// is the price of that split rather than something to optimize away here.
     pub fn preflight_anonymization(&self, input: PreflightParams) -> Result<PreflightData> {
         let file_path = normalize_path(&input.file_path)?;
-        let headers = self.analyze_csv_with_sample_rows(&file_path, input.sample_row_count)?;
+        let headers = self.analyze_csv(
+            &file_path,
+            CsvAnalysisOptions {
+                sample_rows: input.sample_row_count,
+                ..Default::default()
+            },
+        )?;
         // Coverage of the pass that just classified the file, not a fresh count: the
         // detection sample reads every row and keeps a bounded spread, so both figures
         // fell out of work already done.
@@ -230,24 +213,15 @@ impl AnonymizerService {
         run_preflight(&file_path, headers.columns, input, coverage)
     }
 
-    pub fn preview_anonymization(&self, input: PreviewParams) -> Result<PreviewData> {
-        self.preview_anonymization_with_smart_provider(input, None)
-    }
-
-    pub fn preview_anonymization_with_smart_provider(
+    pub fn preview_anonymization(
         &self,
         input: PreviewParams,
-        provider: Option<&mut dyn SmartReplacementProvider>,
+        runtime: TransformRuntime<'_, '_>,
     ) -> Result<PreviewData> {
-        self.preview_anonymization_with_run_secrets(input, provider, None)
-    }
-
-    pub fn preview_anonymization_with_run_secrets(
-        &self,
-        input: PreviewParams,
-        provider: Option<&mut dyn SmartReplacementProvider>,
-        tokenization_key: Option<&crate::TokenizationKey>,
-    ) -> Result<PreviewData> {
+        let TransformRuntime {
+            provider,
+            tokenization_key,
+        } = runtime;
         let file_path = normalize_path(&input.file_path)?;
         // Detect on `sample_row_count`, the figure analyze and the run are given,
         // so the preview cannot show a different detected type — and therefore a
@@ -257,8 +231,6 @@ impl AnonymizerService {
         let detection_sample =
             read_detection_sample(&file_path, detection_sample_rows(input.sample_row_count))?;
         let metadata = build_column_metadata(&detection_sample.headers, &detection_sample.rows);
-        // Displayed rows are a separate, head-anchored window: the user expects
-        // the preview to show the file's opening rows, not the detection spread.
         let display = read_sample(&file_path, display_row_count(input.sample_count))?;
         preview::preview_rows_with_smart_provider(
             &metadata,
@@ -267,9 +239,6 @@ impl AnonymizerService {
                 columns: &input.columns,
                 controls: &input.controls,
                 sample_count: input.sample_count,
-                // The file's row count, from the pass that just classified it — not the
-                // sample size, which is what made the cardinality warning miss columns
-                // whose values repeat across a file far larger than the sample.
                 population_values: detection_sample.data_rows_scanned,
             },
             provider,
@@ -282,62 +251,20 @@ impl AnonymizerService {
         count_csv_data_rows(&file_path)
     }
 
-    pub fn anonymize_csv(&self, input: AnonymizeParams) -> Result<AnonymizeData> {
-        self.anonymize_csv_with_sample_rows(input, DETECTION_SAMPLE_ROW_FLOOR)
-    }
-
-    pub fn anonymize_csv_with_sample_rows(
+    pub fn anonymize_csv(
         &self,
         input: AnonymizeParams,
-        sample_rows: usize,
+        options: CsvRunOptions<'_, '_, '_, '_>,
     ) -> Result<AnonymizeData> {
-        self.anonymize_csv_with_sample_rows_and_control(input, sample_rows, None)
-    }
-
-    pub fn anonymize_csv_with_control(
-        &self,
-        input: AnonymizeParams,
-        control: &mut ProcessControl<'_>,
-    ) -> Result<AnonymizeData> {
-        self.anonymize_csv_with_sample_rows_and_control(
-            input,
-            DETECTION_SAMPLE_ROW_FLOOR,
-            Some(control),
-        )
-    }
-
-    pub fn anonymize_csv_with_sample_rows_and_control(
-        &self,
-        input: AnonymizeParams,
-        sample_rows: usize,
-        control: Option<&mut ProcessControl<'_>>,
-    ) -> Result<AnonymizeData> {
-        self.anonymize_csv_with_sample_rows_and_control_and_smart_provider(
-            input,
+        let CsvRunOptions {
             sample_rows,
-            control,
-            None,
-        )
-    }
-
-    pub fn anonymize_csv_with_sample_rows_and_control_and_smart_provider(
-        &self,
-        input: AnonymizeParams,
-        sample_rows: usize,
-        control: Option<&mut ProcessControl<'_>>,
-        provider: Option<&mut dyn SmartReplacementProvider>,
-    ) -> Result<AnonymizeData> {
-        self.anonymize_csv_with_run_secrets(input, sample_rows, control, provider, None)
-    }
-
-    pub fn anonymize_csv_with_run_secrets(
-        &self,
-        input: AnonymizeParams,
-        sample_rows: usize,
-        mut control: Option<&mut ProcessControl<'_>>,
-        provider: Option<&mut dyn SmartReplacementProvider>,
-        tokenization_key: Option<&crate::TokenizationKey>,
-    ) -> Result<AnonymizeData> {
+            mut control,
+            transform:
+                TransformRuntime {
+                    provider,
+                    tokenization_key,
+                },
+        } = options;
         let input_path = normalize_path(&input.file_path)?;
         ensure_output_differs_from_input(&input_path, &input.output_path)?;
         let output_path = validate_output_path(&input.output_path, input.force)?;

@@ -23,10 +23,13 @@ fn placeholder_ordinal(cell: &str, label: &str) -> Option<usize> {
 fn anonymize_to(input_path: &Path, output_path: &Path, columns: Vec<usize>) {
     let controls = columns.iter().copied().map(label_control).collect();
     AnonymizerService::new("test-version")
-        .anonymize_csv(AnonymizeParams {
-            controls,
-            ..anonymize_params(input_path.to_path_buf(), output_path.to_path_buf(), columns)
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                controls,
+                ..anonymize_params(input_path.to_path_buf(), output_path.to_path_buf(), columns)
+            },
+            crate::CsvRunOptions::default(),
+        )
         .unwrap();
 }
 
@@ -56,7 +59,11 @@ fn a_labelled_column_reaches_the_written_file_with_one_placeholder_per_distinct_
     // Pins the reason this column is a fair subject: no validator claims free-form
     // prose, so `String` is what a real free-text column detects as, and the header
     // is genuinely the only surviving evidence about what the cells held.
-    let columns = workspace.service.analyze_csv(&input_path).unwrap().columns;
+    let columns = workspace
+        .service
+        .analyze_csv(&input_path, crate::CsvAnalysisOptions::default())
+        .unwrap()
+        .columns;
     assert_eq!(columns[1].name, "customer notes");
     assert_eq!(columns[1].detected_type, DataType::String);
 
@@ -134,10 +141,13 @@ fn the_preview_and_the_run_agree_on_what_each_placeholder_stands_for() {
 
     let preview = workspace
         .service
-        .preview_anonymization(PreviewParams {
-            controls: vec![label_control(1)],
-            ..preview_params(input_path.clone(), vec![1])
-        })
+        .preview_anonymization(
+            PreviewParams {
+                controls: vec![label_control(1)],
+                ..preview_params(input_path.clone(), vec![1])
+            },
+            crate::TransformRuntime::default(),
+        )
         .unwrap();
     anonymize_to(&input_path, &output_path, vec![1]);
     let rows = written_rows(&output_path);
@@ -179,10 +189,13 @@ fn the_preview_numbers_the_files_opening_rows() {
 
     let preview = workspace
         .service
-        .preview_anonymization(PreviewParams {
-            controls: vec![label_control(1)],
-            ..preview_params(input_path, vec![1])
-        })
+        .preview_anonymization(
+            PreviewParams {
+                controls: vec![label_control(1)],
+                ..preview_params(input_path, vec![1])
+            },
+            crate::TransformRuntime::default(),
+        )
         .unwrap();
 
     let shown: Vec<(String, String)> = preview.previews[0]

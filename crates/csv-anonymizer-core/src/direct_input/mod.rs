@@ -11,86 +11,36 @@ mod tests;
 
 use crate::detection::CandidateDetector;
 use crate::error::Result;
+use crate::execution::TransformRuntime;
 use crate::metadata::should_auto_select_column;
-use crate::smart::SmartReplacementProvider;
 use crate::types::{
     PasteAnalyzeData, PasteAnalyzeParams, PasteDataFormat, PastePreviewParams, PasteTransformData,
     PasteTransformParams, PreviewData,
 };
 
-pub fn analyze_paste_data(input: PasteAnalyzeParams) -> Result<PasteAnalyzeData> {
-    analyze_paste_data_impl(input, None)
-}
-
-pub fn analyze_paste_data_with_candidate_detector(
-    input: PasteAnalyzeParams,
-    detector: &mut dyn CandidateDetector,
-) -> Result<PasteAnalyzeData> {
-    analyze_paste_data_impl(input, Some(detector))
-}
-
-fn analyze_paste_data_impl(
+pub fn analyze_paste_data(
     input: PasteAnalyzeParams,
     detector: Option<&mut dyn CandidateDetector>,
 ) -> Result<PasteAnalyzeData> {
     shared::validate_paste_content(&input.content)?;
     let format = format_detection::resolve_format(input.format, &input.content);
 
-    let mut analysis = match (format, detector) {
-        (PasteDataFormat::Csv, Some(detector)) => {
-            csv_text::analyze_csv_text_with_candidate_detector(
-                &input.content,
-                input.sample_row_count,
-                detector,
-            )
+    let mut analysis = match format {
+        PasteDataFormat::Csv => {
+            csv_text::analyze_csv_text(&input.content, input.sample_row_count, detector)
+                .map(|(analysis, _)| analysis)
         }
-        (PasteDataFormat::Csv, None) => {
-            csv_text::analyze_csv_text(&input.content, input.sample_row_count)
+        PasteDataFormat::Json | PasteDataFormat::Yaml => {
+            let value = documents::parse_value_document(format, &input.content)?;
+            documents::analyze_value_document(format, &value, input.sample_row_count, detector)
+                .map(|(analysis, _)| analysis)
         }
-        (PasteDataFormat::Json, Some(detector)) => {
-            let value = documents::parse_json(&input.content)?;
-            documents::analyze_value_document_with_candidate_detector(
-                format,
-                &value,
-                input.sample_row_count,
-                detector,
-            )
+        PasteDataFormat::Xml => xml::analyze_xml(&input.content, input.sample_row_count, detector)
+            .map(|(analysis, _)| analysis),
+        PasteDataFormat::PlainText | PasteDataFormat::Logs => {
+            text::analyze_text_content(&input.content, format, input.sample_row_count, detector)
         }
-        (PasteDataFormat::Json, None) => {
-            let value = documents::parse_json(&input.content)?;
-            documents::analyze_value_document(format, &value, input.sample_row_count)
-        }
-        (PasteDataFormat::Yaml, Some(detector)) => {
-            let value = documents::parse_yaml(&input.content)?;
-            documents::analyze_value_document_with_candidate_detector(
-                format,
-                &value,
-                input.sample_row_count,
-                detector,
-            )
-        }
-        (PasteDataFormat::Yaml, None) => {
-            let value = documents::parse_yaml(&input.content)?;
-            documents::analyze_value_document(format, &value, input.sample_row_count)
-        }
-        (PasteDataFormat::Xml, Some(detector)) => xml::analyze_xml_with_candidate_detector(
-            &input.content,
-            input.sample_row_count,
-            detector,
-        ),
-        (PasteDataFormat::Xml, None) => xml::analyze_xml(&input.content, input.sample_row_count),
-        (PasteDataFormat::PlainText | PasteDataFormat::Logs, Some(detector)) => {
-            text::analyze_text_content_with_candidate_detector(
-                &input.content,
-                format,
-                input.sample_row_count,
-                detector,
-            )
-        }
-        (PasteDataFormat::PlainText | PasteDataFormat::Logs, None) => {
-            text::analyze_text_content(&input.content, format, input.sample_row_count)
-        }
-        (PasteDataFormat::Auto, _) => unreachable!("auto format must resolve before analysis"),
+        PasteDataFormat::Auto => unreachable!("auto format must resolve before analysis"),
     }?;
 
     for column in &mut analysis.columns {
@@ -100,22 +50,14 @@ fn analyze_paste_data_impl(
     Ok(analysis)
 }
 
-pub fn preview_paste_data(input: PastePreviewParams) -> Result<PreviewData> {
-    preview_paste_data_with_smart_provider(input, None)
-}
-
-pub fn preview_paste_data_with_smart_provider(
+pub fn preview_paste_data(
     input: PastePreviewParams,
-    provider: Option<&mut dyn SmartReplacementProvider>,
+    runtime: TransformRuntime<'_, '_>,
 ) -> Result<PreviewData> {
-    preview_paste_data_with_run_secrets(input, provider, None)
-}
-
-pub fn preview_paste_data_with_run_secrets(
-    input: PastePreviewParams,
-    provider: Option<&mut dyn SmartReplacementProvider>,
-    tokenization_key: Option<&crate::TokenizationKey>,
-) -> Result<PreviewData> {
+    let TransformRuntime {
+        provider,
+        tokenization_key,
+    } = runtime;
     shared::validate_paste_content(&input.content)?;
     let format = format_detection::resolve_format(input.format, &input.content);
 
@@ -123,22 +65,12 @@ pub fn preview_paste_data_with_run_secrets(
         PasteDataFormat::Csv => {
             csv_text::preview_csv_text_with_smart_provider(input, provider, tokenization_key)
         }
-        PasteDataFormat::Json => {
-            let value = documents::parse_json(&input.content)?;
+        PasteDataFormat::Json | PasteDataFormat::Yaml => {
+            let value = documents::parse_value_document(format, &input.content)?;
             documents::preview_value_document_with_smart_provider(
                 input,
                 value,
-                PasteDataFormat::Json,
-                provider,
-                tokenization_key,
-            )
-        }
-        PasteDataFormat::Yaml => {
-            let value = documents::parse_yaml(&input.content)?;
-            documents::preview_value_document_with_smart_provider(
-                input,
-                value,
-                PasteDataFormat::Yaml,
+                format,
                 provider,
                 tokenization_key,
             )
@@ -158,22 +90,14 @@ pub fn preview_paste_data_with_run_secrets(
     }
 }
 
-pub fn transform_paste_data(input: PasteTransformParams) -> Result<PasteTransformData> {
-    transform_paste_data_with_smart_provider(input, None)
-}
-
-pub fn transform_paste_data_with_smart_provider(
+pub fn transform_paste_data(
     input: PasteTransformParams,
-    provider: Option<&mut dyn SmartReplacementProvider>,
+    runtime: TransformRuntime<'_, '_>,
 ) -> Result<PasteTransformData> {
-    transform_paste_data_with_run_secrets(input, provider, None)
-}
-
-pub fn transform_paste_data_with_run_secrets(
-    input: PasteTransformParams,
-    provider: Option<&mut dyn SmartReplacementProvider>,
-    tokenization_key: Option<&crate::TokenizationKey>,
-) -> Result<PasteTransformData> {
+    let TransformRuntime {
+        provider,
+        tokenization_key,
+    } = runtime;
     shared::validate_paste_content(&input.content)?;
     let format = format_detection::resolve_format(input.format, &input.content);
 
@@ -181,11 +105,13 @@ pub fn transform_paste_data_with_run_secrets(
         PasteDataFormat::Csv => {
             csv_text::transform_csv_text_with_smart_provider(input, provider, tokenization_key)
         }
-        PasteDataFormat::Json => {
-            documents::transform_json_with_smart_provider(input, provider, tokenization_key)
-        }
-        PasteDataFormat::Yaml => {
-            documents::transform_yaml_with_smart_provider(input, provider, tokenization_key)
+        PasteDataFormat::Json | PasteDataFormat::Yaml => {
+            documents::transform_value_document_with_smart_provider(
+                input,
+                format,
+                provider,
+                tokenization_key,
+            )
         }
         PasteDataFormat::Xml => {
             xml::transform_xml_with_smart_provider(input, provider, tokenization_key)
@@ -197,46 +123,18 @@ pub fn transform_paste_data_with_run_secrets(
     }
 }
 
-pub use quick::{
-    generate_quick_values, generate_quick_values_with_run_secrets,
-    generate_quick_values_with_smart_provider,
-};
+pub use quick::generate_quick_values;
 
 pub fn replay_paste_text_candidate_evidence(
     input: &PasteTransformParams,
     snapshot: &crate::PreparedAnalysisSnapshot,
     confirmed_candidate_ids: &[String],
+    runtime: TransformRuntime<'_, '_>,
 ) -> Result<PasteTransformData> {
-    replay_paste_text_candidate_evidence_with_smart_provider(
-        input,
-        snapshot,
-        confirmed_candidate_ids,
-        None,
-    )
-}
-
-pub fn replay_paste_text_candidate_evidence_with_smart_provider(
-    input: &PasteTransformParams,
-    snapshot: &crate::PreparedAnalysisSnapshot,
-    confirmed_candidate_ids: &[String],
-    provider: Option<&mut dyn SmartReplacementProvider>,
-) -> Result<PasteTransformData> {
-    replay_paste_text_candidate_evidence_with_run_secrets(
-        input,
-        snapshot,
-        confirmed_candidate_ids,
+    let TransformRuntime {
         provider,
-        None,
-    )
-}
-
-pub fn replay_paste_text_candidate_evidence_with_run_secrets(
-    input: &PasteTransformParams,
-    snapshot: &crate::PreparedAnalysisSnapshot,
-    confirmed_candidate_ids: &[String],
-    provider: Option<&mut dyn SmartReplacementProvider>,
-    tokenization_key: Option<&crate::TokenizationKey>,
-) -> Result<PasteTransformData> {
+        tokenization_key,
+    } = runtime;
     shared::validate_paste_content(&input.content)?;
     let format = format_detection::resolve_format(input.format, &input.content);
     if !matches!(format, PasteDataFormat::PlainText | PasteDataFormat::Logs) {
@@ -259,37 +157,12 @@ pub fn preview_paste_text_candidate_evidence(
     input: &PastePreviewParams,
     snapshot: &crate::PreparedAnalysisSnapshot,
     confirmed_candidate_ids: &[String],
+    runtime: TransformRuntime<'_, '_>,
 ) -> Result<PreviewData> {
-    preview_paste_text_candidate_evidence_with_smart_provider(
-        input,
-        snapshot,
-        confirmed_candidate_ids,
-        None,
-    )
-}
-
-pub fn preview_paste_text_candidate_evidence_with_smart_provider(
-    input: &PastePreviewParams,
-    snapshot: &crate::PreparedAnalysisSnapshot,
-    confirmed_candidate_ids: &[String],
-    provider: Option<&mut dyn SmartReplacementProvider>,
-) -> Result<PreviewData> {
-    preview_paste_text_candidate_evidence_with_run_secrets(
-        input,
-        snapshot,
-        confirmed_candidate_ids,
+    let TransformRuntime {
         provider,
-        None,
-    )
-}
-
-pub fn preview_paste_text_candidate_evidence_with_run_secrets(
-    input: &PastePreviewParams,
-    snapshot: &crate::PreparedAnalysisSnapshot,
-    confirmed_candidate_ids: &[String],
-    provider: Option<&mut dyn SmartReplacementProvider>,
-    tokenization_key: Option<&crate::TokenizationKey>,
-) -> Result<PreviewData> {
+        tokenization_key,
+    } = runtime;
     shared::validate_paste_content(&input.content)?;
     let format = format_detection::resolve_format(input.format, &input.content);
     if !matches!(format, PasteDataFormat::PlainText | PasteDataFormat::Logs) {

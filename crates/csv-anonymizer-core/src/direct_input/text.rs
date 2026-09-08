@@ -17,11 +17,10 @@ use std::time::Instant;
 
 use super::shared::{
     FieldSampleLimits, FieldSamples, PASTE_MAX_TEXT_MATCHES, PreviewSelection,
-    analysis_from_fields, analysis_from_fields_with_candidate_detector,
-    bounded_preview_sample_count, next_row_index, paste_detection_sample_rows,
-    paste_transform_data, preview_field_sample_limits, preview_from_fields_with_smart_provider,
-    push_identified_field_sample, push_typed_field_sample, selected_columns_by_source,
-    smart_replacements_for_fields,
+    analysis_from_fields, bounded_preview_sample_count, next_row_index,
+    paste_detection_sample_rows, paste_transform_data, preview_field_sample_limits,
+    preview_from_fields_with_smart_provider, push_identified_field_sample, push_typed_field_sample,
+    selected_columns_by_source, smart_replacements_for_fields,
 };
 
 const UNSTRUCTURED_TEXT_COLUMN: &str = "Unstructured text";
@@ -31,28 +30,19 @@ pub(super) fn analyze_text_content(
     content: &str,
     format: PasteDataFormat,
     sample_row_count: usize,
+    detector: Option<&mut dyn CandidateDetector>,
 ) -> Result<PasteAnalyzeData> {
-    let sample_row_count = paste_detection_sample_rows(sample_row_count)?;
-    let matches = collect_text_matches(content)?;
-    let fields = text_fields_from_matches(
-        &matches,
-        FieldSampleLimits::detection_only(sample_row_count),
-    )?;
-    // Free text is the input the coverage disclosure matters most on: a long log whose
-    // detection window is thinned would otherwise report its types with no caveat, and
-    // the user would find out only after the output existed. It comes with the analysis
-    // here rather than being computed separately.
-    Ok(analysis_from_fields(format, &fields, matches.len()).0)
-}
+    let Some(detector) = detector else {
+        let sample_row_count = paste_detection_sample_rows(sample_row_count)?;
+        let matches = collect_text_matches(content)?;
+        let fields = text_fields_from_matches(
+            &matches,
+            FieldSampleLimits::detection_only(sample_row_count),
+        )?;
+        return Ok(analysis_from_fields(format, &fields, matches.len(), None).0);
+    };
 
-pub(super) fn analyze_text_content_with_candidate_detector(
-    content: &str,
-    format: PasteDataFormat,
-    sample_row_count: usize,
-    detector: &mut dyn CandidateDetector,
-) -> Result<PasteAnalyzeData> {
-    // A line gives the model useful context and stable replay coordinates. Paste
-    // bytes are bounded by the public entry point, so every line is retained.
+    // A line gives the model useful context and stable replay coordinates.
     let line_count = content.split('\n').count();
     let limits = FieldSampleLimits::detection_only(line_count.max(1));
     let mut fields = Vec::with_capacity(1);
@@ -65,8 +55,7 @@ pub(super) fn analyze_text_content_with_candidate_detector(
             limits,
         )?;
     }
-    let (mut analysis, _) =
-        analysis_from_fields_with_candidate_detector(format, &fields, line_count, Some(detector));
+    let (mut analysis, _) = analysis_from_fields(format, &fields, line_count, Some(detector));
     if matches!(
         analysis.detection_run_summary.local_ner,
         crate::types::LocalNerRunStatus::Completed | crate::types::LocalNerRunStatus::Incomplete
@@ -381,7 +370,7 @@ pub(super) fn transform_text_with_smart_provider(
         &matches,
         FieldSampleLimits::detection_only(detection_sample_rows),
     )?;
-    let (analysis, coverage) = analysis_from_fields(format, &fields, matches.len());
+    let (analysis, coverage) = analysis_from_fields(format, &fields, matches.len(), None);
     let metadata = select_columns(&analysis.columns, &input.columns, &input.controls)?;
     let selected_by_name = selected_columns_by_source(&metadata);
     // Every match, not the detection window: a span the sample dropped would reach the

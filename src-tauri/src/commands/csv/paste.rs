@@ -15,7 +15,7 @@ use crate::settings::SettingsStore;
 use csv_anonymizer_core::{
     LocalNerRunStatus, PasteAnalyzeData, PasteAnalyzeParams, PastePreviewParams,
     PasteTransformData, PasteTransformParams, PreparedAnalysisSnapshot, PreviewData,
-    SmartReplacementProvider,
+    SmartReplacementProvider, TransformRuntime,
 };
 use serde::Deserialize;
 use std::sync::Arc;
@@ -54,21 +54,19 @@ pub async fn analyze_pasted_data(
         let sample_row_count = request.sample_row_count;
         let mut analysis = if local_ner_enabled {
             if let Some(message) = local_ner_unavailable_message(&local_ner_model)? {
-                let mut analysis = csv_anonymizer_core::direct_input::analyze_paste_data(request)
-                    .map_err(|error| error.to_string())?;
+                let mut analysis =
+                    csv_anonymizer_core::direct_input::analyze_paste_data(request, None)
+                        .map_err(|error| error.to_string())?;
                 analysis.detection_run_summary.local_ner = LocalNerRunStatus::Unavailable;
                 analysis.detection_run_summary.message = Some(message);
                 analysis
             } else {
                 let mut detector = local_candidate_detector(&local_ner_model)?;
-                csv_anonymizer_core::direct_input::analyze_paste_data_with_candidate_detector(
-                    request,
-                    &mut detector,
-                )
-                .map_err(|error| error.to_string())?
+                csv_anonymizer_core::direct_input::analyze_paste_data(request, Some(&mut detector))
+                    .map_err(|error| error.to_string())?
             }
         } else {
-            csv_anonymizer_core::direct_input::analyze_paste_data(request)
+            csv_anonymizer_core::direct_input::analyze_paste_data(request, None)
                 .map_err(|error| error.to_string())?
         };
         let prepared_analysis = if local_ner_enabled {
@@ -139,19 +137,23 @@ pub async fn preview_pasted_data(
             .filter(|snapshot| matches!(snapshot.format.as_str(), "plainText" | "logs"))
         {
             let confirmed = selected_candidate_ids(snapshot, &request.params.columns);
-            csv_anonymizer_core::direct_input::preview_paste_text_candidate_evidence_with_run_secrets(
+            csv_anonymizer_core::direct_input::preview_paste_text_candidate_evidence(
                 &request.params,
                 snapshot,
                 &confirmed,
-                provider,
-                tokenization_key.as_ref(),
+                TransformRuntime {
+                    provider,
+                    tokenization_key: tokenization_key.as_ref(),
+                },
             )
             .map_err(|error| error.to_string())
         } else {
-            csv_anonymizer_core::direct_input::preview_paste_data_with_run_secrets(
+            csv_anonymizer_core::direct_input::preview_paste_data(
                 request.params,
-                provider,
-                tokenization_key.as_ref(),
+                TransformRuntime {
+                    provider,
+                    tokenization_key: tokenization_key.as_ref(),
+                },
             )
             .map_err(|error| error.to_string())
         }
@@ -199,19 +201,23 @@ pub async fn anonymize_pasted_data(
             .filter(|snapshot| matches!(snapshot.format.as_str(), "plainText" | "logs"))
         {
             let confirmed = selected_candidate_ids(snapshot, &request.params.columns);
-            csv_anonymizer_core::direct_input::replay_paste_text_candidate_evidence_with_run_secrets(
+            csv_anonymizer_core::direct_input::replay_paste_text_candidate_evidence(
                 &request.params,
                 snapshot,
                 &confirmed,
-                provider,
-                tokenization_key.as_ref(),
+                TransformRuntime {
+                    provider,
+                    tokenization_key: tokenization_key.as_ref(),
+                },
             )
             .map_err(|error| error.to_string())
         } else {
-            csv_anonymizer_core::direct_input::transform_paste_data_with_run_secrets(
+            csv_anonymizer_core::direct_input::transform_paste_data(
                 request.params,
-                provider,
-                tokenization_key.as_ref(),
+                TransformRuntime {
+                    provider,
+                    tokenization_key: tokenization_key.as_ref(),
+                },
             )
             .map_err(|error| error.to_string())
         }?;
