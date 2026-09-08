@@ -30,7 +30,9 @@ impl TokenizationKey {
             return Err(AnonymizerError::InvalidTokenizationKey);
         }
         let mut bytes = [0_u8; 32];
-        for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+        let (pairs, remainder) = value.as_bytes().as_chunks::<2>();
+        debug_assert!(remainder.is_empty());
+        for (index, pair) in pairs.iter().enumerate() {
             let pair =
                 std::str::from_utf8(pair).map_err(|_| AnonymizerError::InvalidTokenizationKey)?;
             bytes[index] = u8::from_str_radix(pair, 16)
