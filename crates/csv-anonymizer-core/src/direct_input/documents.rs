@@ -85,6 +85,7 @@ fn transform_value_document(
     provider: Option<&mut dyn SmartReplacementProvider>,
     tokenization_key: Option<&crate::TokenizationKey>,
 ) -> Result<(Value, PasteTransformData)> {
+    let start_time = Instant::now();
     let (analysis, coverage) =
         analyze_value_document_with_coverage(format, &value, input.sample_row_count)?;
     let metadata = select_columns(&analysis.columns, &input.columns, &input.controls)?;
@@ -105,7 +106,6 @@ fn transform_value_document(
     transform_json_value(&mut value, &mut Vec::new(), &mut context);
 
     let row_count = infer_value_row_count(&value);
-    let start_time = Instant::now();
     let mut report = state.report();
     // Scalar document traversal does not run the row-level residual audit; mark that
     // distinction explicitly so an empty fingerprint intersection is not a verified pass.

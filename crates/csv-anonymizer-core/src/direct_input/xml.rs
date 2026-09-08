@@ -119,14 +119,17 @@ pub(super) fn collect_xml_fields(
     reader.config_mut().trim_text(false);
     let mut path = Vec::new();
     let mut fields = Vec::new();
+    let mut pending_scalar = None;
 
     loop {
         match reader.read_event().map_err(xml_error)? {
             Event::Start(event) => {
+                flush_xml_field_sample(&mut pending_scalar, &mut fields, limits)?;
                 path.push(xml_name(event.name().as_ref()));
                 collect_xml_attributes(&reader, &event, &path, &mut fields, limits)?;
             }
             Event::Empty(event) => {
+                flush_xml_field_sample(&mut pending_scalar, &mut fields, limits)?;
                 path.push(xml_name(event.name().as_ref()));
                 collect_xml_attributes(&reader, &event, &path, &mut fields, limits)?;
                 path.pop();
@@ -135,21 +138,48 @@ pub(super) fn collect_xml_fields(
                 let value = event
                     .xml_content(XmlVersion::Implicit1_0)
                     .map_err(xml_error)?;
-                push_xml_text_sample(&mut fields, &path, value.trim(), limits)?;
+                append_pending_xml_scalar(&mut pending_scalar, &path, value.into_owned(), false);
             }
             Event::CData(event) => {
                 let value = event.decode().map_err(xml_error)?;
-                push_xml_text_sample(&mut fields, &path, value.trim(), limits)?;
+                append_pending_xml_scalar(&mut pending_scalar, &path, value.into_owned(), true);
+            }
+            Event::GeneralRef(event) => {
+                let value = decode_xml_general_ref(event.as_ref())
+                    .ok_or_else(|| xml_error("unsupported XML general reference"))?;
+                append_pending_xml_scalar(&mut pending_scalar, &path, value, false);
             }
             Event::End(_) => {
+                flush_xml_field_sample(&mut pending_scalar, &mut fields, limits)?;
                 path.pop();
             }
-            Event::Eof => break,
-            _ => {}
+            Event::Eof => {
+                flush_xml_field_sample(&mut pending_scalar, &mut fields, limits)?;
+                break;
+            }
+            _ => {
+                flush_xml_field_sample(&mut pending_scalar, &mut fields, limits)?;
+            }
         }
     }
 
     Ok(fields)
+}
+
+fn flush_xml_field_sample(
+    pending: &mut Option<PendingXmlScalar>,
+    fields: &mut Vec<FieldSamples>,
+    limits: FieldSampleLimits,
+) -> Result<()> {
+    let Some(pending_scalar) = pending.take() else {
+        return Ok(());
+    };
+    push_xml_text_sample(
+        fields,
+        &pending_scalar.path,
+        pending_scalar.raw.trim(),
+        limits,
+    )
 }
 
 fn push_xml_text_sample(

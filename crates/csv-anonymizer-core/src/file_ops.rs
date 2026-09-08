@@ -23,20 +23,28 @@ pub(crate) fn replace_file_atomically_with_handle<T>(
         reserve_temporary_output_path(output_path)?;
     match write_temporary(&temporary_output_path, &mut temporary_output_file) {
         Ok(result) => {
-            temporary_output_file.sync_all()?;
-            ensure_temporary_path_matches_handle(&temporary_output_path, &temporary_output_file)?;
-            // Only the overwrite branch adopts a mode. It is the one that replaces a file
-            // the user already placed; on the other branch a destination existing is the
-            // error, so there is no mode there to inherit and reading one would describe a
-            // file publication is about to refuse to touch.
-            let publish_result = if overwrite {
-                adopt_destination_permissions(&temporary_output_path, output_path).and_then(|()| {
-                    fs::rename(&temporary_output_path, output_path).map_err(AnonymizerError::from)
-                })
-            } else {
-                fs::hard_link(&temporary_output_path, output_path)
-                    .map_err(|error| no_clobber_publish_error(error, output_path))
-            };
+            let publish_result = (|| {
+                temporary_output_file.sync_all()?;
+                ensure_temporary_path_matches_handle(
+                    &temporary_output_path,
+                    &temporary_output_file,
+                )?;
+                // Only the overwrite branch adopts a mode. It is the one that replaces a file
+                // the user already placed; on the other branch a destination existing is the
+                // error, so there is no mode there to inherit and reading one would describe a
+                // file publication is about to refuse to touch.
+                if overwrite {
+                    adopt_destination_permissions(&temporary_output_path, output_path).and_then(
+                        |()| {
+                            fs::rename(&temporary_output_path, output_path)
+                                .map_err(AnonymizerError::from)
+                        },
+                    )
+                } else {
+                    fs::hard_link(&temporary_output_path, output_path)
+                        .map_err(|error| no_clobber_publish_error(error, output_path))
+                }
+            })();
             match publish_result {
                 Ok(()) => {
                     if !overwrite {
