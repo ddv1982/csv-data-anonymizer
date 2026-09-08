@@ -141,27 +141,27 @@ function ColumnSelectionStep({
         actions={[
           {
             label: 'Select All',
-            disabled: workflow.busy === 'loading' || workflow.allSelected || workflow.columns.length === 0,
+            disabled: workflow.isLoading || workflow.allSelected || workflow.columns.length === 0,
             onClick: () => workflow.setColumnSelection(workflow.columns.map((column) => column.index)),
           },
           {
             label: 'Deselect All',
-            disabled: workflow.busy === 'loading' || workflow.selectedColumns.length === 0,
+            disabled: workflow.isLoading || workflow.selectedColumns.length === 0,
             onClick: () => workflow.setColumnSelection([]),
           },
           {
             label: 'Select High Risk',
-            disabled: workflow.busy === 'loading' || workflow.highRiskColumns.length === 0,
+            disabled: workflow.isLoading || workflow.highRiskColumns.length === 0,
             onClick: () => workflow.setColumnSelection(workflow.highRiskColumns),
           },
           {
             label: 'Select Detected Risk',
-            disabled: workflow.busy === 'loading' || workflow.detectedRiskColumns.length === 0,
+            disabled: workflow.isLoading || workflow.detectedRiskColumns.length === 0,
             onClick: () => workflow.setColumnSelection(workflow.detectedRiskColumns),
           },
           {
             label: 'Select Uncertain',
-            disabled: workflow.busy === 'loading' || workflow.uncertainColumns.length === 0,
+            disabled: workflow.isLoading || workflow.uncertainColumns.length === 0,
             onClick: () => workflow.setColumnSelection(workflow.uncertainColumns),
           },
         ]}
@@ -191,6 +191,7 @@ function ColumnSelectionStep({
           allColumnCount={workflow.columns.length}
           selectedSet={workflow.selectedSet}
           loading={workflow.busy === 'loading'}
+          disabled={workflow.isLoading}
           showAllColumns={workflow.showAllColumns}
           hiddenColumnCount={workflow.hiddenColumnCount}
           onToggleColumn={workflow.toggleColumn}

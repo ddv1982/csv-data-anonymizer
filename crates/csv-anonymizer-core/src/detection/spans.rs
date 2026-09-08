@@ -250,18 +250,33 @@ fn push_secret_spans<'a>(content: &'a str, candidates: &mut Vec<PrivacySpan<'a>>
         }
     }
 
-    for regex_match in private_key_marker_pattern().find_iter(content) {
+    for begin in private_key_marker_pattern().find_iter(content) {
+        // Redact the complete PEM object, not just its BEGIN line. If a log truncates
+        // before the END marker, conservatively treat the remainder as key material:
+        // publishing an unterminated fragment can still disclose the private key.
+        let label = begin
+            .as_str()
+            .strip_prefix("-----BEGIN ")
+            .and_then(|label| label.strip_suffix("-----"));
+        let end = label
+            .and_then(|label| {
+                let marker = format!("-----END {label}-----");
+                content[begin.end()..]
+                    .find(&marker)
+                    .map(|offset| begin.end() + offset + marker.len())
+            })
+            .unwrap_or(content.len());
         candidates.push(PrivacySpan {
             field_name: "secret",
             kind: PrivacyFindingKind::CredentialOrSecret,
             data_type: DataType::String,
-            start: regex_match.start(),
-            end: regex_match.end(),
-            value: regex_match.as_str(),
+            start: begin.start(),
+            end,
+            value: &content[begin.start()..end],
             confidence: Confidence::High,
             score: 99,
             detector: "pattern:private-key",
-            reason: "Private key marker pattern.",
+            reason: "Private key PEM block, including delimiter and payload.",
             priority: 2,
         });
     }
@@ -592,6 +607,31 @@ mod tests {
             "connected from 192.168.1.20 at noon",
             DataType::IpAddress
         ));
+    }
+
+    #[test]
+    fn private_key_spans_cover_complete_and_unterminated_pem_blocks() {
+        let complete = "prefix\n-----BEGIN RSA PRIVATE KEY-----\nabc123\n-----END RSA PRIVATE KEY-----\nsuffix";
+        let spans = collect_privacy_spans(complete);
+        let span = spans
+            .iter()
+            .find(|span| span.detector == "pattern:private-key")
+            .expect("PEM block should be detected");
+        assert_eq!(
+            span.value,
+            "-----BEGIN RSA PRIVATE KEY-----\nabc123\n-----END RSA PRIVATE KEY-----"
+        );
+        assert_eq!(&complete[..span.start], "prefix\n");
+        assert_eq!(&complete[span.end..], "\nsuffix");
+
+        let truncated = "-----BEGIN PRIVATE KEY-----\nsecret payload";
+        let span = collect_privacy_spans(truncated)
+            .into_iter()
+            .find(|span| span.detector == "pattern:private-key")
+            .expect("unterminated PEM block should be detected");
+        assert_eq!(span.start, 0);
+        assert_eq!(span.end, truncated.len());
+        assert_eq!(span.value, truncated);
     }
 
     fn phone_span_confidence(content: &str) -> Option<Confidence> {

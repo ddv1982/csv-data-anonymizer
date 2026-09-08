@@ -77,6 +77,8 @@ pub fn local_candidate_detector(model: &str) -> Result<OllamaCandidateDetector, 
     let model = normalized_model(model);
     ensure_obviously_local_model(&model)?;
     let client = Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
         .timeout(REQUEST_TIMEOUT)
         .connect_timeout(Duration::from_secs(2))
         .build()

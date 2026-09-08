@@ -113,6 +113,7 @@ export function useAnonymizerWorkflow() {
   const invalidatingSelection = useSelectionInvalidation(
     { setSelectedColumns: setCsvSelectedColumns, toggleColumn: toggleCsvColumn, updateColumnStrategy: updateCsvColumnStrategy },
     clearArtifacts,
+    () => busy !== 'idle',
   )
 
   function updateSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {

@@ -104,12 +104,14 @@ pub(super) fn replay_text_candidate_evidence(
         provider,
         tokenization_key,
     )?;
-    let row_count = input.content.split('\n').count();
+    let mut report = replay.report;
+    report.residual_audit_incomplete = true;
+    let row_count = input.content.lines().count().max(1);
     Ok(paste_transform_data(
         replay.output,
         row_count,
         &replay.columns,
-        replay.report,
+        report,
         DetectionCoverage::values(row_count, row_count),
         start_time,
     ))
@@ -415,11 +417,14 @@ pub(super) fn transform_text_with_smart_provider(
     }
     output.push_str(&input.content[last_end..]);
 
+    let mut report = state.report();
+    // Span replacement is scalar-oriented and does not drive the row-level residual audit.
+    report.residual_audit_incomplete = true;
     Ok(paste_transform_data(
         output,
         analysis.row_count,
         &metadata,
-        state.report(),
+        report,
         coverage,
         start_time,
     ))

@@ -52,6 +52,13 @@ pub async fn start_anonymize_job(
         "Sample row count",
     )
     .map_err(CommandError::invalid_input)?;
+    // Parse secrets before admission so malformed input never occupies the single-run lease.
+    let tokenization_key = request
+        .tokenization_key
+        .as_deref()
+        .map(csv_anonymizer_core::TokenizationKey::parse_hex)
+        .transpose()
+        .map_err(|error| CommandError::invalid_input(error.to_string()))?;
     // Refuse a busy app before asking the user anything. `authorize_or_confirm_output_file`
     // can open a blocking native dialog, and running it first walked a user through
     // confirming a destination only to be told afterwards that another job holds the only
@@ -97,12 +104,6 @@ pub async fn start_anonymize_job(
         .prepared_analysis
         .as_ref()
         .map(snapshot_detection_summary);
-    let tokenization_key = request
-        .tokenization_key
-        .as_deref()
-        .map(csv_anonymizer_core::TokenizationKey::parse_hex)
-        .transpose()
-        .map_err(|error| CommandError::invalid_input(error.to_string()))?;
 
     let _job_handle = tauri::async_runtime::spawn_blocking(move || {
         let result = catch_unwind(AssertUnwindSafe(|| {
@@ -333,5 +334,19 @@ mod tests {
                 .is_some_and(|error| error.contains("provider unavailable"))
         );
         assert_eq!(repeat.state, AnonymizeJobState::Failed);
+    }
+
+    #[test]
+    fn malformed_tokenization_key_can_be_retried_without_consuming_lease() {
+        let jobs = AnonymizeJobStore::default();
+        let malformed = csv_anonymizer_core::TokenizationKey::parse_hex("not-hex");
+        assert!(malformed.is_err());
+
+        // Parsing happens before command admission; a valid retry can therefore acquire the
+        // otherwise-unused lease instead of being rejected as a concurrent run.
+        let valid = "11".repeat(32);
+        assert!(csv_anonymizer_core::TokenizationKey::parse_hex(&valid).is_ok());
+        let job = jobs.create_job_for_output(None).expect("valid retry admitted");
+        assert_eq!(job.snapshot().expect("status").state, AnonymizeJobState::Running);
     }
 }

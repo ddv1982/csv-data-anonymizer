@@ -1,18 +1,32 @@
 use crate::error::{AnonymizerError, Result};
-use std::fs;
+use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_TEMPORARY_OUTPUT_FILE: AtomicU64 = AtomicU64::new(0);
 
+#[cfg(test)]
 pub(crate) fn replace_file_atomically<T>(
     output_path: &Path,
     overwrite: bool,
     write_temporary: impl FnOnce(&Path) -> Result<T>,
 ) -> Result<T> {
-    let temporary_output_path = reserve_temporary_output_path(output_path)?;
-    match write_temporary(&temporary_output_path) {
+    replace_file_atomically_with_handle(output_path, overwrite, |path, _file| {
+        write_temporary(path)
+    })
+}
+
+pub(crate) fn replace_file_atomically_with_handle<T>(
+    output_path: &Path,
+    overwrite: bool,
+    write_temporary: impl FnOnce(&Path, &mut File) -> Result<T>,
+) -> Result<T> {
+    let (temporary_output_path, mut temporary_output_file) =
+        reserve_temporary_output_path(output_path)?;
+    match write_temporary(&temporary_output_path, &mut temporary_output_file) {
         Ok(result) => {
+            temporary_output_file.sync_all()?;
+            ensure_temporary_path_matches_handle(&temporary_output_path, &temporary_output_file)?;
             // Only the overwrite branch adopts a mode. It is the one that replaces a file
             // the user already placed; on the other branch a destination existing is the
             // error, so there is no mode there to inherit and reading one would describe a
@@ -43,6 +57,25 @@ pub(crate) fn replace_file_atomically<T>(
             Err(error)
         }
     }
+}
+
+#[cfg(unix)]
+fn ensure_temporary_path_matches_handle(path: &Path, file: &File) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+
+    let path_metadata = fs::metadata(path)?;
+    let file_metadata = file.metadata()?;
+    if path_metadata.dev() != file_metadata.dev() || path_metadata.ino() != file_metadata.ino() {
+        return Err(AnonymizerError::Io(std::io::Error::other(
+            "Temporary output path was replaced before publication.",
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn ensure_temporary_path_matches_handle(_path: &Path, _file: &File) -> Result<()> {
+    Ok(())
 }
 
 /// Explains a no-clobber publish that failed for a reason other than the
@@ -163,7 +196,7 @@ fn adopt_destination_permissions(_temporary_path: &Path, _output_path: &Path) ->
     Ok(())
 }
 
-fn reserve_temporary_output_path(output_path: &Path) -> Result<PathBuf> {
+fn reserve_temporary_output_path(output_path: &Path) -> Result<(PathBuf, File)> {
     let parent = output_path.parent().unwrap_or_else(|| Path::new("."));
     let file_name = output_path
         .file_name()
@@ -177,18 +210,13 @@ fn reserve_temporary_output_path(output_path: &Path) -> Result<PathBuf> {
         ));
         let mut options = fs::OpenOptions::new();
         options.create_new(true).write(true);
-        // Owner-only from the moment it exists, not set afterwards: between creation
-        // and a later chmod the file would be readable at the directory's default
-        // mode, and it is holding transformed source data for the whole of that
-        // window. `create_new` above means this mode applies to a file this call just
-        // made, never to one it found.
         #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
         }
         match options.open(&path) {
-            Ok(_) => return Ok(path),
+            Ok(file) => return Ok((path, file)),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(error) => return Err(error.into()),
         }
@@ -221,7 +249,6 @@ mod tests {
                 .ends_with(".tmp")
         }));
     }
-
     #[test]
     fn failed_publish_removes_the_temporary_file() {
         let temp_dir = tempfile::tempdir().unwrap();
@@ -241,6 +268,29 @@ mod tests {
                 .to_string_lossy()
                 .ends_with(".tmp")
         }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn retained_output_handle_survives_temporary_path_symlink_substitution() {
+        use std::io::Write;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let output_path = temp_dir.path().join("output.csv");
+        let victim_path = temp_dir.path().join("victim.csv");
+        fs::write(&victim_path, "victim").unwrap();
+
+        let error = replace_file_atomically_with_handle(&output_path, true, |temporary_path, file| {
+            fs::remove_file(temporary_path).unwrap();
+            std::os::unix::fs::symlink(&victim_path, temporary_path).unwrap();
+            file.write_all(b"anonymized").unwrap();
+            Ok(())
+        })
+        .unwrap_err();
+
+        assert!(matches!(error, AnonymizerError::Io(_)));
+        assert_eq!(fs::read_to_string(&victim_path).unwrap(), "victim");
+        assert!(!output_path.exists());
     }
 
     #[test]
@@ -461,7 +511,7 @@ mod tests {
         let threads = (0..16)
             .map(|_| {
                 let output_path = output_path.clone();
-                std::thread::spawn(move || reserve_temporary_output_path(&output_path).unwrap())
+                std::thread::spawn(move || reserve_temporary_output_path(&output_path).unwrap().0)
             })
             .collect::<Vec<_>>();
         let paths = threads

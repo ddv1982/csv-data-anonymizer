@@ -192,6 +192,38 @@ impl SmartReplacementMap {
             .map(|replacement| value_identity_key(&replacement.original))
             .collect()
     }
+    /// Drops preview entries whose output carries any source value from the
+    /// complete final column. A preview only sees its display window, so an
+    /// output that looked synthetic there can collide with a value in the tail.
+    /// Those originals must be requested again rather than reused.
+    fn reject_replacements_containing_source_values(
+        &mut self,
+        column_index: usize,
+        source_keys: &BTreeSet<String>,
+    ) {
+        let mut rejected = Vec::new();
+        self.replacements.retain(|key, replacement| {
+            if key.column_index != column_index {
+                return true;
+            }
+            let reason = invalid_replacement_reason(
+                &replacement.original,
+                &replacement.replacement,
+                source_keys,
+            );
+            if let Some(reason) = reason {
+                rejected.push(reason);
+                false
+            } else {
+                true
+            }
+        });
+        self.rejected_values += rejected.len();
+        for reason in rejected {
+            *self.rejection_counts.entry(reason).or_default() += 1;
+        }
+    }
+
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -383,6 +415,8 @@ fn build_replacement_map(
 
     let mut map = existing.cloned().unwrap_or_default();
     for (column_index, values) in batches {
+        let final_source_keys = source_keys(&values);
+        map.reject_replacements_containing_source_values(column_index, &final_source_keys);
         let missing_values = values
             .into_iter()
             .filter(|value| !map.contains(column_index, value))

@@ -91,7 +91,6 @@ fn transform_value_document(
     let selected_by_path = selected_columns_by_source(&metadata);
     let smart_replacements =
         prepare_value_smart_replacements(&value, format, &metadata, &input, provider)?;
-    let start_time = Instant::now();
     let mut state = TransformState::with_smart_replacements_if_active(smart_replacements)
         .with_tokenization_key(tokenization_key.cloned());
     let mut row_indices = HashMap::new();
@@ -106,13 +105,16 @@ fn transform_value_document(
     transform_json_value(&mut value, &mut Vec::new(), &mut context);
 
     let row_count = infer_value_row_count(&value);
-    // The output is serialized by the caller, which knows whether this document is
-    // JSON or YAML; everything else about the run is settled here.
+    let start_time = Instant::now();
+    let mut report = state.report();
+    // Scalar document traversal does not run the row-level residual audit; mark that
+    // distinction explicitly so an empty fingerprint intersection is not a verified pass.
+    report.residual_audit_incomplete = true;
     let result = paste_transform_data(
         String::new(),
         row_count,
         &metadata,
-        state.report(),
+        report,
         coverage,
         start_time,
     );

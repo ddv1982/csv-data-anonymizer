@@ -33,6 +33,8 @@ pub fn open_setup_url() -> Result<(), String> {
 
 fn client() -> Result<BlockingClient, String> {
     BlockingClient::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(120))
         .connect_timeout(Duration::from_secs(2))
         .build()
@@ -41,6 +43,8 @@ fn client() -> Result<BlockingClient, String> {
 
 fn download_client() -> Result<AsyncClient, String> {
     AsyncClient::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
         .timeout(OLLAMA_DOWNLOAD_TIMEOUT)
         .read_timeout(OLLAMA_DOWNLOAD_READ_TIMEOUT)
         .connect_timeout(Duration::from_secs(2))

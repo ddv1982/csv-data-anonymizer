@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import { firstPreflightBlocker, preflightAnonymization, previewAnonymization } from '../tauri'
 import type {
@@ -44,6 +45,16 @@ export function usePreviewWorkflow(
   const localAiReady = localAi.ready
   const selectedUsesTokenization = selectionUsesTokenization(selectedColumns)
   const selectedTokenizationKey = selectedUsesTokenization ? tokenizationKey : null
+  const operationSequence = useRef(0)
+  const selectedColumnsFingerprint = selectedColumns.join(',')
+
+  useEffect(() => {
+    operationSequence.current += 1
+    if (busy === 'preview') setBusy('idle')
+  }, [inputPath, selectedColumnsFingerprint, tokenizationKey, preparedAnalysis])
+  useEffect(() => () => {
+    operationSequence.current += 1
+  }, [])
 
   const canPreview = Boolean(
     hasColumns &&
@@ -72,6 +83,7 @@ export function usePreviewWorkflow(
       return
     }
 
+    const sequence = ++operationSequence.current
     setBusy('preview')
     setError(null)
     try {
@@ -88,6 +100,7 @@ export function usePreviewWorkflow(
         localAi: localAiRequest,
         preparedAnalysis,
       })
+      if (sequence !== operationSequence.current) return
       const blocker = firstPreflightBlocker(preflight)
       if (blocker) {
         setPreview(null)
@@ -104,12 +117,13 @@ export function usePreviewWorkflow(
         preparedAnalysis,
         tokenizationKey: tokenizationKeyForPreview,
       })
+      if (sequence !== operationSequence.current) return
       setPreview(nextPreview)
       setResult(null)
     } catch (caught) {
-      setError(messageFrom(caught))
+      if (sequence === operationSequence.current) setError(messageFrom(caught))
     } finally {
-      setBusy('idle')
+      if (sequence === operationSequence.current) setBusy('idle')
     }
   }
 

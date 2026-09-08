@@ -508,10 +508,14 @@ pub(crate) fn build_readiness(
     if let Some(report) = context.transform_report
         && report.residual_audit_incomplete
     {
-        review_items.push(
+        review_items.push(if report.residual_audit_source_values == 0
+            && report.residual_audit_output_values == 0
+        {
+            "The broad residual-value audit was not run for this scalar workflow; its empty result must not be treated as a pass.".to_string()
+        } else {
             "The broad residual-value audit reached its memory bound and is incomplete."
-                .to_string(),
-        );
+                .to_string()
+        });
     }
     // A review item rather than a blocker. Whether few distinct values matter depends
     // on what the column holds — a six-valued column may carry nothing sensitive — so
@@ -668,7 +672,12 @@ pub(crate) fn build_evidence(
             } else {
                 ReleaseEvidenceStatus::Verified
             },
-            detail: if report.residual_audit_incomplete {
+            detail: if report.residual_audit_incomplete
+                && report.residual_audit_source_values == 0
+                && report.residual_audit_output_values == 0
+            {
+                "The broad residual-value audit was not run for this scalar workflow; its empty result must not be treated as a pass.".to_string()
+            } else if report.residual_audit_incomplete {
                 format!(
                     "The bounded audit reached its capacity after fingerprinting {} protected source value(s) and {} released value(s); its result is incomplete and must not be treated as a pass.",
                     report.residual_audit_source_values, report.residual_audit_output_values

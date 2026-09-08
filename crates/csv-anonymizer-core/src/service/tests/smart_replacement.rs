@@ -343,6 +343,43 @@ fn anonymize_rejects_invalid_preview_smart_replacements_and_generates_missing_va
 }
 
 #[test]
+fn anonymize_revalidates_preview_replacement_against_tail_values() {
+    let workspace = Workspace::new();
+    let input_path = workspace.path("smart-preview-tail-collision.csv");
+    let output_path = workspace.path("smart-preview-tail-collision-output.csv");
+    fs::write(&input_path, "name\nAlice Smith\nCharlie Ray\n").unwrap();
+    let mut provider = RecordingSmartProvider::new("Generated");
+
+    let result = workspace
+        .service
+        .anonymize_csv_with_sample_rows_and_control_and_smart_provider(
+            AnonymizeParams {
+                controls: vec![typed_control(
+                    0,
+                    DataType::FullName,
+                    AnonymizationStrategy::LocalAi,
+                )],
+                preview_smart_replacements: vec![SmartReplacementEntry {
+                    column_index: 0,
+                    original: "Alice Smith".to_string(),
+                    replacement: "Charlie Ray".to_string(),
+                }],
+                ..anonymize_params(input_path, output_path.clone(), vec![0])
+            },
+            10,
+            None,
+            Some(&mut provider),
+        )
+        .unwrap();
+
+    let output = read_sample(&output_path, 10).unwrap();
+    assert_ne!(output.rows[0][0], "Charlie Ray");
+    assert_ne!(output.rows[1][0], "Charlie Ray");
+    assert_eq!(provider.requests, vec![vec!["Alice Smith".to_string(), "Charlie Ray".to_string()]]);
+    assert!(result.privacy_report.smart_replacement_rejections >= 1);
+}
+
+#[test]
 fn anonymize_rejects_smart_replacements_carrying_another_rows_value() {
     let workspace = Workspace::new();
     let input_path = workspace.path("smart-cross-value.csv");

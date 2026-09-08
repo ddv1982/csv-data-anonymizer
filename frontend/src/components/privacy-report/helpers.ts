@@ -10,6 +10,17 @@ export function readinessSummary(privacyReport: PrivacyReport) {
   return 'No blockers'
 }
 
+export function transformedColumnCount(privacyReport: PrivacyReport) {
+  return (
+    privacyReport.redactedColumns +
+    privacyReport.maskedColumns +
+    privacyReport.pseudonymizedColumns +
+    privacyReport.opaqueTokenColumns +
+    privacyReport.labelledColumns +
+    privacyReport.smartReplacementColumns
+  )
+}
+
 export function transformationSummary(privacyReport: PrivacyReport) {
   const parts = [
     metricPart(privacyReport.redactedColumns, 'redacted'),
@@ -22,7 +33,6 @@ export function transformationSummary(privacyReport: PrivacyReport) {
 
   return parts.length > 0 ? parts.join(', ') : 'No transformed columns'
 }
-
 export function sensitiveSummary(privacyReport: PrivacyReport) {
   const parts = [
     metricPart(privacyReport.directIdentifiers, 'direct'),
