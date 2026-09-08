@@ -25,12 +25,15 @@ fn name_column_file(
 fn reviewed_columns(header: &str, values: &[&str]) -> Vec<String> {
     let workspace = Workspace::new();
     AnonymizerService::new("test-version")
-        .preview_anonymization(PreviewParams {
-            ..preview_params(
-                name_column_file(workspace.directory.path(), header, values),
-                vec![],
-            )
-        })
+        .preview_anonymization(
+            PreviewParams {
+                ..preview_params(
+                    name_column_file(workspace.directory.path(), header, values),
+                    vec![],
+                )
+            },
+            crate::TransformRuntime::default(),
+        )
         .unwrap()
         .warnings
         .iter()
@@ -126,7 +129,7 @@ fn a_surfaced_column_is_still_neither_selected_nor_redacted() {
     let workspace = Workspace::new();
     let path = name_column_file(workspace.directory.path(), "agent_name", PEOPLE);
     let column = AnonymizerService::new("test-version")
-        .analyze_csv(path)
+        .analyze_csv(path, crate::CsvAnalysisOptions::default())
         .unwrap()
         .columns
         .remove(1);

@@ -127,7 +127,7 @@ pub(crate) fn run_cli(action: CliAction) -> Result<(), String> {
     match action {
         CliAction::Analyze { input } => {
             let headers = service
-                .analyze_csv(&input)
+                .analyze_csv(&input, csv_anonymizer_core::CsvAnalysisOptions::default())
                 .map_err(|error| error.to_string())?;
             println!(
                 "CSV Anonymizer {} inspected {} rows in {}",
@@ -145,7 +145,7 @@ pub(crate) fn run_cli(action: CliAction) -> Result<(), String> {
         }
         CliAction::SmokeAnonymize { input, output } => {
             let headers = service
-                .analyze_csv(&input)
+                .analyze_csv(&input, csv_anonymizer_core::CsvAnalysisOptions::default())
                 .map_err(|error| error.to_string())?;
             let columns = headers
                 .columns
@@ -158,29 +158,35 @@ pub(crate) fn run_cli(action: CliAction) -> Result<(), String> {
             }
 
             let preview = service
-                .preview_anonymization(PreviewParams {
-                    file_path: input.clone(),
-                    columns: columns.clone(),
-                    controls: vec![],
-                    sample_count: 2,
-                    // The analyze and anonymize calls either side of this one take
-                    // the service default, so the preview has to ask for it too.
-                    sample_row_count: 100,
-                })
+                .preview_anonymization(
+                    PreviewParams {
+                        file_path: input.clone(),
+                        columns: columns.clone(),
+                        controls: vec![],
+                        sample_count: 2,
+                        // The analyze and anonymize calls either side of this one take
+                        // the service default, so the preview has to ask for it too.
+                        sample_row_count: 100,
+                    },
+                    csv_anonymizer_core::TransformRuntime::default(),
+                )
                 .map_err(|error| error.to_string())?;
             if preview.previews.is_empty() {
                 return Err("smoke preview did not produce any column samples".to_string());
             }
 
             let result = service
-                .anonymize_csv(AnonymizeParams {
-                    file_path: input,
-                    output_path: output,
-                    columns,
-                    controls: vec![],
-                    force: true,
-                    preview_smart_replacements: preview.smart_replacements,
-                })
+                .anonymize_csv(
+                    AnonymizeParams {
+                        file_path: input,
+                        output_path: output,
+                        columns,
+                        controls: vec![],
+                        force: true,
+                        preview_smart_replacements: preview.smart_replacements,
+                    },
+                    csv_anonymizer_core::CsvRunOptions::default(),
+                )
                 .map_err(|error| error.to_string())?;
             println!(
                 "CSV Anonymizer smoke OK: wrote {} rows to {} in {} ms",
@@ -197,14 +203,17 @@ pub(crate) fn run_cli(action: CliAction) -> Result<(), String> {
             force,
         } => {
             let result = service
-                .anonymize_csv(AnonymizeParams {
-                    file_path: input,
-                    output_path: output,
-                    columns,
-                    controls: vec![],
-                    force,
-                    preview_smart_replacements: vec![],
-                })
+                .anonymize_csv(
+                    AnonymizeParams {
+                        file_path: input,
+                        output_path: output,
+                        columns,
+                        controls: vec![],
+                        force,
+                        preview_smart_replacements: vec![],
+                    },
+                    csv_anonymizer_core::CsvRunOptions::default(),
+                )
                 .map_err(|error| error.to_string())?;
             println!(
                 "Wrote {} rows to {} in {} ms",

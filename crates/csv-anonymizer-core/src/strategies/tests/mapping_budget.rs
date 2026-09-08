@@ -399,18 +399,21 @@ fn measure(strategy: AnonymizationStrategy, distinct_values: usize) -> (u64, usi
 
     let service = AnonymizerService::new("mapping-budget-measurement");
     service
-        .anonymize_csv(AnonymizeParams {
-            file_path: input_path,
-            output_path,
-            columns: vec![1],
-            controls: vec![ColumnControl {
-                column_index: 1,
-                type_override: Some(DataType::String),
-                strategy,
-            }],
-            force: true,
-            preview_smart_replacements: vec![],
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                file_path: input_path,
+                output_path,
+                columns: vec![1],
+                controls: vec![ColumnControl {
+                    column_index: 1,
+                    type_override: Some(DataType::String),
+                    strategy,
+                }],
+                force: true,
+                preview_smart_replacements: vec![],
+            },
+            crate::CsvRunOptions::default(),
+        )
         .expect("measurement run should succeed");
 
     // Recomputed here rather than read from the run, because the run's state is

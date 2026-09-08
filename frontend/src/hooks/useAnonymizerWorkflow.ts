@@ -11,6 +11,7 @@ import { useCsvSelection } from './useCsvSelection'
 import { useLocalAi } from './useLocalAi'
 import { usePersistentSettings } from './usePersistentSettings'
 import { usePreviewWorkflow } from './usePreviewWorkflow'
+import { isSmartReplacementBlocked } from './workflowReadiness'
 import { useWorkflowArtifacts, useSelectionInvalidation } from './useWorkflowArtifacts'
 import type { BusyState, WorkflowShell } from './workflowTypes'
 
@@ -79,14 +80,11 @@ export function useAnonymizerWorkflow() {
   const hasFile = Boolean(inputPath.trim())
   const isLoading = busy !== 'idle'
   const settingsDisabled = isLoading || !settingsLoaded
-  const localAiBlocked =
-    selectionUsesLocalAi(selectedColumns) && (!localAi.ready || localAi.downloadRunning)
+  const localAiBlocked = isSmartReplacementBlocked(selectionUsesLocalAi(selectedColumns), localAi)
   const previewWorkflow = usePreviewWorkflow(shell, {
     inputPath,
     selectedColumns,
     hasColumns,
-    hasSelectedColumns,
-    localAiBlocked,
     controlsForColumns,
     selectionUsesLocalAi,
     selectionUsesTokenization,
@@ -103,12 +101,12 @@ export function useAnonymizerWorkflow() {
     hasSelectedColumns,
     headers,
     previewSmartReplacements: preview?.smartReplacements ?? [],
-    localAiBlocked,
     persistSettings,
     refreshSettings,
     preparedAnalysis,
     tokenizationKey,
     selectedUsesTokenization: selectionUsesTokenization(selectedColumns),
+    selectedUsesLocalAi: selectionUsesLocalAi(selectedColumns),
   })
   const invalidatingSelection = useSelectionInvalidation(
     { setSelectedColumns: setCsvSelectedColumns, toggleColumn: toggleCsvColumn, updateColumnStrategy: updateCsvColumnStrategy },

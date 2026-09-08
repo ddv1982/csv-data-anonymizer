@@ -12,11 +12,14 @@ use crate::types::{
 const SCALAR_WARNING: &str = "may change scalar value types";
 
 fn analyze(content: &str, format: PasteDataFormat) -> PasteAnalyzeData {
-    analyze_paste_data(PasteAnalyzeParams {
-        content: content.to_string(),
-        format,
-        sample_row_count: 10,
-    })
+    analyze_paste_data(
+        PasteAnalyzeParams {
+            content: content.to_string(),
+            format,
+            sample_row_count: 10,
+        },
+        None,
+    )
     .unwrap()
 }
 
@@ -34,14 +37,17 @@ fn preview(
     columns: Vec<usize>,
     controls: Vec<ColumnControl>,
 ) -> PreviewData {
-    preview_paste_data(PastePreviewParams {
-        content: content.to_string(),
-        format,
-        columns,
-        controls,
-        sample_count: 3,
-        sample_row_count: 100,
-    })
+    preview_paste_data(
+        PastePreviewParams {
+            content: content.to_string(),
+            format,
+            columns,
+            controls,
+            sample_count: 3,
+            sample_row_count: 100,
+        },
+        crate::TransformRuntime::default(),
+    )
     .unwrap()
 }
 
@@ -51,14 +57,17 @@ fn transform(
     columns: Vec<usize>,
     controls: Vec<ColumnControl>,
 ) -> PasteTransformData {
-    transform_paste_data(PasteTransformParams {
-        content: content.to_string(),
-        format,
-        columns,
-        controls,
-        sample_row_count: 100,
-        preview_smart_replacements: Vec::new(),
-    })
+    transform_paste_data(
+        PasteTransformParams {
+            content: content.to_string(),
+            format,
+            columns,
+            controls,
+            sample_row_count: 100,
+            preview_smart_replacements: Vec::new(),
+        },
+        crate::TransformRuntime::default(),
+    )
     .unwrap()
 }
 
@@ -364,7 +373,7 @@ fn typed_field_override_preserves_existing_privacy_risk_before_redact_default() 
         &["johndoe"],
     )];
     let (headers, rows) = fields_to_rows(&fields, FieldWindow::Detection);
-    let metadata = metadata_from_fields(&fields, &headers, &rows);
+    let metadata = metadata_from_fields(&fields, &headers, &rows, None).0;
     let username = &metadata[0];
 
     assert_eq!(username.detected_type, DataType::String);

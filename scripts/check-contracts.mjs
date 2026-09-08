@@ -8,8 +8,13 @@ import { pathToFileURL } from 'node:url'
 // owns the analysis/transform vocabulary; the Tauri crate owns the settings,
 // job and Local AI surfaces, which reach the frontend over IPC just the same
 // and drift just as silently when they are left unchecked.
-const rustSources = [
+export const rustSources = [
   'crates/csv-anonymizer-core/src/types.rs',
+  'crates/csv-anonymizer-core/src/types/column.rs',
+  'crates/csv-anonymizer-core/src/types/sampling.rs',
+  'crates/csv-anonymizer-core/src/types/processing.rs',
+  'crates/csv-anonymizer-core/src/types/workflow.rs',
+  'crates/csv-anonymizer-core/src/types/report.rs',
   'src-tauri/src/commands/csv.rs',
   'src-tauri/src/jobs.rs',
   'src-tauri/src/local_ai/types.rs',

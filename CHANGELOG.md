@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.0.0 - 2026-09-08
+
+- Cut the Rust source API over to explicit borrowed execution options for CSV analysis, preview, output, paste transformation, and quick generation; the public wire contracts and CLI/Tauri command names remain unchanged.
+- Centralize frontend protection readiness so disabled controls and direct CSV, paste, and quick actions agree, including selected Local AI download blocking and the specific malformed tokenization-key error.
+- Isolate anonymization job transport tracking and split internal core type ownership behind the unchanged root type façade.
+
 ## v1.0.93 - 2026-09-08
 
 - Close anonymization disclosure paths in pasted text and XML, including complete PEM redaction, character-reference transformation, and honest residual-audit evidence.

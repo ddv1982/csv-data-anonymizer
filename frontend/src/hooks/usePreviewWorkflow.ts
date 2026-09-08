@@ -7,15 +7,13 @@ import type {
   PreparedAnalysis,
 } from '../types'
 import { messageFrom } from '../utils/errors'
-import { isValidTokenizationKey } from '../utils/tokenizationKey'
+import { getProtectionReadiness } from './workflowReadiness'
 import type { WorkflowShell } from './workflowTypes'
 
 type PreviewWorkflowArgs = {
   inputPath: string
   selectedColumns: number[]
   hasColumns: boolean
-  hasSelectedColumns: boolean
-  localAiBlocked: boolean
   controlsForColumns: (columns: number[]) => ColumnControl[]
   selectionUsesLocalAi: (columns: number[]) => boolean
   selectionUsesTokenization: (columns: number[]) => boolean
@@ -30,8 +28,6 @@ export function usePreviewWorkflow(
     inputPath,
     selectedColumns,
     hasColumns,
-    hasSelectedColumns,
-    localAiBlocked,
     controlsForColumns,
     selectionUsesLocalAi,
     selectionUsesTokenization,
@@ -42,9 +38,6 @@ export function usePreviewWorkflow(
 ) {
   const { busy, setBusy, setError, setResult, settings, localAi } = shell
   const localAiRequest = localAi.request
-  const localAiReady = localAi.ready
-  const selectedUsesTokenization = selectionUsesTokenization(selectedColumns)
-  const selectedTokenizationKey = selectedUsesTokenization ? tokenizationKey : null
   const operationSequence = useRef(0)
   const selectedColumnsFingerprint = selectedColumns.join(',')
 
@@ -56,33 +49,56 @@ export function usePreviewWorkflow(
     operationSequence.current += 1
   }, [])
 
-  const canPreview = Boolean(
-    hasColumns &&
-      hasSelectedColumns &&
-      inputPath &&
-      busy === 'idle' &&
-      (!settings.localNerEnabled || Boolean(preparedAnalysis)) &&
-      !localAiBlocked &&
-      isValidTokenizationKey(selectedTokenizationKey),
-  )
+  function getPreviewReadiness(path: string, columns: number[]) {
+    const protection = getProtectionReadiness({
+      usesLocalAi: selectionUsesLocalAi(columns),
+      localAi,
+      requiresPreparedAnalysis: settings.localNerEnabled,
+      hasPreparedAnalysis: Boolean(preparedAnalysis),
+      usesTokenization: selectionUsesTokenization(columns),
+      tokenizationKey,
+    })
+    const blocker = !path
+      ? 'missingSource'
+      : columns.length === 0
+        ? 'noSelection'
+        : !hasColumns
+          ? 'missingColumns'
+          : busy !== 'idle'
+            ? 'busy'
+            : protection.blocker
+    return { blocker, protection }
+  }
+
+  const canPreview = getPreviewReadiness(inputPath, selectedColumns).blocker === null
 
   async function previewCsv(path = inputPath, columnsToPreview = selectedColumns) {
-    if (!path || columnsToPreview.length === 0) {
+    const readiness = getPreviewReadiness(path, columnsToPreview)
+    if (readiness.blocker === 'missingSource' || readiness.blocker === 'noSelection') {
       setPreview(null)
       return
     }
-    if (selectionUsesLocalAi(columnsToPreview) && !localAiReady) {
+    if (readiness.blocker === 'missingColumns') {
+      setError('Load a CSV file first.')
+      return
+    }
+    if (readiness.blocker === 'busy') {
+      setError('Wait for the current operation to finish.')
+      return
+    }
+    if (readiness.blocker === 'localAi') {
       setError('Set up Local AI before previewing Smart replacement columns.')
       return
     }
-    const tokenizationKeyForPreview = selectionUsesTokenization(columnsToPreview)
-      ? tokenizationKey
-      : null
-    if (!isValidTokenizationKey(tokenizationKeyForPreview)) {
+    if (readiness.blocker === 'preparedAnalysis') {
+      setError('Analyze the source again before previewing.')
+      return
+    }
+    if (readiness.blocker === 'tokenizationKey') {
       setError('Enter a valid 64-character hexadecimal tokenization key before previewing.')
       return
     }
-
+    const tokenizationKeyForPreview = readiness.protection.tokenizationKey
     const sequence = ++operationSequence.current
     setBusy('preview')
     setError(null)
@@ -126,6 +142,7 @@ export function usePreviewWorkflow(
       if (sequence === operationSequence.current) setBusy('idle')
     }
   }
+
 
   return {
     canPreview,

@@ -9,12 +9,12 @@ import type {
   PreviewData,
 } from '../types'
 import { messageFrom } from '../utils/errors'
-import { confirmEphemeralTokenizationKey, isValidTokenizationKey } from '../utils/tokenizationKey'
+import { confirmEphemeralTokenizationKey } from '../utils/tokenizationKey'
 import { useColumnSelection } from './useColumnSelection'
 import { useCopyOutput } from './useCopyOutput'
 import type { LocalAiState } from './useLocalAi'
+import { getProtectionReadiness } from './workflowReadiness'
 import { useSelectionInvalidation } from './useWorkflowArtifacts'
-
 export type PasteBusyState = 'idle' | 'analyzing' | 'previewing' | 'transforming' | 'copying'
 
 type PasteDataWorkflowOptions = {
@@ -49,21 +49,26 @@ export function usePasteDataWorkflow({
   const isContentTooLarge = contentByteLength > MAX_PASTE_CONTENT_BYTES
   const selectedUsesLocalAi = selection.selectionUsesLocalAi(selection.selectedColumns)
   const selectedUsesTokenization = selection.selectionUsesTokenization(selection.selectedColumns)
-  const activeTokenizationKey = selectedUsesTokenization ? tokenizationKey : null
-  const localAiBlocked = selectedUsesLocalAi && (!localAi.ready || localAi.downloadRunning)
+  const getRunReadiness = () => {
+    const protection = getProtectionReadiness({
+      usesLocalAi: selectedUsesLocalAi,
+      localAi,
+      requiresPreparedAnalysis: settings.localNerEnabled,
+      hasPreparedAnalysis: Boolean(analysis?.preparedAnalysis),
+      usesTokenization: selectedUsesTokenization,
+      tokenizationKey,
+    })
+    const blocker =
+      !settingsLoaded || !analysis || selection.selectedColumns.length === 0 || isBusy
+        ? 'unavailable'
+        : protection.blocker
+    return { blocker, protection }
+  }
+  const readiness = getRunReadiness()
+  const activeTokenizationKey = readiness.protection.tokenizationKey
   const canAnalyze = settingsLoaded && content.trim().length > 0 && !isBusy && !isContentTooLarge
   const canClear = !isBusy && (content.length > 0 || analysis !== null || preview !== null || result !== null || copyStatus !== null)
-  // Preview and transform are gated on exactly the same conditions: both send the
-  // current selection to the backend, so anything that makes one unsafe makes the
-  // other unsafe too. They were two identical expressions that could drift apart.
-  const canRun =
-    settingsLoaded &&
-    Boolean(analysis) &&
-    selection.selectedColumns.length > 0 &&
-    (!settings.localNerEnabled || Boolean(analysis?.preparedAnalysis)) &&
-    !isBusy &&
-    !localAiBlocked &&
-    isValidTokenizationKey(activeTokenizationKey)
+  const canRun = readiness.blocker === null
 
   useEffect(() => () => {
     operationSequence.current += 1
@@ -136,18 +141,25 @@ export function usePasteDataWorkflow({
     setContentState('')
     resetDerivedState()
   }
-
   async function showPreview() {
-    if (!settingsLoaded || !analysis || selection.selectedColumns.length === 0 || isBusy) return
-    if (localAiBlocked) {
+    const current = getRunReadiness()
+    if (current.blocker === 'unavailable') {
+      if (settingsLoaded && analysis && selection.selectedColumns.length > 0 && !isBusy) {
+        if (current.protection.blocker === 'localAi') onError('Set up Local AI before previewing Smart replacement fields.')
+        else if (current.protection.blocker === 'preparedAnalysis') onError('Analyze the content again before previewing.')
+        else if (current.protection.blocker === 'tokenizationKey') onError('Enter a valid 64-character hexadecimal tokenization key before previewing.')
+      }
+      return
+    }
+    if (current.blocker === 'localAi') {
       onError('Set up Local AI before previewing Smart replacement fields.')
       return
     }
-    if (settings.localNerEnabled && !analysis.preparedAnalysis) {
+    if (current.blocker === 'preparedAnalysis') {
       onError('Analyze the content again before previewing.')
       return
     }
-    if (!isValidTokenizationKey(activeTokenizationKey)) {
+    if (current.blocker === 'tokenizationKey') {
       onError('Enter a valid 64-character hexadecimal tokenization key before previewing.')
       return
     }
@@ -159,13 +171,13 @@ export function usePasteDataWorkflow({
     try {
       const nextPreview = await previewPasteData({
         content,
-        format: analysis.format,
+        format: analysis!.format,
         columns: selection.selectedColumns,
         controls: selection.controlsForColumns(selection.selectedColumns),
         sampleCount: settings.previewSampleCount,
         sampleRowCount: settings.sampleRowCount,
         localAi: localAi.request,
-        preparedAnalysis: analysis.preparedAnalysis,
+        preparedAnalysis: analysis!.preparedAnalysis,
         tokenizationKey: activeTokenizationKey,
       })
       if (sequence === operationSequence.current) setPreview(nextPreview)
@@ -177,16 +189,24 @@ export function usePasteDataWorkflow({
   }
 
   async function transform() {
-    if (!settingsLoaded || !analysis || selection.selectedColumns.length === 0 || isBusy) return
-    if (localAiBlocked) {
+    const current = getRunReadiness()
+    if (current.blocker === 'unavailable') {
+      if (settingsLoaded && analysis && selection.selectedColumns.length > 0 && !isBusy) {
+        if (current.protection.blocker === 'localAi') onError('Set up Local AI before anonymizing Smart replacement fields.')
+        else if (current.protection.blocker === 'preparedAnalysis') onError('Analyze the content again before transforming.')
+        else if (current.protection.blocker === 'tokenizationKey') onError('Enter a valid 64-character hexadecimal tokenization key before transforming.')
+      }
+      return
+    }
+    if (current.blocker === 'localAi') {
       onError('Set up Local AI before anonymizing Smart replacement fields.')
       return
     }
-    if (settings.localNerEnabled && !analysis.preparedAnalysis) {
+    if (current.blocker === 'preparedAnalysis') {
       onError('Analyze the content again before transforming.')
       return
     }
-    if (!isValidTokenizationKey(activeTokenizationKey)) {
+    if (current.blocker === 'tokenizationKey') {
       onError('Enter a valid 64-character hexadecimal tokenization key before transforming.')
       return
     }
@@ -198,13 +218,13 @@ export function usePasteDataWorkflow({
     try {
       const nextResult = await transformPasteData({
         content,
-        format: analysis.format,
+        format: analysis!.format,
         columns: selection.selectedColumns,
         controls: selection.controlsForColumns(selection.selectedColumns),
         sampleRowCount: settings.sampleRowCount,
         previewSmartReplacements: preview?.smartReplacements ?? [],
         localAi: localAi.request,
-        preparedAnalysis: analysis.preparedAnalysis,
+        preparedAnalysis: analysis!.preparedAnalysis,
         tokenizationKey: activeTokenizationKey,
       })
       if (sequence === operationSequence.current) setResult(nextResult)
@@ -249,7 +269,7 @@ export function usePasteDataWorkflow({
     contentByteLength,
     isContentTooLarge,
     selectedUsesLocalAi,
-    localAiBlocked,
+    localAiBlocked: readiness.protection.localAiBlocked,
     isBusy,
     canAnalyze,
     canClear,

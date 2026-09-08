@@ -1,8 +1,5 @@
-import { useEffect, useReducer, useRef } from 'react'
 import {
-  cancelAnonymizeJob,
   firstPreflightBlocker,
-  getAnonymizeJobStatus,
   preflightAnonymization,
   startAnonymizeJob,
 } from '../tauri'
@@ -17,96 +14,10 @@ import type {
 } from '../types'
 import { messageFrom } from '../utils/errors'
 import { confirmEphemeralTokenizationKey } from '../utils/tokenizationKey'
-import { isValidTokenizationKey } from '../utils/tokenizationKey'
 import { directoryOf } from '../utils/paths'
+import { getProtectionReadiness } from './workflowReadiness'
+import { useAnonymizeJobTracker } from './useAnonymizeJobTracker'
 import type { WorkflowShell } from './workflowTypes'
-
-/** Gap between successful status polls. */
-const POLL_INTERVAL_MS = 300
-/** Status-query fallback begins only after the live progress channel falls silent. */
-const CHANNEL_SILENCE_BEFORE_POLL_MS = 5_000
-/**
- * Failed polls tolerated silently before the user is told contact was lost.
- *
- * Above one so a single dropped response — common enough while the backend is
- * busy writing — never surfaces as an error the run then recovers from anyway.
- */
-const POLL_FAILURES_BEFORE_REPORTING = 3
-/** Ceiling on the backoff, so a long outage still notices recovery promptly. */
-const MAX_POLL_RETRY_MS = 5_000
-/**
- * How long contact may stay lost before the client stops polling and hands the UI back.
- *
- * Without a deadline, polling has no terminal condition at all: `snapshot_job` returns a
- * permanent error for an id that is no longer in the registry, and a poisoned registry
- * mutex fails forever too — neither can ever succeed on a retry. Retrying those every
- * five seconds keeps `busy === 'running'` for good, and that state has no exit: the view
- * gates every other control on it, and Cancel cannot rescue it either — pressing it only
- * sets a flag the worker reads, and the terminal `canceled` state that would release the
- * view can only be learned by the polling that is broken. Only killing the app recovers.
- *
- * Two minutes is measured against continuous unreachability, not against run length: a
- * healthy hour-long run answers every poll in microseconds (a status snapshot is an
- * in-memory lock and clone), so a long run never approaches this. Two minutes of silence
- * is roughly thirty consecutive failed attempts at the capped 5s backoff — far past any
- * plausible transient hiccup — while still being short enough that a wedged user is not
- * held hostage.
- *
- * Deliberately a wall clock and not a failure count: the backoff makes "how many failures"
- * a poor proxy for "how long the user has been stuck", which is the thing that matters.
- *
- * An unknown-job error is not treated as immediately terminal. The only signal Tauri hands
- * back is the Rust error prose ("Unknown anonymization job: …"); matching on it would stop
- * working silently the day someone rewords that string, leaving exactly the freeze this
- * constant exists to prevent. The deadline costs an unknown-job outage two minutes of
- * waiting and works no matter how the backend words its errors.
- */
-const LOST_CONTACT_DEADLINE_MS = 120_000
-
-/**
- * Says tracking stopped without claiming the run failed or finished.
- *
- * The backend job is unaffected by the client giving up on it — it may still be streaming
- * rows into the output file — so this must not read as a failure that invites a retry over
- * the same output path.
- */
-function formatMinutes(milliseconds: number) {
-  const minutes = milliseconds / 60_000
-  return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`
-}
-
-const LOST_CONTACT_GIVE_UP_MESSAGE =
-  // The duration is read off the deadline rather than written out, because the two had
-  // already been written out twice and would part company the first time the deadline moved:
-  // the user would be told "two minutes" by a timer that waited five. Pluralised for the same
-  // reason — a one-minute deadline would otherwise render "over 1 minutes".
-  `Lost contact with the running job for over ${formatMinutes(LOST_CONTACT_DEADLINE_MS)}, so ` +
-  'this app stopped tracking it. The job may still be running and writing to the output ' +
-  'file: check that file before starting another run over the same path.'
-
-/**
- * How long to wait before retrying after `failures` consecutive failed polls.
- *
- * Backs off rather than retrying flat at the poll interval, so a backend that is
- * unresponsive because it is overloaded is not asked 200 more times a minute while
- * it recovers. Capped, because the job may finish at any point and the client has
- * no other way to find out.
- */
-function pollRetryDelay(failures: number) {
-  return Math.min(POLL_INTERVAL_MS * 2 ** (failures - 1), MAX_POLL_RETRY_MS)
-}
-
-/**
- * Says contact was lost without claiming the run failed, and keeps the underlying
- * reason where it is useful.
- *
- * The distinction matters: the job may well still be streaming rows, and telling
- * someone their run failed when it has not is what would make them start a second
- * one over the same output.
- */
-function lostContactMessage(caught: unknown) {
-  return `Lost contact with the running job, still retrying. ${messageFrom(caught)}`
-}
 
 type AnonymizeJobArgs = {
   inputPath: string
@@ -116,40 +27,13 @@ type AnonymizeJobArgs = {
   hasColumns: boolean
   hasSelectedColumns: boolean
   headers: HeadersData | null
-  previewSmartReplacements: SmartReplacementEntry[]
   preparedAnalysis: PreparedAnalysis | null
+  previewSmartReplacements: SmartReplacementEntry[]
   tokenizationKey: string | null
+  selectedUsesLocalAi: boolean
   selectedUsesTokenization: boolean
-  localAiBlocked: boolean
   persistSettings: (settings: AppSettings) => Promise<void>
   refreshSettings: () => Promise<void>
-}
-
-type JobTrackerState =
-  | { tag: 'idle'; status: null }
-  | { tag: 'running'; jobId: string; status: AnonymizeJobStatus }
-
-type JobTrackerEvent =
-  | { type: 'started'; status: AnonymizeJobStatus }
-  | { type: 'progress'; status: AnonymizeJobStatus }
-  | { type: 'cleared' }
-
-const idleJobTracker: JobTrackerState = { tag: 'idle', status: null }
-
-function jobTrackerReducer(state: JobTrackerState, event: JobTrackerEvent): JobTrackerState {
-  switch (event.type) {
-    case 'started':
-      return event.status.state === 'running'
-        ? { tag: 'running', jobId: event.status.jobId, status: event.status }
-        : idleJobTracker
-    case 'progress':
-      if (state.tag !== 'running' || event.status.jobId !== state.jobId) return state
-      return event.status.state === 'running'
-        ? { ...state, status: event.status }
-        : idleJobTracker
-    case 'cleared':
-      return idleJobTracker
-  }
 }
 
 export function useAnonymizeJob(
@@ -166,7 +50,7 @@ export function useAnonymizeJob(
     preparedAnalysis,
     tokenizationKey,
     selectedUsesTokenization,
-    localAiBlocked,
+    selectedUsesLocalAi,
     persistSettings,
     refreshSettings,
   }: AnonymizeJobArgs,
@@ -174,180 +58,50 @@ export function useAnonymizeJob(
   const { busy, setBusy, setError, setResult, settings, localAi } = shell
   const localAiRequest = localAi.request
 
-  const [jobTracker, dispatchJob] = useReducer(jobTrackerReducer, idleJobTracker)
-  const activeJobId = jobTracker.tag === 'running' ? jobTracker.jobId : null
-  const jobStatus = jobTracker.status
-  const handleJobStatusRef = useRef(handleJobStatus)
-  const terminalJobIdsRef = useRef(new Set<string>())
-  const lastChannelUpdateRef = useRef<number | null>(null)
-  const consecutivePollFailuresRef = useRef(0)
-  /** When the current run of consecutive poll failures started, for the lost-contact deadline. */
-  const lostContactSinceRef = useRef<number | null>(null)
-  /**
-   * The exact message this hook last wrote, so recovery clears only that message.
-   *
-   * Clearing on "polling failed recently" instead would erase whatever error is on screen,
-   * including ones written after it by other code paths — a rejected Cancel, or a Local AI
-   * download failure during a run — leaving the user believing an action succeeded.
-   */
-  const lostContactMessageRef = useRef<string | null>(null)
-  const canAnonymize = Boolean(
-    hasColumns &&
-      hasSelectedColumns &&
-      inputPath &&
-      outputPath &&
-      busy === 'idle' &&
-      (!settings.localNerEnabled || Boolean(preparedAnalysis)) &&
-      !localAiBlocked &&
-      isValidTokenizationKey(selectedUsesTokenization ? tokenizationKey : null),
-  )
-
-  useEffect(() => {
-    handleJobStatusRef.current = handleJobStatus
+  const trackerReadiness = getProtectionReadiness({
+    usesLocalAi: selectedUsesLocalAi,
+    localAi,
+    requiresPreparedAnalysis: settings.localNerEnabled,
+    hasPreparedAnalysis: Boolean(preparedAnalysis),
+    usesTokenization: selectedUsesTokenization,
+    tokenizationKey,
   })
+  const tracker = useAnonymizeJobTracker({ busy, setBusy, setError, onTerminal: handleTerminal })
+  const jobStatus = tracker.jobStatus
 
-  useEffect(() => {
-    if (busy !== 'running' || !activeJobId) return
-
-    const jobId = activeJobId
-    let isMounted = true
-    let timeoutId: number | undefined
-    consecutivePollFailuresRef.current = 0
-    lostContactSinceRef.current = null
-    lostContactMessageRef.current = null
-
-    function reportLostContact(message: string) {
-      lostContactMessageRef.current = message
-      setError(message)
-    }
-
-    function clearLostContactReport() {
-      const reported = lostContactMessageRef.current
-      if (!reported) return
-      lostContactMessageRef.current = null
-      // Only retract our own message: anything written after it belongs to another
-      // code path and is still news to the user.
-      setError((current) => (current === reported ? null : current))
-    }
-
-    async function pollJob() {
-      const lastChannelUpdate = lastChannelUpdateRef.current
-      if (lastChannelUpdate !== null) {
-        const channelAge = Date.now() - lastChannelUpdate
-        if (channelAge < CHANNEL_SILENCE_BEFORE_POLL_MS) {
-          timeoutId = window.setTimeout(
-            pollJob,
-            CHANNEL_SILENCE_BEFORE_POLL_MS - channelAge,
-          )
-          return
-        }
-      }
-      try {
-        const status = await getAnonymizeJobStatus(jobId)
-        if (!isMounted) return
-        // Clear a lost-contact message the moment contact returns, so a recovered
-        // run does not finish while still showing the reason it looked stuck.
-        clearLostContactReport()
-        consecutivePollFailuresRef.current = 0
-        lostContactSinceRef.current = null
-        const finished = handleJobStatusRef.current(status)
-        if (!finished) {
-          timeoutId = window.setTimeout(pollJob, POLL_INTERVAL_MS)
-        }
-      } catch (caught) {
-        if (!isMounted) return
-        // Losing contact with the job is not the job failing. Cancelling here used
-        // to abort the run after two missed polls — under a second — discarding work
-        // that can legitimately stream for an hour. The run is cancel-safe and leaves
-        // no partial output either way, so there is nothing for the client to protect
-        // by ending it; it only has to keep asking and say that it is out of touch.
-        consecutivePollFailuresRef.current += 1
-        lostContactSinceRef.current ??= Date.now()
-
-        if (Date.now() - lostContactSinceRef.current >= LOST_CONTACT_DEADLINE_MS) {
-          // Give the UI back rather than poll a job we can provably never hear from
-          // again. Not rescheduling is the point: this is the only exit from `running`
-          // when the failure is permanent.
-          lostContactMessageRef.current = null
-          dispatchJob({ type: 'cleared' })
-          setBusy('idle')
-          setError(LOST_CONTACT_GIVE_UP_MESSAGE)
-          return
-        }
-
-        if (consecutivePollFailuresRef.current >= POLL_FAILURES_BEFORE_REPORTING) {
-          reportLostContact(lostContactMessage(caught))
-        }
-        timeoutId = window.setTimeout(pollJob, pollRetryDelay(consecutivePollFailuresRef.current))
-      }
-    }
-
-    timeoutId = window.setTimeout(pollJob, POLL_INTERVAL_MS)
-
-    return () => {
-      isMounted = false
-      if (timeoutId) window.clearTimeout(timeoutId)
-    }
-  }, [activeJobId, busy, setBusy, setError])
-
-  function handleJobStatus(status: AnonymizeJobStatus) {
-    if (status.state === 'running') {
-      // A channel can deliver completion before the start command resolves with
-      // its earlier running snapshot. Never let that stale response resurrect a
-      // terminal job.
-      if (terminalJobIdsRef.current.has(status.jobId)) return true
-      dispatchJob({ type: activeJobId ? 'progress' : 'started', status })
-      return false
-    }
-
-    terminalJobIdsRef.current.add(status.jobId)
-    dispatchJob({ type: 'progress', status })
-    setBusy('idle')
-
+  function handleTerminal(status: AnonymizeJobStatus) {
     if (status.state === 'succeeded' && status.result) {
       setResult(status.result)
       const nextSettings = settingsAfterSuccessfulRun(settings, status.result)
-      if (nextSettings !== settings) {
-        void persistSettings(nextSettings)
-      } else {
-        void refreshSettings()
-      }
-      return true
+      if (nextSettings !== settings) void persistSettings(nextSettings)
+      else void refreshSettings()
+      return
     }
-
-    if (status.state === 'canceled') {
-      setError('Output creation canceled.')
-    } else {
-      setError(status.error ? messageFrom(status.error) : 'Output creation failed.')
-    }
-    return true
+    if (status.state === 'canceled') setError('Output creation canceled.')
+    else setError(status.error ? messageFrom(status.error) : 'Output creation failed.')
   }
 
-  function anonymizeBlockedMessage() {
-    if (localAiBlocked) return 'Set up Local AI before creating output with Smart replacement columns.'
-    if (settings.localNerEnabled && !preparedAnalysis) return 'Analyze the source again before creating output.'
-    if (!inputPath || !hasColumns) return 'Load a CSV file first.'
-    if (!hasSelectedColumns) return 'Select at least one column to anonymize.'
-    if (!outputPath) return 'Choose an output path.'
-    return 'Wait for the current operation to finish.'
-  }
+  const canAnonymize = Boolean(
+    hasColumns && hasSelectedColumns && inputPath && outputPath && busy === 'idle' && !trackerReadiness.blocker,
+  )
 
   async function runAnonymization() {
     if (!canAnonymize) {
-      setError(anonymizeBlockedMessage())
+      if (trackerReadiness.blocker === 'localAi') setError('Set up Local AI before creating output with Smart replacement columns.')
+      else if (trackerReadiness.blocker === 'preparedAnalysis') setError('Analyze the source again before creating output.')
+      else if (trackerReadiness.blocker === 'tokenizationKey') setError('Enter a valid 64-character hexadecimal tokenization key before creating output.')
+      else if (!inputPath || !hasColumns) setError('Load a CSV file first.')
+      else if (!hasSelectedColumns) setError('Select at least one column to anonymize.')
+      else if (!outputPath) setError('Choose an output path.')
+      else setError('Wait for the current operation to finish.')
       return
     }
-
-    const activeTokenizationKey = selectedUsesTokenization ? tokenizationKey : null
-    if (!isValidTokenizationKey(activeTokenizationKey)) {
-      setError('Enter a valid 64-character hexadecimal tokenization key before creating output.')
-      return
-    }
+    const activeTokenizationKey = trackerReadiness.tokenizationKey
     if (!confirmEphemeralTokenizationKey(activeTokenizationKey)) return
     setBusy('running')
     setError(null)
     setResult(null)
-    dispatchJob({ type: 'cleared' })
+    tracker.clearJobState()
 
     try {
       const preflight = await preflightAnonymization({
@@ -382,33 +136,18 @@ export function useAnonymizeJob(
           preparedAnalysis,
           tokenizationKey: activeTokenizationKey,
         },
-        onProgress: (nextStatus) => {
-          lastChannelUpdateRef.current = Date.now()
-          handleJobStatusRef.current(nextStatus)
-        },
+        onProgress: tracker.onProgress,
       })
-      handleJobStatus(status)
+      tracker.acceptStatus(status)
     } catch (caught) {
-      dispatchJob({ type: 'cleared' })
+      tracker.clearJobState()
       setBusy('idle')
       setError(messageFrom(caught))
     }
   }
 
-  async function cancelCurrentJob() {
-    if (!activeJobId || busy !== 'running') return
-
-    try {
-      const status = await cancelAnonymizeJob(activeJobId)
-      handleJobStatus(status)
-    } catch (caught) {
-      setError(messageFrom(caught))
-    }
-  }
-
-  function clearJobState() {
-    dispatchJob({ type: 'cleared' })
-  }
+  const cancelCurrentJob = tracker.cancelCurrentJob
+  const clearJobState = tracker.clearJobState
 
   return {
     jobStatus,

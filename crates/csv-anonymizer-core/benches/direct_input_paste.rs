@@ -7,11 +7,14 @@ use std::hint::black_box;
 
 fn bench_pasted_json(c: &mut Criterion) {
     let content = build_json_payload(1_000);
-    let analysis = direct_input::analyze_paste_data(PasteAnalyzeParams {
-        content: content.clone(),
-        format: PasteDataFormat::Json,
-        sample_row_count: 1_000,
-    })
+    let analysis = direct_input::analyze_paste_data(
+        PasteAnalyzeParams {
+            content: content.clone(),
+            format: PasteDataFormat::Json,
+            sample_row_count: 1_000,
+        },
+        None,
+    )
     .expect("benchmark JSON analysis should succeed");
     let selected_columns =
         columns_for(&analysis.columns, &["[].email", "[].fullName", "[].userId"]);
@@ -23,25 +26,31 @@ fn bench_pasted_json(c: &mut Criterion) {
 
     c.bench_function("analyze_pasted_json_1k", |b| {
         b.iter(|| {
-            direct_input::analyze_paste_data(PasteAnalyzeParams {
-                content: black_box(content.clone()),
-                format: PasteDataFormat::Json,
-                sample_row_count: 1_000,
-            })
+            direct_input::analyze_paste_data(
+                PasteAnalyzeParams {
+                    content: black_box(content.clone()),
+                    format: PasteDataFormat::Json,
+                    sample_row_count: 1_000,
+                },
+                None,
+            )
             .expect("JSON analysis should succeed")
         })
     });
 
     c.bench_function("transform_pasted_json_1k", |b| {
         b.iter(|| {
-            direct_input::transform_paste_data(PasteTransformParams {
-                content: black_box(content.clone()),
-                format: PasteDataFormat::Json,
-                columns: selected_columns.clone(),
-                controls: controls.clone(),
-                sample_row_count: 1_000,
-                preview_smart_replacements: Vec::new(),
-            })
+            direct_input::transform_paste_data(
+                PasteTransformParams {
+                    content: black_box(content.clone()),
+                    format: PasteDataFormat::Json,
+                    columns: selected_columns.clone(),
+                    controls: controls.clone(),
+                    sample_row_count: 1_000,
+                    preview_smart_replacements: Vec::new(),
+                },
+                csv_anonymizer_core::TransformRuntime::default(),
+            )
             .expect("JSON transform should succeed")
         })
     });
@@ -49,11 +58,14 @@ fn bench_pasted_json(c: &mut Criterion) {
 
 fn bench_pasted_xml(c: &mut Criterion) {
     let content = build_xml_payload(1_000);
-    let analysis = direct_input::analyze_paste_data(PasteAnalyzeParams {
-        content: content.clone(),
-        format: PasteDataFormat::Xml,
-        sample_row_count: 1_000,
-    })
+    let analysis = direct_input::analyze_paste_data(
+        PasteAnalyzeParams {
+            content: content.clone(),
+            format: PasteDataFormat::Xml,
+            sample_row_count: 1_000,
+        },
+        None,
+    )
     .expect("benchmark XML analysis should succeed");
     let selected_columns =
         columns_for(&analysis.columns, &["users.user.@email", "users.user.name"]);
@@ -64,25 +76,31 @@ fn bench_pasted_xml(c: &mut Criterion) {
 
     c.bench_function("analyze_pasted_xml_1k", |b| {
         b.iter(|| {
-            direct_input::analyze_paste_data(PasteAnalyzeParams {
-                content: black_box(content.clone()),
-                format: PasteDataFormat::Xml,
-                sample_row_count: 1_000,
-            })
+            direct_input::analyze_paste_data(
+                PasteAnalyzeParams {
+                    content: black_box(content.clone()),
+                    format: PasteDataFormat::Xml,
+                    sample_row_count: 1_000,
+                },
+                None,
+            )
             .expect("XML analysis should succeed")
         })
     });
 
     c.bench_function("transform_pasted_xml_1k", |b| {
         b.iter(|| {
-            direct_input::transform_paste_data(PasteTransformParams {
-                content: black_box(content.clone()),
-                format: PasteDataFormat::Xml,
-                columns: selected_columns.clone(),
-                controls: controls.clone(),
-                sample_row_count: 1_000,
-                preview_smart_replacements: Vec::new(),
-            })
+            direct_input::transform_paste_data(
+                PasteTransformParams {
+                    content: black_box(content.clone()),
+                    format: PasteDataFormat::Xml,
+                    columns: selected_columns.clone(),
+                    controls: controls.clone(),
+                    sample_row_count: 1_000,
+                    preview_smart_replacements: Vec::new(),
+                },
+                csv_anonymizer_core::TransformRuntime::default(),
+            )
             .expect("XML transform should succeed")
         })
     });
@@ -90,11 +108,14 @@ fn bench_pasted_xml(c: &mut Criterion) {
 
 fn bench_pasted_logs(c: &mut Criterion) {
     let content = build_log_payload(1_000);
-    let analysis = direct_input::analyze_paste_data(PasteAnalyzeParams {
-        content: content.clone(),
-        format: PasteDataFormat::Logs,
-        sample_row_count: 1_000,
-    })
+    let analysis = direct_input::analyze_paste_data(
+        PasteAnalyzeParams {
+            content: content.clone(),
+            format: PasteDataFormat::Logs,
+            sample_row_count: 1_000,
+        },
+        None,
+    )
     .expect("benchmark log analysis should succeed");
     let selected_columns = columns_for(&analysis.columns, &["email", "ipAddress"]);
     let controls = vec![
@@ -104,25 +125,31 @@ fn bench_pasted_logs(c: &mut Criterion) {
 
     c.bench_function("analyze_pasted_logs_1k", |b| {
         b.iter(|| {
-            direct_input::analyze_paste_data(PasteAnalyzeParams {
-                content: black_box(content.clone()),
-                format: PasteDataFormat::Logs,
-                sample_row_count: 1_000,
-            })
+            direct_input::analyze_paste_data(
+                PasteAnalyzeParams {
+                    content: black_box(content.clone()),
+                    format: PasteDataFormat::Logs,
+                    sample_row_count: 1_000,
+                },
+                None,
+            )
             .expect("log analysis should succeed")
         })
     });
 
     c.bench_function("transform_pasted_logs_1k", |b| {
         b.iter(|| {
-            direct_input::transform_paste_data(PasteTransformParams {
-                content: black_box(content.clone()),
-                format: PasteDataFormat::Logs,
-                columns: selected_columns.clone(),
-                controls: controls.clone(),
-                sample_row_count: 1_000,
-                preview_smart_replacements: Vec::new(),
-            })
+            direct_input::transform_paste_data(
+                PasteTransformParams {
+                    content: black_box(content.clone()),
+                    format: PasteDataFormat::Logs,
+                    columns: selected_columns.clone(),
+                    controls: controls.clone(),
+                    sample_row_count: 1_000,
+                    preview_smart_replacements: Vec::new(),
+                },
+                csv_anonymizer_core::TransformRuntime::default(),
+            )
             .expect("log transform should succeed")
         })
     });

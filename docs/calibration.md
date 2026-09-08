@@ -12,10 +12,10 @@ the constant. If you change a constant, update the table and re-run its harness.
 
 ---
 
-# `types.rs` — frequency-inversion constants
+# `types/report.rs` — frequency-inversion constants
 
-Source: the frequency-inversion constants in `types.rs`. Every figure below is copied
-verbatim from the doc comments that previously sat above each constant.
+Source: the frequency-inversion constants in `types/report.rs`. Every figure below is copied
+verbatim from the doc comments that define each constant.
 
 ## MIN_SAMPLE_COVERAGE
 

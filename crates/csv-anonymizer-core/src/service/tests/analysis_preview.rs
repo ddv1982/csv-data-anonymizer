@@ -35,7 +35,9 @@ impl CandidateDetector for FirstCellNameDetector {
 #[test]
 fn analyzes_csv_headers_and_default_output_path() {
     let service = AnonymizerService::new("test-version");
-    let result = service.analyze_csv(fixture("sample.csv")).unwrap();
+    let result = service
+        .analyze_csv(fixture("sample.csv"), crate::CsvAnalysisOptions::default())
+        .unwrap();
 
     assert_eq!(result.row_count, 5);
     assert!(result.row_count_is_complete);
@@ -53,7 +55,13 @@ fn file_analysis_can_report_additive_candidate_detection() {
     let mut detector = FirstCellNameDetector;
 
     let result = service
-        .analyze_csv_with_candidate_detector(fixture("sample.csv"), &mut detector)
+        .analyze_csv(
+            fixture("sample.csv"),
+            crate::CsvAnalysisOptions {
+                candidate_detector: Some(&mut detector),
+                ..Default::default()
+            },
+        )
         .unwrap();
 
     assert_eq!(
@@ -74,7 +82,13 @@ fn file_analysis_can_report_additive_candidate_detection() {
 fn sampled_analysis_still_reports_the_exact_row_count() {
     let service = AnonymizerService::new("test-version");
     let result = service
-        .analyze_csv_with_sample_rows(fixture("large.csv"), 25)
+        .analyze_csv(
+            fixture("large.csv"),
+            crate::CsvAnalysisOptions {
+                sample_rows: 25,
+                ..Default::default()
+            },
+        )
         .unwrap();
 
     // The sample is capped at 25 rows, but detection streams every row, so the
@@ -109,7 +123,13 @@ fn detects_pii_that_only_starts_after_the_sample_window() {
 
     let result = workspace
         .service
-        .analyze_csv_with_sample_rows(&input_path, 100)
+        .analyze_csv(
+            &input_path,
+            crate::CsvAnalysisOptions {
+                sample_rows: 100,
+                ..Default::default()
+            },
+        )
         .unwrap();
     let column = &result.columns[0];
 
@@ -148,7 +168,10 @@ fn detects_pii_that_repeats_on_a_power_of_two_period() {
         }
         fs::write(&input_path, &content).unwrap();
 
-        let result = workspace.service.analyze_csv(&input_path).unwrap();
+        let result = workspace
+            .service
+            .analyze_csv(&input_path, crate::CsvAnalysisOptions::default())
+            .unwrap();
         let column = &result.columns[0];
 
         assert_eq!(
@@ -195,13 +218,25 @@ fn a_small_sample_row_request_cannot_lower_the_detection_basis() {
 
     let floored = workspace
         .service
-        .analyze_csv_with_sample_rows(&input_path, 100)
+        .analyze_csv(
+            &input_path,
+            crate::CsvAnalysisOptions {
+                sample_rows: 100,
+                ..Default::default()
+            },
+        )
         .unwrap();
 
     for requested in [1, 2, 3, 5, 10, 50] {
         let result = workspace
             .service
-            .analyze_csv_with_sample_rows(&input_path, requested)
+            .analyze_csv(
+                &input_path,
+                crate::CsvAnalysisOptions {
+                    sample_rows: requested,
+                    ..Default::default()
+                },
+            )
             .unwrap();
 
         assert_eq!(
@@ -245,7 +280,13 @@ fn preview_classifies_on_the_same_basis_the_setting_gave_analyze() {
 
     let analyzed = workspace
         .service
-        .analyze_csv_with_sample_rows(&input_path, SAMPLE_ROWS)
+        .analyze_csv(
+            &input_path,
+            crate::CsvAnalysisOptions {
+                sample_rows: SAMPLE_ROWS,
+                ..Default::default()
+            },
+        )
         .unwrap();
     assert_eq!(
         analyzed.columns[0].pii_risk,
@@ -255,12 +296,15 @@ fn preview_classifies_on_the_same_basis_the_setting_gave_analyze() {
 
     let preview = workspace
         .service
-        .preview_anonymization(PreviewParams {
-            controls: Vec::new(),
-            sample_count: 3,
-            sample_row_count: SAMPLE_ROWS,
-            ..preview_params(input_path, vec![0])
-        })
+        .preview_anonymization(
+            PreviewParams {
+                controls: Vec::new(),
+                sample_count: 3,
+                sample_row_count: SAMPLE_ROWS,
+                ..preview_params(input_path, vec![0])
+            },
+            crate::TransformRuntime::default(),
+        )
         .unwrap();
 
     for sample in &preview.previews[0].samples {
@@ -285,15 +329,18 @@ fn preview_reuses_repeated_values_within_one_run() {
 
     let preview = workspace
         .service
-        .preview_anonymization(PreviewParams {
-            controls: vec![typed_control(
-                0,
-                DataType::Email,
-                AnonymizationStrategy::Auto,
-            )],
-            sample_count: 3,
-            ..preview_params(input_path, vec![0])
-        })
+        .preview_anonymization(
+            PreviewParams {
+                controls: vec![typed_control(
+                    0,
+                    DataType::Email,
+                    AnonymizationStrategy::Auto,
+                )],
+                sample_count: 3,
+                ..preview_params(input_path, vec![0])
+            },
+            crate::TransformRuntime::default(),
+        )
         .unwrap();
 
     assert_eq!(preview.previews[0].samples.len(), 3);
@@ -314,11 +361,14 @@ fn preview_preserves_short_numeric_code_shape() {
 
     let preview = workspace
         .service
-        .preview_anonymization(PreviewParams {
-            controls: vec![control(0, AnonymizationStrategy::Auto)],
-            sample_count: 3,
-            ..preview_params(input_path, vec![0])
-        })
+        .preview_anonymization(
+            PreviewParams {
+                controls: vec![control(0, AnonymizationStrategy::Auto)],
+                sample_count: 3,
+                ..preview_params(input_path, vec![0])
+            },
+            crate::TransformRuntime::default(),
+        )
         .unwrap();
 
     assert_eq!(preview.previews[0].samples.len(), 3);
@@ -337,10 +387,13 @@ fn preview_preserves_decimal_numeric_shape() {
 
     let preview = workspace
         .service
-        .preview_anonymization(PreviewParams {
-            sample_count: 3,
-            ..preview_params(input_path, vec![0])
-        })
+        .preview_anonymization(
+            PreviewParams {
+                sample_count: 3,
+                ..preview_params(input_path, vec![0])
+            },
+            crate::TransformRuntime::default(),
+        )
         .unwrap();
 
     assert_eq!(preview.previews[0].samples.len(), 3);
@@ -364,10 +417,13 @@ fn preview_skips_empty_and_null_samples() {
 
     let preview = workspace
         .service
-        .preview_anonymization(PreviewParams {
-            sample_count: 3,
-            ..preview_params(input_path, vec![0])
-        })
+        .preview_anonymization(
+            PreviewParams {
+                sample_count: 3,
+                ..preview_params(input_path, vec![0])
+            },
+            crate::TransformRuntime::default(),
+        )
         .unwrap();
 
     assert_eq!(preview.previews[0].samples.len(), 1);
@@ -386,16 +442,19 @@ fn preview_uses_type_specific_phone_and_name_strategies() {
 
     let preview = workspace
         .service
-        .preview_anonymization(PreviewParams {
-            controls: vec![
-                control(0, AnonymizationStrategy::Auto),
-                control(1, AnonymizationStrategy::Auto),
-                control(2, AnonymizationStrategy::Auto),
-                control(3, AnonymizationStrategy::Auto),
-            ],
-            sample_count: 1,
-            ..preview_params(input_path, vec![0, 1, 2, 3])
-        })
+        .preview_anonymization(
+            PreviewParams {
+                controls: vec![
+                    control(0, AnonymizationStrategy::Auto),
+                    control(1, AnonymizationStrategy::Auto),
+                    control(2, AnonymizationStrategy::Auto),
+                    control(3, AnonymizationStrategy::Auto),
+                ],
+                sample_count: 1,
+                ..preview_params(input_path, vec![0, 1, 2, 3])
+            },
+            crate::TransformRuntime::default(),
+        )
         .unwrap();
 
     let phone = &preview.previews[0].samples[0].anonymized;
@@ -418,10 +477,13 @@ fn people_names_fixture_previews_name_like_full_names() {
     let service = AnonymizerService::new("test-version");
 
     let preview = service
-        .preview_anonymization(PreviewParams {
-            controls: vec![control(2, AnonymizationStrategy::Auto)],
-            ..preview_params(fixture("people-names.csv"), vec![2])
-        })
+        .preview_anonymization(
+            PreviewParams {
+                controls: vec![control(2, AnonymizationStrategy::Auto)],
+                ..preview_params(fixture("people-names.csv"), vec![2])
+            },
+            crate::TransformRuntime::default(),
+        )
         .unwrap();
 
     assert_eq!(preview.previews[0].column_name, "full_name");
@@ -452,15 +514,18 @@ fn people_names_fixture_treats_single_token_name_column_as_name() {
     let service = AnonymizerService::new("test-version");
 
     let preview = service
-        .preview_anonymization(PreviewParams {
-            controls: vec![
-                control(0, AnonymizationStrategy::Auto),
-                control(1, AnonymizationStrategy::Auto),
-                control(2, AnonymizationStrategy::Auto),
-                control(3, AnonymizationStrategy::Auto),
-            ],
-            ..preview_params(fixture("people-names.csv"), vec![0, 1, 2, 3])
-        })
+        .preview_anonymization(
+            PreviewParams {
+                controls: vec![
+                    control(0, AnonymizationStrategy::Auto),
+                    control(1, AnonymizationStrategy::Auto),
+                    control(2, AnonymizationStrategy::Auto),
+                    control(3, AnonymizationStrategy::Auto),
+                ],
+                ..preview_params(fixture("people-names.csv"), vec![0, 1, 2, 3])
+            },
+            crate::TransformRuntime::default(),
+        )
         .unwrap();
 
     assert_eq!(preview.previews[3].column_name, "name");
@@ -512,11 +577,14 @@ fn preview_name_mappings_are_consistent_within_previewed_rows() {
 
     let preview = workspace
         .service
-        .preview_anonymization(PreviewParams {
-            controls: controls.clone(),
-            sample_count: 2,
-            ..preview_params(input_path.clone(), vec![0, 1, 2])
-        })
+        .preview_anonymization(
+            PreviewParams {
+                controls: controls.clone(),
+                sample_count: 2,
+                ..preview_params(input_path.clone(), vec![0, 1, 2])
+            },
+            crate::TransformRuntime::default(),
+        )
         .unwrap();
 
     for row_index in 0..2 {
@@ -538,15 +606,18 @@ fn preview_applies_per_column_type_and_strategy_controls() {
 
     let preview = workspace
         .service
-        .preview_anonymization(PreviewParams {
-            controls: vec![typed_control(
-                0,
-                DataType::Email,
-                AnonymizationStrategy::Mask,
-            )],
-            sample_count: 1,
-            ..preview_params(input_path, vec![0])
-        })
+        .preview_anonymization(
+            PreviewParams {
+                controls: vec![typed_control(
+                    0,
+                    DataType::Email,
+                    AnonymizationStrategy::Mask,
+                )],
+                sample_count: 1,
+                ..preview_params(input_path, vec![0])
+            },
+            crate::TransformRuntime::default(),
+        )
         .unwrap();
 
     assert_eq!(preview.previews[0].samples[0].anonymized, "***");
@@ -573,14 +644,17 @@ fn column_report_for(
 
     let result = workspace
         .service
-        .anonymize_csv(AnonymizeParams {
-            controls: vec![ColumnControl {
-                column_index: 0,
-                type_override,
-                strategy,
-            }],
-            ..anonymize_params(input_path, output_path, vec![0])
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                controls: vec![ColumnControl {
+                    column_index: 0,
+                    type_override,
+                    strategy,
+                }],
+                ..anonymize_params(input_path, output_path, vec![0])
+            },
+            crate::CsvRunOptions::default(),
+        )
         .unwrap();
 
     result.privacy_report.column_reports[0].clone()
@@ -697,15 +771,18 @@ fn the_preview_discloses_structure_preservation_before_the_run() {
 
     let preview = workspace
         .service
-        .preview_anonymization(PreviewParams {
-            controls: vec![typed_control(
-                0,
-                DataType::Timestamp,
-                AnonymizationStrategy::Pseudonymize,
-            )],
-            sample_count: 1,
-            ..preview_params(input_path, vec![0])
-        })
+        .preview_anonymization(
+            PreviewParams {
+                controls: vec![typed_control(
+                    0,
+                    DataType::Timestamp,
+                    AnonymizationStrategy::Pseudonymize,
+                )],
+                sample_count: 1,
+                ..preview_params(input_path, vec![0])
+            },
+            crate::TransformRuntime::default(),
+        )
         .unwrap();
 
     assert!(
@@ -727,18 +804,21 @@ fn type_override_updates_report_risk_for_effective_type() {
 
     let result = workspace
         .service
-        .anonymize_csv(AnonymizeParams {
-            file_path: input_path,
-            output_path,
-            columns: vec![0],
-            controls: vec![typed_control(
-                0,
-                DataType::Email,
-                AnonymizationStrategy::Redact,
-            )],
-            force: false,
-            preview_smart_replacements: vec![],
-        })
+        .anonymize_csv(
+            AnonymizeParams {
+                file_path: input_path,
+                output_path,
+                columns: vec![0],
+                controls: vec![typed_control(
+                    0,
+                    DataType::Email,
+                    AnonymizationStrategy::Redact,
+                )],
+                force: false,
+                preview_smart_replacements: vec![],
+            },
+            crate::CsvRunOptions::default(),
+        )
         .unwrap();
 
     let report = &result.privacy_report.column_reports[0];
@@ -831,11 +911,14 @@ fn preview_warns_for_pass_through_and_no_op_columns() {
 
     let preview = workspace
         .service
-        .preview_anonymization(PreviewParams {
-            controls: vec![control(1, AnonymizationStrategy::PassThrough)],
-            sample_count: 1,
-            ..preview_params(input_path, vec![0, 1])
-        })
+        .preview_anonymization(
+            PreviewParams {
+                controls: vec![control(1, AnonymizationStrategy::PassThrough)],
+                sample_count: 1,
+                ..preview_params(input_path, vec![0, 1])
+            },
+            crate::TransformRuntime::default(),
+        )
         .unwrap();
 
     assert_eq!(preview.warnings.len(), 2);

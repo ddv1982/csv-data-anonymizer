@@ -3,7 +3,9 @@ use crate::command_error::CommandError;
 use crate::commands::shared::run_blocking;
 use crate::local_ai::{LocalAiRequest, smart_provider_for_strategy};
 use crate::settings::SettingsStore;
-use csv_anonymizer_core::{QuickGenerateParams, QuickTransformData, SmartReplacementProvider};
+use csv_anonymizer_core::{
+    QuickGenerateParams, QuickTransformData, SmartReplacementProvider, TransformRuntime,
+};
 use serde::Deserialize;
 use std::sync::Arc;
 use tauri::State;
@@ -35,10 +37,12 @@ pub async fn generate_quick_values(
         let provider = provider
             .as_mut()
             .map(|provider| provider as &mut dyn SmartReplacementProvider);
-        csv_anonymizer_core::direct_input::generate_quick_values_with_run_secrets(
+        csv_anonymizer_core::direct_input::generate_quick_values(
             request.params,
-            provider,
-            tokenization_key.as_ref(),
+            TransformRuntime {
+                provider,
+                tokenization_key: tokenization_key.as_ref(),
+            },
         )
         .map_err(|error| error.to_string())
     })
