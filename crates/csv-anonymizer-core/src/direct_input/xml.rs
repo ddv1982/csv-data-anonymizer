@@ -98,11 +98,14 @@ pub(super) fn transform_xml_with_smart_provider(
         .with_tokenization_key(tokenization_key.cloned());
     let output = transform_xml_content(&input.content, &selected_by_path, &mut state)?;
 
+    let mut report = state.report();
+    // XML scalar content is transformed node-by-node, not through the row-level audit.
+    report.residual_audit_incomplete = true;
     Ok(paste_transform_data(
         output,
         analysis.row_count,
         &metadata,
-        state.report(),
+        report,
         coverage,
         start_time,
     ))
@@ -116,14 +119,17 @@ pub(super) fn collect_xml_fields(
     reader.config_mut().trim_text(false);
     let mut path = Vec::new();
     let mut fields = Vec::new();
+    let mut pending_scalar = None;
 
     loop {
         match reader.read_event().map_err(xml_error)? {
             Event::Start(event) => {
+                flush_xml_field_sample(&mut pending_scalar, &mut fields, limits)?;
                 path.push(xml_name(event.name().as_ref()));
                 collect_xml_attributes(&reader, &event, &path, &mut fields, limits)?;
             }
             Event::Empty(event) => {
+                flush_xml_field_sample(&mut pending_scalar, &mut fields, limits)?;
                 path.push(xml_name(event.name().as_ref()));
                 collect_xml_attributes(&reader, &event, &path, &mut fields, limits)?;
                 path.pop();
@@ -132,21 +138,48 @@ pub(super) fn collect_xml_fields(
                 let value = event
                     .xml_content(XmlVersion::Implicit1_0)
                     .map_err(xml_error)?;
-                push_xml_text_sample(&mut fields, &path, value.trim(), limits)?;
+                append_pending_xml_scalar(&mut pending_scalar, &path, value.into_owned(), false);
             }
             Event::CData(event) => {
                 let value = event.decode().map_err(xml_error)?;
-                push_xml_text_sample(&mut fields, &path, value.trim(), limits)?;
+                append_pending_xml_scalar(&mut pending_scalar, &path, value.into_owned(), true);
+            }
+            Event::GeneralRef(event) => {
+                let value = decode_xml_general_ref(event.as_ref())
+                    .ok_or_else(|| xml_error("unsupported XML general reference"))?;
+                append_pending_xml_scalar(&mut pending_scalar, &path, value, false);
             }
             Event::End(_) => {
+                flush_xml_field_sample(&mut pending_scalar, &mut fields, limits)?;
                 path.pop();
             }
-            Event::Eof => break,
-            _ => {}
+            Event::Eof => {
+                flush_xml_field_sample(&mut pending_scalar, &mut fields, limits)?;
+                break;
+            }
+            _ => {
+                flush_xml_field_sample(&mut pending_scalar, &mut fields, limits)?;
+            }
         }
     }
 
     Ok(fields)
+}
+
+fn flush_xml_field_sample(
+    pending: &mut Option<PendingXmlScalar>,
+    fields: &mut Vec<FieldSamples>,
+    limits: FieldSampleLimits,
+) -> Result<()> {
+    let Some(pending_scalar) = pending.take() else {
+        return Ok(());
+    };
+    push_xml_text_sample(
+        fields,
+        &pending_scalar.path,
+        pending_scalar.raw.trim(),
+        limits,
+    )
 }
 
 fn push_xml_text_sample(
@@ -204,60 +237,163 @@ fn transform_xml_content(
         state,
     };
 
+    let mut pending_scalar: Option<PendingXmlScalar> = None;
     loop {
         let event = reader.read_event().map_err(xml_error)?;
         match event {
             Event::Start(event) => {
+                flush_pending_xml_scalar(&mut pending_scalar, &mut writer, &mut transform_context)?;
                 path.push(xml_name(event.name().as_ref()));
                 let event =
                     transform_xml_attributes(&reader, event, &path, &mut transform_context)?;
                 writer.write_event(Event::Start(event)).map_err(xml_error)?;
             }
             Event::Empty(event) => {
+                flush_pending_xml_scalar(&mut pending_scalar, &mut writer, &mut transform_context)?;
                 path.push(xml_name(event.name().as_ref()));
                 let event =
                     transform_xml_attributes(&reader, event, &path, &mut transform_context)?;
                 writer.write_event(Event::Empty(event)).map_err(xml_error)?;
                 path.pop();
             }
-            // Text and CDATA decode before the path is checked, so a node that
-            // cannot be decoded fails the run even when it was never selected.
-            // That is safe only because `collect_xml_fields` decodes every node
-            // unconditionally too, and `transform_xml_with_smart_provider` always
-            // analyzes before it transforms — so an undecodable document has
-            // already been rejected by the time it reaches here.
+            // Text, CDATA, and general references are one logical scalar in XML. Buffer adjacent
+            // content so a value split as `Ada&#32;Lovelace` is transformed once, rather than
+            // leaving the reference untouched or assigning separate replacements to each piece.
             Event::Text(event) => {
                 let raw = event
                     .xml_content(XmlVersion::Implicit1_0)
                     .map_err(xml_error)?;
-                let replacement = xml_text_replacement(&path, &raw, &mut transform_context);
-                let event = match replacement.as_deref() {
-                    Some(anonymized) => Event::Text(BytesText::new(anonymized)),
-                    None => Event::Text(event),
-                };
-                writer.write_event(event).map_err(xml_error)?;
+                if selected_xml_text_path(&path, selected_by_path) {
+                    append_pending_xml_scalar(&mut pending_scalar, &path, raw.into_owned(), false);
+                } else {
+                    flush_pending_xml_scalar(
+                        &mut pending_scalar,
+                        &mut writer,
+                        &mut transform_context,
+                    )?;
+                    writer.write_event(Event::Text(event)).map_err(xml_error)?;
+                }
             }
             Event::CData(event) => {
                 let raw = event.decode().map_err(xml_error)?;
-                let replacement = xml_text_replacement(&path, &raw, &mut transform_context);
-                let event = match replacement.as_deref() {
-                    Some(anonymized) => Event::CData(BytesCData::new(anonymized)),
-                    None => Event::CData(event),
-                };
-                writer.write_event(event).map_err(xml_error)?;
+                if selected_xml_text_path(&path, selected_by_path) {
+                    append_pending_xml_scalar(&mut pending_scalar, &path, raw.into_owned(), true);
+                } else {
+                    flush_pending_xml_scalar(
+                        &mut pending_scalar,
+                        &mut writer,
+                        &mut transform_context,
+                    )?;
+                    writer.write_event(Event::CData(event)).map_err(xml_error)?;
+                }
+            }
+            Event::GeneralRef(event) => {
+                if selected_xml_text_path(&path, selected_by_path) {
+                    let raw = decode_xml_general_ref(event.as_ref())
+                        .ok_or_else(|| xml_error("unsupported XML general reference"))?;
+                    append_pending_xml_scalar(&mut pending_scalar, &path, raw, false);
+                } else {
+                    flush_pending_xml_scalar(
+                        &mut pending_scalar,
+                        &mut writer,
+                        &mut transform_context,
+                    )?;
+                    writer
+                        .write_event(Event::GeneralRef(event))
+                        .map_err(xml_error)?;
+                }
             }
             Event::End(event) => {
+                flush_pending_xml_scalar(&mut pending_scalar, &mut writer, &mut transform_context)?;
                 writer.write_event(Event::End(event)).map_err(xml_error)?;
                 path.pop();
             }
-            Event::Eof => break,
+            Event::Eof => {
+                flush_pending_xml_scalar(&mut pending_scalar, &mut writer, &mut transform_context)?;
+                break;
+            }
             other => {
+                flush_pending_xml_scalar(&mut pending_scalar, &mut writer, &mut transform_context)?;
                 writer.write_event(other).map_err(xml_error)?;
             }
         }
     }
 
     String::from_utf8(writer.into_inner()).map_err(xml_error)
+}
+
+struct PendingXmlScalar {
+    path: Vec<String>,
+    raw: String,
+    all_cdata: bool,
+}
+
+fn selected_xml_text_path(path: &[String], selected: &HashMap<String, ColumnMetadata>) -> bool {
+    selected.contains_key(&xml_text_source_path(path))
+}
+
+fn append_pending_xml_scalar(
+    pending: &mut Option<PendingXmlScalar>,
+    path: &[String],
+    raw: String,
+    is_cdata: bool,
+) {
+    match pending {
+        Some(existing) if existing.path == path => {
+            existing.raw.push_str(&raw);
+            existing.all_cdata &= is_cdata;
+        }
+        _ => {
+            *pending = Some(PendingXmlScalar {
+                path: path.to_vec(),
+                raw,
+                all_cdata: is_cdata,
+            });
+        }
+    }
+}
+
+fn flush_pending_xml_scalar(
+    pending: &mut Option<PendingXmlScalar>,
+    writer: &mut Writer<Vec<u8>>,
+    context: &mut XmlTransformContext<'_>,
+) -> Result<()> {
+    let Some(pending_scalar) = pending.take() else {
+        return Ok(());
+    };
+    let replacement = xml_text_replacement(&pending_scalar.path, &pending_scalar.raw, context);
+    match replacement.as_deref() {
+        Some(anonymized) if pending_scalar.all_cdata => writer
+            .write_event(Event::CData(BytesCData::new(anonymized)))
+            .map_err(xml_error),
+        Some(anonymized) => writer
+            .write_event(Event::Text(BytesText::new(anonymized)))
+            .map_err(xml_error),
+        None if pending_scalar.all_cdata => writer
+            .write_event(Event::CData(BytesCData::new(&pending_scalar.raw)))
+            .map_err(xml_error),
+        None => writer
+            .write_event(Event::Text(BytesText::new(&pending_scalar.raw)))
+            .map_err(xml_error),
+    }
+}
+
+fn decode_xml_general_ref(raw: &[u8]) -> Option<String> {
+    let name = std::str::from_utf8(raw).ok()?;
+    match name {
+        "amp" => Some("&".to_string()),
+        "lt" => Some("<".to_string()),
+        "gt" => Some(">".to_string()),
+        "apos" => Some("'".to_string()),
+        "quot" => Some("\"".to_string()),
+        value if let Some(hex) = value.strip_prefix("#x") => {
+            char::from_u32(u32::from_str_radix(hex, 16).ok()?).map(|c| c.to_string())
+        }
+        value if let Some(decimal) = value.strip_prefix('#') => {
+            char::from_u32(decimal.parse().ok()?).map(|c| c.to_string())
+        }
+        _ => None,
+    }
 }
 
 /// Wraps any XML reader/writer failure as an input-parse error.

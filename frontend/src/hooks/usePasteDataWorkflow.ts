@@ -221,6 +221,13 @@ export function usePasteDataWorkflow({
     setResult(null)
     setPreview(null)
   }
+  const previousTokenizationKey = useRef(activeTokenizationKey)
+
+  useEffect(() => {
+    if (previousTokenizationKey.current === activeTokenizationKey) return
+    previousTokenizationKey.current = activeTokenizationKey
+    clearOutput()
+  }, [activeTokenizationKey, setCopyStatus])
 
   const invalidatingSelection = useSelectionInvalidation(
     selection,

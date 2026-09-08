@@ -8,6 +8,7 @@ import {
   smartRejectionReasonLabel,
   statusLabel,
   statusPillClass,
+  transformedColumnCount,
   transformationSummary,
 } from './helpers'
 import { PrivacyMetricGrid } from './PrivacyMetricGrid'
@@ -17,12 +18,7 @@ import { ReleaseContextReview } from './ReleaseContextReview'
 import type { PrivacyMetric } from './types'
 
 export function PrivacyReportSummary({ privacyReport }: { privacyReport: PrivacyReport }) {
-  const transformedColumns =
-    privacyReport.pseudonymizedColumns +
-    privacyReport.smartReplacementColumns +
-    privacyReport.opaqueTokenColumns +
-    privacyReport.maskedColumns +
-    privacyReport.redactedColumns
+  const transformedColumns = transformedColumnCount(privacyReport)
   const sensitiveColumnTotal = privacyReport.directIdentifiers + privacyReport.quasiIdentifiers
   const advancedMetrics = nonZeroMetrics([
     { label: 'Direct identifiers', value: privacyReport.directIdentifiers, glossaryTerm: 'directIdentifier' },

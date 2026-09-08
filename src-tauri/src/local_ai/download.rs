@@ -156,14 +156,16 @@ impl LocalAiDownloadJob {
 pub fn start_download_job(job: Arc<LocalAiDownloadJob>, request: LocalAiRequest) {
     let result = tauri::async_runtime::block_on(download_model(job.clone(), request.model_name()));
     match result {
-        Ok(()) if job.should_cancel() => job.finish_canceled(),
-        Ok(()) => job.finish_success(),
+        Ok(true) if job.should_cancel() => job.finish_canceled(),
+        Ok(true) => job.finish_success(),
+        Ok(false) if job.should_cancel() => job.finish_canceled(),
+        Ok(false) => job.finish_error(INCOMPLETE_DOWNLOAD_ERROR.to_string()),
         Err(_) if job.should_cancel() => job.finish_canceled(),
         Err(error) => job.finish_error(error),
     }
 }
 
-async fn download_model(job: Arc<LocalAiDownloadJob>, model: String) -> Result<(), String> {
+async fn download_model(job: Arc<LocalAiDownloadJob>, model: String) -> Result<bool, String> {
     let client = download_client()?;
     let mut response = client
         .post(format!("{DEFAULT_OLLAMA_ENDPOINT}/api/pull"))
@@ -186,36 +188,40 @@ async fn download_model(job: Arc<LocalAiDownloadJob>, model: String) -> Result<(
         .map_err(|error| format!("Could not read Ollama download progress: {error}"))?
     {
         if job.should_cancel() {
-            return Ok(());
+            return Ok(false);
         }
 
         pending.extend_from_slice(&chunk);
         while let Some(newline_index) = pending.iter().position(|byte| *byte == b'\n') {
             let line = pending.drain(..=newline_index).collect::<Vec<_>>();
-            process_download_line(&job, &line)?;
+            if process_download_line(&job, &line)? {
+                return Ok(true);
+            }
         }
     }
 
-    if !pending.is_empty() {
-        process_download_line(&job, &pending)?;
+    if !pending.is_empty() && process_download_line(&job, &pending)? {
+        return Ok(true);
     }
-    Ok(())
+    Ok(false)
 }
 
-fn process_download_line(job: &LocalAiDownloadJob, line: &[u8]) -> Result<(), String> {
+fn process_download_line(job: &LocalAiDownloadJob, line: &[u8]) -> Result<bool, String> {
     let line = String::from_utf8_lossy(line);
     let line = line.trim();
     if line.is_empty() {
-        return Ok(());
+        return Ok(false);
     }
     let progress = serde_json::from_str::<OllamaPullProgress>(line)
         .map_err(|error| format!("Ollama returned invalid download progress: {error}"))?;
     if let Some(error) = progress.error {
         return Err(format!("Ollama model download failed: {error}"));
     }
+    let completed = progress.status.as_deref() == Some("success");
     job.report_progress(progress);
-    Ok(())
+    Ok(completed)
 }
+const INCOMPLETE_DOWNLOAD_ERROR: &str = "Ollama ended the model download before reporting success.";
 
 #[cfg(test)]
 mod tests {
@@ -346,21 +352,39 @@ mod tests {
     }
 
     #[test]
-    fn download_progress_line_updates_status() {
+    fn download_progress_line_updates_status_without_marking_completion() {
         let store = LocalAiDownloadStore::default();
         let job = store.create_job("gemma3:4b".to_string()).unwrap();
 
-        process_download_line(
+        let completed = process_download_line(
             &job,
             br#"{"status":"pulling manifest","completed":4,"total":10}
 "#,
         )
         .unwrap();
 
+        assert!(!completed);
         let status = job.snapshot().unwrap();
         assert_eq!(status.status_message, "pulling manifest");
         assert_eq!(status.completed_bytes, Some(4));
         assert_eq!(status.total_bytes, Some(10));
+    }
+
+    #[test]
+    fn empty_or_nonterminal_eof_does_not_count_as_success() {
+        let store = LocalAiDownloadStore::default();
+        let job = store.create_job("gemma3:4b".to_string()).unwrap();
+
+        assert!(!process_download_line(&job, b"").unwrap());
+        assert!(!process_download_line(&job, br#"{"status":"pulling layers"}"#).unwrap());
+    }
+
+    #[test]
+    fn explicit_ollama_success_record_marks_completion() {
+        let store = LocalAiDownloadStore::default();
+        let job = store.create_job("gemma3:4b".to_string()).unwrap();
+
+        assert!(process_download_line(&job, br#"{"status":"success"}"#).unwrap());
     }
 
     #[test]

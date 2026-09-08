@@ -1,5 +1,5 @@
 use crate::error::{AnonymizerError, Result, csv_error};
-use crate::file_ops::replace_file_atomically;
+use crate::file_ops::replace_file_atomically_with_handle;
 use crate::process_control::{check_canceled, report_progress};
 use crate::sampling::SpreadSampler;
 use crate::strategies::{TransformState, transform_row_with_state};
@@ -509,23 +509,28 @@ pub(crate) fn process_file_with_control_and_overwrite(
 ) -> Result<ProcessResult> {
     validate_file(input_path)?;
     let start_time = Instant::now();
-    let mut result = replace_file_atomically(output_path, overwrite, |temporary_output_path| {
-        process_file_to_temporary_output(
-            input_path,
-            temporary_output_path,
-            columns,
-            options,
-            control,
-            start_time,
-        )
-    })?;
+    let mut result = replace_file_atomically_with_handle(
+        output_path,
+        overwrite,
+        |temporary_output_path, temporary_output_file| {
+            process_file_to_temporary_output(
+                input_path,
+                temporary_output_path,
+                temporary_output_file,
+                columns,
+                options,
+                control,
+                start_time,
+            )
+        },
+    )?;
     result.output_path = output_path.to_path_buf();
     Ok(result)
 }
-
 fn process_file_to_temporary_output(
     input_path: &Path,
     temporary_output_path: &Path,
+    temporary_output_file: &mut std::fs::File,
     columns: &[ColumnMetadata],
     options: ProcessOptions<'_>,
     control: Option<&mut ProcessControl<'_>>,
@@ -538,8 +543,7 @@ fn process_file_to_temporary_output(
         .map_err(csv_error)?;
     let mut writer = WriterBuilder::new()
         .has_headers(false)
-        .from_path(temporary_output_path)
-        .map_err(csv_error)?;
+        .from_writer(&mut *temporary_output_file);
 
     process_csv_reader_to_writer(
         &mut reader,

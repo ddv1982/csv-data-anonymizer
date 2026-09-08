@@ -909,6 +909,112 @@ fn transforms_selected_xml_cdata() {
 }
 
 #[test]
+fn transforms_xml_text_cdata_and_references_as_one_scalar() {
+    let input = r#"<users><user><name>Ada&#32;<![CDATA[Lovelace]]>&amp;</name><note>keep</note></user></users>"#;
+    let analysis = analyze_paste_data(PasteAnalyzeParams {
+        content: input.to_string(),
+        format: PasteDataFormat::Xml,
+        sample_row_count: 10,
+    })
+    .unwrap();
+    let name = analysis
+        .columns
+        .iter()
+        .find(|column| column.name == "users.user.name")
+        .unwrap();
+    let result = transform_paste_data(PasteTransformParams {
+        content: input.to_string(),
+        format: PasteDataFormat::Xml,
+        columns: vec![name.index],
+        controls: vec![ColumnControl {
+            column_index: name.index,
+            type_override: Some(DataType::FullName),
+            strategy: AnonymizationStrategy::Redact,
+        }],
+        sample_row_count: 100,
+        preview_smart_replacements: Vec::new(),
+    })
+    .unwrap();
+    let mut reader = quick_xml::Reader::from_str(&result.output);
+    loop {
+        if matches!(reader.read_event().unwrap(), quick_xml::events::Event::Eof) {
+            break;
+        }
+    }
+    assert!(result.output.contains("<note>keep</note>"));
+}
+
+#[test]
+fn smart_xml_replacements_use_combined_text_cdata_and_references() {
+    let input = r#"<users><user><name>Ada&#32;<![CDATA[Lovelace]]>&amp;</name></user></users>"#;
+    let analysis = analyze_paste_data(PasteAnalyzeParams {
+        content: input.to_string(),
+        format: PasteDataFormat::Xml,
+        sample_row_count: 10,
+    })
+    .unwrap();
+    let name = analysis
+        .columns
+        .iter()
+        .find(|column| column.name == "users.user.name")
+        .unwrap();
+    let mut provider = RecordingSmartProvider::default();
+
+    let result = transform_paste_data_with_smart_provider(
+        PasteTransformParams {
+            content: input.to_string(),
+            format: PasteDataFormat::Xml,
+            columns: vec![name.index],
+            controls: vec![ColumnControl {
+                column_index: name.index,
+                type_override: Some(DataType::FullName),
+                strategy: AnonymizationStrategy::LocalAi,
+            }],
+            sample_row_count: 100,
+            preview_smart_replacements: Vec::new(),
+        },
+        Some(&mut provider),
+    )
+    .unwrap();
+
+    assert_eq!(provider.requests, vec![vec!["Ada Lovelace&".to_string()]]);
+    assert!(result.output.contains("Generated Person 1"));
+}
+
+#[test]
+fn scalar_document_marks_unmeasured_residual_audit_as_review() {
+    let input = r#"{"first":"alice@example.com","second":"alice@example.com"}"#;
+    let analysis = analyze_paste_data(PasteAnalyzeParams {
+        content: input.to_string(),
+        format: PasteDataFormat::Json,
+        sample_row_count: 10,
+    })
+    .unwrap();
+    let selected = analysis
+        .columns
+        .iter()
+        .map(|column| column.index)
+        .collect::<Vec<_>>();
+    let result = transform_paste_data(PasteTransformParams {
+        content: input.to_string(),
+        format: PasteDataFormat::Json,
+        columns: selected,
+        controls: Vec::new(),
+        sample_row_count: 100,
+        preview_smart_replacements: Vec::new(),
+    })
+    .unwrap();
+    let audit = result
+        .privacy_report
+        .evidence
+        .iter()
+        .find(|item| item.id == "broad-residual-value-audit")
+        .expect("scalar report should include residual audit evidence");
+    assert_eq!(audit.status, crate::types::ReleaseEvidenceStatus::Review);
+    assert!(audit.detail.contains("was not run"));
+}
+
+#[test]
 fn json_paths_distinguish_literal_dotted_keys_from_nested_keys() {
     let input = r#"{
   "a.b": "literal@example.com",

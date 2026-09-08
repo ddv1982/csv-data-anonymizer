@@ -66,6 +66,19 @@ describe('PrivacyReportSummary', () => {
     expect(screen.queryByText('Smart Replacement')).not.toBeInTheDocument()
   })
 
+  it('counts labelled columns as transformed and describes an all-labelled report', () => {
+    render(
+      <PrivacyReportSummary
+        privacyReport={privacyReportFixture({
+          labelledColumns: 2,
+        })}
+      />,
+    )
+
+    expect(screen.getByText('2')).toBeInTheDocument()
+    expect(screen.getByText('2 labelled')).toBeInTheDocument()
+  })
+
   it('prints a count Rust sent as a string exactly as Rust wrote it', () => {
     render(
       <PrivacyReportSummary

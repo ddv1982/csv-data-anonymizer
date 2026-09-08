@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.93 - 2026-09-08
+
+- Close anonymization disclosure paths in pasted text and XML, including complete PEM redaction, character-reference transformation, and honest residual-audit evidence.
+- Revalidate Smart preview replacements against full-run values, retain output handles through publication, and prevent malformed keys from consuming the only anonymization job slot.
+- Harden Local AI transport and download completion, invalidate stale frontend artifacts, correct Label report counts, and update the audited Browserslist dependency.
+
 ## v1.0.92 - 2026-08-19
 
 - Stop the per-column Action dropdowns from clipping their text: a short control box inherited the body line-height, so the line box overflowed the select and cut the glyphs.

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { generateQuickValues } from '../tauri'
 import type { AnonymizationStrategy, DataType, QuickTransformData } from '../types'
 import { messageFrom } from '../utils/errors'
@@ -50,6 +50,13 @@ export function useQuickGenerateWorkflow({
     setResult(null)
     setCopyStatus(null)
   }
+  const previousTokenizationKey = useRef(activeTokenizationKey)
+
+  useEffect(() => {
+    if (previousTokenizationKey.current === activeTokenizationKey) return
+    previousTokenizationKey.current = activeTokenizationKey
+    clearOutput()
+  }, [activeTokenizationKey, setCopyStatus])
 
   function setDataType(nextDataType: DataType) {
     setDataTypeState(nextDataType)
